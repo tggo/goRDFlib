@@ -1,0 +1,15 @@
+Graph has 6 triples
+
+Turtle output:
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix ex: <http://example.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+ex:Bob a foaf:Person ;
+    dc:title "The Builder"@en ;
+    foaf:name "Bob" .
+
+ex:Donna a foaf:Person ;
+    foaf:knows ex:Bob ;
+    foaf:name "Donna Fales" .

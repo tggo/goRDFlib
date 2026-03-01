@@ -1,0 +1,55 @@
+Graph has 3 triples
+
+--- turtle ---
+@prefix ex: <http://example.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+ex:Alice a foaf:Person ;
+    ex:age 30 ;
+    foaf:name "Alice" .
+
+--- nt ---
+<http://example.org/Alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<http://example.org/Alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://xmlns.com/foaf/0.1/Person> .
+<http://example.org/Alice> <http://xmlns.com/foaf/0.1/name> "Alice" .
+
+--- xml ---
+<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF
+   xmlns:ex="http://example.org/"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+   xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+   xmlns:owl="http://www.w3.org/2002/07/owl#"
+   xmlns:foaf="http://xmlns.com/foaf/0.1/">
+  <foaf:Person rdf:about="http://example.org/Alice">
+    <ex:age rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">30</ex:age>
+    <foaf:name>Alice</foaf:name>
+  </foaf:Person>
+</rdf:RDF>
+
+--- json-ld ---
+{
+  "@context": {
+    "ex": "http://example.org/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@id": "ex:Alice",
+  "@type": "foaf:Person",
+  "ex:age": {
+    "@type": "xsd:integer",
+    "@value": "30"
+  },
+  "foaf:name": "Alice"
+}
+
+Parsed 2 triples from N-Triples
+  data.ttl → turtle
+  data.nt → nt
+  data.rdf → xml
+  data.jsonld → json-ld

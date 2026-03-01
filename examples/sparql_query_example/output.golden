@@ -1,0 +1,14 @@
+Loaded 11 triples
+
+All persons:
+  Alice
+  Bob
+  Charlie
+
+Persons over 28:
+  Charlie (age 35)
+  Alice (age 30)
+
+Alice knows Bob? true
+
+Constructed graph has 3 triples

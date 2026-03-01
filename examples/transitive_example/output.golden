@@ -1,0 +1,20 @@
+All ancestors of person (parent+):
+  dad
+  gm1
+  gm2
+  gp1
+  gp2
+  mom
+
+All descendants of gm1 (^parent+):
+  mom
+  person
+
+Ancestors including self (parent*):
+  dad
+  gm1
+  gm2
+  gp1
+  gp2
+  mom
+  person

@@ -1,0 +1,14 @@
+Name: Alice
+Age: 30
+
+Alice knows:
+  <http://example.org/Bob>
+
+Updated age: 31
+
+Alice's properties:
+  <http://xmlns.com/foaf/0.1/age> = 31
+  <http://xmlns.com/foaf/0.1/knows> = <http://example.org/Bob>
+  <http://xmlns.com/foaf/0.1/name> = "Alice"
+
+Graph has 5 triples

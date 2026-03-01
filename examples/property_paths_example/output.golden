@@ -1,0 +1,14 @@
+Tim knows directly:
+  Alice
+
+Tim knows via 2 hops (knows/knows):
+  Bob
+
+Tim knows transitively (knows+):
+  Alice
+  Bob
+  Charlie
+
+Tim's knows-or-name (knows|name):
+  <http://example.org/Alice>
+  "Tim"
