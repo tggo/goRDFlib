@@ -250,7 +250,7 @@ func (p *turtleParser) readSubject() (rdflibgo.Subject, error) {
 		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
 	}
 	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
-		return p.readBlankNodeLabel(), nil
+		return p.readBlankNodeLabel()
 	}
 	if ch == '[' {
 		return p.readBlankNodePropertyList()
@@ -322,7 +322,7 @@ func (p *turtleParser) readObject() (rdflibgo.Term, error) {
 		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
 	}
 	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
-		return p.readBlankNodeLabel(), nil
+		return p.readBlankNodeLabel()
 	}
 	if ch == '[' {
 		return p.readBlankNodePropertyList()
@@ -370,7 +370,11 @@ func (p *turtleParser) readIRI() (string, error) {
 		if ch == '>' {
 			iri := p.input[start:p.pos]
 			p.pos++
-			return p.unescapeIRI(iri), nil
+			unescaped, err := p.unescapeIRI(iri)
+			if err != nil {
+				return "", err
+			}
+			return unescaped, nil
 		}
 		if ch == '\\' {
 			p.pos += 2 // skip escape (handled in unescape)
@@ -390,13 +394,13 @@ func (p *turtleParser) readPrefixedName() (string, error) {
 	local := p.readLocalName()
 	ns, ok := p.prefixes[prefix]
 	if !ok {
-		return "", p.errorf("undefined prefix %q at line %d", prefix, p.line)
+		return "", p.errorf("undefined prefix %q", prefix)
 	}
 	return ns + local, nil
 }
 
 // readBlankNodeLabel reads _:label.
-func (p *turtleParser) readBlankNodeLabel() rdflibgo.BNode {
+func (p *turtleParser) readBlankNodeLabel() (rdflibgo.BNode, error) {
 	p.pos += 2 // skip "_:"
 	start := p.pos
 	for p.pos < len(p.input) && !isDelimiter(p.input[p.pos]) {
@@ -406,7 +410,10 @@ func (p *turtleParser) readBlankNodeLabel() rdflibgo.BNode {
 	label := p.input[start:p.pos]
 	label = strings.TrimRight(label, ".")
 	p.pos = start + len(label)
-	return rdflibgo.NewBNode(label)
+	if label == "" {
+		return rdflibgo.BNode{}, p.errorf("empty blank node label after _:")
+	}
+	return rdflibgo.NewBNode(label), nil
 }
 
 // readBlankNodePropertyList reads [...].
@@ -514,12 +521,13 @@ func (p *turtleParser) readLiteral() (rdflibgo.Literal, error) {
 				p.pos += 3
 				goto done
 			}
-			sb.WriteByte(ch)
+			r, size := utf8.DecodeRuneInString(p.input[p.pos:])
+			sb.WriteRune(r)
 			if ch == '\n' {
 				p.line++
 				p.col = 1
 			}
-			p.pos++
+			p.pos += size
 		} else {
 			if ch == quote {
 				p.pos++
@@ -528,8 +536,9 @@ func (p *turtleParser) readLiteral() (rdflibgo.Literal, error) {
 			if ch == '\n' || ch == '\r' {
 				return rdflibgo.Literal{}, p.errorf("newline in short string")
 			}
-			sb.WriteByte(ch)
-			p.pos++
+			r, size := utf8.DecodeRuneInString(p.input[p.pos:])
+			sb.WriteRune(r)
+			p.pos += size
 		}
 	}
 	return rdflibgo.Literal{}, p.errorf("unterminated string literal")
@@ -796,9 +805,9 @@ func (p *turtleParser) resolveIRI(iri string) string {
 	return b.ResolveReference(ref).String()
 }
 
-func (p *turtleParser) unescapeIRI(s string) string {
+func (p *turtleParser) unescapeIRI(s string) (string, error) {
 	if !strings.ContainsRune(s, '\\') {
-		return s
+		return s, nil
 	}
 	var sb strings.Builder
 	i := 0
@@ -807,36 +816,38 @@ func (p *turtleParser) unescapeIRI(s string) string {
 			i++
 			switch s[i] {
 			case 'u':
-				if i+4 <= len(s) {
-					code, err := strconv.ParseUint(s[i+1:i+5], 16, 32)
-					if err == nil {
-						sb.WriteRune(rune(code))
-						i += 5
-						continue
-					}
+				if i+5 > len(s) {
+					return "", p.errorf("truncated \\u escape in IRI")
 				}
+				code, err := strconv.ParseUint(s[i+1:i+5], 16, 32)
+				if err != nil {
+					return "", p.errorf("invalid \\u escape in IRI: %s", s[i+1:i+5])
+				}
+				sb.WriteRune(rune(code))
+				i += 5
 			case 'U':
-				if i+8 <= len(s) {
-					code, err := strconv.ParseUint(s[i+1:i+9], 16, 32)
-					if err == nil {
-						sb.WriteRune(rune(code))
-						i += 9
-						continue
-					}
+				if i+9 > len(s) {
+					return "", p.errorf("truncated \\U escape in IRI")
 				}
+				code, err := strconv.ParseUint(s[i+1:i+9], 16, 32)
+				if err != nil {
+					return "", p.errorf("invalid \\U escape in IRI: %s", s[i+1:i+9])
+				}
+				sb.WriteRune(rune(code))
+				i += 9
+			default:
+				return "", p.errorf("unknown escape \\%c in IRI", s[i])
 			}
-			sb.WriteByte(s[i])
-			i++
 		} else {
 			sb.WriteByte(s[i])
 			i++
 		}
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
 func (p *turtleParser) errorf(format string, args ...any) error {
-	return fmt.Errorf("turtle parse error at line %d, col %d: %s", p.line, p.col, fmt.Sprintf(format, args...))
+	return fmt.Errorf("turtle parse error at line %d: "+format, append([]any{p.line}, args...)...)
 }
 
 func isDelimiter(ch byte) bool {

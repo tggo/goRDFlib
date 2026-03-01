@@ -1,10 +1,12 @@
 package turtle
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
+	"unicode"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 )
@@ -52,6 +54,9 @@ type turtleState struct {
 
 	// serialized BNodes (avoid duplicates)
 	serialized map[string]bool
+
+	// subjectMap maps N3 key -> Subject for O(1) lookup
+	subjectMap map[string]rdflibgo.Subject
 }
 
 func newTurtleState(g *rdflibgo.Graph) *turtleState {
@@ -63,6 +68,7 @@ func newTurtleState(g *rdflibgo.Graph) *turtleState {
 		listHeads:  make(map[string]bool),
 		listNodes:  make(map[string]bool),
 		serialized: make(map[string]bool),
+		subjectMap: make(map[string]rdflibgo.Subject),
 	}
 }
 
@@ -75,6 +81,7 @@ func (ts *turtleState) preprocess() {
 		if ts.spoMap[sk] == nil {
 			ts.spoMap[sk] = make(map[string][]rdflibgo.Term)
 		}
+		ts.subjectMap[sk] = t.Subject
 		ts.spoMap[sk][pk] = append(ts.spoMap[sk][pk], t.Object)
 
 		// Count object references
@@ -234,21 +241,17 @@ func (ts *turtleState) orderSubjects() {
 	ts.subjects = append(ts.subjects, bnodeSubjects...)
 }
 
-// resolveSubject finds the original Subject term from an N3 key.
+// resolveSubject finds the original Subject term from an N3 key via the precomputed map.
 func (ts *turtleState) resolveSubject(sk string) rdflibgo.Subject {
-	var result rdflibgo.Subject
-	ts.g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-		if termKey(t.Subject) == sk {
-			result = t.Subject
-			return false
-		}
-		return true
-	})
-	return result
+	return ts.subjectMap[sk]
 }
 
 // write outputs the Turtle document.
 func (ts *turtleState) write(w io.Writer) error {
+	bw := bufio.NewWriter(w)
+	defer bw.Flush()
+	w = bw
+
 	// @base
 	if ts.base != "" {
 		if _, err := fmt.Fprintf(w, "@base <%s> .\n", ts.base); err != nil {
@@ -348,7 +351,7 @@ func (ts *turtleState) writePredicates(w io.Writer, sk string, indent string) er
 					return err
 				}
 			}
-			objStr, err := ts.objectStr(w, obj)
+			objStr, err := ts.objectStr(obj)
 			if err != nil {
 				return err
 			}
@@ -416,7 +419,7 @@ func (ts *turtleState) predLabel(pk string) string {
 }
 
 // objectStr returns the Turtle representation of an object term.
-func (ts *turtleState) objectStr(w io.Writer, t rdflibgo.Term) (string, error) {
+func (ts *turtleState) objectStr(t rdflibgo.Term) (string, error) {
 	switch v := t.(type) {
 	case rdflibgo.URIRef:
 		return ts.qnameOrFull(v), nil
@@ -424,12 +427,12 @@ func (ts *turtleState) objectStr(w io.Writer, t rdflibgo.Term) (string, error) {
 		bk := termKey(v)
 		// Check if it's a list head
 		if ts.listHeads[bk] && !ts.serialized[bk] {
-			return ts.listStr(v), nil
+			return ts.listStr(v)
 		}
 		// Inline blank node if referenced only once and not yet serialized
 		if ts.refs[bk] <= 1 && !ts.serialized[bk] {
 			if preds := ts.spoMap[bk]; len(preds) > 0 {
-				return ts.inlineBNode(v), nil
+				return ts.inlineBNode(v)
 			}
 		}
 		return v.N3(), nil
@@ -484,21 +487,46 @@ func (ts *turtleState) qnameOrFull(u rdflibgo.URIRef) string {
 	return u.N3()
 }
 
-// isValidLocalName checks if a string is valid as a Turtle local name.
+// isValidLocalName checks if a string is valid as a Turtle PN_LOCAL name.
+// It uses a positive match aligned with the Turtle grammar specification.
 func isValidLocalName(s string) bool {
 	if s == "" {
 		return false
 	}
-	for _, c := range s {
-		if c == '/' || c == ' ' || c == '<' || c == '>' || c == '{' || c == '}' || c == '"' || c == '?' || c == '#' {
-			return false
+	runes := []rune(s)
+	// First character: must be PN_CHARS_U, digit, ':', or PLX start
+	if !isPNCharsU(runes[0]) && !unicode.IsDigit(runes[0]) && runes[0] != ':' {
+		return false
+	}
+	// Middle and last characters
+	for i := 1; i < len(runes); i++ {
+		c := runes[i]
+		if isPNCharsBase(c) || c == '_' || c == '-' || c == '\u00B7' ||
+			(c >= '\u0300' && c <= '\u036F') || (c >= '\u203F' && c <= '\u2040') ||
+			unicode.IsDigit(c) || c == ':' || c == '.' {
+			continue
 		}
+		return false
+	}
+	// Last character must not be '.'
+	if runes[len(runes)-1] == '.' {
+		return false
 	}
 	return true
 }
 
+// isPNCharsU returns true if the rune matches PN_CHARS_U (PN_CHARS_BASE | '_').
+func isPNCharsU(r rune) bool {
+	return r == '_' || isPNCharsBase(r)
+}
+
+// isPNCharsBase returns true if the rune matches PN_CHARS_BASE from the Turtle grammar.
+func isPNCharsBase(r rune) bool {
+	return unicode.IsLetter(r)
+}
+
 // listStr serializes an rdf:List as Turtle collection syntax: ( item1 item2 ... )
-func (ts *turtleState) listStr(head rdflibgo.BNode) string {
+func (ts *turtleState) listStr(head rdflibgo.BNode) (string, error) {
 	var items []string
 	restKey := termKey(rdflibgo.RDF.Rest)
 	firstKey := termKey(rdflibgo.RDF.First)
@@ -509,7 +537,10 @@ func (ts *turtleState) listStr(head rdflibgo.BNode) string {
 		ts.serialized[node] = true
 		firsts := ts.spoMap[node][firstKey]
 		if len(firsts) > 0 {
-			str, _ := ts.objectStr(nil, firsts[0])
+			str, err := ts.objectStr(firsts[0])
+			if err != nil {
+				return "", err
+			}
 			items = append(items, str)
 		}
 		rests := ts.spoMap[node][restKey]
@@ -519,11 +550,11 @@ func (ts *turtleState) listStr(head rdflibgo.BNode) string {
 		node = termKey(rests[0])
 	}
 
-	return "( " + strings.Join(items, " ") + " )"
+	return "( " + strings.Join(items, " ") + " )", nil
 }
 
 // inlineBNode serializes a blank node inline: [ pred1 obj1 ; pred2 obj2 ]
-func (ts *turtleState) inlineBNode(b rdflibgo.BNode) string {
+func (ts *turtleState) inlineBNode(b rdflibgo.BNode) (string, error) {
 	sk := termKey(b)
 	ts.serialized[sk] = true
 	preds := ts.spoMap[sk]
@@ -541,11 +572,14 @@ func (ts *turtleState) inlineBNode(b rdflibgo.BNode) string {
 
 		var objStrs []string
 		for _, obj := range objs {
-			str, _ := ts.objectStr(nil, obj)
+			str, err := ts.objectStr(obj)
+			if err != nil {
+				return "", err
+			}
 			objStrs = append(objStrs, str)
 		}
 		parts = append(parts, predLabel+" "+strings.Join(objStrs, ", "))
 	}
 
-	return "[ " + strings.Join(parts, " ; ") + " ]"
+	return "[ " + strings.Join(parts, " ; ") + " ]", nil
 }

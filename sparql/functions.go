@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 )
@@ -72,7 +73,7 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "STRLEN":
 		vals := evalArgs()
 		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(len(termString(vals[0])))
+			return rdflibgo.NewLiteral(utf8.RuneCountInString(termString(vals[0])))
 		}
 	case "SUBSTR":
 		vals := evalArgs()
@@ -80,23 +81,24 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 			return nil
 		}
 		s := termString(vals[0])
+		runes := []rune(s)
 		if len(vals) >= 2 {
-			start := int(toFloat64(vals[1])) - 1
+			start := int(toFloat64(vals[1])) - 1 // SPARQL is 1-based
 			if start < 0 {
 				start = 0
 			}
-			if start >= len(s) {
+			if start >= len(runes) {
 				return rdflibgo.NewLiteral("")
 			}
 			if len(vals) >= 3 {
 				length := int(toFloat64(vals[2]))
 				end := start + length
-				if end > len(s) {
-					end = len(s)
+				if end > len(runes) {
+					end = len(runes)
 				}
-				return rdflibgo.NewLiteral(s[start:end])
+				return rdflibgo.NewLiteral(string(runes[start:end]))
 			}
-			return rdflibgo.NewLiteral(s[start:])
+			return rdflibgo.NewLiteral(string(runes[start:]))
 		}
 	case "UCASE":
 		vals := evalArgs()

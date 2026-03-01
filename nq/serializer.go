@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/internal/ntsyntax"
 )
 
 // Serialize writes the graph in N-Quads format.
@@ -15,17 +16,50 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	var lines []string
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-		line := ntTerm(t.Subject) + " " + ntTerm(t.Predicate) + " " + ntTerm(t.Object)
-		// Add graph context if the graph has an identifier that's a URIRef
-		if id, ok := g.Identifier().(rdflibgo.URIRef); ok {
-			line += " " + ntTerm(id)
+	lines := make([]string, 0, g.Len())
+	var serErr error
+
+	// Determine graph context once
+	var graphSuffix string
+	if id, ok := g.Identifier().(rdflibgo.URIRef); ok {
+		term, err := ntsyntax.Term(id)
+		if err != nil {
+			return err
 		}
-		line += " ."
-		lines = append(lines, line)
+		graphSuffix = " " + term
+	}
+
+	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+		var sb strings.Builder
+		s, err := ntsyntax.Term(t.Subject)
+		if err != nil {
+			serErr = err
+			return false
+		}
+		p, err := ntsyntax.Term(t.Predicate)
+		if err != nil {
+			serErr = err
+			return false
+		}
+		o, err := ntsyntax.Term(t.Object)
+		if err != nil {
+			serErr = err
+			return false
+		}
+		sb.Grow(len(s) + len(p) + len(o) + len(graphSuffix) + 6)
+		sb.WriteString(s)
+		sb.WriteByte(' ')
+		sb.WriteString(p)
+		sb.WriteByte(' ')
+		sb.WriteString(o)
+		sb.WriteString(graphSuffix)
+		sb.WriteString(" .")
+		lines = append(lines, sb.String())
 		return true
 	})
+	if serErr != nil {
+		return serErr
+	}
 	slices.Sort(lines)
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(w, line); err != nil {
@@ -33,81 +67,4 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		}
 	}
 	return nil
-}
-
-func ntTerm(t rdflibgo.Term) string {
-	switch v := t.(type) {
-	case rdflibgo.URIRef:
-		return "<" + ntEscapeIRI(v.Value()) + ">"
-	case rdflibgo.BNode:
-		return "_:" + v.Value()
-	case rdflibgo.Literal:
-		return ntLiteral(v)
-	default:
-		return t.N3()
-	}
-}
-
-func ntLiteral(l rdflibgo.Literal) string {
-	escaped := ntEscapeString(l.Lexical())
-	quoted := `"` + escaped + `"`
-	if l.Language() != "" {
-		return quoted + "@" + l.Language()
-	}
-	if l.Datatype() != (rdflibgo.URIRef{}) && l.Datatype() != rdflibgo.XSDString {
-		return quoted + "^^<" + l.Datatype().Value() + ">"
-	}
-	return quoted
-}
-
-func ntEscapeString(s string) string {
-	var sb strings.Builder
-	for _, r := range s {
-		switch r {
-		case '\\':
-			sb.WriteString(`\\`)
-		case '"':
-			sb.WriteString(`\"`)
-		case '\n':
-			sb.WriteString(`\n`)
-		case '\r':
-			sb.WriteString(`\r`)
-		case '\t':
-			sb.WriteString(`\t`)
-		default:
-			if r < 0x20 {
-				sb.WriteString(fmt.Sprintf(`\u%04X`, r))
-			} else if r > 0xFFFF {
-				sb.WriteString(fmt.Sprintf(`\U%08X`, r))
-			} else {
-				sb.WriteRune(r)
-			}
-		}
-	}
-	return sb.String()
-}
-
-func ntEscapeIRI(s string) string {
-	needsEscape := false
-	for _, r := range s {
-		if r < 0x20 || r > 0xFFFF {
-			needsEscape = true
-			break
-		}
-	}
-	if !needsEscape {
-		return s
-	}
-	var sb strings.Builder
-	sb.Grow(len(s))
-	for _, r := range s {
-		if r < 0x20 {
-			sb.WriteString(fmt.Sprintf(`\u%04X`, r))
-		} else if r > 0xFFFF {
-			sb.WriteString(fmt.Sprintf(`\U%08X`, r))
-		} else {
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
 }

@@ -13,6 +13,8 @@ import (
 )
 
 // Parse parses a JSON-LD document into the given graph.
+// It uses piprate/json-gold to expand the document to N-Quads, then parses those into the graph.
+// Options: WithBase, WithDocumentLoader.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -21,7 +23,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	base := cfg.base
 
 	// Decode JSON
-	var doc interface{}
+	var doc any
 	if err := json.NewDecoder(r).Decode(&doc); err != nil {
 		return err
 	}
@@ -30,6 +32,9 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	proc := ld.NewJsonLdProcessor()
 	ldOpts := ld.NewJsonLdOptions(base)
 	ldOpts.Format = "application/n-quads"
+	if cfg.documentLoader != nil {
+		ldOpts.DocumentLoader = cfg.documentLoader
+	}
 
 	nquads, err := proc.ToRDF(doc, ldOpts)
 	if err != nil {

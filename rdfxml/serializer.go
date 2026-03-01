@@ -13,6 +13,10 @@ import (
 func termKey(t rdflibgo.Term) string { return t.N3() }
 
 // Serialize serializes a Graph to RDF/XML format.
+// It groups triples by subject and emits typed node elements when rdf:type is present.
+// If a subject has multiple rdf:type values, the first one with a valid QName becomes
+// the element name; the rest are emitted as rdf:type property elements.
+// Options: WithBase sets xml:base on the root element.
 func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -70,7 +74,7 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		return err
 	}
 
-	// Write each subject as rdf:Description
+	// Write each subject
 	for _, sk := range subjectOrder {
 		triples := subjects[sk]
 		if len(triples) == 0 {
@@ -78,18 +82,26 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		}
 		subj := triples[0].Subject
 
-		// Determine element type: if there's rdf:type, use typed node
+		// Determine element type: first rdf:type with a valid QName becomes element name,
+		// remaining rdf:type triples are kept as property elements.
 		elemName := "rdf:Description"
+		elemNameSet := false
 		var remaining []rdflibgo.Triple
 		for _, t := range triples {
 			if t.Predicate == rdflibgo.RDF.Type {
 				if u, ok := t.Object.(rdflibgo.URIRef); ok {
-					qn := xmlQName(u.Value(), nsMap)
-					if qn != "" {
-						elemName = qn
-						continue
+					if !elemNameSet {
+						qn := xmlQName(u.Value(), nsMap)
+						if qn != "" {
+							elemName = qn
+							elemNameSet = true
+							continue
+						}
 					}
 				}
+				// Additional rdf:type values become property elements
+				remaining = append(remaining, t)
+				continue
 			}
 			remaining = append(remaining, t)
 		}
@@ -165,16 +177,16 @@ func xmlQName(uri string, nsMap map[string]string) string {
 	return ""
 }
 
+// xmlAttr returns an XML-escaped, double-quoted attribute value.
 func xmlAttr(s string) string {
 	var b strings.Builder
-	if err := xml.EscapeText(&b, []byte(s)); err != nil {
-		return `"` + s + `"`
-	}
+	// xml.EscapeText writing to strings.Builder cannot fail, so we ignore the error.
+	_ = xml.EscapeText(&b, []byte(s))
 	return `"` + b.String() + `"`
 }
 
 func xmlEscape(s string) string {
 	var b strings.Builder
-	xml.EscapeText(&b, []byte(s))
+	_ = xml.EscapeText(&b, []byte(s))
 	return b.String()
 }

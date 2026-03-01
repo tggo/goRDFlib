@@ -2,7 +2,9 @@ package rdfxml
 
 import (
 	"encoding/xml"
+	"fmt"
 	"io"
+	"net/url"
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -12,6 +14,9 @@ const rdfNS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 const xmlNS = "http://www.w3.org/XML/1998/namespace"
 
 // Parse parses RDF/XML format into the given graph.
+// It supports xml:base, xml:lang, parseType (Resource, Literal, Collection),
+// rdf:nodeID, rdf:about, rdf:ID, rdf:resource, rdf:datatype, and typed node elements.
+// Options: WithBase sets the base IRI for relative URI resolution.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -47,7 +52,7 @@ func (p *rdfxmlParser) parse(r io.Reader) error {
 			if name == rdfNS+"RDF" {
 				return p.parseRDFRoot(decoder, se)
 			}
-			return p.parseNodeElement(decoder, se, "")
+			return p.parseNodeElement(decoder, se, "", nil)
 		}
 	}
 }
@@ -69,7 +74,7 @@ func (p *rdfxmlParser) parseRDFRoot(decoder *xml.Decoder, root xml.StartElement)
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if err := p.parseNodeElement(decoder, t, ""); err != nil {
+			if err := p.parseNodeElement(decoder, t, "", nil); err != nil {
 				return err
 			}
 		case xml.EndElement:
@@ -78,23 +83,28 @@ func (p *rdfxmlParser) parseRDFRoot(decoder *xml.Decoder, root xml.StartElement)
 	}
 }
 
-func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElement, parentLang string, preSubj ...rdflibgo.Subject) error {
+// parseNodeElement parses a node element. If preSubj is non-nil, it is used as the subject.
+func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElement, parentLang string, preSubj rdflibgo.Subject) error {
 	elemURI := el.Name.Space + el.Name.Local
 
-	var subj rdflibgo.Subject
-	if len(preSubj) > 0 && preSubj[0] != nil {
-		subj = preSubj[0]
-	}
+	subj := preSubj
 	lang := parentLang
 
 	savedBase := p.base
+	defer func() { p.base = savedBase }()
 
+	// First pass: extract xml:lang and xml:base before resolving URIs
+	for _, attr := range el.Attr {
+		if isXMLAttr(attr, "lang") {
+			lang = attr.Value
+		} else if isXMLAttr(attr, "base") {
+			p.base = attr.Value
+		}
+	}
+
+	// Second pass: resolve subject URIs using the updated base
 	for _, attr := range el.Attr {
 		switch {
-		case isXMLAttr(attr, "lang"):
-			lang = attr.Value
-		case isXMLAttr(attr, "base"):
-			p.base = attr.Value
 		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "about":
 			subj = rdflibgo.NewURIRefUnsafe(p.resolve(attr.Value))
 		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "ID":
@@ -107,8 +117,6 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 	if subj == nil {
 		subj = rdflibgo.NewBNode()
 	}
-
-	defer func() { p.base = savedBase }()
 
 	if elemURI != rdfNS+"Description" {
 		p.g.Add(subj, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(elemURI))
@@ -160,12 +168,22 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 	pred := rdflibgo.NewURIRefUnsafe(predURI)
 	lang := parentLang
 
+	savedBase := p.base
+	defer func() { p.base = savedBase }()
+
+	// First pass: extract xml:lang and xml:base
+	for _, attr := range el.Attr {
+		if isXMLAttr(attr, "lang") {
+			lang = attr.Value
+		} else if isXMLAttr(attr, "base") {
+			p.base = attr.Value
+		}
+	}
+
 	var resource, nodeID, parseType, datatype string
 
 	for _, attr := range el.Attr {
 		switch {
-		case isXMLAttr(attr, "lang"):
-			lang = attr.Value
 		case (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "resource":
 			resource = attr.Value
 		case (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "nodeID":
@@ -240,7 +258,9 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 				return err
 			}
 			p.g.Add(subj, pred, childSubj)
-			skipToEnd(decoder)
+			if err := skipToEnd(decoder); err != nil {
+				return err
+			}
 			return nil
 		case xml.EndElement:
 			if hasChild {
@@ -312,6 +332,7 @@ func (p *rdfxmlParser) extractSubject(el xml.StartElement) rdflibgo.Subject {
 	return rdflibgo.NewBNode()
 }
 
+// resolve resolves a URI reference against the parser's base IRI using net/url.
 func (p *rdfxmlParser) resolve(uri string) string {
 	if p.base == "" || isAbsoluteIRI(uri) {
 		return uri
@@ -319,14 +340,15 @@ func (p *rdfxmlParser) resolve(uri string) string {
 	if uri == "" {
 		return p.base
 	}
-	if strings.HasPrefix(uri, "#") {
-		return p.base + uri
+	baseURL, err := url.Parse(p.base)
+	if err != nil {
+		return uri
 	}
-	lastSlash := strings.LastIndex(p.base, "/")
-	if lastSlash >= 0 {
-		return p.base[:lastSlash+1] + uri
+	ref, err := url.Parse(uri)
+	if err != nil {
+		return uri
 	}
-	return p.base + "/" + uri
+	return baseURL.ResolveReference(ref).String()
 }
 
 func (p *rdfxmlParser) getBNode(id string) rdflibgo.BNode {
@@ -358,6 +380,8 @@ func isAbsoluteIRI(s string) bool {
 	return true
 }
 
+// readInnerXML reads the inner XML content including attributes and namespace declarations,
+// required for parseType="Literal" which must preserve canonical XML fragments.
 func readInnerXML(decoder *xml.Decoder) (string, error) {
 	var sb strings.Builder
 	depth := 1
@@ -369,29 +393,73 @@ func readInnerXML(decoder *xml.Decoder) (string, error) {
 		switch t := tok.(type) {
 		case xml.StartElement:
 			depth++
-			sb.WriteString("<" + t.Name.Local + ">")
+			sb.WriteString("<")
+			if t.Name.Space != "" {
+				sb.WriteString(t.Name.Space)
+				sb.WriteString(":")
+			}
+			sb.WriteString(t.Name.Local)
+			for _, attr := range t.Attr {
+				sb.WriteString(" ")
+				if attr.Name.Space != "" && attr.Name.Space != "xmlns" {
+					sb.WriteString(attr.Name.Space)
+					sb.WriteString(":")
+				}
+				sb.WriteString(attr.Name.Local)
+				sb.WriteString(`="`)
+				xmlEscapeToBuilder(&sb, attr.Value)
+				sb.WriteString(`"`)
+			}
+			sb.WriteString(">")
 		case xml.EndElement:
 			depth--
 			if depth > 0 {
-				sb.WriteString("</" + t.Name.Local + ">")
+				sb.WriteString("</")
+				if t.Name.Space != "" {
+					sb.WriteString(t.Name.Space)
+					sb.WriteString(":")
+				}
+				sb.WriteString(t.Name.Local)
+				sb.WriteString(">")
 			}
 		case xml.CharData:
-			sb.Write(t)
+			xmlEscapeToBuilder(&sb, string(t))
 		}
 	}
 	return sb.String(), nil
+}
+
+func xmlEscapeToBuilder(sb *strings.Builder, s string) {
+	for _, r := range s {
+		switch r {
+		case '<':
+			sb.WriteString("&lt;")
+		case '>':
+			sb.WriteString("&gt;")
+		case '&':
+			sb.WriteString("&amp;")
+		case '"':
+			sb.WriteString("&quot;")
+		default:
+			sb.WriteRune(r)
+		}
+	}
 }
 
 func isXMLAttr(attr xml.Attr, local string) bool {
 	return attr.Name.Local == local && (attr.Name.Space == "xml" || attr.Name.Space == xmlNS)
 }
 
-func skipToEnd(decoder *xml.Decoder) {
+// skipToEnd consumes tokens until the current element's end tag, returning any decoder error.
+func skipToEnd(decoder *xml.Decoder) error {
 	depth := 1
 	for depth > 0 {
-		tok, _ := decoder.Token()
+		tok, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("skipToEnd: %w", err)
+		}
 		if tok == nil {
-			return
+			return nil
 		}
 		switch tok.(type) {
 		case xml.StartElement:
@@ -400,4 +468,5 @@ func skipToEnd(decoder *xml.Decoder) {
 			depth--
 		}
 	}
+	return nil
 }

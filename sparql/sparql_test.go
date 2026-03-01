@@ -573,6 +573,137 @@ func TestSPARQLParseError(t *testing.T) {
 	}
 }
 
+// --- Phase 13 fix tests ---
+
+func TestSPARQLStrlenUnicode(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
+	// "cafe\u0301" is 5 runes but 6 bytes; "日本語" is 3 runes but 9 bytes
+	g.Add(s, p, rdflibgo.NewLiteral("日本語"))
+
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?len WHERE {
+			?s ex:val ?v .
+			BIND(STRLEN(?v) AS ?len)
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("expected 1, got %d", len(r.Bindings))
+	}
+	if r.Bindings[0]["len"].String() != "3" {
+		t.Errorf("STRLEN should count runes, expected 3, got %s", r.Bindings[0]["len"].String())
+	}
+}
+
+func TestSPARQLSubstrUnicode(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
+	g.Add(s, p, rdflibgo.NewLiteral("日本語"))
+
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?sub WHERE {
+			?s ex:val ?v .
+			BIND(SUBSTR(?v, 2, 1) AS ?sub)
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("expected 1, got %d", len(r.Bindings))
+	}
+	if r.Bindings[0]["sub"].String() != "本" {
+		t.Errorf("SUBSTR should use rune offsets, expected '本', got %q", r.Bindings[0]["sub"].String())
+	}
+}
+
+func TestSPARQLNestedExpressionAS(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/name")
+	g.Add(s, p, rdflibgo.NewLiteral("Hello World"))
+
+	// Test (STRLEN(?name) AS ?len) — nested function call in SELECT expression
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT (STRLEN(?name) AS ?len) WHERE { ?s ex:name ?name }
+	`)
+	if err != nil {
+		t.Fatalf("parsing (STRLEN(?name) AS ?len) failed: %v", err)
+	}
+	if len(r.Vars) != 1 || r.Vars[0] != "len" {
+		t.Errorf("expected vars [len], got %v", r.Vars)
+	}
+}
+
+func TestSPARQLValueEquality(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
+	g.Add(s, p, rdflibgo.NewLiteral(1))
+
+	// Test that integer 1 equals string "1" comparison via value equality:
+	// "1"^^xsd:integer should equal itself regardless of N3 form
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?s WHERE { ?s ex:val ?v . FILTER(?v = 1) }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Errorf("expected 1 result for value equality, got %d", len(r.Bindings))
+	}
+}
+
+func TestSPARQLValueEqualityNumericCrossType(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
+	// Add integer 1
+	g.Add(s, p, rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+
+	// 1 (integer) = 1.0 (decimal) should be true
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?s WHERE { ?s ex:val ?v . FILTER(?v = 1.0) }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Errorf("expected 1 for cross-type numeric equality, got %d", len(r.Bindings))
+	}
+}
+
+func TestSPARQLValueEqualityStringLiteral(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/name")
+	g.Add(s, p, rdflibgo.NewLiteral("Alice"))
+
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?s WHERE { ?s ex:name ?n . FILTER(?n = "Alice") }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Errorf("expected 1 for string equality, got %d", len(r.Bindings))
+	}
+}
+
 // --- Benchmarks ---
 
 func BenchmarkSPARQLSelectAll(b *testing.B) {

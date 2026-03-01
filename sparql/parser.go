@@ -188,13 +188,15 @@ func (p *sparqlParser) parseSelect(q *ParsedQuery) error {
 				v := p.readVar()
 				q.Variables = append(q.Variables, v)
 			} else if p.input[p.pos] == '(' {
-				// Expression AS ?var
-				p.pos++
+				// (expression AS ?var)
+				p.pos++ // skip '('
 				p.skipWS()
-				// skip expression for now — read until AS
-				for p.pos < len(p.input) && !p.matchKeywordCI("AS") {
-					p.pos++
+				// Parse the expression properly (handles nested parens/functions)
+				_, err := p.parseOrExpr()
+				if err != nil {
+					return err
 				}
+				p.skipWS()
 				if p.matchKeywordCI("AS") {
 					p.pos += 2
 					p.skipWS()
