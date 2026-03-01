@@ -1,8 +1,11 @@
-package rdflibgo
+package integration_test
 
 import (
 	"sync"
 	"testing"
+
+	. "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/term"
 )
 
 func makeTestGraph(t *testing.T) (*Graph, URIRef, URIRef, Literal) {
@@ -89,7 +92,7 @@ func TestStoreSetMethod(t *testing.T) {
 func TestTermKeyDoesNotUseN3(t *testing.T) {
 	// Verify that termKey for URIRef does NOT wrap in angle brackets (N3 format).
 	u, _ := NewURIRef("http://example.org/foo")
-	k := termKey(u)
+	k := term.TermKey(u)
 	if k == "<http://example.org/foo>" {
 		t.Error("termKey should not use N3 format for URIRef")
 	}
@@ -98,7 +101,7 @@ func TestTermKeyDoesNotUseN3(t *testing.T) {
 	}
 
 	b := NewBNode("xyz")
-	k = termKey(b)
+	k = term.TermKey(b)
 	if k != "B:xyz" {
 		t.Errorf("unexpected BNode termKey: %q", k)
 	}

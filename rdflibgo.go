@@ -185,27 +185,3 @@ func AssertGraphLen(t *testing.T, g *Graph, expected int) {
 	testutil.AssertGraphLen(t, g, expected)
 }
 
-// ---- backward compat helpers ----
-
-// termKey is re-exported for internal use by test files that reference it directly.
-func termKey(t Term) string {
-	return term.TermKey(t)
-}
-
-// splitURI is re-exported for backward compat.
-func splitURI(uri string) (ns, local string) {
-	return namespace.SplitURI(uri)
-}
-
-// mustURIRef is re-exported for backward compat.
-func mustURIRef(value string) URIRef {
-	return term.MustURIRef(value)
-}
-
-// isRDFNil checks if term is rdf:nil.
-func isRDFNil(t Term) bool {
-	if u, ok := t.(URIRef); ok {
-		return u.Equal(RDF.Nil)
-	}
-	return false
-}

@@ -1,6 +1,10 @@
-package rdflibgo
+package integration_test
 
-import "testing"
+import (
+	"testing"
+
+	. "github.com/tggo/goRDFlib"
+)
 
 // --- ConjunctiveGraph tests ---
 // Ported from: rdflib.graph.ConjunctiveGraph

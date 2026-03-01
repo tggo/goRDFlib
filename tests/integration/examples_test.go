@@ -1,4 +1,4 @@
-package rdflibgo_test
+package integration_test
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ func TestExamples(t *testing.T) {
 
 	for _, name := range examples {
 		t.Run(name, func(t *testing.T) {
-			exampleDir := filepath.Join("examples", name)
+			exampleDir := filepath.Join("..", "..", "examples", name)
 
 			cmd := exec.Command("go", "run", ".")
 			cmd.Dir = exampleDir
