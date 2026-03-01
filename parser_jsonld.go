@@ -2,6 +2,7 @@ package rdflibgo
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 
@@ -38,6 +39,12 @@ func (p *JSONLDParser) Parse(g *Graph, r io.Reader, base string) error {
 
 	nqStr, ok := nquads.(string)
 	if !ok {
+		if nquads == nil {
+			return nil // empty result
+		}
+		return fmt.Errorf("json-ld: unexpected ToRDF result type %T", nquads)
+	}
+	if nqStr == "" {
 		return nil
 	}
 

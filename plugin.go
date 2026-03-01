@@ -5,18 +5,22 @@ import (
 	"strings"
 )
 
-// Store registry (complements parser/serializer registries in graph.go).
+// Store registry — protected by registryMu (defined in graph.go).
 // Ported from: rdflib.plugin
 
 var stores = make(map[string]func() Store)
 
-// RegisterStore registers a store factory by name.
+// RegisterStore registers a store factory by name. Safe for concurrent use.
 func RegisterStore(name string, factory func() Store) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	stores[name] = factory
 }
 
-// GetStore creates a store by registered name.
+// GetStore creates a store by registered name. Safe for concurrent use.
 func GetStore(name string) (Store, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	f, ok := stores[name]
 	if !ok {
 		return nil, false
@@ -54,7 +58,7 @@ var extToFormat = map[string]string{
 	".owl":    "xml",
 	".jsonld": "json-ld",
 	".json":   "json-ld",
-	".trig":   "turtle", // simplified — TriG is close to Turtle
+	// .trig intentionally omitted — TriG supports named graphs which Turtle does not
 }
 
 // FormatFromFilename detects the RDF format from a file path extension.

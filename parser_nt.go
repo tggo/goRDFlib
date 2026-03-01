@@ -144,11 +144,21 @@ func (p *ntLineParser) readNTIRI() (string, error) {
 func (p *ntLineParser) readNTBNode() BNode {
 	p.pos += 2 // skip "_:"
 	start := p.pos
-	for p.pos < len(p.line) && p.line[p.pos] != ' ' && p.line[p.pos] != '\t' && p.line[p.pos] != '.' {
+	for p.pos < len(p.line) {
+		ch := p.line[p.pos]
+		if ch == ' ' || ch == '\t' {
+			break
+		}
+		// '.' is allowed inside labels but not as the last character.
+		// Peek ahead: if '.' is followed by space/tab/EOL, it's the statement terminator.
+		if ch == '.' {
+			if p.pos+1 >= len(p.line) || p.line[p.pos+1] == ' ' || p.line[p.pos+1] == '\t' {
+				break
+			}
+		}
 		p.pos++
 	}
-	label := strings.TrimRight(p.line[start:p.pos], " \t")
-	return NewBNode(label)
+	return NewBNode(p.line[start:p.pos])
 }
 
 // readNTLiteral parses "lexical"@lang or "lexical"^^<datatype>.
@@ -156,6 +166,7 @@ func (p *ntLineParser) readNTBNode() BNode {
 func (p *ntLineParser) readNTLiteral() (Literal, error) {
 	p.pos++ // skip opening "
 	var sb strings.Builder
+	closed := false
 	for p.pos < len(p.line) {
 		ch := p.line[p.pos]
 		if ch == '\\' {
@@ -203,10 +214,15 @@ func (p *ntLineParser) readNTLiteral() (Literal, error) {
 		}
 		if ch == '"' {
 			p.pos++
+			closed = true
 			break
 		}
 		sb.WriteByte(ch)
 		p.pos++
+	}
+
+	if !closed {
+		return Literal{}, fmt.Errorf("line %d: unterminated string literal", p.lineNum)
 	}
 
 	lexical := sb.String()

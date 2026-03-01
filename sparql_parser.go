@@ -296,6 +296,9 @@ func (p *sparqlParser) parseSelect(q *SPARQLQuery) error {
 	} else {
 		for p.pos < len(p.input) {
 			p.skipWS()
+			if p.pos >= len(p.input) {
+				break
+			}
 			if p.input[p.pos] == '?' || p.input[p.pos] == '$' {
 				v := p.readVar()
 				q.Variables = append(q.Variables, v)
@@ -590,7 +593,7 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 			var row []Term
 			for {
 				p.skipWS()
-				if p.input[p.pos] == ')' {
+				if p.pos >= len(p.input) || p.input[p.pos] == ')' {
 					p.pos++
 					break
 				}

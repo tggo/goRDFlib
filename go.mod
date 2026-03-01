@@ -1,4 +1,4 @@
-module github.com/ruslan/rdflibgo
+module github.com/tggo/goRDFlib
 
 go 1.25.0
 

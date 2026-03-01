@@ -109,9 +109,12 @@ func (m *MemoryStore) Remove(pattern TriplePattern, context Term) {
 func (m *MemoryStore) removeLocked(t Triple) {
 	sk, pk, ok := termKey(t.Subject), termKey(t.Predicate), termKey(t.Object)
 
+	// Check existence in SPO first — only decrement count if triple actually exists
+	found := false
 	if po, exists := m.spo[sk]; exists {
 		if o, exists := po[pk]; exists {
 			if _, exists := o[ok]; exists {
+				found = true
 				delete(o, ok)
 				if len(o) == 0 {
 					delete(po, pk)
@@ -121,6 +124,10 @@ func (m *MemoryStore) removeLocked(t Triple) {
 				}
 			}
 		}
+	}
+
+	if !found {
+		return
 	}
 
 	if os, exists := m.pos[pk]; exists {

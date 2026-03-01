@@ -95,12 +95,15 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 	}
 	lang := parentLang
 
+	// Save base for scoped xml:base — restore on exit
+	savedBase := p.base
+
 	for _, attr := range el.Attr {
 		switch {
 		case isXMLAttr(attr, "lang"):
 			lang = attr.Value
 		case isXMLAttr(attr, "base"):
-			p.base = attr.Value
+			p.base = attr.Value // scoped — restored via defer below
 		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "about":
 			subj = NewURIRefUnsafe(p.resolve(attr.Value))
 		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "ID":
@@ -113,6 +116,9 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 	if subj == nil {
 		subj = NewBNode()
 	}
+
+	// Restore xml:base on exit (scoped per element)
+	defer func() { p.base = savedBase }()
 
 	// Typed node (not rdf:Description)
 	if elemURI != rdfNS+"Description" {
@@ -292,7 +298,7 @@ func (p *rdfxmlParser) parseCollection(decoder *xml.Decoder, subj Subject, pred 
 		switch t := tok.(type) {
 		case xml.StartElement:
 			childSubj := p.extractSubject(t)
-			if err := p.parseNodeElement(decoder, t, lang); err != nil {
+			if err := p.parseNodeElement(decoder, t, lang, childSubj); err != nil {
 				return err
 			}
 			items = append(items, childSubj)

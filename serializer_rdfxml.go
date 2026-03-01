@@ -102,12 +102,12 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 		// Opening tag
 		switch v := subj.(type) {
 		case URIRef:
-			fmt.Fprintf(w, "  <%s rdf:about=%s>\n", elemName, xmlAttr(v.Value()))
+			if _, err := fmt.Fprintf(w, "  <%s rdf:about=%s>\n", elemName, xmlAttr(v.Value())); err != nil {
+				return err
+			}
 		case BNode:
-			if elemName != "rdf:Description" {
-				fmt.Fprintf(w, "  <%s rdf:nodeID=%s>\n", elemName, xmlAttr(v.Value()))
-			} else {
-				fmt.Fprintf(w, "  <%s rdf:nodeID=%s>\n", elemName, xmlAttr(v.Value()))
+			if _, err := fmt.Fprintf(w, "  <%s rdf:nodeID=%s>\n", elemName, xmlAttr(v.Value())); err != nil {
+				return err
 			}
 		}
 
@@ -118,23 +118,29 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 				predQN = t.Predicate.Value()
 			}
 
+			var err error
 			switch obj := t.Object.(type) {
 			case URIRef:
-				fmt.Fprintf(w, "    <%s rdf:resource=%s/>\n", predQN, xmlAttr(obj.Value()))
+				_, err = fmt.Fprintf(w, "    <%s rdf:resource=%s/>\n", predQN, xmlAttr(obj.Value()))
 			case BNode:
-				fmt.Fprintf(w, "    <%s rdf:nodeID=%s/>\n", predQN, xmlAttr(obj.Value()))
+				_, err = fmt.Fprintf(w, "    <%s rdf:nodeID=%s/>\n", predQN, xmlAttr(obj.Value()))
 			case Literal:
 				if obj.Language() != "" {
-					fmt.Fprintf(w, "    <%s xml:lang=%s>%s</%s>\n", predQN, xmlAttr(obj.Language()), xmlEscape(obj.Lexical()), predQN)
+					_, err = fmt.Fprintf(w, "    <%s xml:lang=%s>%s</%s>\n", predQN, xmlAttr(obj.Language()), xmlEscape(obj.Lexical()), predQN)
 				} else if obj.Datatype() != (URIRef{}) && obj.Datatype() != XSDString {
-					fmt.Fprintf(w, "    <%s rdf:datatype=%s>%s</%s>\n", predQN, xmlAttr(obj.Datatype().Value()), xmlEscape(obj.Lexical()), predQN)
+					_, err = fmt.Fprintf(w, "    <%s rdf:datatype=%s>%s</%s>\n", predQN, xmlAttr(obj.Datatype().Value()), xmlEscape(obj.Lexical()), predQN)
 				} else {
-					fmt.Fprintf(w, "    <%s>%s</%s>\n", predQN, xmlEscape(obj.Lexical()), predQN)
+					_, err = fmt.Fprintf(w, "    <%s>%s</%s>\n", predQN, xmlEscape(obj.Lexical()), predQN)
 				}
+			}
+			if err != nil {
+				return err
 			}
 		}
 
-		fmt.Fprintf(w, "  </%s>\n", elemName)
+		if _, err := fmt.Fprintf(w, "  </%s>\n", elemName); err != nil {
+			return err
+		}
 	}
 
 	_, err := fmt.Fprintln(w, "</rdf:RDF>")

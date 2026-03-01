@@ -215,6 +215,7 @@ var literalEscaper = strings.NewReplacer(
 	`"`, `\"`,
 	"\n", `\n`,
 	"\r", `\r`,
+	"\t", `\t`,
 )
 
 func escapeLiteral(s string) string {

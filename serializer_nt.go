@@ -90,10 +90,23 @@ func ntEscapeString(s string) string {
 }
 
 func ntEscapeIRI(s string) string {
-	// IRIs in N-Triples: escape only specific chars
-	var sb strings.Builder
+	// IRIs in N-Triples: escape control chars and supplementary plane per W3C spec.
+	needsEscape := false
 	for _, r := range s {
-		if r > 0xFFFF {
+		if r < 0x20 || r > 0xFFFF {
+			needsEscape = true
+			break
+		}
+	}
+	if !needsEscape {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 {
+			sb.WriteString(fmt.Sprintf(`\u%04X`, r))
+		} else if r > 0xFFFF {
 			sb.WriteString(fmt.Sprintf(`\U%08X`, r))
 		} else {
 			sb.WriteRune(r)

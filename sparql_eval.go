@@ -529,6 +529,9 @@ func evalFunc(name string, args []SPARQLExpr, bindings map[string]Term, prefixes
 		}
 	case "SUBSTR":
 		vals := evalArgs()
+		if len(vals) < 1 {
+			return nil
+		}
 		s := termString(vals[0])
 		if len(vals) >= 2 {
 			start := int(toFloat64(vals[1])) - 1
