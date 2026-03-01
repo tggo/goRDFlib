@@ -242,7 +242,7 @@ func ntUnescapeString(s string) string {
 			i++
 			switch s[i] {
 			case 'u':
-				if i+4 < len(s) {
+				if i+4 <= len(s) {
 					code, err := strconv.ParseUint(s[i+1:i+5], 16, 32)
 					if err == nil {
 						sb.WriteRune(rune(code))
@@ -251,7 +251,7 @@ func ntUnescapeString(s string) string {
 					}
 				}
 			case 'U':
-				if i+8 < len(s) {
+				if i+8 <= len(s) {
 					code, err := strconv.ParseUint(s[i+1:i+9], 16, 32)
 					if err == nil {
 						sb.WriteRune(rune(code))

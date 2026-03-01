@@ -3,6 +3,7 @@ package rdflibgo
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -243,6 +244,9 @@ func (p *turtleParser) objectList(subj Subject, pred URIRef) error {
 // readSubject parses a subject: IRI, prefixed name, blank node, or collection.
 func (p *turtleParser) readSubject() (Subject, error) {
 	p.skipWS()
+	if p.pos >= len(p.input) {
+		return nil, p.errorf("unexpected end of input, expected subject")
+	}
 	ch := p.input[p.pos]
 
 	if ch == '<' {
@@ -703,7 +707,7 @@ func (p *turtleParser) readPrefixName() string {
 	start := p.pos
 	for p.pos < len(p.input) {
 		r, size := utf8.DecodeRuneInString(p.input[p.pos:])
-		if r == ':' || isDelimiter(byte(r)) {
+		if r == ':' || (r < 128 && isDelimiter(byte(r))) {
 			break
 		}
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' {
@@ -727,7 +731,7 @@ func (p *turtleParser) readLocalName() string {
 			continue
 		}
 		r, size := utf8.DecodeRuneInString(p.input[p.pos:])
-		if isDelimiter(byte(r)) || r == ';' || r == ',' || r == '.' || r == '[' || r == ']' || r == '(' || r == ')' {
+		if (r < 128 && isDelimiter(byte(r))) || r == ';' || r == ',' || r == '.' || r == '[' || r == ']' || r == '(' || r == ')' {
 			break
 		}
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' && r != '·' {
@@ -795,33 +799,15 @@ func (p *turtleParser) resolveIRI(iri string) string {
 	if p.base == "" || isAbsoluteIRI(iri) {
 		return iri
 	}
-	// Simple relative resolution
-	if iri == "" {
-		return p.base
+	b, err := url.Parse(p.base)
+	if err != nil {
+		return iri
 	}
-	if strings.HasPrefix(iri, "#") {
-		return p.base + iri
+	ref, err := url.Parse(iri)
+	if err != nil {
+		return iri
 	}
-	if strings.HasPrefix(iri, "?") {
-		return p.base + iri
-	}
-	if strings.HasPrefix(iri, "/") {
-		// Find scheme + authority
-		idx := strings.Index(p.base, "://")
-		if idx >= 0 {
-			auth := strings.Index(p.base[idx+3:], "/")
-			if auth >= 0 {
-				return p.base[:idx+3+auth] + iri
-			}
-		}
-		return p.base + iri
-	}
-	// Remove last path segment from base
-	lastSlash := strings.LastIndex(p.base, "/")
-	if lastSlash >= 0 {
-		return p.base[:lastSlash+1] + iri
-	}
-	return p.base + "/" + iri
+	return b.ResolveReference(ref).String()
 }
 
 func (p *turtleParser) unescapeIRI(s string) string {
