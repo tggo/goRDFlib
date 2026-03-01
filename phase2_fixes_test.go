@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func makeTestGraph(t *testing.T) (*Graph, URIRef, URIRef, Literal) {
+	t.Helper()
+	g := NewGraph()
+	s, _ := NewURIRef("http://example.org/s")
+	p, _ := NewURIRef("http://example.org/p")
+	o := NewLiteral("hello")
+	g.Add(s, p, o)
+	return g, s, p, o
+}
+
 // --- Fix 1: Graph.Set atomicity ---
 
 func TestGraphSetAtomic(t *testing.T) {

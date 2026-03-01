@@ -1,4 +1,4 @@
-package rdflibgo
+package term
 
 import (
 	"sort"
@@ -99,17 +99,17 @@ func TestGoToLexicalAndNewLiteralConsistency(t *testing.T) {
 	}
 }
 
-// --- Fix 4: mustURIRef (unexported alias for NewURIRefUnsafe) ---
+// --- Fix 4: MustURIRef ---
 
 func TestMustURIRef(t *testing.T) {
-	u := mustURIRef("http://example.org/test")
+	u := MustURIRef("http://example.org/test")
 	if u.Value() != "http://example.org/test" {
 		t.Errorf("got %q", u.Value())
 	}
 	// Should produce the same result as NewURIRefUnsafe.
 	u2 := NewURIRefUnsafe("http://example.org/test")
 	if u != u2 {
-		t.Error("mustURIRef and NewURIRefUnsafe should produce identical results")
+		t.Error("MustURIRef and NewURIRefUnsafe should produce identical results")
 	}
 }
 
@@ -223,32 +223,5 @@ func TestBNodeSkolemizeDefaultBasepath(t *testing.T) {
 	s := b.Skolemize("http://example.org")
 	if s.Value() != "http://example.org/.well-known/genid/abc" {
 		t.Errorf("got %q", s.Value())
-	}
-}
-
-// --- Fix 8: NamespaceManager.Prefix documentation ---
-// (Documentation-only fix; verify the interface is correctly defined.)
-
-func TestNamespaceManagerInterface(t *testing.T) {
-	// Verify the interface can be satisfied and works correctly.
-	var nm NamespaceManager
-	store := NewMemoryStore()
-	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	nm = NewNSManager(store)
-
-	prefix, ok := nm.Prefix("http://example.org/Thing")
-	if !ok {
-		t.Error("expected prefix match")
-	}
-	if prefix != "ex:Thing" {
-		t.Errorf("expected 'ex:Thing', got %q", prefix)
-	}
-
-	// NSManager auto-generates prefixes for unknown namespaces, so
-	// Prefix returns true even for URIs without explicit bindings.
-	// Test with a string that has no namespace separator.
-	_, ok = nm.Prefix("noseparator")
-	if ok {
-		t.Error("expected no match for URI without namespace separator")
 	}
 }

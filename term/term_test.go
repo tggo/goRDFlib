@@ -1,4 +1,4 @@
-package rdflibgo
+package term
 
 import (
 	"strings"
@@ -59,18 +59,6 @@ func TestURIRefN3(t *testing.T) {
 	u, _ := NewURIRef("http://example.org/")
 	if got := u.N3(); got != "<http://example.org/>" {
 		t.Errorf("got %q", got)
-	}
-}
-
-func TestURIRefN3WithNamespaceManager(t *testing.T) {
-	u, _ := NewURIRef("http://example.org/Thing")
-	store := NewMemoryStore()
-	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	mgr := NewNSManager(store)
-
-	got := u.N3(mgr)
-	if got != "ex:Thing" {
-		t.Errorf("expected ex:Thing, got %q", got)
 	}
 }
 
@@ -285,6 +273,6 @@ func BenchmarkTermKey(b *testing.B) {
 	u, _ := NewURIRef("http://example.org/resource")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		termKey(u)
+		TermKey(u)
 	}
 }
