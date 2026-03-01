@@ -1,0 +1,3 @@
+[submodule "rdflib_py_proto"]
+	path = rdflib_py_proto
+	url = git@github.com:RDFLib/rdflib
