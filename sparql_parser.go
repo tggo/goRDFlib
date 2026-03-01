@@ -890,10 +890,6 @@ func (p *sparqlParser) readTermOrVar() string {
 	ch := p.input[p.pos]
 
 	if ch == '?' || ch == '$' {
-		return "?" + p.readVar()[0:] // readVar already skipped ? so re-read
-	}
-	// Re-do: readVar skips the ? prefix
-	if ch == '?' || ch == '$' {
 		v := p.readVar()
 		return "?" + v
 	}
@@ -1150,9 +1146,11 @@ func parseLiteralString(s string) Literal {
 	return NewLiteral(lexical, opts...)
 }
 
+// sparqlStringUnescaper is a package-level replacer for SPARQL string escape sequences.
+var sparqlStringUnescaper = strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\n`, "\n", `\r`, "\r", `\t`, "\t")
+
 func unescapeSPARQLString(s string) string {
-	r := strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\n`, "\n", `\r`, "\r", `\t`, "\t")
-	return r.Replace(s)
+	return sparqlStringUnescaper.Replace(s)
 }
 
 func (p *sparqlParser) skipWS() {

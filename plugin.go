@@ -80,7 +80,14 @@ func FormatFromMIME(contentType string) (string, bool) {
 // FormatFromContent detects the RDF format by sniffing the first bytes.
 // Ported from: rdflib.plugin — content-based detection
 func FormatFromContent(data []byte) (string, bool) {
-	s := strings.TrimSpace(string(data[:min(len(data), 500)]))
+	if len(data) == 0 {
+		return "", false
+	}
+	n := len(data)
+	if n > 500 {
+		n = 500
+	}
+	s := strings.TrimSpace(string(data[:n]))
 	if strings.HasPrefix(s, "<?xml") || strings.HasPrefix(s, "<rdf:RDF") {
 		return "xml", true
 	}
@@ -108,7 +115,9 @@ func FormatFromContent(data []byte) (string, bool) {
 
 // ListParsers returns all registered parser format names.
 func ListParsers() []string {
-	var names []string
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	names := make([]string, 0, len(parsers))
 	for name := range parsers {
 		names = append(names, name)
 	}
@@ -117,16 +126,11 @@ func ListParsers() []string {
 
 // ListSerializers returns all registered serializer format names.
 func ListSerializers() []string {
-	var names []string
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	names := make([]string, 0, len(serializers))
 	for name := range serializers {
 		names = append(names, name)
 	}
 	return names
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

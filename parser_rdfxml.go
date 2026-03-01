@@ -84,12 +84,15 @@ func (p *rdfxmlParser) parseRDFRoot(decoder *xml.Decoder, root xml.StartElement)
 }
 
 // parseNodeElement handles rdf:Description or typed node elements.
+// If preSubj is non-nil, it is used as the subject instead of deriving one from attributes.
 // Ported from: rdflib.plugins.parsers.rdfxml — node element processing
-func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElement, parentLang string) error {
+func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElement, parentLang string, preSubj ...Subject) error {
 	elemURI := el.Name.Space + el.Name.Local
 
-	// Determine subject
 	var subj Subject
+	if len(preSubj) > 0 && preSubj[0] != nil {
+		subj = preSubj[0]
+	}
 	lang := parentLang
 
 	for _, attr := range el.Attr {
@@ -98,11 +101,11 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 			lang = attr.Value
 		case isXMLAttr(attr, "base"):
 			p.base = attr.Value
-		case (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "about":
+		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "about":
 			subj = NewURIRefUnsafe(p.resolve(attr.Value))
-		case (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "ID":
+		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "ID":
 			subj = NewURIRefUnsafe(p.resolve("#" + attr.Value))
-		case (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "nodeID":
+		case subj == nil && (attr.Name.Space == rdfNS || attr.Name.Space == "") && attr.Name.Local == "nodeID":
 			subj = p.getBNode(attr.Value)
 		}
 	}
@@ -251,20 +254,13 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 			textContent.Write(t)
 		case xml.StartElement:
 			hasChild = true
-			// Nested node element → object
-			if err := p.parseNodeElement(decoder, t, lang); err != nil {
+			// Extract subject before parsing so both use the same node
+			childSubj := p.extractSubject(t)
+			if err := p.parseNodeElement(decoder, t, lang, childSubj); err != nil {
 				return err
 			}
-			// The nested node's subject becomes our object
-			// We need to figure out the subject of the child
-			// Re-parse to get the subject... instead, create a link
-			// Actually: we need to extract subject before calling parseNodeElement
-			// Let's use a simpler approach: create bnode, parse into it
-			// This is already handled — parseNodeElement added triples
-			// We need the child's subject. Let's refactor:
-			childSubj := p.extractSubject(t)
 			p.g.Add(subj, pred, childSubj)
-			// Skip to end of property element
+			// Skip to closing tag of property element
 			skipToEnd(decoder)
 			return nil
 		case xml.EndElement:
