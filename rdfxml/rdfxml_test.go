@@ -1,9 +1,11 @@
-package rdflibgo
+package rdfxml
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
 // Ported from: test/test_w3c_spec/test_rdfxml_w3c.py, test/test_serializers/test_serializer_xml.py
@@ -17,8 +19,8 @@ func TestRDFXMLParserBasic(t *testing.T) {
     <ex:p>hello</ex:p>
   </rdf:Description>
 </rdf:RDF>`
-	g := NewGraph()
-	if err := g.Parse(strings.NewReader(input), WithFormat("xml")); err != nil {
+	g := rdflibgo.NewGraph()
+	if err := Parse(g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	if g.Len() != 1 {
@@ -35,15 +37,15 @@ func TestRDFXMLParserTypedNode(t *testing.T) {
     <ex:name>Alice</ex:name>
   </ex:Person>
 </rdf:RDF>`
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
 	// Should have: rdf:type + ex:name = 2 triples
 	if g.Len() != 2 {
 		t.Errorf("expected 2, got %d", g.Len())
 	}
-	alice, _ := NewURIRef("http://example.org/Alice")
-	person, _ := NewURIRef("http://example.org/Person")
-	if !g.Contains(alice, RDF.Type, person) {
+	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
+	person, _ := rdflibgo.NewURIRef("http://example.org/Person")
+	if !g.Contains(alice, rdflibgo.RDF.Type, person) {
 		t.Error("expected rdf:type triple")
 	}
 }
@@ -57,11 +59,11 @@ func TestRDFXMLParserResource(t *testing.T) {
     <ex:knows rdf:resource="http://example.org/o"/>
   </rdf:Description>
 </rdf:RDF>`
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
-	s, _ := NewURIRef("http://example.org/s")
-	knows, _ := NewURIRef("http://example.org/knows")
-	o, _ := NewURIRef("http://example.org/o")
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	knows, _ := rdflibgo.NewURIRef("http://example.org/knows")
+	o, _ := rdflibgo.NewURIRef("http://example.org/o")
 	if !g.Contains(s, knows, o) {
 		t.Error("expected resource link triple")
 	}
@@ -76,15 +78,15 @@ func TestRDFXMLParserLangTag(t *testing.T) {
     <ex:name xml:lang="en">Alice</ex:name>
   </rdf:Description>
 </rdf:RDF>`
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
-	s, _ := NewURIRef("http://example.org/s")
-	name, _ := NewURIRef("http://example.org/name")
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	name, _ := rdflibgo.NewURIRef("http://example.org/name")
 	val, ok := g.Value(s, &name, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
-	if lit, ok := val.(Literal); !ok || lit.Language() != "en" {
+	if lit, ok := val.(rdflibgo.Literal); !ok || lit.Language() != "en" {
 		t.Errorf("expected lang en, got %v", val)
 	}
 }
@@ -99,15 +101,15 @@ func TestRDFXMLParserDatatype(t *testing.T) {
     <ex:age rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">42</ex:age>
   </rdf:Description>
 </rdf:RDF>`
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
-	s, _ := NewURIRef("http://example.org/s")
-	age, _ := NewURIRef("http://example.org/age")
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	age, _ := rdflibgo.NewURIRef("http://example.org/age")
 	val, ok := g.Value(s, &age, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
-	if lit, ok := val.(Literal); !ok || lit.Datatype() != XSDInteger {
+	if lit, ok := val.(rdflibgo.Literal); !ok || lit.Datatype() != rdflibgo.XSDInteger {
 		t.Errorf("expected xsd:integer, got %v", val)
 	}
 }
@@ -123,8 +125,8 @@ func TestRDFXMLParserParseTypeResource(t *testing.T) {
     </ex:address>
   </rdf:Description>
 </rdf:RDF>`
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
 	// s → address → bnode, bnode → city → "Berlin" = 2 triples
 	if g.Len() != 2 {
 		t.Errorf("expected 2, got %d", g.Len())
@@ -143,8 +145,8 @@ func TestRDFXMLParserNodeID(t *testing.T) {
     <ex:name>Bob</ex:name>
   </rdf:Description>
 </rdf:RDF>`
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
 	if g.Len() != 2 {
 		t.Errorf("expected 2, got %d", g.Len())
 	}
@@ -152,14 +154,14 @@ func TestRDFXMLParserNodeID(t *testing.T) {
 
 func TestRDFXMLSerializerBasic(t *testing.T) {
 	// Ported from: rdflib.plugins.serializers.rdfxml.XMLSerializer
-	g := NewGraph()
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, NewLiteral("hello"))
+	g := rdflibgo.NewGraph()
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(s, p, rdflibgo.NewLiteral("hello"))
 
 	var buf bytes.Buffer
-	if err := g.Serialize(&buf, WithSerializeFormat("xml")); err != nil {
+	if err := Serialize(g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -172,14 +174,14 @@ func TestRDFXMLSerializerBasic(t *testing.T) {
 }
 
 func TestRDFXMLSerializerTypedNode(t *testing.T) {
-	g := NewGraph()
-	s, _ := NewURIRef("http://example.org/Alice")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, RDF.Type, NewURIRefUnsafe("http://example.org/Person"))
-	g.Add(s, NewURIRefUnsafe("http://example.org/name"), NewLiteral("Alice"))
+	g := rdflibgo.NewGraph()
+	s, _ := rdflibgo.NewURIRef("http://example.org/Alice")
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
+	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
 
 	var buf bytes.Buffer
-	g.Serialize(&buf, WithSerializeFormat("xml"))
+	Serialize(g, &buf)
 	out := buf.String()
 	if !strings.Contains(out, "ex:Person") {
 		t.Errorf("expected typed node element, got:\n%s", out)
@@ -188,18 +190,18 @@ func TestRDFXMLSerializerTypedNode(t *testing.T) {
 
 func TestRDFXMLRoundtrip(t *testing.T) {
 	// Ported from: test/test_roundtrip.py — RDF/XML roundtrip
-	g1 := NewGraph()
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
-	g1.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g1.Add(s, p, NewLiteral("hello"))
-	g1.Add(s, p, NewLiteral("world", WithLang("en")))
+	g1 := rdflibgo.NewGraph()
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
+	g1.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
+	g1.Add(s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
 
 	var buf bytes.Buffer
-	g1.Serialize(&buf, WithSerializeFormat("xml"))
+	Serialize(g1, &buf)
 
-	g2 := NewGraph()
-	if err := g2.Parse(strings.NewReader(buf.String()), WithFormat("xml")); err != nil {
+	g2 := rdflibgo.NewGraph()
+	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatalf("roundtrip parse failed: %v\nSerialized:\n%s", err, buf.String())
 	}
 

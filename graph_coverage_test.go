@@ -1,8 +1,6 @@
 package rdflibgo
 
 import (
-	"bytes"
-	"strings"
 	"testing"
 )
 
@@ -134,31 +132,6 @@ func TestGraphConnectedSingleNode(t *testing.T) {
 	g.Add(s, p, NewLiteral("v"))
 	if !g.Connected() {
 		t.Error("single-subject graph should be connected")
-	}
-}
-
-func TestGraphWithParseBase(t *testing.T) {
-	g := NewGraph(WithBase("http://example.org/"))
-	input := `<s> <p> "hello" .`
-	err := g.Parse(strings.NewReader(input), WithFormat("nt"), WithParseBase("http://example.org/"))
-	// NT parser doesn't resolve relative IRIs, so <s> is literal
-	_ = err
-}
-
-func TestGraphParseUnknownFormat(t *testing.T) {
-	g := NewGraph()
-	err := g.Parse(strings.NewReader(""), WithFormat("nonexistent"))
-	if err == nil {
-		t.Error("expected error")
-	}
-}
-
-func TestGraphSerializeUnknownFormat(t *testing.T) {
-	g := NewGraph()
-	var buf bytes.Buffer
-	err := g.Serialize(&buf, WithSerializeFormat("nonexistent"))
-	if err == nil {
-		t.Error("expected error")
 	}
 }
 

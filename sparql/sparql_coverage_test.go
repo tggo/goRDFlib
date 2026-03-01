@@ -1,10 +1,14 @@
-package rdflibgo
+package sparql
 
-import "testing"
+import (
+	"testing"
+
+	rdflibgo "github.com/tggo/goRDFlib"
+)
 
 func TestSPARQLValues(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -21,11 +25,11 @@ func TestSPARQLValues(t *testing.T) {
 
 func TestSPARQLInitBindings(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	alice, _ := NewURIRef("http://example.org/Alice")
-	r, err := g.Query(`
+	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE { ?s ex:name ?name }
-	`, map[string]Term{"s": alice})
+	`, map[string]rdflibgo.Term{"s": alice})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +40,7 @@ func TestSPARQLInitBindings(t *testing.T) {
 
 func TestSPARQLSubtract(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?age WHERE {
 			?s ex:age ?age .
@@ -54,7 +58,7 @@ func TestSPARQLSubtract(t *testing.T) {
 
 func TestSPARQLMultiply(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -73,7 +77,7 @@ func TestSPARQLMultiply(t *testing.T) {
 
 func TestSPARQLDivide(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -92,7 +96,7 @@ func TestSPARQLDivide(t *testing.T) {
 
 func TestSPARQLNegativeUnary(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -111,14 +115,14 @@ func TestSPARQLNegativeUnary(t *testing.T) {
 }
 
 func TestSPARQLLangFunction(t *testing.T) {
-	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/label")
-	g.Add(s, p, NewLiteral("hello", WithLang("en")))
-	g.Add(s, p, NewLiteral("hallo", WithLang("de")))
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/label")
+	g.Add(s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
+	g.Add(s, p, rdflibgo.NewLiteral("hallo", rdflibgo.WithLang("de")))
 
-	r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?l WHERE { ex:s ex:label ?l . FILTER(LANG(?l) = "en") }`)
+	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT ?l WHERE { ex:s ex:label ?l . FILTER(LANG(?l) = "en") }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +133,7 @@ func TestSPARQLLangFunction(t *testing.T) {
 
 func TestSPARQLDatatypeFunction(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 		SELECT ?name WHERE {
@@ -147,7 +151,7 @@ func TestSPARQLDatatypeFunction(t *testing.T) {
 
 func TestSPARQLIsNumericFunction(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE { ?s ?p ?o . FILTER(ISNUMERIC(?o)) }
 	`)
@@ -162,7 +166,7 @@ func TestSPARQLIsNumericFunction(t *testing.T) {
 
 func TestSPARQLConcatFunction(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?full WHERE {
 			?s ex:name ?name .
@@ -180,7 +184,7 @@ func TestSPARQLConcatFunction(t *testing.T) {
 
 func TestSPARQLReplaceFunction(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?replaced WHERE {
 			?s ex:name "Alice" .
@@ -197,7 +201,7 @@ func TestSPARQLReplaceFunction(t *testing.T) {
 
 func TestSPARQLSubstrFunction(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?sub WHERE {
 			?s ex:name "Alice" .
@@ -214,7 +218,7 @@ func TestSPARQLSubstrFunction(t *testing.T) {
 
 func TestSPARQLHashFunctions(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?h WHERE {
 			?s ex:name "Alice" .
@@ -228,25 +232,25 @@ func TestSPARQLHashFunctions(t *testing.T) {
 		t.Error("expected non-empty MD5 hash")
 	}
 
-	r2, _ := g.Query(`PREFIX ex: <http://example.org/> SELECT ?h WHERE { ?s ex:name "Alice" . BIND(SHA1("Alice") AS ?h) }`)
+	r2, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?h WHERE { ?s ex:name "Alice" . BIND(SHA1("Alice") AS ?h) }`)
 	if len(r2.Bindings) != 1 || r2.Bindings[0]["h"].String() == "" {
 		t.Error("expected non-empty SHA1 hash")
 	}
 
-	r3, _ := g.Query(`PREFIX ex: <http://example.org/> SELECT ?h WHERE { ?s ex:name "Alice" . BIND(SHA256("Alice") AS ?h) }`)
+	r3, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?h WHERE { ?s ex:name "Alice" . BIND(SHA256("Alice") AS ?h) }`)
 	if len(r3.Bindings) != 1 || r3.Bindings[0]["h"].String() == "" {
 		t.Error("expected non-empty SHA256 hash")
 	}
 }
 
 func TestSPARQLRoundCeilFloor(t *testing.T) {
-	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral(3.7))
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
+	g.Add(s, p, rdflibgo.NewLiteral(3.7))
 
-	r, _ := g.Query(`PREFIX ex: <http://example.org/> SELECT ?r ?c ?f WHERE { ?s ex:val ?v . BIND(ROUND(?v) AS ?r) BIND(CEIL(?v) AS ?c) BIND(FLOOR(?v) AS ?f) }`)
+	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?r ?c ?f WHERE { ?s ex:val ?v . BIND(ROUND(?v) AS ?r) BIND(CEIL(?v) AS ?c) BIND(FLOOR(?v) AS ?f) }`)
 	if len(r.Bindings) != 1 {
 		t.Fatal("expected 1")
 	}
@@ -257,7 +261,7 @@ func TestSPARQLRoundCeilFloor(t *testing.T) {
 
 func TestSPARQLRegexCaseInsensitive(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -273,15 +277,15 @@ func TestSPARQLRegexCaseInsensitive(t *testing.T) {
 }
 
 func TestSPARQLEffectiveBooleanValue(t *testing.T) {
-	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral(""))
-	g.Add(s, p, NewLiteral("nonempty"))
-	g.Add(s, p, NewLiteral(0))
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
+	g.Add(s, p, rdflibgo.NewLiteral(""))
+	g.Add(s, p, rdflibgo.NewLiteral("nonempty"))
+	g.Add(s, p, rdflibgo.NewLiteral(0))
 
-	r, _ := g.Query(`PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:val ?v . FILTER(?v) }`)
+	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:val ?v . FILTER(?v) }`)
 	// "" is falsy, 0 is falsy, "nonempty" is truthy
 	if len(r.Bindings) != 1 {
 		t.Errorf("expected 1 truthy, got %d", len(r.Bindings))

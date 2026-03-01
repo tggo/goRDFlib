@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 func main() {
@@ -15,7 +17,7 @@ func main() {
 	g.Bind("ex", rdf.NewURIRefUnsafe("http://example.org/"))
 
 	// Build a small social graph
-	g.Parse(strings.NewReader(`
+	turtle.Parse(g, strings.NewReader(`
 		@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 		@prefix ex: <http://example.org/> .
 
@@ -31,13 +33,13 @@ func main() {
 		ex:Charlie a foaf:Person ;
 			foaf:name "Charlie" ;
 			foaf:age 35 .
-	`), rdf.WithFormat("turtle"))
+	`))
 
 	fmt.Printf("Loaded %d triples\n", g.Len())
 
 	// SELECT query: find all persons
 	fmt.Println("\nAll persons:")
-	result, _ := g.Query(`
+	result, _ := sparql.Query(g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		SELECT ?name WHERE { ?s a foaf:Person . ?s foaf:name ?name }
 		ORDER BY ?name
@@ -48,7 +50,7 @@ func main() {
 
 	// FILTER query: persons over 28
 	fmt.Println("\nPersons over 28:")
-	result, _ = g.Query(`
+	result, _ = sparql.Query(g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		SELECT ?name ?age WHERE {
 			?s foaf:name ?name .
@@ -62,7 +64,7 @@ func main() {
 	}
 
 	// ASK query
-	result, _ = g.Query(`
+	result, _ = sparql.Query(g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		PREFIX ex: <http://example.org/>
 		ASK { ex:Alice foaf:knows ex:Bob }
@@ -70,7 +72,7 @@ func main() {
 	fmt.Printf("\nAlice knows Bob? %v\n", result.AskResult)
 
 	// CONSTRUCT query
-	result, _ = g.Query(`
+	result, _ = sparql.Query(g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:label ?name }

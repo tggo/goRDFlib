@@ -8,6 +8,10 @@ import (
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/jsonld"
+	"github.com/tggo/goRDFlib/nt"
+	"github.com/tggo/goRDFlib/rdfxml"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 func main() {
@@ -28,13 +32,23 @@ func main() {
 	fmt.Printf("Graph has %d triples\n\n", g.Len())
 
 	// Serialize to each format
-	for _, format := range []string{"turtle", "nt", "xml", "json-ld"} {
+	serializers := []struct {
+		name string
+		fn   func(*rdf.Graph, *bytes.Buffer) error
+	}{
+		{"turtle", func(g *rdf.Graph, buf *bytes.Buffer) error { return turtle.Serialize(g, buf) }},
+		{"nt", func(g *rdf.Graph, buf *bytes.Buffer) error { return nt.Serialize(g, buf) }},
+		{"xml", func(g *rdf.Graph, buf *bytes.Buffer) error { return rdfxml.Serialize(g, buf) }},
+		{"json-ld", func(g *rdf.Graph, buf *bytes.Buffer) error { return jsonld.Serialize(g, buf) }},
+	}
+
+	for _, s := range serializers {
 		var buf bytes.Buffer
-		if err := g.Serialize(&buf, rdf.WithSerializeFormat(format)); err != nil {
-			fmt.Printf("%s: error: %v\n", format, err)
+		if err := s.fn(g, &buf); err != nil {
+			fmt.Printf("%s: error: %v\n", s.name, err)
 			continue
 		}
-		fmt.Printf("--- %s ---\n%s\n", format, buf.String())
+		fmt.Printf("--- %s ---\n%s\n", s.name, buf.String())
 	}
 
 	// Parse from N-Triples
@@ -42,7 +56,7 @@ func main() {
 <http://example.org/Bob> <http://example.org/age> "25"^^<http://www.w3.org/2001/XMLSchema#integer> .
 `
 	g2 := rdf.NewGraph()
-	g2.Parse(strings.NewReader(ntData), rdf.WithFormat("nt"))
+	nt.Parse(g2, strings.NewReader(ntData))
 	fmt.Printf("Parsed %d triples from N-Triples\n", g2.Len())
 
 	// Format auto-detection

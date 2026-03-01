@@ -68,28 +68,3 @@ func TestFormatFromContent(t *testing.T) {
 		}
 	}
 }
-
-func TestGetStore(t *testing.T) {
-	s, ok := GetStore("memory")
-	if !ok || s == nil {
-		t.Error("expected memory store")
-	}
-	_, ok = GetStore("nonexistent")
-	if ok {
-		t.Error("expected false for unknown store")
-	}
-}
-
-func TestListParsers(t *testing.T) {
-	names := ListParsers()
-	if len(names) < 4 {
-		t.Errorf("expected at least 4 parsers, got %d: %v", len(names), names)
-	}
-}
-
-func TestListSerializers(t *testing.T) {
-	names := ListSerializers()
-	if len(names) < 4 {
-		t.Errorf("expected at least 4 serializers, got %d: %v", len(names), names)
-	}
-}

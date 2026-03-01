@@ -5,34 +5,6 @@ import (
 	"strings"
 )
 
-// Store registry — protected by registryMu (defined in graph.go).
-// Ported from: rdflib.plugin
-
-var stores = make(map[string]func() Store)
-
-// RegisterStore registers a store factory by name. Safe for concurrent use.
-func RegisterStore(name string, factory func() Store) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	stores[name] = factory
-}
-
-// GetStore creates a store by registered name. Safe for concurrent use.
-func GetStore(name string) (Store, bool) {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	f, ok := stores[name]
-	if !ok {
-		return nil, false
-	}
-	return f(), true
-}
-
-func init() {
-	RegisterStore("default", func() Store { return NewMemoryStore() })
-	RegisterStore("memory", func() Store { return NewMemoryStore() })
-}
-
 // --- MIME type and file extension mappings ---
 
 var mimeToFormat = map[string]string{
@@ -47,18 +19,17 @@ var mimeToFormat = map[string]string{
 }
 
 var extToFormat = map[string]string{
-	".ttl":    "turtle",
-	".turtle": "turtle",
-	".nt":     "nt",
+	".ttl":      "turtle",
+	".turtle":   "turtle",
+	".nt":       "nt",
 	".ntriples": "nt",
-	".nq":     "nquads",
-	".nquads": "nquads",
-	".rdf":    "xml",
-	".xml":    "xml",
-	".owl":    "xml",
-	".jsonld": "json-ld",
-	".json":   "json-ld",
-	// .trig intentionally omitted — TriG supports named graphs which Turtle does not
+	".nq":       "nquads",
+	".nquads":   "nquads",
+	".rdf":      "xml",
+	".xml":      "xml",
+	".owl":      "xml",
+	".jsonld":   "json-ld",
+	".json":     "json-ld",
 }
 
 // FormatFromFilename detects the RDF format from a file path extension.
@@ -115,26 +86,4 @@ func FormatFromContent(data []byte) (string, bool) {
 		return "nt", true
 	}
 	return "", false
-}
-
-// ListParsers returns all registered parser format names.
-func ListParsers() []string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	names := make([]string, 0, len(parsers))
-	for name := range parsers {
-		names = append(names, name)
-	}
-	return names
-}
-
-// ListSerializers returns all registered serializer format names.
-func ListSerializers() []string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	names := make([]string, 0, len(serializers))
-	for name := range serializers {
-		names = append(names, name)
-	}
-	return names
 }

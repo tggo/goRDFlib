@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 func main() {
 	g := rdf.NewGraph()
-	g.Parse(strings.NewReader(`
+	turtle.Parse(g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 
 		ex:person ex:parent ex:mom .
@@ -21,7 +22,7 @@ func main() {
 		ex:mom ex:parent ex:gp1 .
 		ex:dad ex:parent ex:gm2 .
 		ex:dad ex:parent ex:gp2 .
-	`), rdf.WithFormat("turtle"))
+	`))
 
 	person, _ := rdf.NewURIRef("http://example.org/person")
 	parent, _ := rdf.NewURIRef("http://example.org/parent")

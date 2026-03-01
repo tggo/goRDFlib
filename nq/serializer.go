@@ -1,25 +1,29 @@
-package rdflibgo
+package nq
 
 import (
 	"fmt"
 	"io"
 	"slices"
 	"strings"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// NTriplesSerializer serializes a Graph to N-Triples format.
-// Ported from: rdflib.plugins.serializers.nt.NTSerializer
-type NTriplesSerializer struct{}
-
-func init() {
-	RegisterSerializer("nt", func() Serializer { return &NTriplesSerializer{} })
-	RegisterSerializer("ntriples", func() Serializer { return &NTriplesSerializer{} })
-}
-
-func (s *NTriplesSerializer) Serialize(g *Graph, w io.Writer, base string) error {
+// Serialize writes the graph in N-Quads format.
+func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+	var cfg config
+	for _, o := range opts {
+		o(&cfg)
+	}
 	var lines []string
-	g.Triples(nil, nil, nil)(func(t Triple) bool {
-		lines = append(lines, ntTriple(t))
+	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+		line := ntTerm(t.Subject) + " " + ntTerm(t.Predicate) + " " + ntTerm(t.Object)
+		// Add graph context if the graph has an identifier that's a URIRef
+		if id, ok := g.Identifier().(rdflibgo.URIRef); ok {
+			line += " " + ntTerm(id)
+		}
+		line += " ."
+		lines = append(lines, line)
 		return true
 	})
 	slices.Sort(lines)
@@ -31,37 +35,31 @@ func (s *NTriplesSerializer) Serialize(g *Graph, w io.Writer, base string) error
 	return nil
 }
 
-func ntTriple(t Triple) string {
-	return ntTerm(t.Subject) + " " + ntTerm(t.Predicate) + " " + ntTerm(t.Object) + " ."
-}
-
-func ntTerm(t Term) string {
+func ntTerm(t rdflibgo.Term) string {
 	switch v := t.(type) {
-	case URIRef:
+	case rdflibgo.URIRef:
 		return "<" + ntEscapeIRI(v.Value()) + ">"
-	case BNode:
+	case rdflibgo.BNode:
 		return "_:" + v.Value()
-	case Literal:
+	case rdflibgo.Literal:
 		return ntLiteral(v)
 	default:
 		return t.N3()
 	}
 }
 
-func ntLiteral(l Literal) string {
+func ntLiteral(l rdflibgo.Literal) string {
 	escaped := ntEscapeString(l.Lexical())
 	quoted := `"` + escaped + `"`
 	if l.Language() != "" {
 		return quoted + "@" + l.Language()
 	}
-	if l.Datatype() != (URIRef{}) && l.Datatype() != XSDString {
+	if l.Datatype() != (rdflibgo.URIRef{}) && l.Datatype() != rdflibgo.XSDString {
 		return quoted + "^^<" + l.Datatype().Value() + ">"
 	}
 	return quoted
 }
 
-// ntEscapeString escapes a string per N-Triples spec.
-// Ported from: rdflib.plugins.serializers.nt — _nt_unicode_error_resolver
 func ntEscapeString(s string) string {
 	var sb strings.Builder
 	for _, r := range s {
@@ -90,7 +88,6 @@ func ntEscapeString(s string) string {
 }
 
 func ntEscapeIRI(s string) string {
-	// IRIs in N-Triples: escape control chars and supplementary plane per W3C spec.
 	needsEscape := false
 	for _, r := range s {
 		if r < 0x20 || r > 0xFFFF {

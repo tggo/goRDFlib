@@ -7,6 +7,7 @@ import (
 	"os"
 
 	rdf "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 func main() {
@@ -38,5 +39,5 @@ func main() {
 
 	// Serialize to Turtle (deterministic output)
 	fmt.Println("Turtle output:")
-	g.Serialize(os.Stdout, rdf.WithSerializeFormat("turtle"))
+	turtle.Serialize(g, os.Stdout)
 }

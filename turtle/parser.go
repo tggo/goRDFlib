@@ -1,4 +1,4 @@
-package rdflibgo
+package turtle
 
 import (
 	"fmt"
@@ -8,20 +8,16 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// TurtleParser parses Turtle format RDF into a Graph.
-// Ported from: rdflib.plugins.parsers.notation3.TurtleParser / SinkParser
-type TurtleParser struct{}
-
-func init() {
-	RegisterParser("turtle", func() Parser { return &TurtleParser{} })
-	RegisterParser("ttl", func() Parser { return &TurtleParser{} })
-}
-
 // Parse reads Turtle from r and adds triples to g.
-// Ported from: rdflib.plugins.parsers.notation3.TurtleParser.parse
-func (p *TurtleParser) Parse(g *Graph, r io.Reader, base string) error {
+func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+	cfg := &config{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -29,11 +25,11 @@ func (p *TurtleParser) Parse(g *Graph, r io.Reader, base string) error {
 	parser := &turtleParser{
 		g:        g,
 		input:    string(data),
-		base:     base,
+		base:     cfg.base,
 		prefixes: make(map[string]string),
 	}
 	// Copy graph namespace bindings as initial prefixes
-	g.Namespaces()(func(prefix string, ns URIRef) bool {
+	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		parser.prefixes[prefix] = ns.Value()
 		return true
 	})
@@ -41,13 +37,13 @@ func (p *TurtleParser) Parse(g *Graph, r io.Reader, base string) error {
 }
 
 type turtleParser struct {
-	g        *Graph
+	g        *rdflibgo.Graph
 	input    string
 	pos      int
 	line     int
 	col      int
 	base     string
-	prefixes map[string]string // prefix → namespace URI
+	prefixes map[string]string // prefix -> namespace URI
 }
 
 // parse is the main entry point.
@@ -93,7 +89,6 @@ func (p *turtleParser) statement() error {
 }
 
 // directive handles @prefix and @base.
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.directive
 func (p *turtleParser) directive() error {
 	p.pos++ // skip '@'
 	if p.startsWith("prefix") {
@@ -110,7 +105,7 @@ func (p *turtleParser) directive() error {
 		}
 		iri = p.resolveIRI(iri)
 		p.prefixes[prefix] = iri
-		p.g.Bind(prefix, NewURIRefUnsafe(iri))
+		p.g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri))
 		p.skipWS()
 		if !p.expect('.') {
 			return p.errorf("expected '.' after @prefix")
@@ -148,7 +143,7 @@ func (p *turtleParser) sparqlPrefix() error {
 	}
 	iri = p.resolveIRI(iri)
 	p.prefixes[prefix] = iri
-	p.g.Bind(prefix, NewURIRefUnsafe(iri))
+	p.g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri))
 	return nil
 }
 
@@ -183,8 +178,7 @@ func (p *turtleParser) tripleStatement() error {
 }
 
 // predicateObjectList parses: verb objectList (';' verb objectList)*
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.property_list
-func (p *turtleParser) predicateObjectList(subj Subject) error {
+func (p *turtleParser) predicateObjectList(subj rdflibgo.Subject) error {
 	pred, err := p.readVerb()
 	if err != nil {
 		return err
@@ -217,8 +211,7 @@ func (p *turtleParser) predicateObjectList(subj Subject) error {
 }
 
 // objectList parses: object (',' object)*
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.objectList
-func (p *turtleParser) objectList(subj Subject, pred URIRef) error {
+func (p *turtleParser) objectList(subj rdflibgo.Subject, pred rdflibgo.URIRef) error {
 	obj, err := p.readObject()
 	if err != nil {
 		return err
@@ -242,7 +235,7 @@ func (p *turtleParser) objectList(subj Subject, pred URIRef) error {
 }
 
 // readSubject parses a subject: IRI, prefixed name, blank node, or collection.
-func (p *turtleParser) readSubject() (Subject, error) {
+func (p *turtleParser) readSubject() (rdflibgo.Subject, error) {
 	p.skipWS()
 	if p.pos >= len(p.input) {
 		return nil, p.errorf("unexpected end of input, expected subject")
@@ -254,7 +247,7 @@ func (p *turtleParser) readSubject() (Subject, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewURIRefUnsafe(p.resolveIRI(iri)), nil
+		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
 	}
 	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
 		return p.readBlankNodeLabel(), nil
@@ -267,7 +260,7 @@ func (p *turtleParser) readSubject() (Subject, error) {
 		if err != nil {
 			return nil, err
 		}
-		if subj, ok := term.(Subject); ok {
+		if subj, ok := term.(rdflibgo.Subject); ok {
 			return subj, nil
 		}
 		return nil, p.errorf("collection as subject must be a node")
@@ -278,12 +271,11 @@ func (p *turtleParser) readSubject() (Subject, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewURIRefUnsafe(uri), nil
+	return rdflibgo.NewURIRefUnsafe(uri), nil
 }
 
 // readVerb parses a predicate: 'a' | IRI | prefixed name.
-// Ported from: uses "a" shorthand for rdf:type
-func (p *turtleParser) readVerb() (URIRef, error) {
+func (p *turtleParser) readVerb() (rdflibgo.URIRef, error) {
 	p.skipWS()
 	// Check for 'a' keyword
 	if p.pos < len(p.input) && p.input[p.pos] == 'a' {
@@ -291,31 +283,31 @@ func (p *turtleParser) readVerb() (URIRef, error) {
 		next := p.pos + 1
 		if next >= len(p.input) || isDelimiter(p.input[next]) {
 			p.pos++
-			return RDF.Type, nil
+			return rdflibgo.RDF.Type, nil
 		}
 	}
 
 	return p.readPredicate()
 }
 
-func (p *turtleParser) readPredicate() (URIRef, error) {
+func (p *turtleParser) readPredicate() (rdflibgo.URIRef, error) {
 	p.skipWS()
 	if p.pos < len(p.input) && p.input[p.pos] == '<' {
 		iri, err := p.readIRI()
 		if err != nil {
-			return URIRef{}, err
+			return rdflibgo.URIRef{}, err
 		}
-		return NewURIRefUnsafe(p.resolveIRI(iri)), nil
+		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
 	}
 	uri, err := p.readPrefixedName()
 	if err != nil {
-		return URIRef{}, err
+		return rdflibgo.URIRef{}, err
 	}
-	return NewURIRefUnsafe(uri), nil
+	return rdflibgo.NewURIRefUnsafe(uri), nil
 }
 
 // readObject parses an object term.
-func (p *turtleParser) readObject() (Term, error) {
+func (p *turtleParser) readObject() (rdflibgo.Term, error) {
 	p.skipWS()
 	if p.pos >= len(p.input) {
 		return nil, p.errorf("unexpected end of input")
@@ -327,7 +319,7 @@ func (p *turtleParser) readObject() (Term, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewURIRefUnsafe(p.resolveIRI(iri)), nil
+		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
 	}
 	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
 		return p.readBlankNodeLabel(), nil
@@ -352,11 +344,11 @@ func (p *turtleParser) readObject() (Term, error) {
 	// Boolean keywords
 	if p.startsWith("true") && (p.pos+4 >= len(p.input) || isDelimiter(p.input[p.pos+4])) {
 		p.pos += 4
-		return NewLiteral(true), nil
+		return rdflibgo.NewLiteral(true), nil
 	}
 	if p.startsWith("false") && (p.pos+5 >= len(p.input) || isDelimiter(p.input[p.pos+5])) {
 		p.pos += 5
-		return NewLiteral(false), nil
+		return rdflibgo.NewLiteral(false), nil
 	}
 
 	// Prefixed name
@@ -364,7 +356,7 @@ func (p *turtleParser) readObject() (Term, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewURIRefUnsafe(uri), nil
+	return rdflibgo.NewURIRefUnsafe(uri), nil
 }
 
 // readIRI reads <...> and returns the IRI string (without angle brackets).
@@ -390,7 +382,6 @@ func (p *turtleParser) readIRI() (string, error) {
 }
 
 // readPrefixedName reads prefix:local and returns the full URI.
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser — qname parsing
 func (p *turtleParser) readPrefixedName() (string, error) {
 	prefix := p.readPrefixName()
 	if !p.expect(':') {
@@ -405,7 +396,7 @@ func (p *turtleParser) readPrefixedName() (string, error) {
 }
 
 // readBlankNodeLabel reads _:label.
-func (p *turtleParser) readBlankNodeLabel() BNode {
+func (p *turtleParser) readBlankNodeLabel() rdflibgo.BNode {
 	p.pos += 2 // skip "_:"
 	start := p.pos
 	for p.pos < len(p.input) && !isDelimiter(p.input[p.pos]) {
@@ -415,16 +406,15 @@ func (p *turtleParser) readBlankNodeLabel() BNode {
 	label := p.input[start:p.pos]
 	label = strings.TrimRight(label, ".")
 	p.pos = start + len(label)
-	return NewBNode(label)
+	return rdflibgo.NewBNode(label)
 }
 
 // readBlankNodePropertyList reads [...].
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.node — blank node property list
-func (p *turtleParser) readBlankNodePropertyList() (BNode, error) {
+func (p *turtleParser) readBlankNodePropertyList() (rdflibgo.BNode, error) {
 	p.pos++ // skip '['
 	p.skipWS()
 
-	b := NewBNode()
+	b := rdflibgo.NewBNode()
 
 	// Empty blank node []
 	if p.pos < len(p.input) && p.input[p.pos] == ']' {
@@ -433,28 +423,27 @@ func (p *turtleParser) readBlankNodePropertyList() (BNode, error) {
 	}
 
 	if err := p.predicateObjectList(b); err != nil {
-		return BNode{}, err
+		return rdflibgo.BNode{}, err
 	}
 	p.skipWS()
 	if !p.expect(']') {
-		return BNode{}, p.errorf("expected ']'")
+		return rdflibgo.BNode{}, p.errorf("expected ']'")
 	}
 	return b, nil
 }
 
 // readCollection reads (...) and builds rdf:List triples.
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.node — collection
-func (p *turtleParser) readCollection() (Term, error) {
+func (p *turtleParser) readCollection() (rdflibgo.Term, error) {
 	p.pos++ // skip '('
 	p.skipWS()
 
 	// Empty collection
 	if p.pos < len(p.input) && p.input[p.pos] == ')' {
 		p.pos++
-		return RDF.Nil, nil
+		return rdflibgo.RDF.Nil, nil
 	}
 
-	var items []Term
+	var items []rdflibgo.Term
 	for {
 		p.skipWS()
 		if p.pos >= len(p.input) {
@@ -473,27 +462,26 @@ func (p *turtleParser) readCollection() (Term, error) {
 
 	// Build rdf:List chain
 	if len(items) == 0 {
-		return RDF.Nil, nil
+		return rdflibgo.RDF.Nil, nil
 	}
 
-	head := NewBNode()
+	head := rdflibgo.NewBNode()
 	current := head
 	for i, item := range items {
-		p.g.Add(current, RDF.First, item)
+		p.g.Add(current, rdflibgo.RDF.First, item)
 		if i < len(items)-1 {
-			next := NewBNode()
-			p.g.Add(current, RDF.Rest, next)
+			next := rdflibgo.NewBNode()
+			p.g.Add(current, rdflibgo.RDF.Rest, next)
 			current = next
 		} else {
-			p.g.Add(current, RDF.Rest, RDF.Nil)
+			p.g.Add(current, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 		}
 	}
 	return head, nil
 }
 
 // readLiteral reads a string literal with optional language tag or datatype.
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.strconst
-func (p *turtleParser) readLiteral() (Literal, error) {
+func (p *turtleParser) readLiteral() (rdflibgo.Literal, error) {
 	quote := p.input[p.pos]
 	p.pos++
 
@@ -511,11 +499,11 @@ func (p *turtleParser) readLiteral() (Literal, error) {
 		if ch == '\\' {
 			p.pos++
 			if p.pos >= len(p.input) {
-				return Literal{}, p.errorf("unterminated escape")
+				return rdflibgo.Literal{}, p.errorf("unterminated escape")
 			}
 			escaped, err := p.readEscape()
 			if err != nil {
-				return Literal{}, err
+				return rdflibgo.Literal{}, err
 			}
 			sb.WriteString(escaped)
 			continue
@@ -538,37 +526,36 @@ func (p *turtleParser) readLiteral() (Literal, error) {
 				goto done
 			}
 			if ch == '\n' || ch == '\r' {
-				return Literal{}, p.errorf("newline in short string")
+				return rdflibgo.Literal{}, p.errorf("newline in short string")
 			}
 			sb.WriteByte(ch)
 			p.pos++
 		}
 	}
-	return Literal{}, p.errorf("unterminated string literal")
+	return rdflibgo.Literal{}, p.errorf("unterminated string literal")
 
 done:
 	value := sb.String()
-	var opts []LiteralOption
+	var lopts []rdflibgo.LiteralOption
 
 	// Language tag or datatype
 	if p.pos < len(p.input) && p.input[p.pos] == '@' {
 		p.pos++
 		lang := p.readLangTag()
-		opts = append(opts, WithLang(lang))
+		lopts = append(lopts, rdflibgo.WithLang(lang))
 	} else if p.pos+1 < len(p.input) && p.input[p.pos] == '^' && p.input[p.pos+1] == '^' {
 		p.pos += 2
 		dt, err := p.readDatatypeIRI()
 		if err != nil {
-			return Literal{}, err
+			return rdflibgo.Literal{}, err
 		}
-		opts = append(opts, WithDatatype(NewURIRefUnsafe(dt)))
+		lopts = append(lopts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt)))
 	}
 
-	return NewLiteral(value, opts...), nil
+	return rdflibgo.NewLiteral(value, lopts...), nil
 }
 
 // readEscape handles escape sequences.
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.strconst — escape handling
 func (p *turtleParser) readEscape() (string, error) {
 	ch := p.input[p.pos]
 	p.pos++
@@ -608,8 +595,7 @@ func (p *turtleParser) readUnicodeEscape(n int) (string, error) {
 }
 
 // tryNumeric attempts to parse a numeric literal.
-// Ported from: rdflib.plugins.parsers.notation3.SinkParser.nodeOrLiteral — numeric parsing
-func (p *turtleParser) tryNumeric() (Literal, bool) {
+func (p *turtleParser) tryNumeric() (rdflibgo.Literal, bool) {
 	start := p.pos
 
 	// Optional sign
@@ -635,7 +621,7 @@ func (p *turtleParser) tryNumeric() (Literal, bool) {
 		} else if !hasDigitsBefore {
 			// Just a dot, not a number
 			p.pos = start
-			return Literal{}, false
+			return rdflibgo.Literal{}, false
 		}
 	}
 
@@ -648,7 +634,7 @@ func (p *turtleParser) tryNumeric() (Literal, bool) {
 		}
 		if p.pos >= len(p.input) || p.input[p.pos] < '0' || p.input[p.pos] > '9' {
 			p.pos = start
-			return Literal{}, false
+			return rdflibgo.Literal{}, false
 		}
 		for p.pos < len(p.input) && p.input[p.pos] >= '0' && p.input[p.pos] <= '9' {
 			p.pos++
@@ -657,22 +643,22 @@ func (p *turtleParser) tryNumeric() (Literal, bool) {
 
 	if !hasDigitsBefore && !hasDot {
 		p.pos = start
-		return Literal{}, false
+		return rdflibgo.Literal{}, false
 	}
 
 	lexical := p.input[start:p.pos]
 
-	var dt URIRef
+	var dt rdflibgo.URIRef
 	switch {
 	case hasExp:
-		dt = XSDDouble
+		dt = rdflibgo.XSDDouble
 	case hasDot:
-		dt = XSDDecimal
+		dt = rdflibgo.XSDDecimal
 	default:
-		dt = XSDInteger
+		dt = rdflibgo.XSDInteger
 	}
 
-	return NewLiteral(lexical, WithDatatype(dt)), true
+	return rdflibgo.NewLiteral(lexical, rdflibgo.WithDatatype(dt)), true
 }
 
 func (p *turtleParser) readLangTag() string {
@@ -734,7 +720,7 @@ func (p *turtleParser) readLocalName() string {
 		if (r < 128 && isDelimiter(byte(r))) || r == ';' || r == ',' || r == '.' || r == '[' || r == ']' || r == '(' || r == ')' {
 			break
 		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' && r != '·' {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' && r != '\u00B7' {
 			break
 		}
 		p.pos += size

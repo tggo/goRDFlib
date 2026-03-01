@@ -1,45 +1,46 @@
-package rdflibgo
+package sparql
 
 import (
-	"errors"
 	"fmt"
 	"testing"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
 // Ported from: test/test_sparql/
 
-func makeSPARQLGraph(t *testing.T) *Graph {
+func makeSPARQLGraph(t *testing.T) *rdflibgo.Graph {
 	t.Helper()
-	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	alice, _ := NewURIRef("http://example.org/Alice")
-	bob, _ := NewURIRef("http://example.org/Bob")
-	charlie, _ := NewURIRef("http://example.org/Charlie")
-	name, _ := NewURIRef("http://example.org/name")
-	age, _ := NewURIRef("http://example.org/age")
-	knows, _ := NewURIRef("http://example.org/knows")
-	person, _ := NewURIRef("http://example.org/Person")
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
+	bob, _ := rdflibgo.NewURIRef("http://example.org/Bob")
+	charlie, _ := rdflibgo.NewURIRef("http://example.org/Charlie")
+	name, _ := rdflibgo.NewURIRef("http://example.org/name")
+	age, _ := rdflibgo.NewURIRef("http://example.org/age")
+	knows, _ := rdflibgo.NewURIRef("http://example.org/knows")
+	person, _ := rdflibgo.NewURIRef("http://example.org/Person")
 
-	g.Add(alice, RDF.Type, person)
-	g.Add(alice, name, NewLiteral("Alice"))
-	g.Add(alice, age, NewLiteral(30))
+	g.Add(alice, rdflibgo.RDF.Type, person)
+	g.Add(alice, name, rdflibgo.NewLiteral("Alice"))
+	g.Add(alice, age, rdflibgo.NewLiteral(30))
 	g.Add(alice, knows, bob)
 
-	g.Add(bob, RDF.Type, person)
-	g.Add(bob, name, NewLiteral("Bob"))
-	g.Add(bob, age, NewLiteral(25))
+	g.Add(bob, rdflibgo.RDF.Type, person)
+	g.Add(bob, name, rdflibgo.NewLiteral("Bob"))
+	g.Add(bob, age, rdflibgo.NewLiteral(25))
 	g.Add(bob, knows, charlie)
 
-	g.Add(charlie, RDF.Type, person)
-	g.Add(charlie, name, NewLiteral("Charlie"))
-	g.Add(charlie, age, NewLiteral(35))
+	g.Add(charlie, rdflibgo.RDF.Type, person)
+	g.Add(charlie, name, rdflibgo.NewLiteral("Charlie"))
+	g.Add(charlie, age, rdflibgo.NewLiteral(35))
 	return g
 }
 
 func TestSPARQLSelectAll(t *testing.T) {
 	// Ported from: rdflib SPARQL SELECT *
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT * WHERE { ?s ex:name ?name }
 	`)
@@ -54,7 +55,7 @@ func TestSPARQLSelectAll(t *testing.T) {
 func TestSPARQLSelectVars(t *testing.T) {
 	// Ported from: rdflib SPARQL SELECT with specific vars
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE { ?s ex:name ?name }
 	`)
@@ -72,7 +73,7 @@ func TestSPARQLSelectVars(t *testing.T) {
 func TestSPARQLSelectFilter(t *testing.T) {
 	// Ported from: rdflib SPARQL FILTER
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -91,7 +92,7 @@ func TestSPARQLSelectFilter(t *testing.T) {
 func TestSPARQLSelectOptional(t *testing.T) {
 	// Ported from: rdflib SPARQL OPTIONAL
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?friend WHERE {
 			?s ex:name ?name .
@@ -110,7 +111,7 @@ func TestSPARQLSelectOptional(t *testing.T) {
 func TestSPARQLSelectUnion(t *testing.T) {
 	// Ported from: rdflib SPARQL UNION
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?x WHERE {
 			{ ?x ex:name "Alice" }
@@ -129,7 +130,7 @@ func TestSPARQLSelectUnion(t *testing.T) {
 func TestSPARQLAsk(t *testing.T) {
 	// Ported from: rdflib SPARQL ASK
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		ASK { ?s ex:name "Alice" }
 	`)
@@ -140,7 +141,7 @@ func TestSPARQLAsk(t *testing.T) {
 		t.Error("expected true")
 	}
 
-	r2, _ := g.Query(`
+	r2, _ := Query(g, `
 		PREFIX ex: <http://example.org/>
 		ASK { ?s ex:name "Nobody" }
 	`)
@@ -152,7 +153,7 @@ func TestSPARQLAsk(t *testing.T) {
 func TestSPARQLConstruct(t *testing.T) {
 	// Ported from: rdflib SPARQL CONSTRUCT
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:label ?name }
 		WHERE { ?s ex:name ?name }
@@ -168,7 +169,7 @@ func TestSPARQLConstruct(t *testing.T) {
 func TestSPARQLOrderBy(t *testing.T) {
 	// Ported from: rdflib SPARQL ORDER BY
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE { ?s ex:name ?name }
 		ORDER BY ?name
@@ -187,7 +188,7 @@ func TestSPARQLOrderBy(t *testing.T) {
 
 func TestSPARQLOrderByDesc(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?age WHERE { ?s ex:name ?name . ?s ex:age ?age }
 		ORDER BY DESC(?age)
@@ -203,7 +204,7 @@ func TestSPARQLOrderByDesc(t *testing.T) {
 func TestSPARQLLimit(t *testing.T) {
 	// Ported from: rdflib SPARQL LIMIT
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE { ?s ex:name ?name }
 		LIMIT 2
@@ -218,7 +219,7 @@ func TestSPARQLLimit(t *testing.T) {
 
 func TestSPARQLOffset(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE { ?s ex:name ?name }
 		ORDER BY ?name
@@ -236,7 +237,7 @@ func TestSPARQLOffset(t *testing.T) {
 func TestSPARQLDistinct(t *testing.T) {
 	// Ported from: rdflib SPARQL DISTINCT
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT DISTINCT ?type WHERE { ?s a ?type }
 	`)
@@ -251,7 +252,7 @@ func TestSPARQLDistinct(t *testing.T) {
 func TestSPARQLBind(t *testing.T) {
 	// Ported from: rdflib SPARQL BIND
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?upper WHERE {
 			?s ex:name ?name .
@@ -279,7 +280,7 @@ func TestSPARQLBind(t *testing.T) {
 func TestSPARQLFilterRegex(t *testing.T) {
 	// Ported from: rdflib SPARQL FILTER REGEX
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -296,7 +297,7 @@ func TestSPARQLFilterRegex(t *testing.T) {
 
 func TestSPARQLFilterBound(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -315,7 +316,7 @@ func TestSPARQLFilterBound(t *testing.T) {
 
 func TestSPARQLFilterIsIRI(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE {
 			ex:Alice ?p ?o .
@@ -333,7 +334,7 @@ func TestSPARQLFilterIsIRI(t *testing.T) {
 
 func TestSPARQLBuiltinStringFunctions(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -352,7 +353,7 @@ func TestSPARQLBuiltinStringFunctions(t *testing.T) {
 func TestSPARQLMultipleTriplePatterns(t *testing.T) {
 	// Ported from: rdflib SPARQL — join via shared variable
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?friendName WHERE {
 			?s ex:name ?name .
@@ -371,7 +372,7 @@ func TestSPARQLMultipleTriplePatterns(t *testing.T) {
 
 func TestSPARQLTypeShorthand(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE { ?s a ex:Person }
 	`)
@@ -385,7 +386,7 @@ func TestSPARQLTypeShorthand(t *testing.T) {
 
 func TestSPARQLArithmetic(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?nextAge WHERE {
 			?s ex:name ?name .
@@ -418,7 +419,7 @@ func TestSPARQLComparisonOps(t *testing.T) {
 		{`FILTER(?age = 30)`, 1},
 	}
 	for _, tt := range tests {
-		r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:age ?age . ` + tt.filter + ` }`)
+		r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:age ?age . `+tt.filter+` }`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -430,7 +431,7 @@ func TestSPARQLComparisonOps(t *testing.T) {
 
 func TestSPARQLBooleanOps(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -448,7 +449,7 @@ func TestSPARQLBooleanOps(t *testing.T) {
 
 func TestSPARQLOrFilter(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -465,7 +466,7 @@ func TestSPARQLOrFilter(t *testing.T) {
 
 func TestSPARQLNotFilter(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -497,7 +498,7 @@ func TestSPARQLBuiltinFunctionsExtended(t *testing.T) {
 		{"IF", `SELECT ?n WHERE { ?s ex:name ?n . ?s ex:age ?a . BIND(IF(?a > 30, "old", "young") AS ?cat) FILTER(?cat = "old") }`, 1},
 	}
 	for _, tt := range tests {
-		r, err := g.Query(`PREFIX ex: <http://example.org/> ` + tt.query)
+		r, err := Query(g, `PREFIX ex: <http://example.org/> `+tt.query)
 		if err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}
@@ -509,7 +510,7 @@ func TestSPARQLBuiltinFunctionsExtended(t *testing.T) {
 
 func TestSPARQLNumericFunctions(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -528,7 +529,7 @@ func TestSPARQLNumericFunctions(t *testing.T) {
 
 func TestSPARQLCoalesce(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?friend WHERE {
 			?s ex:name ?name .
@@ -547,8 +548,8 @@ func TestSPARQLCoalesce(t *testing.T) {
 
 func TestSPARQLSameTerm(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	alice, _ := NewURIRef("http://example.org/Alice")
-	r, err := g.Query(`
+	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			?s ex:name ?name .
@@ -566,46 +567,38 @@ func TestSPARQLSameTerm(t *testing.T) {
 
 func TestSPARQLParseError(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	_, err := g.Query(`NOT A VALID QUERY`)
+	_, err := Query(g, `NOT A VALID QUERY`)
 	if err == nil {
 		t.Error("expected parse error")
-	}
-}
-
-func TestSPARQLUnknownFormat(t *testing.T) {
-	g := NewGraph()
-	err := g.Serialize(nil, WithSerializeFormat("nonexistent"))
-	if !errors.Is(err, ErrUnknownFormat) {
-		t.Errorf("expected ErrUnknownFormat, got %v", err)
 	}
 }
 
 // --- Benchmarks ---
 
 func BenchmarkSPARQLSelectAll(b *testing.B) {
-	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	for i := 0; i < 100; i++ {
-		s := NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-		p, _ := NewURIRef("http://example.org/name")
-		g.Add(s, p, NewLiteral(fmt.Sprintf("name%d", i)))
+		s := rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
+		p, _ := rdflibgo.NewURIRef("http://example.org/name")
+		g.Add(s, p, rdflibgo.NewLiteral(fmt.Sprintf("name%d", i)))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		g.Query(`PREFIX ex: <http://example.org/> SELECT * WHERE { ?s ex:name ?name }`)
+		Query(g, `PREFIX ex: <http://example.org/> SELECT * WHERE { ?s ex:name ?name }`)
 	}
 }
 
 func BenchmarkSPARQLFilter(b *testing.B) {
-	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	p, _ := NewURIRef("http://example.org/val")
+	g := rdflibgo.NewGraph()
+	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	p, _ := rdflibgo.NewURIRef("http://example.org/val")
 	for i := 0; i < 100; i++ {
-		s := NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(s, p, NewLiteral(i))
+		s := rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
+		g.Add(s, p, rdflibgo.NewLiteral(i))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		g.Query(`PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val ?v . FILTER(?v > 50) }`)
+		Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val ?v . FILTER(?v > 50) }`)
 	}
 }

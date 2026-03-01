@@ -1,4 +1,4 @@
-package rdflibgo
+package nt
 
 import (
 	"bufio"
@@ -6,18 +6,16 @@ import (
 	"io"
 	"strconv"
 	"strings"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// NTriplesParser parses N-Triples format RDF.
-// Ported from: rdflib.plugins.parsers.ntriples.NTriplesParser
-type NTriplesParser struct{}
-
-func init() {
-	RegisterParser("nt", func() Parser { return &NTriplesParser{} })
-	RegisterParser("ntriples", func() Parser { return &NTriplesParser{} })
-}
-
-func (p *NTriplesParser) Parse(g *Graph, r io.Reader, base string) error {
+// Parse parses N-Triples format RDF into the given graph.
+func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+	var cfg config
+	for _, o := range opts {
+		o(&cfg)
+	}
 	scanner := bufio.NewScanner(r)
 	lineNum := 0
 	for scanner.Scan() {
@@ -33,7 +31,7 @@ func (p *NTriplesParser) Parse(g *Graph, r io.Reader, base string) error {
 	return scanner.Err()
 }
 
-func parseNTLine(g *Graph, line string, lineNum int) error {
+func parseNTLine(g *rdflibgo.Graph, line string, lineNum int) error {
 	p := &ntLineParser{line: line, pos: 0, lineNum: lineNum}
 
 	subj, err := p.readNTSubject()
@@ -58,7 +56,7 @@ func parseNTLine(g *Graph, line string, lineNum int) error {
 		return fmt.Errorf("line %d: expected '.'", lineNum)
 	}
 
-	g.Add(subj, NewURIRefUnsafe(pred), obj)
+	g.Add(subj, rdflibgo.NewURIRefUnsafe(pred), obj)
 	return nil
 }
 
@@ -82,7 +80,7 @@ func (p *ntLineParser) expect(ch byte) bool {
 	return false
 }
 
-func (p *ntLineParser) readNTSubject() (Subject, error) {
+func (p *ntLineParser) readNTSubject() (rdflibgo.Subject, error) {
 	p.skipSpaces()
 	if p.pos >= len(p.line) {
 		return nil, fmt.Errorf("line %d: unexpected end", p.lineNum)
@@ -92,7 +90,7 @@ func (p *ntLineParser) readNTSubject() (Subject, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d: subject: %w", p.lineNum, err)
 		}
-		return NewURIRefUnsafe(iri), nil
+		return rdflibgo.NewURIRefUnsafe(iri), nil
 	}
 	if strings.HasPrefix(p.line[p.pos:], "_:") {
 		return p.readNTBNode(), nil
@@ -100,7 +98,7 @@ func (p *ntLineParser) readNTSubject() (Subject, error) {
 	return nil, fmt.Errorf("line %d: expected IRI or blank node for subject", p.lineNum)
 }
 
-func (p *ntLineParser) readNTObject() (Term, error) {
+func (p *ntLineParser) readNTObject() (rdflibgo.Term, error) {
 	p.skipSpaces()
 	if p.pos >= len(p.line) {
 		return nil, fmt.Errorf("line %d: unexpected end", p.lineNum)
@@ -110,7 +108,7 @@ func (p *ntLineParser) readNTObject() (Term, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d: object: %w", p.lineNum, err)
 		}
-		return NewURIRefUnsafe(iri), nil
+		return rdflibgo.NewURIRefUnsafe(iri), nil
 	}
 	if strings.HasPrefix(p.line[p.pos:], "_:") {
 		return p.readNTBNode(), nil
@@ -141,7 +139,7 @@ func (p *ntLineParser) readNTIRI() (string, error) {
 	return "", fmt.Errorf("unterminated IRI")
 }
 
-func (p *ntLineParser) readNTBNode() BNode {
+func (p *ntLineParser) readNTBNode() rdflibgo.BNode {
 	p.pos += 2 // skip "_:"
 	start := p.pos
 	for p.pos < len(p.line) {
@@ -158,12 +156,11 @@ func (p *ntLineParser) readNTBNode() BNode {
 		}
 		p.pos++
 	}
-	return NewBNode(p.line[start:p.pos])
+	return rdflibgo.NewBNode(p.line[start:p.pos])
 }
 
 // readNTLiteral parses "lexical"@lang or "lexical"^^<datatype>.
-// Ported from: rdflib.plugins.parsers.ntriples — literal parsing
-func (p *ntLineParser) readNTLiteral() (Literal, error) {
+func (p *ntLineParser) readNTLiteral() (rdflibgo.Literal, error) {
 	p.pos++ // skip opening "
 	var sb strings.Builder
 	closed := false
@@ -172,7 +169,7 @@ func (p *ntLineParser) readNTLiteral() (Literal, error) {
 		if ch == '\\' {
 			p.pos++
 			if p.pos >= len(p.line) {
-				return Literal{}, fmt.Errorf("line %d: unterminated escape", p.lineNum)
+				return rdflibgo.Literal{}, fmt.Errorf("line %d: unterminated escape", p.lineNum)
 			}
 			esc := p.line[p.pos]
 			p.pos++
@@ -189,26 +186,26 @@ func (p *ntLineParser) readNTLiteral() (Literal, error) {
 				sb.WriteByte('"')
 			case 'u':
 				if p.pos+4 > len(p.line) {
-					return Literal{}, fmt.Errorf("line %d: truncated \\u escape", p.lineNum)
+					return rdflibgo.Literal{}, fmt.Errorf("line %d: truncated \\u escape", p.lineNum)
 				}
 				code, err := strconv.ParseUint(p.line[p.pos:p.pos+4], 16, 32)
 				if err != nil {
-					return Literal{}, fmt.Errorf("line %d: invalid \\u escape", p.lineNum)
+					return rdflibgo.Literal{}, fmt.Errorf("line %d: invalid \\u escape", p.lineNum)
 				}
 				sb.WriteRune(rune(code))
 				p.pos += 4
 			case 'U':
 				if p.pos+8 > len(p.line) {
-					return Literal{}, fmt.Errorf("line %d: truncated \\U escape", p.lineNum)
+					return rdflibgo.Literal{}, fmt.Errorf("line %d: truncated \\U escape", p.lineNum)
 				}
 				code, err := strconv.ParseUint(p.line[p.pos:p.pos+8], 16, 32)
 				if err != nil {
-					return Literal{}, fmt.Errorf("line %d: invalid \\U escape", p.lineNum)
+					return rdflibgo.Literal{}, fmt.Errorf("line %d: invalid \\U escape", p.lineNum)
 				}
 				sb.WriteRune(rune(code))
 				p.pos += 8
 			default:
-				return Literal{}, fmt.Errorf("line %d: unknown escape \\%c", p.lineNum, esc)
+				return rdflibgo.Literal{}, fmt.Errorf("line %d: unknown escape \\%c", p.lineNum, esc)
 			}
 			continue
 		}
@@ -222,11 +219,11 @@ func (p *ntLineParser) readNTLiteral() (Literal, error) {
 	}
 
 	if !closed {
-		return Literal{}, fmt.Errorf("line %d: unterminated string literal", p.lineNum)
+		return rdflibgo.Literal{}, fmt.Errorf("line %d: unterminated string literal", p.lineNum)
 	}
 
 	lexical := sb.String()
-	var opts []LiteralOption
+	var opts []rdflibgo.LiteralOption
 
 	if p.pos < len(p.line) && p.line[p.pos] == '@' {
 		p.pos++
@@ -234,17 +231,17 @@ func (p *ntLineParser) readNTLiteral() (Literal, error) {
 		for p.pos < len(p.line) && p.line[p.pos] != ' ' && p.line[p.pos] != '\t' && p.line[p.pos] != '.' {
 			p.pos++
 		}
-		opts = append(opts, WithLang(p.line[start:p.pos]))
+		opts = append(opts, rdflibgo.WithLang(p.line[start:p.pos]))
 	} else if p.pos+1 < len(p.line) && p.line[p.pos] == '^' && p.line[p.pos+1] == '^' {
 		p.pos += 2
 		dt, err := p.readNTIRI()
 		if err != nil {
-			return Literal{}, fmt.Errorf("line %d: datatype: %w", p.lineNum, err)
+			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.lineNum, err)
 		}
-		opts = append(opts, WithDatatype(NewURIRefUnsafe(dt)))
+		opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt)))
 	}
 
-	return NewLiteral(lexical, opts...), nil
+	return rdflibgo.NewLiteral(lexical, opts...), nil
 }
 
 func ntUnescapeString(s string) string {

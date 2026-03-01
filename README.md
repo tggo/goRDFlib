@@ -42,6 +42,8 @@ import (
     "strings"
 
     rdf "github.com/tggo/goRDFlib"
+    "github.com/tggo/goRDFlib/sparql"
+    "github.com/tggo/goRDFlib/turtle"
 )
 
 func main() {
@@ -57,17 +59,17 @@ func main() {
     g.Add(alice, age, rdf.NewLiteral(30))
 
     // Serialize to Turtle
-    g.Serialize(os.Stdout, rdf.WithSerializeFormat("turtle"))
+    turtle.Serialize(g, os.Stdout)
 
     // Parse Turtle
     g2 := rdf.NewGraph()
-    g2.Parse(strings.NewReader(`
+    turtle.Parse(g2, strings.NewReader(`
         @prefix ex: <http://example.org/> .
         ex:Bob a ex:Person ; ex:name "Bob" .
-    `), rdf.WithFormat("turtle"))
+    `))
 
     // SPARQL query
-    result, _ := g.Query(`
+    result, _ := sparql.Query(g, `
         PREFIX ex: <http://example.org/>
         SELECT ?name WHERE { ?s ex:name ?name }
     `)

@@ -1,47 +1,48 @@
-package rdflibgo
+package turtle
 
 import (
 	"fmt"
 	"io"
 	"slices"
 	"strings"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// TurtleSerializer serializes a Graph to Turtle format.
-// Ported from: rdflib.plugins.serializers.turtle.TurtleSerializer
-type TurtleSerializer struct{}
-
-func init() {
-	RegisterSerializer("turtle", func() Serializer { return &TurtleSerializer{} })
-	RegisterSerializer("ttl", func() Serializer { return &TurtleSerializer{} })
-}
-
 // Serialize writes the graph in Turtle format.
-// Ported from: rdflib.plugins.serializers.turtle.TurtleSerializer.serialize
-func (s *TurtleSerializer) Serialize(g *Graph, w io.Writer, base string) error {
+func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+	cfg := &config{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	ts := newTurtleState(g)
-	ts.base = base
+	ts.base = cfg.base
 	ts.preprocess()
 	ts.orderSubjects()
 	return ts.write(w)
 }
 
+// termKey returns a string key for a term (its N3 representation).
+func termKey(t rdflibgo.Term) string {
+	return t.N3()
+}
+
 // turtleState holds serialization state.
 type turtleState struct {
-	g    *Graph
+	g    *rdflibgo.Graph
 	base string
 
-	// subject → predicate → []object
-	spoMap map[string]map[string][]Term
+	// subject -> predicate -> []object
+	spoMap map[string]map[string][]rdflibgo.Term
 
 	// subject order
-	subjects []Subject
+	subjects []rdflibgo.Subject
 
 	// reference count for each term (as object)
 	refs map[string]int
 
 	// namespace tracking: only emit used prefixes
-	usedNS map[string]URIRef // prefix → namespace
+	usedNS map[string]rdflibgo.URIRef // prefix -> namespace
 
 	// set of BNode keys that are list heads
 	listHeads map[string]bool
@@ -53,12 +54,12 @@ type turtleState struct {
 	serialized map[string]bool
 }
 
-func newTurtleState(g *Graph) *turtleState {
+func newTurtleState(g *rdflibgo.Graph) *turtleState {
 	return &turtleState{
 		g:          g,
-		spoMap:     make(map[string]map[string][]Term),
+		spoMap:     make(map[string]map[string][]rdflibgo.Term),
 		refs:       make(map[string]int),
-		usedNS:     make(map[string]URIRef),
+		usedNS:     make(map[string]rdflibgo.URIRef),
 		listHeads:  make(map[string]bool),
 		listNodes:  make(map[string]bool),
 		serialized: make(map[string]bool),
@@ -66,14 +67,13 @@ func newTurtleState(g *Graph) *turtleState {
 }
 
 // preprocess collects triples, counts references, detects lists, and tracks used prefixes.
-// Ported from: rdflib.plugins.serializers.turtle.TurtleSerializer.preprocessTriple
 func (ts *turtleState) preprocess() {
-	ts.g.Triples(nil, nil, nil)(func(t Triple) bool {
+	ts.g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
 		sk := termKey(t.Subject)
 		pk := termKey(t.Predicate)
 
 		if ts.spoMap[sk] == nil {
-			ts.spoMap[sk] = make(map[string][]Term)
+			ts.spoMap[sk] = make(map[string][]rdflibgo.Term)
 		}
 		ts.spoMap[sk][pk] = append(ts.spoMap[sk][pk], t.Object)
 
@@ -93,13 +93,13 @@ func (ts *turtleState) preprocess() {
 }
 
 // trackNS registers a namespace as used if the term is a URIRef with a known prefix.
-func (ts *turtleState) trackNS(t Term) {
-	u, ok := t.(URIRef)
+func (ts *turtleState) trackNS(t rdflibgo.Term) {
+	u, ok := t.(rdflibgo.URIRef)
 	if !ok {
 		return
 	}
 	uri := u.Value()
-	ts.g.Namespaces()(func(prefix string, ns URIRef) bool {
+	ts.g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		nsStr := ns.Value()
 		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) {
 			ts.usedNS[prefix] = ns
@@ -109,11 +109,10 @@ func (ts *turtleState) trackNS(t Term) {
 }
 
 // detectLists finds rdf:List patterns.
-// Ported from: rdflib.plugins.serializers.turtle.RecursiveSerializer.isValidList
 func (ts *turtleState) detectLists() {
-	firstKey := termKey(RDF.First)
-	restKey := termKey(RDF.Rest)
-	nilKey := termKey(RDF.Nil)
+	firstKey := termKey(rdflibgo.RDF.First)
+	restKey := termKey(rdflibgo.RDF.Rest)
+	nilKey := termKey(rdflibgo.RDF.Nil)
 
 	for sk, preds := range ts.spoMap {
 		if _, hasFirst := preds[firstKey]; !hasFirst {
@@ -145,7 +144,7 @@ func (ts *turtleState) isValidList(sk, firstKey, restKey, nilKey string) bool {
 		if len(firsts) != 1 || len(rests) != 1 {
 			return false
 		}
-		// List node should only have rdf:first and rdf:rest (and optionally rdf:type rdf:List)
+		// List node should only have rdf:first and rdf:rest
 		allowedPreds := 0
 		for pk := range preds {
 			if pk == firstKey || pk == restKey {
@@ -175,14 +174,13 @@ func (ts *turtleState) markListNodes(sk, restKey, nilKey string) {
 }
 
 // orderSubjects sorts subjects for deterministic output.
-// Ported from: rdflib.plugins.serializers.turtle.TurtleSerializer.orderSubjects
 func (ts *turtleState) orderSubjects() {
-	typeKey := termKey(RDF.Type)
-	classKey := termKey(RDFS.Class)
+	typeKey := termKey(rdflibgo.RDF.Type)
+	classKey := termKey(rdflibgo.RDFS.Class)
 
-	var topSubjects []Subject
-	var bnodeSubjects []Subject
-	var otherSubjects []Subject
+	var topSubjects []rdflibgo.Subject
+	var bnodeSubjects []rdflibgo.Subject
+	var otherSubjects []rdflibgo.Subject
 
 	for sk := range ts.spoMap {
 		// Skip list internal nodes
@@ -207,7 +205,7 @@ func (ts *turtleState) orderSubjects() {
 			}
 		}
 
-		if _, isBNode := subj.(BNode); isBNode {
+		if _, isBNode := subj.(rdflibgo.BNode); isBNode {
 			bnodeSubjects = append(bnodeSubjects, subj)
 		} else {
 			otherSubjects = append(otherSubjects, subj)
@@ -215,15 +213,15 @@ func (ts *turtleState) orderSubjects() {
 	next:
 	}
 
-	sortSubjects := func(ss []Subject) {
-		slices.SortFunc(ss, func(a, b Subject) int {
+	sortSubjects := func(ss []rdflibgo.Subject) {
+		slices.SortFunc(ss, func(a, b rdflibgo.Subject) int {
 			return strings.Compare(a.N3(), b.N3())
 		})
 	}
 	sortSubjects(topSubjects)
 	sortSubjects(otherSubjects)
 	// BNodes sorted by ref count ascending, then by N3
-	slices.SortFunc(bnodeSubjects, func(a, b Subject) int {
+	slices.SortFunc(bnodeSubjects, func(a, b rdflibgo.Subject) int {
 		ra, rb := ts.refs[termKey(a)], ts.refs[termKey(b)]
 		if ra != rb {
 			return ra - rb
@@ -237,9 +235,9 @@ func (ts *turtleState) orderSubjects() {
 }
 
 // resolveSubject finds the original Subject term from an N3 key.
-func (ts *turtleState) resolveSubject(sk string) Subject {
-	var result Subject
-	ts.g.Triples(nil, nil, nil)(func(t Triple) bool {
+func (ts *turtleState) resolveSubject(sk string) rdflibgo.Subject {
+	var result rdflibgo.Subject
+	ts.g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
 		if termKey(t.Subject) == sk {
 			result = t.Subject
 			return false
@@ -295,12 +293,12 @@ func (ts *turtleState) write(w io.Writer) error {
 }
 
 // writeSubject writes a single subject block.
-func (ts *turtleState) writeSubject(w io.Writer, subj Subject) error {
+func (ts *turtleState) writeSubject(w io.Writer, subj rdflibgo.Subject) error {
 	sk := termKey(subj)
 	ts.serialized[sk] = true
 
 	// Check if this BNode can be inlined (referenced 0 times)
-	if _, isBNode := subj.(BNode); isBNode && ts.refs[sk] == 0 && !ts.listHeads[sk] {
+	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 && !ts.listHeads[sk] {
 		if _, err := fmt.Fprintf(w, "[]"); err != nil {
 			return err
 		}
@@ -340,8 +338,8 @@ func (ts *turtleState) writePredicates(w io.Writer, sk string, indent string) er
 		}
 
 		// Sort objects
-		slices.SortFunc(objs, func(a, b Term) int {
-			return CompareTerm(a, b)
+		slices.SortFunc(objs, func(a, b rdflibgo.Term) int {
+			return rdflibgo.CompareTerm(a, b)
 		})
 
 		for j, obj := range objs {
@@ -365,10 +363,9 @@ func (ts *turtleState) writePredicates(w io.Writer, sk string, indent string) er
 }
 
 // sortPredicates returns predicate keys with rdf:type first, then rdfs:label, then alphabetical.
-// Ported from: rdflib.plugins.serializers.turtle.TurtleSerializer.sortProperties
-func (ts *turtleState) sortPredicates(preds map[string][]Term) []string {
-	typeKey := termKey(RDF.Type)
-	labelKey := termKey(RDFS.Label)
+func (ts *turtleState) sortPredicates(preds map[string][]rdflibgo.Term) []string {
+	typeKey := termKey(rdflibgo.RDF.Type)
+	labelKey := termKey(rdflibgo.RDFS.Label)
 
 	var ordered []string
 	var rest []string
@@ -395,11 +392,11 @@ func (ts *turtleState) sortPredicates(preds map[string][]Term) []string {
 }
 
 // label returns the Turtle representation of a term in subject position.
-func (ts *turtleState) label(t Term) string {
+func (ts *turtleState) label(t rdflibgo.Term) string {
 	switch v := t.(type) {
-	case URIRef:
+	case rdflibgo.URIRef:
 		return ts.qnameOrFull(v)
-	case BNode:
+	case rdflibgo.BNode:
 		return v.N3()
 	default:
 		return t.N3()
@@ -407,24 +404,23 @@ func (ts *turtleState) label(t Term) string {
 }
 
 // predLabel returns the Turtle representation of a predicate.
-// Ported from: uses "a" shorthand for rdf:type
 func (ts *turtleState) predLabel(pk string) string {
-	if pk == termKey(RDF.Type) {
+	if pk == termKey(rdflibgo.RDF.Type) {
 		return "a"
 	}
 	// Try to resolve to a URIRef and get qname
 	// pk is N3 form like <http://...>
 	uri := strings.TrimPrefix(strings.TrimSuffix(pk, ">"), "<")
-	u := NewURIRefUnsafe(uri)
+	u := rdflibgo.NewURIRefUnsafe(uri)
 	return ts.qnameOrFull(u)
 }
 
 // objectStr returns the Turtle representation of an object term.
-func (ts *turtleState) objectStr(w io.Writer, t Term) (string, error) {
+func (ts *turtleState) objectStr(w io.Writer, t rdflibgo.Term) (string, error) {
 	switch v := t.(type) {
-	case URIRef:
+	case rdflibgo.URIRef:
 		return ts.qnameOrFull(v), nil
-	case BNode:
+	case rdflibgo.BNode:
 		bk := termKey(v)
 		// Check if it's a list head
 		if ts.listHeads[bk] && !ts.serialized[bk] {
@@ -437,7 +433,7 @@ func (ts *turtleState) objectStr(w io.Writer, t Term) (string, error) {
 			}
 		}
 		return v.N3(), nil
-	case Literal:
+	case rdflibgo.Literal:
 		return ts.literalStr(v), nil
 	default:
 		return t.N3(), nil
@@ -445,15 +441,14 @@ func (ts *turtleState) objectStr(w io.Writer, t Term) (string, error) {
 }
 
 // literalStr formats a literal for Turtle output.
-// Ported from: rdflib.plugins.serializers.turtle — literal formatting
-func (ts *turtleState) literalStr(l Literal) string {
+func (ts *turtleState) literalStr(l rdflibgo.Literal) string {
 	n3 := l.N3()
 	// If N3 already uses shorthand (integer, boolean, decimal), use it
 	if !strings.HasPrefix(n3, "\"") {
 		return n3
 	}
 	// Try to use prefixed datatype
-	if l.Language() == "" && l.Datatype() != (URIRef{}) && l.Datatype() != XSDString {
+	if l.Language() == "" && l.Datatype() != (rdflibgo.URIRef{}) && l.Datatype() != rdflibgo.XSDString {
 		// Replace ^^<full-uri> with ^^prefix:local
 		dtN3 := l.Datatype().N3()
 		dtQName := ts.qnameOrFull(l.Datatype())
@@ -465,7 +460,7 @@ func (ts *turtleState) literalStr(l Literal) string {
 }
 
 // qnameOrFull returns a prefixed name if possible, otherwise the full N3 form.
-func (ts *turtleState) qnameOrFull(u URIRef) string {
+func (ts *turtleState) qnameOrFull(u rdflibgo.URIRef) string {
 	uri := u.Value()
 	bestPrefix := ""
 	bestNS := ""
@@ -503,11 +498,11 @@ func isValidLocalName(s string) bool {
 }
 
 // listStr serializes an rdf:List as Turtle collection syntax: ( item1 item2 ... )
-func (ts *turtleState) listStr(head BNode) string {
+func (ts *turtleState) listStr(head rdflibgo.BNode) string {
 	var items []string
-	restKey := termKey(RDF.Rest)
-	firstKey := termKey(RDF.First)
-	nilKey := termKey(RDF.Nil)
+	restKey := termKey(rdflibgo.RDF.Rest)
+	firstKey := termKey(rdflibgo.RDF.First)
+	nilKey := termKey(rdflibgo.RDF.Nil)
 
 	node := termKey(head)
 	for node != nilKey {
@@ -528,7 +523,7 @@ func (ts *turtleState) listStr(head BNode) string {
 }
 
 // inlineBNode serializes a blank node inline: [ pred1 obj1 ; pred2 obj2 ]
-func (ts *turtleState) inlineBNode(b BNode) string {
+func (ts *turtleState) inlineBNode(b rdflibgo.BNode) string {
 	sk := termKey(b)
 	ts.serialized[sk] = true
 	preds := ts.spoMap[sk]
@@ -540,8 +535,8 @@ func (ts *turtleState) inlineBNode(b BNode) string {
 		objs := preds[pk]
 		predLabel := ts.predLabel(pk)
 
-		slices.SortFunc(objs, func(a, b Term) int {
-			return CompareTerm(a, b)
+		slices.SortFunc(objs, func(a, b rdflibgo.Term) int {
+			return rdflibgo.CompareTerm(a, b)
 		})
 
 		var objStrs []string

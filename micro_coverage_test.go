@@ -1,9 +1,12 @@
-package rdflibgo
+package rdflibgo_test
 
 import (
-	"bytes"
 	"strings"
 	"testing"
+
+	. "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 // --- SPARQL: triple-quoted strings ---
@@ -15,7 +18,7 @@ func TestSPARQLTripleQuotedString(t *testing.T) {
 	p, _ := NewURIRef("http://example.org/desc")
 	g.Add(s, p, NewLiteral("line1\nline2"))
 
-	r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?d WHERE { ex:s ex:desc ?d }`)
+	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?d WHERE { ex:s ex:desc ?d }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,8 +37,7 @@ func TestSPARQLTypedLiteralInWhere(t *testing.T) {
 	p, _ := NewURIRef("http://example.org/val")
 	g.Add(s, p, NewLiteral("42", WithDatatype(XSDInteger)))
 
-	// Use numeric shorthand (42 → xsd:integer) which the parser handles
-	r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val 42 }`)
+	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val 42 }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +49,8 @@ func TestSPARQLTypedLiteralInWhere(t *testing.T) {
 // --- SPARQL: prefixed name in patterns ---
 
 func TestSPARQLPrefixedNameInPattern(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:knows ex:Bob }`)
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:knows ex:Bob }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,61 +59,28 @@ func TestSPARQLPrefixedNameInPattern(t *testing.T) {
 	}
 }
 
-// --- NT serializer: tab in string ---
-
-func TestNTEscapeStringTab(t *testing.T) {
-	got := ntEscapeString("a\tb")
-	if !strings.Contains(got, `\t`) {
-		t.Errorf("expected \\t, got %q", got)
-	}
-}
-
-func TestNTEscapeStringQuote(t *testing.T) {
-	got := ntEscapeString(`say "hi"`)
-	if !strings.Contains(got, `\"`) {
-		t.Errorf("expected escaped quote, got %q", got)
-	}
-}
-
-func TestNTEscapeStringBackslash(t *testing.T) {
-	got := ntEscapeString(`a\b`)
-	if !strings.Contains(got, `\\`) {
-		t.Errorf("expected escaped backslash, got %q", got)
-	}
-}
-
-func TestNTEscapeStringControlChar(t *testing.T) {
-	got := ntEscapeString("a\x01b")
-	if !strings.Contains(got, `\u0001`) {
-		t.Errorf("expected unicode escape, got %q", got)
-	}
-}
-
 // --- InvPath eval with nil obj ---
 
 func TestInvPathEvalNilObj(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	p, _ := NewURIRef("http://example.org/p")
 	a, _ := NewURIRef("http://example.org/a")
 
-	// ^p from a: find all x where x→p→a
 	inv := Inv(AsPath(p))
-	pairs := collectPairs(g, inv, a, nil)
-	// Nothing points to a via p
+	pairs := collectPairsExt(g, inv, a, nil)
 	if len(pairs) != 0 {
 		t.Errorf("expected 0, got %d: %v", len(pairs), pairs)
 	}
 }
 
 func TestInvPathEvalWithObj(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	p, _ := NewURIRef("http://example.org/p")
 	a, _ := NewURIRef("http://example.org/a")
 	b, _ := NewURIRef("http://example.org/b")
 
-	// ^p with subj=b, should find that b→p→? inverse means ?→p→b, so result is (b, a)
 	inv := Inv(AsPath(p))
-	pairs := collectPairs(g, inv, b, a)
+	pairs := collectPairsExt(g, inv, b, a)
 	if len(pairs) != 1 {
 		t.Errorf("expected 1, got %d: %v", len(pairs), pairs)
 	}
@@ -127,9 +96,8 @@ func TestTurtleSerializerMultipleSubjects(t *testing.T) {
 		p, _ := NewURIRef("http://example.org/name")
 		g.Add(s, p, NewLiteral(name))
 	}
-	var buf bytes.Buffer
-	g.Serialize(&buf, WithSerializeFormat("turtle"))
-	// Should have two subject blocks
+	var buf strings.Builder
+	turtle.Serialize(g, &buf)
 	if strings.Count(buf.String(), " .") < 2 {
 		t.Errorf("expected 2 statements, got:\n%s", buf.String())
 	}
@@ -138,8 +106,8 @@ func TestTurtleSerializerMultipleSubjects(t *testing.T) {
 // --- SPARQL unary minus ---
 
 func TestSPARQLUnaryMinus(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, _ := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, _ := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?neg WHERE {
 			?s ex:age ?age .

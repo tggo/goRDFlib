@@ -1,44 +1,45 @@
-package rdflibgo
+package rdflibgo_test
 
 import (
 	"strings"
 	"testing"
+
+	. "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/rdfxml"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 func TestPathBackwardEval(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	c, _ := NewURIRef("http://example.org/c")
 	p, _ := NewURIRef("http://example.org/p")
 
-	// p+ backward from c
 	path := OneOrMore(AsPath(p))
-	pairs := collectPairs(g, path, nil, c)
-	// b→c (direct), a→c (transitive) = at least 2
+	pairs := collectPairsExt(g, path, nil, c)
 	if len(pairs) < 2 {
 		t.Errorf("expected >=2 backward pairs, got %d: %v", len(pairs), pairs)
 	}
 }
 
 func TestZeroOrMoreNoConstraints(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	p, _ := NewURIRef("http://example.org/p")
 
 	path := ZeroOrMore(AsPath(p))
-	pairs := collectPairs(g, path, nil, nil)
-	// Should have identity pairs + all transitive pairs
+	pairs := collectPairsExt(g, path, nil, nil)
 	if len(pairs) < 4 {
 		t.Errorf("expected >=4, got %d", len(pairs))
 	}
 }
 
 func TestNegatedPathNoMatch(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	a, _ := NewURIRef("http://example.org/a")
 	p, _ := NewURIRef("http://example.org/p")
 	q, _ := NewURIRef("http://example.org/q")
 
 	path := Negated(p, q)
-	pairs := collectPairs(g, path, a, nil)
+	pairs := collectPairsExt(g, path, a, nil)
 	if len(pairs) != 0 {
 		t.Errorf("expected 0 when all predicates excluded, got %d", len(pairs))
 	}
@@ -56,7 +57,7 @@ func TestResourceGraphAndIdentifier(t *testing.T) {
 	}
 }
 
-func TestNSManagerNamespaces(t *testing.T) {
+func TestNSManagerNamespacesPathsCov(t *testing.T) {
 	store := NewMemoryStore()
 	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
@@ -67,12 +68,11 @@ func TestNSManagerNamespaces(t *testing.T) {
 	}
 }
 
-func TestNSManagerBind(t *testing.T) {
+func TestNSManagerBindPathsCov(t *testing.T) {
 	store := NewMemoryStore()
 	mgr := NewNSManager(store)
 	ns, _ := NewURIRef("http://example.org/")
 	mgr.Bind("ex", ns, true)
-	// Override=false should not replace
 	ns2, _ := NewURIRef("http://other.org/")
 	mgr.Bind("ex", ns2, false)
 	got, ok := store.Namespace("ex")
@@ -99,10 +99,11 @@ func TestMemoryStoreContextAware(t *testing.T) {
 }
 
 func TestTurtleParserSPARQLBase(t *testing.T) {
-	g := parseTurtle(t, `
+	g := NewGraph()
+	turtle.Parse(g, strings.NewReader(`
 		BASE <http://example.org/>
 		<s> <p> "hello" .
-	`)
+	`))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}
@@ -117,7 +118,7 @@ func TestRDFXMLParserParseLiteral(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
+	rdfxml.Parse(g, strings.NewReader(input))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}

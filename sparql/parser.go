@@ -1,132 +1,17 @@
-package rdflibgo
+package sparql
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// SPARQLQuery is the parsed representation of a SPARQL query.
-// Ported from: rdflib.plugins.sparql.parserutils.CompValue
-type SPARQLQuery struct {
-	Type       string            // "SELECT", "ASK", "CONSTRUCT"
-	Distinct   bool
-	Variables  []string          // projection vars (nil = *)
-	Where      SPARQLPattern
-	OrderBy    []SPARQLOrderExpr
-	Limit      int               // -1 = no limit
-	Offset     int
-	Prefixes   map[string]string // prefix → namespace
-	Construct  []TripleTemplate  // CONSTRUCT template
-	GroupBy    []SPARQLExpr
-	Having     SPARQLExpr
-}
-
-// TripleTemplate is a triple pattern used in CONSTRUCT.
-type TripleTemplate struct {
-	Subject, Predicate, Object string // variable names or N3 terms
-}
-
-// SPARQLOrderExpr is an ORDER BY expression.
-type SPARQLOrderExpr struct {
-	Expr SPARQLExpr
-	Desc bool
-}
-
-// SPARQLPattern represents a WHERE clause pattern.
-type SPARQLPattern interface {
-	patternType() string
-}
-
-// BGP is a Basic Graph Pattern.
-type BGP struct {
-	Triples []SPARQLTriple
-}
-func (b *BGP) patternType() string { return "BGP" }
-
-// SPARQLTriple is a triple pattern with possible variables.
-type SPARQLTriple struct {
-	Subject, Predicate, Object string // "?var" or N3 term
-}
-
-// JoinPattern joins two patterns.
-type JoinPattern struct {
-	Left, Right SPARQLPattern
-}
-func (j *JoinPattern) patternType() string { return "Join" }
-
-// OptionalPattern is a LEFT JOIN.
-type OptionalPattern struct {
-	Main, Optional SPARQLPattern
-}
-func (o *OptionalPattern) patternType() string { return "Optional" }
-
-// UnionPattern is a UNION of two patterns.
-type UnionPattern struct {
-	Left, Right SPARQLPattern
-}
-func (u *UnionPattern) patternType() string { return "Union" }
-
-// FilterPattern wraps a pattern with a FILTER expression.
-type FilterPattern struct {
-	Pattern SPARQLPattern
-	Expr    SPARQLExpr
-}
-func (f *FilterPattern) patternType() string { return "Filter" }
-
-// BindPattern introduces a new variable binding.
-type BindPattern struct {
-	Pattern SPARQLPattern
-	Expr    SPARQLExpr
-	Var     string
-}
-func (b *BindPattern) patternType() string { return "Bind" }
-
-// ValuesPattern provides inline data.
-type ValuesPattern struct {
-	Vars   []string
-	Values [][]Term
-}
-func (v *ValuesPattern) patternType() string { return "Values" }
-
-// SPARQLExpr is a filter/bind expression.
-type SPARQLExpr interface {
-	exprType() string
-}
-
-type VarExpr struct{ Name string }
-func (e *VarExpr) exprType() string { return "Var" }
-
-type LiteralExpr struct{ Value Term }
-func (e *LiteralExpr) exprType() string { return "Literal" }
-
-type IRIExpr struct{ Value string }
-func (e *IRIExpr) exprType() string { return "IRI" }
-
-type BinaryExpr struct {
-	Op    string // "=", "!=", "<", ">", "<=", ">=", "&&", "||", "+", "-", "*", "/"
-	Left, Right SPARQLExpr
-}
-func (e *BinaryExpr) exprType() string { return "Binary" }
-
-type UnaryExpr struct {
-	Op   string // "!", "-"
-	Arg  SPARQLExpr
-}
-func (e *UnaryExpr) exprType() string { return "Unary" }
-
-type FuncExpr struct {
-	Name string
-	Args []SPARQLExpr
-}
-func (e *FuncExpr) exprType() string { return "Func" }
-
-// --- SPARQL Parser ---
-
-// ParseSPARQL parses a SPARQL query string.
+// Parse parses a SPARQL query string.
 // Ported from: rdflib.plugins.sparql.parser.parseQuery
-func ParseSPARQL(input string) (*SPARQLQuery, error) {
+func Parse(input string) (*ParsedQuery, error) {
 	p := &sparqlParser{
 		input:    input,
 		pos:      0,
@@ -141,8 +26,8 @@ type sparqlParser struct {
 	prefixes map[string]string
 }
 
-func (p *sparqlParser) parse() (*SPARQLQuery, error) {
-	q := &SPARQLQuery{
+func (p *sparqlParser) parse() (*ParsedQuery, error) {
+	q := &ParsedQuery{
 		Limit:    -1,
 		Prefixes: p.prefixes,
 	}
@@ -277,7 +162,7 @@ func (p *sparqlParser) parse() (*SPARQLQuery, error) {
 	return q, nil
 }
 
-func (p *sparqlParser) parseSelect(q *SPARQLQuery) error {
+func (p *sparqlParser) parseSelect(q *ParsedQuery) error {
 	p.skipWS()
 	if p.matchKeywordCI("DISTINCT") {
 		p.pos += 8
@@ -328,7 +213,7 @@ func (p *sparqlParser) parseSelect(q *SPARQLQuery) error {
 	return nil
 }
 
-func (p *sparqlParser) parseConstruct(q *SPARQLQuery) error {
+func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 	p.skipWS()
 	if p.pos >= len(p.input) || p.input[p.pos] != '{' {
 		return p.errorf("expected '{' in CONSTRUCT template")
@@ -358,15 +243,15 @@ func (p *sparqlParser) parseConstruct(q *SPARQLQuery) error {
 	return nil
 }
 
-func (p *sparqlParser) parseGroupGraphPattern() (SPARQLPattern, error) {
+func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 	p.skipWS()
 	if p.pos >= len(p.input) || p.input[p.pos] != '{' {
 		return nil, p.errorf("expected '{'")
 	}
 	p.pos++
 
-	var result SPARQLPattern
-	var currentTriples []SPARQLTriple
+	var result Pattern
+	var currentTriples []Triple
 
 	flushTriples := func() {
 		if len(currentTriples) > 0 {
@@ -510,8 +395,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (SPARQLPattern, error) {
 	}
 }
 
-func (p *sparqlParser) parseTriplePatterns() ([]SPARQLTriple, error) {
-	var triples []SPARQLTriple
+func (p *sparqlParser) parseTriplePatterns() ([]Triple, error) {
+	var triples []Triple
 	subj := p.readTermOrVar()
 	p.skipWS()
 
@@ -528,7 +413,7 @@ func (p *sparqlParser) parseTriplePatterns() ([]SPARQLTriple, error) {
 			if obj == "" {
 				return nil, p.errorf("expected object")
 			}
-			triples = append(triples, SPARQLTriple{Subject: subj, Predicate: pred, Object: obj})
+			triples = append(triples, Triple{Subject: subj, Predicate: pred, Object: obj})
 			p.skipWS()
 			if p.pos < len(p.input) && p.input[p.pos] == ',' {
 				p.pos++
@@ -581,7 +466,7 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 		return nil, p.errorf("expected '{' in VALUES")
 	}
 
-	var values [][]Term
+	var values [][]rdflibgo.Term
 	for {
 		p.skipWS()
 		if p.pos >= len(p.input) || p.input[p.pos] == '}' {
@@ -590,7 +475,7 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 		}
 		if p.input[p.pos] == '(' {
 			p.pos++
-			var row []Term
+			var row []rdflibgo.Term
 			for {
 				p.skipWS()
 				if p.pos >= len(p.input) || p.input[p.pos] == ')' {
@@ -601,14 +486,14 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 			}
 			values = append(values, row)
 		} else {
-			values = append(values, []Term{p.readTermValue()})
+			values = append(values, []rdflibgo.Term{p.readTermValue()})
 		}
 	}
 
 	return &ValuesPattern{Vars: vars, Values: values}, nil
 }
 
-func (p *sparqlParser) parseOrderBy(q *SPARQLQuery) error {
+func (p *sparqlParser) parseOrderBy(q *ParsedQuery) error {
 	for {
 		p.skipWS()
 		if p.pos >= len(p.input) || p.isKeyword() {
@@ -629,13 +514,13 @@ func (p *sparqlParser) parseOrderBy(q *SPARQLQuery) error {
 		if err != nil {
 			break
 		}
-		q.OrderBy = append(q.OrderBy, SPARQLOrderExpr{Expr: expr, Desc: desc})
+		q.OrderBy = append(q.OrderBy, OrderExpr{Expr: expr, Desc: desc})
 	}
 	return nil
 }
 
 // parseExpr parses a SPARQL expression (simplified: handles comparisons, booleans, function calls).
-func (p *sparqlParser) parseExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseExpr() (Expr, error) {
 	p.skipWS()
 
 	// Handle parenthesized expressions
@@ -653,7 +538,7 @@ func (p *sparqlParser) parseExpr() (SPARQLExpr, error) {
 	return p.parseOrExpr()
 }
 
-func (p *sparqlParser) parseOrExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseOrExpr() (Expr, error) {
 	left, err := p.parseAndExpr()
 	if err != nil {
 		return nil, err
@@ -674,7 +559,7 @@ func (p *sparqlParser) parseOrExpr() (SPARQLExpr, error) {
 	return left, nil
 }
 
-func (p *sparqlParser) parseAndExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseAndExpr() (Expr, error) {
 	left, err := p.parseCompareExpr()
 	if err != nil {
 		return nil, err
@@ -695,7 +580,7 @@ func (p *sparqlParser) parseAndExpr() (SPARQLExpr, error) {
 	return left, nil
 }
 
-func (p *sparqlParser) parseCompareExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseCompareExpr() (Expr, error) {
 	left, err := p.parseAddExpr()
 	if err != nil {
 		return nil, err
@@ -714,7 +599,7 @@ func (p *sparqlParser) parseCompareExpr() (SPARQLExpr, error) {
 	return left, nil
 }
 
-func (p *sparqlParser) parseAddExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseAddExpr() (Expr, error) {
 	left, err := p.parseMulExpr()
 	if err != nil {
 		return nil, err
@@ -736,7 +621,7 @@ func (p *sparqlParser) parseAddExpr() (SPARQLExpr, error) {
 	return left, nil
 }
 
-func (p *sparqlParser) parseMulExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseMulExpr() (Expr, error) {
 	left, err := p.parseUnaryExpr()
 	if err != nil {
 		return nil, err
@@ -758,7 +643,7 @@ func (p *sparqlParser) parseMulExpr() (SPARQLExpr, error) {
 	return left, nil
 }
 
-func (p *sparqlParser) parseUnaryExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parseUnaryExpr() (Expr, error) {
 	p.skipWS()
 	if p.pos < len(p.input) && p.input[p.pos] == '!' {
 		p.pos++
@@ -779,7 +664,7 @@ func (p *sparqlParser) parseUnaryExpr() (SPARQLExpr, error) {
 	return p.parsePrimaryExpr()
 }
 
-func (p *sparqlParser) parsePrimaryExpr() (SPARQLExpr, error) {
+func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	p.skipWS()
 	if p.pos >= len(p.input) {
 		return nil, p.errorf("unexpected end of expression")
@@ -826,11 +711,11 @@ func (p *sparqlParser) parsePrimaryExpr() (SPARQLExpr, error) {
 	// Boolean or function call
 	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameChar(rune(p.input[p.pos+4]))) {
 		p.pos += 4
-		return &LiteralExpr{Value: NewLiteral(true)}, nil
+		return &LiteralExpr{Value: rdflibgo.NewLiteral(true)}, nil
 	}
 	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameChar(rune(p.input[p.pos+5]))) {
 		p.pos += 5
-		return &LiteralExpr{Value: NewLiteral(false)}, nil
+		return &LiteralExpr{Value: rdflibgo.NewLiteral(false)}, nil
 	}
 
 	// Built-in function or prefixed name
@@ -842,7 +727,7 @@ func (p *sparqlParser) parsePrimaryExpr() (SPARQLExpr, error) {
 	p.skipWS()
 	if p.pos < len(p.input) && p.input[p.pos] == '(' {
 		p.pos++
-		var args []SPARQLExpr
+		var args []Expr
 		for {
 			p.skipWS()
 			if p.pos < len(p.input) && p.input[p.pos] == ')' {
@@ -865,7 +750,7 @@ func (p *sparqlParser) parsePrimaryExpr() (SPARQLExpr, error) {
 
 	// It's a prefixed name used as a value
 	resolved := p.resolveTermValue(name)
-	if u, ok := resolved.(URIRef); ok {
+	if u, ok := resolved.(rdflibgo.URIRef); ok {
 		return &IRIExpr{Value: u.Value()}, nil
 	}
 	return &LiteralExpr{Value: resolved}, nil
@@ -908,7 +793,7 @@ func (p *sparqlParser) readTermOrVar() string {
 	// 'a' as rdf:type shorthand
 	if ch == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
 		p.pos++
-		return "<" + RDF.Type.Value() + ">"
+		return "<" + rdflibgo.RDF.Type.Value() + ">"
 	}
 
 	// true/false
@@ -1061,49 +946,49 @@ func (p *sparqlParser) readInt() (int, error) {
 	return strconv.Atoi(p.input[start:p.pos])
 }
 
-func (p *sparqlParser) readTermValue() Term {
+func (p *sparqlParser) readTermValue() rdflibgo.Term {
 	tv := p.readTermOrVar()
 	return p.resolveTermValue(tv)
 }
 
-func (p *sparqlParser) resolveTermValue(s string) Term {
+func (p *sparqlParser) resolveTermValue(s string) rdflibgo.Term {
 	if s == "" {
-		return NewLiteral("")
+		return rdflibgo.NewLiteral("")
 	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
-		return NewURIRefUnsafe(s[1 : len(s)-1])
+		return rdflibgo.NewURIRefUnsafe(s[1 : len(s)-1])
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
 		return parseLiteralString(s)
 	}
 	if s == "true" {
-		return NewLiteral(true)
+		return rdflibgo.NewLiteral(true)
 	}
 	if s == "false" {
-		return NewLiteral(false)
+		return rdflibgo.NewLiteral(false)
 	}
 	// Numeric
 	if len(s) > 0 && (s[0] >= '0' && s[0] <= '9' || s[0] == '+' || s[0] == '-') {
 		if strings.ContainsAny(s, "eE") {
-			return NewLiteral(s, WithDatatype(XSDDouble))
+			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDouble))
 		}
 		if strings.Contains(s, ".") {
-			return NewLiteral(s, WithDatatype(XSDDecimal))
+			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 		}
-		return NewLiteral(s, WithDatatype(XSDInteger))
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 	}
 	// Prefixed name
 	if idx := strings.Index(s, ":"); idx >= 0 {
 		prefix := s[:idx]
 		local := s[idx+1:]
 		if ns, ok := p.prefixes[prefix]; ok {
-			return NewURIRefUnsafe(ns + local)
+			return rdflibgo.NewURIRefUnsafe(ns + local)
 		}
 	}
-	return NewLiteral(s)
+	return rdflibgo.NewLiteral(s)
 }
 
-func parseLiteralString(s string) Literal {
+func parseLiteralString(s string) rdflibgo.Literal {
 	// Simplified literal parsing from N3 form
 	quote := s[0]
 	long := len(s) >= 6 && s[1] == quote && s[2] == quote
@@ -1113,13 +998,13 @@ func parseLiteralString(s string) Literal {
 		q3 := string([]byte{quote, quote, quote})
 		lexEnd = strings.Index(s[3:], q3)
 		if lexEnd < 0 {
-			return NewLiteral(s)
+			return rdflibgo.NewLiteral(s)
 		}
 		lexEnd += 3
 	} else {
 		lexEnd = strings.Index(s[1:], string(quote))
 		if lexEnd < 0 {
-			return NewLiteral(s)
+			return rdflibgo.NewLiteral(s)
 		}
 		lexEnd += 1
 	}
@@ -1137,16 +1022,16 @@ func parseLiteralString(s string) Literal {
 		rest = s[lexEnd+3:]
 	}
 
-	var opts []LiteralOption
+	var opts []rdflibgo.LiteralOption
 	if strings.HasPrefix(rest, "@") {
-		opts = append(opts, WithLang(rest[1:]))
+		opts = append(opts, rdflibgo.WithLang(rest[1:]))
 	} else if strings.HasPrefix(rest, "^^") {
 		dt := rest[2:]
 		if strings.HasPrefix(dt, "<") && strings.HasSuffix(dt, ">") {
-			opts = append(opts, WithDatatype(NewURIRefUnsafe(dt[1:len(dt)-1])))
+			opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt[1:len(dt)-1])))
 		}
 	}
-	return NewLiteral(lexical, opts...)
+	return rdflibgo.NewLiteral(lexical, opts...)
 }
 
 // sparqlStringUnescaper is a package-level replacer for SPARQL string escape sequences.

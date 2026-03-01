@@ -1,22 +1,25 @@
-package rdflibgo
+package rdflibgo_test
 
 import (
 	"strings"
 	"testing"
+
+	. "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/rdfxml"
+	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 // --- SPARQL parser: GROUP BY, HAVING ---
 
 func TestSPARQLGroupByHaving(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	// GROUP BY is parsed but not fully evaluated; just verify no parse error
-	_, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	_, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE { ?s ex:name ?name }
 		GROUP BY ?name
 		HAVING(?name = "Alice")
 	`)
-	// May not filter correctly without full aggregate support, but should parse
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,8 +28,8 @@ func TestSPARQLGroupByHaving(t *testing.T) {
 // --- SPARQL SELECT REDUCED ---
 
 func TestSPARQLSelectReduced(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT REDUCED ?type WHERE { ?s a ?type }
 	`)
@@ -41,8 +44,8 @@ func TestSPARQLSelectReduced(t *testing.T) {
 // --- SPARQL CONSTRUCT empty ---
 
 func TestSPARQLConstructEmpty(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:label ?name }
 		WHERE { ?s ex:nonexistent ?name }
@@ -71,7 +74,7 @@ func TestRDFXMLExtractSubjectID(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
+	rdfxml.Parse(g, strings.NewReader(input))
 	if g.Len() < 2 {
 		t.Errorf("expected >=2, got %d", g.Len())
 	}
@@ -90,7 +93,7 @@ func TestRDFXMLExtractSubjectNodeID(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
+	rdfxml.Parse(g, strings.NewReader(input))
 	if g.Len() < 2 {
 		t.Errorf("expected >=2, got %d", g.Len())
 	}
@@ -100,13 +103,13 @@ func TestRDFXMLExtractSubjectNodeID(t *testing.T) {
 
 func TestTurtleSerializerInvalidLocalName(t *testing.T) {
 	g := NewGraph()
-	// URI with ? in local name — can't be abbreviated
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/has?param")
 	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
 	g.Add(s, p, NewLiteral("v"))
-	out := serializeToString(g, "turtle")
-	// Should use full IRI, not ex:has?param
+	var buf strings.Builder
+	turtle.Serialize(g, &buf)
+	out := buf.String()
 	if strings.Contains(out, "ex:has?param") {
 		t.Errorf("should not abbreviate URI with ?, got:\n%s", out)
 	}
@@ -121,7 +124,7 @@ func TestSPARQLBooleanLiteral(t *testing.T) {
 	p, _ := NewURIRef("http://example.org/active")
 	g.Add(s, p, NewLiteral(true))
 
-	r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:active true }`)
+	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:active true }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +136,8 @@ func TestSPARQLBooleanLiteral(t *testing.T) {
 // --- SPARQL: numeric literal in query ---
 
 func TestSPARQLNumericInPattern(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE { ?s ex:age 30 }
 	`)
@@ -149,8 +152,8 @@ func TestSPARQLNumericInPattern(t *testing.T) {
 // --- SPARQL: IRI in filter expression ---
 
 func TestSPARQLIRIInExpression(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE { ?s a ?t . FILTER(?t = <http://example.org/Person>) }
 	`)
@@ -165,10 +168,9 @@ func TestSPARQLIRIInExpression(t *testing.T) {
 // --- Turtle parser: matchKeywordCI at EOF ---
 
 func TestTurtleParserKeywordAtEOF(t *testing.T) {
-	// "BASE" keyword at very end — matchKeywordCI must handle EOF after keyword
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(`BASE <http://example.org/>
-<s> <p> "v" .`), WithFormat("turtle"))
+	err := turtle.Parse(g, strings.NewReader(`BASE <http://example.org/>
+<s> <p> "v" .`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,10 +179,11 @@ func TestTurtleParserKeywordAtEOF(t *testing.T) {
 // --- Turtle parser: IRI with unicode escape ---
 
 func TestTurtleParserIRIUnicodeEscape8(t *testing.T) {
-	g := parseTurtle(t, `
+	g := NewGraph()
+	turtle.Parse(g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		<http://example.org/\U00000042> ex:p "v" .
-	`)
+	`))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}
@@ -189,8 +192,8 @@ func TestTurtleParserIRIUnicodeEscape8(t *testing.T) {
 // --- SPARQL: nested subgraph patterns ---
 
 func TestSPARQLNestedGroup(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
 			{ ?s ex:name ?name }
@@ -216,7 +219,7 @@ func TestSPARQLObjectList(t *testing.T) {
 	g.Add(s, p, NewLiteral("a"))
 	g.Add(s, p, NewLiteral("b"))
 
-	r, err := g.Query(`PREFIX ex: <http://example.org/> SELECT ?o WHERE { ex:s ex:p ?o }`)
+	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?o WHERE { ex:s ex:p ?o }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,8 +231,8 @@ func TestSPARQLObjectList(t *testing.T) {
 // --- SPARQL: semicolon in triple patterns ---
 
 func TestSPARQLSemicolonPattern(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?age WHERE {
 			?s ex:name ?name ;

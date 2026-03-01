@@ -1,9 +1,12 @@
-package rdflibgo
+package rdflibgo_test
 
 import (
-	"bytes"
 	"strings"
 	"testing"
+
+	. "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 // --- Turtle serializer: label for BNode and Variable ---
@@ -19,10 +22,9 @@ func TestTurtleSerializerRDFSClassFirst(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/instance")
 	g.Add(s, RDF.Type, cls)
 
-	var buf bytes.Buffer
-	g.Serialize(&buf, WithSerializeFormat("turtle"))
+	var buf strings.Builder
+	turtle.Serialize(g, &buf)
 	out := buf.String()
-	// RDFS.Class typed subject should appear before regular subjects
 	classIdx := strings.Index(out, "ex:MyClass")
 	instanceIdx := strings.Index(out, "ex:instance")
 	if classIdx < 0 || instanceIdx < 0 {
@@ -34,7 +36,6 @@ func TestTurtleSerializerRDFSClassFirst(t *testing.T) {
 }
 
 func TestTurtleSerializerInvalidList(t *testing.T) {
-	// A list-like structure that's invalid (has extra properties)
 	g := NewGraph()
 	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
@@ -44,11 +45,10 @@ func TestTurtleSerializerInvalidList(t *testing.T) {
 	g.Add(b, RDF.First, NewLiteral("a"))
 	g.Add(b, RDF.Rest, RDF.Nil)
 	extra, _ := NewURIRef("http://example.org/extra")
-	g.Add(b, extra, NewLiteral("x")) // invalidates list
+	g.Add(b, extra, NewLiteral("x"))
 
-	var buf bytes.Buffer
-	g.Serialize(&buf, WithSerializeFormat("turtle"))
-	// Should NOT use ( ) syntax since list is invalid
+	var buf strings.Builder
+	turtle.Serialize(g, &buf)
 	if strings.Contains(buf.String(), "( ") {
 		t.Errorf("invalid list should not use collection syntax:\n%s", buf.String())
 	}
@@ -58,7 +58,7 @@ func TestTurtleSerializerInvalidList(t *testing.T) {
 
 func TestTurtleParserEscapeError(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\z" .`), WithFormat("turtle"))
+	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\z" .`))
 	if err == nil {
 		t.Error("expected error for unknown escape \\z")
 	}
@@ -66,7 +66,7 @@ func TestTurtleParserEscapeError(t *testing.T) {
 
 func TestTurtleParserUnterminatedLongString(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p """unterminated`), WithFormat("turtle"))
+	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p """unterminated`))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -74,7 +74,7 @@ func TestTurtleParserUnterminatedLongString(t *testing.T) {
 
 func TestTurtleParserUnterminatedShortString(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader("@prefix ex: <http://example.org/> . ex:s ex:p \"unterminated\n"), WithFormat("turtle"))
+	err := turtle.Parse(g, strings.NewReader("@prefix ex: <http://example.org/> . ex:s ex:p \"unterminated\n"))
 	if err == nil {
 		t.Error("expected error for newline in short string")
 	}
@@ -82,7 +82,7 @@ func TestTurtleParserUnterminatedShortString(t *testing.T) {
 
 func TestTurtleParserUnterminatedUnicodeEscape(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\u00" .`), WithFormat("turtle"))
+	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\u00" .`))
 	if err == nil {
 		t.Error("expected error for truncated unicode escape")
 	}
@@ -91,30 +91,33 @@ func TestTurtleParserUnterminatedUnicodeEscape(t *testing.T) {
 // --- Turtle parser: tryNumeric edge cases ---
 
 func TestTurtleParserPositiveNumeric(t *testing.T) {
-	g := parseTurtle(t, `
+	g := NewGraph()
+	turtle.Parse(g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p +42 .
-	`)
+	`))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}
 }
 
 func TestTurtleParserDecimalNumeric(t *testing.T) {
-	g := parseTurtle(t, `
+	g := NewGraph()
+	turtle.Parse(g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p 3.14 .
-	`)
+	`))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}
 }
 
 func TestTurtleParserDoubleNumeric(t *testing.T) {
-	g := parseTurtle(t, `
+	g := NewGraph()
+	turtle.Parse(g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p 1.5e10 .
-	`)
+	`))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}
@@ -123,7 +126,7 @@ func TestTurtleParserDoubleNumeric(t *testing.T) {
 // --- MulPath backward eval ---
 
 func TestMulPathBackwardEval(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	p, _ := NewURIRef("http://example.org/p")
 	d, _ := NewURIRef("http://example.org/d")
 
@@ -133,7 +136,6 @@ func TestMulPathBackwardEval(t *testing.T) {
 		pairs = append(pairs, [2]string{s.N3(), o.N3()})
 		return true
 	})
-	// d→d (identity), c→d, b→d (via b→c→d), a→d (via a→b→c→d)
 	if len(pairs) < 4 {
 		t.Errorf("expected >=4 from backward p* to d, got %d: %v", len(pairs), pairs)
 	}
@@ -142,7 +144,7 @@ func TestMulPathBackwardEval(t *testing.T) {
 // --- AlternativePath early stop ---
 
 func TestAlternativePathEarlyStop(t *testing.T) {
-	g := makePathGraph(t)
+	g := makePathGraphExt(t)
 	a, _ := NewURIRef("http://example.org/a")
 	p, _ := NewURIRef("http://example.org/p")
 	q, _ := NewURIRef("http://example.org/q")
@@ -151,7 +153,7 @@ func TestAlternativePathEarlyStop(t *testing.T) {
 	count := 0
 	path.Eval(g, a, nil)(func(s, o Term) bool {
 		count++
-		return false // stop after first
+		return false
 	})
 	if count != 1 {
 		t.Errorf("expected 1, got %d", count)
@@ -161,8 +163,8 @@ func TestAlternativePathEarlyStop(t *testing.T) {
 // --- SPARQL: resolveTermRef branches ---
 
 func TestSPARQLPrefixedNameInConstruct(t *testing.T) {
-	g := makeSPARQLGraph(t)
-	r, err := g.Query(`
+	g := makeSPARQLGraphExt(t)
+	r, err := sparql.Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:alias ?name }
 		WHERE { ?s ex:name ?name }
@@ -184,7 +186,7 @@ func TestSPARQLUnaryMinusFloat(t *testing.T) {
 	p, _ := NewURIRef("http://example.org/val")
 	g.Add(s, p, NewLiteral(3.14))
 
-	r, _ := g.Query(`PREFIX ex: <http://example.org/> SELECT ?neg WHERE { ?s ex:val ?v . BIND(-?v AS ?neg) }`)
+	r, _ := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?neg WHERE { ?s ex:val ?v . BIND(-?v AS ?neg) }`)
 	if len(r.Bindings) != 1 {
 		t.Fatalf("expected 1, got %d", len(r.Bindings))
 	}
@@ -198,9 +200,8 @@ func TestTurtleSerializerSinglePredicate(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	g.Add(s, p, NewLiteral("v"))
-	var buf bytes.Buffer
-	g.Serialize(&buf, WithSerializeFormat("turtle"))
-	// Should have "." terminator
+	var buf strings.Builder
+	turtle.Serialize(g, &buf)
 	if !strings.Contains(buf.String(), " .") {
 		t.Error("expected dot terminator")
 	}

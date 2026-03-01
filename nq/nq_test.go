@@ -1,22 +1,24 @@
-package rdflibgo
+package nq
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
 // Ported from: test/test_w3c_spec/test_nquads_w3c.py, test/test_parsers/test_nquads.py
 
 func TestNQSerializerBasic(t *testing.T) {
 	// Ported from: rdflib.plugins.serializers.nquads.NQuadsSerializer
-	g := NewGraph()
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("hello"))
+	g := rdflibgo.NewGraph()
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("hello"))
 
 	var buf bytes.Buffer
-	if err := g.Serialize(&buf, WithSerializeFormat("nquads")); err != nil {
+	if err := Serialize(g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -30,8 +32,8 @@ func TestNQParserBasic(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello" <http://example.org/g> .
 <http://example.org/s> <http://example.org/p2> "world" .
 `
-	g := NewGraph()
-	if err := g.Parse(strings.NewReader(input), WithFormat("nquads")); err != nil {
+	g := rdflibgo.NewGraph()
+	if err := Parse(g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	if g.Len() != 2 {
@@ -43,24 +45,24 @@ func TestNQParserComments(t *testing.T) {
 	input := `# comment
 <http://example.org/s> <http://example.org/p> "hello" .
 `
-	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("nquads"))
+	g := rdflibgo.NewGraph()
+	Parse(g, strings.NewReader(input))
 	if g.Len() != 1 {
 		t.Errorf("expected 1, got %d", g.Len())
 	}
 }
 
 func TestNQRoundtrip(t *testing.T) {
-	g1 := NewGraph()
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
-	g1.Add(s, p, NewLiteral("hello"))
+	g1 := rdflibgo.NewGraph()
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
+	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
 
 	var buf bytes.Buffer
-	g1.Serialize(&buf, WithSerializeFormat("nquads"))
+	Serialize(g1, &buf)
 
-	g2 := NewGraph()
-	g2.Parse(strings.NewReader(buf.String()), WithFormat("nquads"))
+	g2 := rdflibgo.NewGraph()
+	Parse(g2, strings.NewReader(buf.String()))
 
 	if g1.Len() != g2.Len() {
 		t.Errorf("roundtrip: %d vs %d", g1.Len(), g2.Len())

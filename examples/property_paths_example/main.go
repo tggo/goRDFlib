@@ -7,11 +7,12 @@ import (
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/turtle"
 )
 
 func main() {
 	g := rdf.NewGraph()
-	g.Parse(strings.NewReader(`
+	turtle.Parse(g, strings.NewReader(`
 		@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 		@prefix ex: <http://example.org/> .
 
@@ -29,7 +30,7 @@ func main() {
 
 		ex:Charlie a foaf:Person ;
 			foaf:name "Charlie" .
-	`), rdf.WithFormat("turtle"))
+	`))
 
 	tim, _ := rdf.NewURIRef("http://example.org/Tim")
 	knows, _ := rdf.NewURIRef("http://xmlns.com/foaf/0.1/knows")

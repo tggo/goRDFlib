@@ -1,9 +1,14 @@
-package rdflibgo
+package rdflibgo_test
 
 import (
-	"bytes"
 	"strings"
 	"testing"
+
+	. "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/jsonld"
+	"github.com/tggo/goRDFlib/nq"
+	"github.com/tggo/goRDFlib/nt"
+	"github.com/tggo/goRDFlib/rdfxml"
 )
 
 // --- graph.go iterator dedup branches ---
@@ -19,7 +24,7 @@ func TestGraphSubjectsDedup(t *testing.T) {
 
 	count := 0
 	g.Subjects(nil, o)(func(Term) bool { count++; return true })
-	if count != 1 { // s appears twice but should be deduped
+	if count != 1 {
 		t.Errorf("expected 1 unique subject, got %d", count)
 	}
 }
@@ -61,7 +66,7 @@ func TestGraphSubjectPredicatesDedup(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	g.Add(s, p, NewLiteral("a"))
-	g.Add(s, p, NewLiteral("b")) // same s,p → should not duplicate (s,p)
+	g.Add(s, p, NewLiteral("b"))
 
 	count := 0
 	g.SubjectPredicates(nil)(func(Term, Term) bool { count++; return true })
@@ -162,7 +167,6 @@ func TestNSManagerPrefix(t *testing.T) {
 		t.Errorf("expected ex:Thing, got %q %v", p, ok)
 	}
 
-	// Unknown URI with no separator → can't compute QName
 	_, ok = mgr.Prefix("noseparator")
 	if ok {
 		t.Error("expected false for unsplittable URI")
@@ -174,9 +178,7 @@ func TestNSManagerComputeQNameCache(t *testing.T) {
 	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
 
-	// First call populates cache
 	p1, _, l1, _ := mgr.ComputeQName("http://example.org/Thing")
-	// Second call uses cache
 	p2, _, l2, _ := mgr.ComputeQName("http://example.org/Thing")
 	if p1 != p2 || l1 != l2 {
 		t.Error("cached result should match")
@@ -192,7 +194,7 @@ func TestNSManagerComputeQNameError(t *testing.T) {
 	}
 }
 
-func TestNamespaceManagerNamespaces(t *testing.T) {
+func TestNamespaceManagerNamespaces95(t *testing.T) {
 	store := NewMemoryStore()
 	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
@@ -203,13 +205,11 @@ func TestNamespaceManagerNamespaces(t *testing.T) {
 	}
 }
 
-// TestClosedNamespaceBase already in namespace_test.go
-
 // --- NT parser: empty input ---
 
 func TestNTParserEmpty(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(""), WithFormat("nt"))
+	err := nt.Parse(g, strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestNTParserEmpty(t *testing.T) {
 
 func TestNTParserIRIEscape(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader("<http://example.org/\\u0041> <http://example.org/p> \"v\" .\n"), WithFormat("nt"))
+	err := nt.Parse(g, strings.NewReader("<http://example.org/\\u0041> <http://example.org/p> \"v\" .\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestNTParserIRIEscape(t *testing.T) {
 
 func TestNQParserErrorBadPredicate(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(`<http://s> "bad" "hello" .\n`), WithFormat("nquads"))
+	err := nq.Parse(g, strings.NewReader(`<http://s> "bad" "hello" .`+"\n"))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -251,8 +251,7 @@ func TestRDFXMLParserEmptyCollection(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	g.Parse(strings.NewReader(input), WithFormat("xml"))
-	// s→items→rdf:nil
+	rdfxml.Parse(g, strings.NewReader(input))
 	if g.Len() < 1 {
 		t.Errorf("expected >=1, got %d", g.Len())
 	}
@@ -262,7 +261,7 @@ func TestRDFXMLParserEmptyCollection(t *testing.T) {
 
 func TestJSONLDParserEmptyDoc(t *testing.T) {
 	g := NewGraph()
-	err := g.Parse(strings.NewReader(`{}`), WithFormat("json-ld"))
+	err := jsonld.Parse(g, strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,8 +278,8 @@ func TestJSONLDSerializerNoNamespaces(t *testing.T) {
 	p, _ := NewURIRef("http://example.org/p")
 	g.Add(s, p, NewLiteral("v"))
 
-	var buf bytes.Buffer
-	err := g.Serialize(&buf, WithSerializeFormat("json-ld"))
+	var buf strings.Builder
+	err := jsonld.Serialize(g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,3 +327,4 @@ func TestMemoryStoreTripleSubjectObject(t *testing.T) {
 		t.Errorf("expected 2, got %d", count)
 	}
 }
+

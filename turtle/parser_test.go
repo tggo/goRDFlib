@@ -1,18 +1,20 @@
-package rdflibgo
+package turtle
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
 // Ported from: test/test_w3c_spec/test_turtle_w3c.py, test/test_roundtrip.py
 
-func parseTurtle(t *testing.T, input string) *Graph {
+func parseTurtle(t *testing.T, input string) *rdflibgo.Graph {
 	t.Helper()
-	g := NewGraph()
+	g := rdflibgo.NewGraph()
 	r := strings.NewReader(input)
-	if err := g.Parse(r, WithFormat("turtle")); err != nil {
+	if err := Parse(g, r); err != nil {
 		t.Fatal(err)
 	}
 	return g
@@ -69,9 +71,9 @@ func TestParseTurtleAShorthand(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s a ex:Thing .
 	`)
-	s, _ := NewURIRef("http://example.org/s")
-	thing, _ := NewURIRef("http://example.org/Thing")
-	if !g.Contains(s, RDF.Type, thing) {
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	thing, _ := rdflibgo.NewURIRef("http://example.org/Thing")
+	if !g.Contains(s, rdflibgo.RDF.Type, thing) {
 		t.Error("expected rdf:type triple")
 	}
 }
@@ -107,13 +109,13 @@ func TestParseTurtleLangTag(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "hello"@en .
 	`)
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	val, ok := g.Value(s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
-	lit, ok := val.(Literal)
+	lit, ok := val.(rdflibgo.Literal)
 	if !ok {
 		t.Fatal("expected Literal")
 	}
@@ -129,17 +131,17 @@ func TestParseTurtleTypedLiteral(t *testing.T) {
 		@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 		ex:s ex:p "42"^^xsd:integer .
 	`)
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	val, ok := g.Value(s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
-	lit, ok := val.(Literal)
+	lit, ok := val.(rdflibgo.Literal)
 	if !ok {
 		t.Fatal("expected Literal")
 	}
-	if lit.Datatype() != XSDInteger {
+	if lit.Datatype() != rdflibgo.XSDInteger {
 		t.Errorf("expected xsd:integer, got %v", lit.Datatype())
 	}
 }
@@ -195,9 +197,9 @@ func TestParseTurtleEmptyCollection(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:list () .
 	`)
-	s, _ := NewURIRef("http://example.org/s")
-	list, _ := NewURIRef("http://example.org/list")
-	if !g.Contains(s, list, RDF.Nil) {
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	list, _ := rdflibgo.NewURIRef("http://example.org/list")
+	if !g.Contains(s, list, rdflibgo.RDF.Nil) {
 		t.Error("expected rdf:nil as object")
 	}
 }
@@ -233,8 +235,8 @@ func TestParseTurtleUnicodeEscape(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "\u0041BC" .
 	`)
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	val, ok := g.Value(s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
@@ -261,9 +263,9 @@ func TestParseTurtleBaseDirective(t *testing.T) {
 		@base <http://example.org/> .
 		<s> <p> "hello" .
 	`)
-	s, _ := NewURIRef("http://example.org/s")
-	p, _ := NewURIRef("http://example.org/p")
-	if !g.Contains(s, p, NewLiteral("hello")) {
+	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	p, _ := rdflibgo.NewURIRef("http://example.org/p")
+	if !g.Contains(s, p, rdflibgo.NewLiteral("hello")) {
 		t.Error("expected resolved triple")
 	}
 }
@@ -294,18 +296,18 @@ func TestParseTurtleTrailingSemicolon(t *testing.T) {
 
 func TestParseTurtleErrorUndefinedPrefix(t *testing.T) {
 	// Ported from: W3C turtle negative syntax test — undefined prefix
-	g := NewGraph()
+	g := rdflibgo.NewGraph()
 	r := strings.NewReader(`unknown:s unknown:p "hello" .`)
-	err := g.Parse(r, WithFormat("turtle"))
+	err := Parse(g, r)
 	if err == nil {
 		t.Error("expected error for undefined prefix")
 	}
 }
 
 func TestParseTurtleErrorUnterminatedString(t *testing.T) {
-	g := NewGraph()
+	g := rdflibgo.NewGraph()
 	r := strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "unterminated .`)
-	err := g.Parse(r, WithFormat("turtle"))
+	err := Parse(g, r)
 	if err == nil {
 		t.Error("expected error for unterminated string")
 	}
@@ -328,13 +330,13 @@ ex:Bob a ex:Person ;
 
 	// Serialize
 	var buf bytes.Buffer
-	if err := g1.Serialize(&buf, WithSerializeFormat("turtle")); err != nil {
+	if err := Serialize(g1, &buf); err != nil {
 		t.Fatal(err)
 	}
 
 	// Parse again
-	g2 := NewGraph()
-	if err := g2.Parse(strings.NewReader(buf.String()), WithFormat("turtle")); err != nil {
+	g2 := rdflibgo.NewGraph()
+	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatalf("roundtrip parse failed: %v\nSerialized:\n%s", err, buf.String())
 	}
 

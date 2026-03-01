@@ -1,4 +1,4 @@
-package rdflibgo
+package rdfxml
 
 import (
 	"encoding/xml"
@@ -6,31 +6,32 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// RDFXMLSerializer serializes a Graph to RDF/XML format.
-// Ported from: rdflib.plugins.serializers.rdfxml.XMLSerializer
-type RDFXMLSerializer struct{}
+func termKey(t rdflibgo.Term) string { return t.N3() }
 
-func init() {
-	RegisterSerializer("xml", func() Serializer { return &RDFXMLSerializer{} })
-	RegisterSerializer("rdf/xml", func() Serializer { return &RDFXMLSerializer{} })
-	RegisterSerializer("application/rdf+xml", func() Serializer { return &RDFXMLSerializer{} })
-}
+// Serialize serializes a Graph to RDF/XML format.
+func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+	var cfg config
+	for _, o := range opts {
+		o(&cfg)
+	}
+	base := cfg.base
 
-func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 	// Collect namespace prefixes
-	nsMap := make(map[string]string) // namespace → prefix
+	nsMap := make(map[string]string) // namespace -> prefix
 	nsMap[rdfNS] = "rdf"
-	g.Namespaces()(func(prefix string, ns URIRef) bool {
+	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		nsMap[ns.Value()] = prefix
 		return true
 	})
 
 	// Group triples by subject
-	subjects := make(map[string][]Triple)
+	subjects := make(map[string][]rdflibgo.Triple)
 	var subjectOrder []string
-	g.Triples(nil, nil, nil)(func(t Triple) bool {
+	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
 		sk := termKey(t.Subject)
 		if _, exists := subjects[sk]; !exists {
 			subjectOrder = append(subjectOrder, sk)
@@ -49,7 +50,6 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 	if _, err := fmt.Fprintf(w, "<rdf:RDF"); err != nil {
 		return err
 	}
-	// Sort namespaces for determinism
 	var nsList []string
 	for ns := range nsMap {
 		nsList = append(nsList, ns)
@@ -80,10 +80,10 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 
 		// Determine element type: if there's rdf:type, use typed node
 		elemName := "rdf:Description"
-		var remaining []Triple
+		var remaining []rdflibgo.Triple
 		for _, t := range triples {
-			if t.Predicate == RDF.Type {
-				if u, ok := t.Object.(URIRef); ok {
+			if t.Predicate == rdflibgo.RDF.Type {
+				if u, ok := t.Object.(rdflibgo.URIRef); ok {
 					qn := xmlQName(u.Value(), nsMap)
 					if qn != "" {
 						elemName = qn
@@ -95,17 +95,17 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 		}
 
 		// Sort remaining triples for determinism
-		slices.SortFunc(remaining, func(a, b Triple) int {
+		slices.SortFunc(remaining, func(a, b rdflibgo.Triple) int {
 			return strings.Compare(a.Predicate.N3()+a.Object.N3(), b.Predicate.N3()+b.Object.N3())
 		})
 
 		// Opening tag
 		switch v := subj.(type) {
-		case URIRef:
+		case rdflibgo.URIRef:
 			if _, err := fmt.Fprintf(w, "  <%s rdf:about=%s>\n", elemName, xmlAttr(v.Value())); err != nil {
 				return err
 			}
-		case BNode:
+		case rdflibgo.BNode:
 			if _, err := fmt.Fprintf(w, "  <%s rdf:nodeID=%s>\n", elemName, xmlAttr(v.Value())); err != nil {
 				return err
 			}
@@ -120,14 +120,14 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 
 			var err error
 			switch obj := t.Object.(type) {
-			case URIRef:
+			case rdflibgo.URIRef:
 				_, err = fmt.Fprintf(w, "    <%s rdf:resource=%s/>\n", predQN, xmlAttr(obj.Value()))
-			case BNode:
+			case rdflibgo.BNode:
 				_, err = fmt.Fprintf(w, "    <%s rdf:nodeID=%s/>\n", predQN, xmlAttr(obj.Value()))
-			case Literal:
+			case rdflibgo.Literal:
 				if obj.Language() != "" {
 					_, err = fmt.Fprintf(w, "    <%s xml:lang=%s>%s</%s>\n", predQN, xmlAttr(obj.Language()), xmlEscape(obj.Lexical()), predQN)
-				} else if obj.Datatype() != (URIRef{}) && obj.Datatype() != XSDString {
+				} else if obj.Datatype() != (rdflibgo.URIRef{}) && obj.Datatype() != rdflibgo.XSDString {
 					_, err = fmt.Fprintf(w, "    <%s rdf:datatype=%s>%s</%s>\n", predQN, xmlAttr(obj.Datatype().Value()), xmlEscape(obj.Lexical()), predQN)
 				} else {
 					_, err = fmt.Fprintf(w, "    <%s>%s</%s>\n", predQN, xmlEscape(obj.Lexical()), predQN)
@@ -147,7 +147,6 @@ func (s *RDFXMLSerializer) Serialize(g *Graph, w io.Writer, base string) error {
 	return err
 }
 
-// xmlQName converts a full URI to a prefixed XML name using known namespaces.
 func xmlQName(uri string, nsMap map[string]string) string {
 	bestNS := ""
 	bestPrefix := ""
