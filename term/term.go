@@ -1,4 +1,4 @@
-package rdflibgo
+package term
 
 import (
 	"encoding/hex"
@@ -111,15 +111,14 @@ func isValidIRI(s string) bool {
 // NewURIRefUnsafe creates a URIRef without validation. For use in init-time
 // constants and tests only. Do not use for user-provided input — use NewURIRef instead.
 //
-// Deprecated: prefer mustURIRef for new package-internal code. This remains
+// Deprecated: prefer MustURIRef for new package-internal code. This remains
 // exported for backward compatibility.
 func NewURIRefUnsafe(value string) URIRef {
 	return URIRef{value: value}
 }
 
-// mustURIRef is the unexported equivalent of NewURIRefUnsafe.
-// Prefer this for new package-internal code.
-func mustURIRef(value string) URIRef {
+// MustURIRef is like NewURIRefUnsafe but exported for cross-package use.
+func MustURIRef(value string) URIRef {
 	return URIRef{value: value}
 }
 

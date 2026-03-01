@@ -128,9 +128,10 @@ func TestURIRefEqual(t *testing.T) {
 }
 
 func TestURIRefTermType(t *testing.T) {
+	// termType is unexported; verify via N3 output instead
 	u, _ := NewURIRef("http://example.org/")
-	if u.termType() != "URIRef" {
-		t.Errorf("got %q", u.termType())
+	if u.N3() != "<http://example.org/>" {
+		t.Errorf("unexpected N3: %q", u.N3())
 	}
 }
 
@@ -207,8 +208,8 @@ func TestBNodeEqual(t *testing.T) {
 
 func TestBNodeTermType(t *testing.T) {
 	b := NewBNode("x")
-	if b.termType() != "BNode" {
-		t.Errorf("got %q", b.termType())
+	if b.N3() != "_:x" {
+		t.Errorf("unexpected N3: %q", b.N3())
 	}
 }
 
@@ -242,8 +243,8 @@ func TestVariableEqual(t *testing.T) {
 
 func TestVariableTermType(t *testing.T) {
 	v := NewVariable("x")
-	if v.termType() != "Variable" {
-		t.Errorf("got %q", v.termType())
+	if v.N3() != "?x" {
+		t.Errorf("unexpected N3: %q", v.N3())
 	}
 }
 

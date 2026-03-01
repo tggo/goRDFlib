@@ -1,6 +1,10 @@
-package rdflibgo
+package graph
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/tggo/goRDFlib/term"
+)
 
 // Dataset extends ConjunctiveGraph with explicit named graph management.
 // Safe for concurrent use.
@@ -19,17 +23,17 @@ func NewDataset(opts ...GraphOption) *Dataset {
 		ConjunctiveGraph: cg,
 		graphs:           make(map[string]*Graph),
 	}
-	ds.graphs[termKey(cg.defaultContext.identifier)] = cg.defaultContext
+	ds.graphs[term.TermKey(cg.defaultContext.identifier)] = cg.defaultContext
 	return ds
 }
 
 // Graph returns or creates a named graph with the given identifier.
 // Ported from: rdflib.graph.Dataset.graph
-func (ds *Dataset) Graph(id Term) *Graph {
+func (ds *Dataset) Graph(id term.Term) *Graph {
 	if id == nil {
 		return ds.DefaultContext()
 	}
-	k := termKey(id)
+	k := term.TermKey(id)
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	if g, ok := ds.graphs[k]; ok {
@@ -45,20 +49,20 @@ func (ds *Dataset) Graph(id Term) *Graph {
 func (ds *Dataset) AddGraph(g *Graph) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	ds.graphs[termKey(g.identifier)] = g
+	ds.graphs[term.TermKey(g.identifier)] = g
 }
 
 // RemoveGraph removes a named graph from the dataset.
 // Ported from: rdflib.graph.Dataset.remove_graph
-func (ds *Dataset) RemoveGraph(id Term) {
-	k := termKey(id)
-	if k == termKey(ds.defaultContext.identifier) {
+func (ds *Dataset) RemoveGraph(id term.Term) {
+	k := term.TermKey(id)
+	if k == term.TermKey(ds.defaultContext.identifier) {
 		return
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	if g, ok := ds.graphs[k]; ok {
-		ds.store.Remove(TriplePattern{}, g.identifier)
+		ds.store.Remove(term.TriplePattern{}, g.identifier)
 		delete(ds.graphs, k)
 	}
 }

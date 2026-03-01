@@ -1,15 +1,19 @@
-package rdflibgo
+package testutil
 
 import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
 )
 
-// AssertGraphEqual checks that two graphs contain the same triples (ignoring blank node identity).
+// AssertGraphEqual checks that two graphs contain the same triples.
+// Note: blank node labels must match exactly; this does not perform BNode isomorphism.
 // On failure, reports which triples differ.
 // Ported from: test infrastructure for rdflib graph comparison
-func AssertGraphEqual(t *testing.T, expected, actual *Graph) {
+func AssertGraphEqual(t *testing.T, expected, actual *graph.Graph) {
 	t.Helper()
 
 	// Collect N3 forms of all triples (for non-BNode comparison)
@@ -61,9 +65,9 @@ func AssertGraphEqual(t *testing.T, expected, actual *Graph) {
 	}
 }
 
-func graphTripleStrings(g *Graph) []string {
+func graphTripleStrings(g *graph.Graph) []string {
 	var result []string
-	g.Triples(nil, nil, nil)(func(t Triple) bool {
+	g.Triples(nil, nil, nil)(func(t term.Triple) bool {
 		s := fmt.Sprintf("%s %s %s", t.Subject.N3(), t.Predicate.N3(), t.Object.N3())
 		result = append(result, s)
 		return true
@@ -72,7 +76,7 @@ func graphTripleStrings(g *Graph) []string {
 }
 
 // AssertGraphContains checks that the graph contains a specific triple.
-func AssertGraphContains(t *testing.T, g *Graph, s Subject, p URIRef, o Term) {
+func AssertGraphContains(t *testing.T, g *graph.Graph, s term.Subject, p term.URIRef, o term.Term) {
 	t.Helper()
 	if !g.Contains(s, p, o) {
 		t.Errorf("graph does not contain: %s %s %s", s.N3(), p.N3(), o.N3())
@@ -80,7 +84,7 @@ func AssertGraphContains(t *testing.T, g *Graph, s Subject, p URIRef, o Term) {
 }
 
 // AssertGraphLen checks the number of triples in a graph.
-func AssertGraphLen(t *testing.T, g *Graph, expected int) {
+func AssertGraphLen(t *testing.T, g *graph.Graph, expected int) {
 	t.Helper()
 	if g.Len() != expected {
 		t.Errorf("expected %d triples, got %d", expected, g.Len())

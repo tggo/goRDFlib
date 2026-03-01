@@ -1,9 +1,92 @@
-package rdflibgo
+package plugin
 
 import (
+	"io"
 	"path/filepath"
 	"strings"
+	"sync"
+
+	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/store"
 )
+
+// Parser reads RDF data from a reader into a graph.
+type Parser interface {
+	Parse(g *graph.Graph, r io.Reader) error
+}
+
+// Serializer writes RDF data from a graph to a writer.
+type Serializer interface {
+	Serialize(g *graph.Graph, w io.Writer) error
+}
+
+// --- Plugin Registry ---
+
+var (
+	parsersMu   sync.RWMutex
+	parsers     = make(map[string]func() Parser)
+
+	serializersMu sync.RWMutex
+	serializers    = make(map[string]func() Serializer)
+
+	storesMu sync.RWMutex
+	stores   = make(map[string]func() store.Store)
+)
+
+// RegisterParser registers a parser factory for the given format name.
+// Typically called from init() functions in format packages.
+func RegisterParser(name string, factory func() Parser) {
+	parsersMu.Lock()
+	defer parsersMu.Unlock()
+	parsers[name] = factory
+}
+
+// GetParser returns a new Parser for the given format name.
+func GetParser(name string) (Parser, bool) {
+	parsersMu.RLock()
+	defer parsersMu.RUnlock()
+	f, ok := parsers[name]
+	if !ok {
+		return nil, false
+	}
+	return f(), true
+}
+
+// RegisterSerializer registers a serializer factory for the given format name.
+func RegisterSerializer(name string, factory func() Serializer) {
+	serializersMu.Lock()
+	defer serializersMu.Unlock()
+	serializers[name] = factory
+}
+
+// GetSerializer returns a new Serializer for the given format name.
+func GetSerializer(name string) (Serializer, bool) {
+	serializersMu.RLock()
+	defer serializersMu.RUnlock()
+	f, ok := serializers[name]
+	if !ok {
+		return nil, false
+	}
+	return f(), true
+}
+
+// RegisterStore registers a store factory for the given name.
+func RegisterStore(name string, factory func() store.Store) {
+	storesMu.Lock()
+	defer storesMu.Unlock()
+	stores[name] = factory
+}
+
+// GetStore returns a new Store for the given name.
+func GetStore(name string) (store.Store, bool) {
+	storesMu.RLock()
+	defer storesMu.RUnlock()
+	f, ok := stores[name]
+	if !ok {
+		return nil, false
+	}
+	return f(), true
+}
 
 // --- MIME type and file extension mappings ---
 
@@ -87,3 +170,4 @@ func FormatFromContent(data []byte) (string, bool) {
 	}
 	return "", false
 }
+

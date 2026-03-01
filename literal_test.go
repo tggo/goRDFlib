@@ -258,8 +258,8 @@ func TestLiteralEscapeCarriageReturn(t *testing.T) {
 
 func TestLiteralTermType(t *testing.T) {
 	l := NewLiteral("x")
-	if l.termType() != "Literal" {
-		t.Errorf("got %q", l.termType())
+	if l.N3() != `"x"` {
+		t.Errorf("unexpected N3: %q", l.N3())
 	}
 }
 
@@ -308,6 +308,7 @@ func BenchmarkEscapeLiteral(b *testing.B) {
 newline`
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		escapeLiteral(s)
+		// Exercise escaping via Literal.N3()
+		NewLiteral(s).N3()
 	}
 }

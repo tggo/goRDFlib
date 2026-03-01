@@ -1,10 +1,15 @@
-package rdflibgo
+package paths
+
+import (
+	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
+)
 
 // Path is a SPARQL-style property path that can be evaluated against a graph.
 // Ported from: rdflib.paths.Path
 type Path interface {
 	// Eval returns matching (subject, object) pairs.
-	Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool)
+	Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool)
 	pathString() string
 }
 
@@ -21,16 +26,16 @@ func Inv(p Path) *InvPath {
 
 func (p *InvPath) pathString() string { return "^(" + p.Arg.pathString() + ")" }
 
-func (p *InvPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool) {
-	return func(yield func(Term, Term) bool) {
+func (p *InvPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return func(yield func(term.Term, term.Term) bool) {
 		// Swap subject/object, evaluate inner, then swap back
-		var objSubj Subject
+		var objSubj term.Subject
 		if obj != nil {
-			if s, ok := obj.(Subject); ok {
+			if s, ok := obj.(term.Subject); ok {
 				objSubj = s
 			}
 		}
-		p.Arg.Eval(g, objSubj, subj)(func(s, o Term) bool {
+		p.Arg.Eval(g, objSubj, subj)(func(s, o term.Term) bool {
 			return yield(o, s)
 		})
 	}
@@ -58,8 +63,8 @@ func (p *SequencePath) pathString() string {
 	return s
 }
 
-func (p *SequencePath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool) {
-	return func(yield func(Term, Term) bool) {
+func (p *SequencePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return func(yield func(term.Term, term.Term) bool) {
 		if len(p.Args) == 0 {
 			return
 		}
@@ -69,15 +74,20 @@ func (p *SequencePath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Te
 		}
 		// Evaluate first path, then chain remaining
 		rest := &SequencePath{Args: p.Args[1:]}
-		p.Args[0].Eval(g, subj, nil)(func(s1, mid Term) bool {
-			midSubj, ok := mid.(Subject)
+		p.Args[0].Eval(g, subj, nil)(func(s1, mid term.Term) bool {
+			midSubj, ok := mid.(term.Subject)
 			if !ok {
 				return true
 			}
-			rest.Eval(g, midSubj, obj)(func(_, o Term) bool {
-				return yield(s1, o)
+			cont := true
+			rest.Eval(g, midSubj, obj)(func(_, o term.Term) bool {
+				if !yield(s1, o) {
+					cont = false
+					return false
+				}
+				return true
 			})
-			return true
+			return cont
 		})
 	}
 }
@@ -104,11 +114,11 @@ func (p *AlternativePath) pathString() string {
 	return s
 }
 
-func (p *AlternativePath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool) {
-	return func(yield func(Term, Term) bool) {
+func (p *AlternativePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return func(yield func(term.Term, term.Term) bool) {
 		for _, alt := range p.Args {
 			cont := true
-			alt.Eval(g, subj, obj)(func(s, o Term) bool {
+			alt.Eval(g, subj, obj)(func(s, o term.Term) bool {
 				if !yield(s, o) {
 					cont = false
 					return false
@@ -159,12 +169,12 @@ func (p *MulPath) pathString() string {
 	return "(" + p.Path.pathString() + ")" + mod
 }
 
-func (p *MulPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool) {
-	return func(yield func(Term, Term) bool) {
+func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return func(yield func(term.Term, term.Term) bool) {
 		done := make(map[string]bool)
 
-		emit := func(s, o Term) bool {
-			k := termKey(s) + "|" + termKey(o)
+		emit := func(s, o term.Term) bool {
+			k := term.TermKey(s) + "|" + term.TermKey(o)
 			if done[k] {
 				return true
 			}
@@ -175,7 +185,7 @@ func (p *MulPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, T
 		if subj != nil {
 			// Forward evaluation
 			if p.Zero {
-				if obj == nil || termKey(subj) == termKey(obj) {
+				if obj == nil || term.TermKey(subj) == term.TermKey(obj) {
 					if !emit(subj, subj) {
 						return
 					}
@@ -186,7 +196,7 @@ func (p *MulPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, T
 		} else if obj != nil {
 			// Backward evaluation
 			if p.Zero {
-				if s, ok := obj.(Subject); ok {
+				if s, ok := obj.(term.Subject); ok {
 					if !emit(obj, obj) {
 						return
 					}
@@ -194,7 +204,7 @@ func (p *MulPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, T
 					p.bwd(g, s, seen, emit)
 				}
 			} else {
-				if s, ok := obj.(Subject); ok {
+				if s, ok := obj.(term.Subject); ok {
 					seen := make(map[string]bool)
 					p.bwd(g, s, seen, emit)
 				}
@@ -209,7 +219,7 @@ func (p *MulPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, T
 				}
 			}
 			for _, n := range g.AllNodes() {
-				if s, ok := n.(Subject); ok {
+				if s, ok := n.(term.Subject); ok {
 					seen := make(map[string]bool)
 					p.fwd(g, s, nil, seen, emit)
 				}
@@ -218,19 +228,19 @@ func (p *MulPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, T
 	}
 }
 
-func (p *MulPath) fwd(g *Graph, node Subject, obj Term, seen map[string]bool, emit func(Term, Term) bool) {
-	k := termKey(node)
+func (p *MulPath) fwd(g *graph.Graph, node term.Subject, obj term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+	k := term.TermKey(node)
 	if seen[k] {
 		return
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, node, obj)(func(s, o Term) bool {
+	p.Path.Eval(g, node, obj)(func(s, o term.Term) bool {
 		if !emit(s, o) {
 			return false
 		}
 		if p.More {
-			if next, ok := o.(Subject); ok {
+			if next, ok := o.(term.Subject); ok {
 				p.fwd(g, next, obj, seen, emit)
 			}
 		}
@@ -238,19 +248,19 @@ func (p *MulPath) fwd(g *Graph, node Subject, obj Term, seen map[string]bool, em
 	})
 }
 
-func (p *MulPath) bwd(g *Graph, node Subject, seen map[string]bool, emit func(Term, Term) bool) {
-	k := termKey(node)
+func (p *MulPath) bwd(g *graph.Graph, node term.Subject, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+	k := term.TermKey(node)
 	if seen[k] {
 		return
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, nil, node)(func(s, o Term) bool {
+	p.Path.Eval(g, nil, node)(func(s, o term.Term) bool {
 		if !emit(s, o) {
 			return false
 		}
 		if p.More {
-			if prev, ok := s.(Subject); ok {
+			if prev, ok := s.(term.Subject); ok {
 				p.bwd(g, prev, seen, emit)
 			}
 		}
@@ -262,10 +272,10 @@ func (p *MulPath) bwd(g *Graph, node Subject, seen map[string]bool, emit func(Te
 // Ported from: rdflib.paths.NegatedPath
 
 type NegatedPath struct {
-	Excluded []URIRef
+	Excluded []term.URIRef
 }
 
-func Negated(excluded ...URIRef) *NegatedPath {
+func Negated(excluded ...term.URIRef) *NegatedPath {
 	return &NegatedPath{Excluded: excluded}
 }
 
@@ -280,15 +290,15 @@ func (p *NegatedPath) pathString() string {
 	return s + ")"
 }
 
-func (p *NegatedPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool) {
+func (p *NegatedPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	excluded := make(map[string]bool)
 	for _, u := range p.Excluded {
-		excluded[termKey(u)] = true
+		excluded[term.TermKey(u)] = true
 	}
 
-	return func(yield func(Term, Term) bool) {
-		g.Triples(subj, nil, obj)(func(t Triple) bool {
-			if !excluded[termKey(t.Predicate)] {
+	return func(yield func(term.Term, term.Term) bool) {
+		g.Triples(subj, nil, obj)(func(t term.Triple) bool {
+			if !excluded[term.TermKey(t.Predicate)] {
 				return yield(t.Subject, t.Object)
 			}
 			return true
@@ -300,15 +310,15 @@ func (p *NegatedPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Ter
 
 // URIRefPath wraps a URIRef to implement the Path interface.
 type URIRefPath struct {
-	URI URIRef
+	URI term.URIRef
 }
 
 func (p URIRefPath) pathString() string { return p.URI.N3() }
 
-func (p URIRefPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term, Term) bool) {
+func (p URIRefPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	u := p.URI
-	return func(yield func(Term, Term) bool) {
-		g.Triples(subj, &u, obj)(func(t Triple) bool {
+	return func(yield func(term.Term, term.Term) bool) {
+		g.Triples(subj, &u, obj)(func(t term.Triple) bool {
 			return yield(t.Subject, t.Object)
 		})
 	}
@@ -317,7 +327,7 @@ func (p URIRefPath) Eval(g *Graph, subj Subject, obj Term) func(yield func(Term,
 // --- Path construction DSL ---
 
 // AsPath converts a URIRef to a Path.
-func AsPath(u URIRef) URIRefPath {
+func AsPath(u term.URIRef) URIRefPath {
 	return URIRefPath{URI: u}
 }
 

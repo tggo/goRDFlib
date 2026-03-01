@@ -1,8 +1,8 @@
-package rdflibgo
+package term
 
 import "errors"
 
-// Sentinel errors for the rdflibgo package.
+// Sentinel errors for the term package.
 var (
 	// ErrInvalidIRI indicates an IRI contains forbidden characters.
 	ErrInvalidIRI = errors.New("rdflibgo: invalid IRI")

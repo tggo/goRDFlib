@@ -1,6 +1,10 @@
-package rdflibgo
+package store
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/tggo/goRDFlib/term"
+)
 
 // MemoryStore is a thread-safe in-memory triple store with 3 indices (SPO, POS, OSP).
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory
@@ -8,14 +12,14 @@ type MemoryStore struct {
 	mu sync.RWMutex
 
 	// Triple indices: nested maps for efficient pattern matching.
-	// Keys are N3() strings of terms for map-key compatibility.
-	spo map[string]map[string]map[string]Triple // subject → predicate → object → triple
-	pos map[string]map[string]map[string]Triple // predicate → object → subject → triple
-	osp map[string]map[string]map[string]Triple // object → subject → predicate → triple
+	// Keys are TermKey() strings for map-key compatibility.
+	spo map[string]map[string]map[string]term.Triple // subject → predicate → object → triple
+	pos map[string]map[string]map[string]term.Triple // predicate → object → subject → triple
+	osp map[string]map[string]map[string]term.Triple // object → subject → predicate → triple
 
 	// Namespace bindings
-	nsPrefix map[string]URIRef // prefix → namespace
-	nsURI    map[string]string // namespace → prefix
+	nsPrefix map[string]term.URIRef // prefix → namespace
+	nsURI    map[string]string      // namespace → prefix
 
 	count int
 }
@@ -24,10 +28,10 @@ type MemoryStore struct {
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.__init__
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		spo:      make(map[string]map[string]map[string]Triple),
-		pos:      make(map[string]map[string]map[string]Triple),
-		osp:      make(map[string]map[string]map[string]Triple),
-		nsPrefix: make(map[string]URIRef),
+		spo:      make(map[string]map[string]map[string]term.Triple),
+		pos:      make(map[string]map[string]map[string]term.Triple),
+		osp:      make(map[string]map[string]map[string]term.Triple),
+		nsPrefix: make(map[string]term.URIRef),
 		nsURI:    make(map[string]string),
 	}
 }
@@ -40,15 +44,15 @@ func (m *MemoryStore) TransactionAware() bool { return false }
 
 // Add inserts a triple into the store.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.add
-func (m *MemoryStore) Add(t Triple, context Term) {
+func (m *MemoryStore) Add(t term.Triple, context term.Term) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.addLocked(t)
 }
 
 // addLocked inserts a triple without acquiring the lock. Caller must hold m.mu.Lock().
-func (m *MemoryStore) addLocked(t Triple) {
-	sk, pk, ok := termKey(t.Subject), termKey(t.Predicate), termKey(t.Object)
+func (m *MemoryStore) addLocked(t term.Triple) {
+	sk, pk, ok := term.TermKey(t.Subject), term.TermKey(t.Predicate), term.TermKey(t.Object)
 
 	// Check if already exists
 	if po, exists := m.spo[sk]; exists {
@@ -66,19 +70,39 @@ func (m *MemoryStore) addLocked(t Triple) {
 }
 
 // ensureInsert inserts t into a 3-level nested map, creating intermediate maps as needed.
-func ensureInsert(idx map[string]map[string]map[string]Triple, k1, k2, k3 string, t Triple) {
+func ensureInsert(idx map[string]map[string]map[string]term.Triple, k1, k2, k3 string, t term.Triple) {
 	if idx[k1] == nil {
-		idx[k1] = make(map[string]map[string]Triple)
+		idx[k1] = make(map[string]map[string]term.Triple)
 	}
 	if idx[k1][k2] == nil {
-		idx[k1][k2] = make(map[string]Triple)
+		idx[k1][k2] = make(map[string]term.Triple)
 	}
 	idx[k1][k2][k3] = t
 }
 
+// Set atomically removes all triples matching (s, p, *) and adds the new triple
+// under a single write lock.
+func (m *MemoryStore) Set(t term.Triple, context term.Term) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Remove all triples with the same subject and predicate.
+	pattern := term.TriplePattern{Subject: t.Subject, Predicate: &t.Predicate}
+	var toRemove []term.Triple
+	m.triplesLocked(pattern)(func(old term.Triple) bool {
+		toRemove = append(toRemove, old)
+		return true
+	})
+	for _, old := range toRemove {
+		m.removeLocked(old)
+	}
+
+	m.addLocked(t)
+}
+
 // AddN atomically batch-adds quads.
 // Ported from: rdflib.store.Store.addN
-func (m *MemoryStore) AddN(quads []Quad) {
+func (m *MemoryStore) AddN(quads []term.Quad) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, q := range quads {
@@ -89,13 +113,13 @@ func (m *MemoryStore) AddN(quads []Quad) {
 // Remove deletes triples matching the pattern.
 // The match and delete are performed under a single write lock to avoid TOCTOU races.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.remove
-func (m *MemoryStore) Remove(pattern TriplePattern, context Term) {
+func (m *MemoryStore) Remove(pattern term.TriplePattern, context term.Term) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Collect matches under the same lock
-	var toRemove []Triple
-	m.triplesLocked(pattern)(func(t Triple) bool {
+	var toRemove []term.Triple
+	m.triplesLocked(pattern)(func(t term.Triple) bool {
 		toRemove = append(toRemove, t)
 		return true
 	})
@@ -106,8 +130,8 @@ func (m *MemoryStore) Remove(pattern TriplePattern, context Term) {
 }
 
 // removeLocked removes a single triple from all indices. Caller must hold m.mu.Lock().
-func (m *MemoryStore) removeLocked(t Triple) {
-	sk, pk, ok := termKey(t.Subject), termKey(t.Predicate), termKey(t.Object)
+func (m *MemoryStore) removeLocked(t term.Triple) {
+	sk, pk, ok := term.TermKey(t.Subject), term.TermKey(t.Predicate), term.TermKey(t.Object)
 
 	// Check existence in SPO first — only decrement count if triple actually exists
 	found := false
@@ -159,8 +183,8 @@ func (m *MemoryStore) removeLocked(t Triple) {
 
 // Triples returns matching triples.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.triples
-func (m *MemoryStore) Triples(pattern TriplePattern, context Term) TripleIterator {
-	return func(yield func(Triple) bool) {
+func (m *MemoryStore) Triples(pattern term.TriplePattern, context term.Term) TripleIterator {
+	return func(yield func(term.Triple) bool) {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
 		m.triplesLocked(pattern)(yield)
@@ -168,11 +192,11 @@ func (m *MemoryStore) Triples(pattern TriplePattern, context Term) TripleIterato
 }
 
 // triplesLocked returns matching triples without acquiring locks. Caller must hold at least RLock.
-func (m *MemoryStore) triplesLocked(pattern TriplePattern) TripleIterator {
-	return func(yield func(Triple) bool) {
-		sk := optTermKey(pattern.Subject)
-		pk := optPredKey(pattern.Predicate)
-		ok := optTermKey(pattern.Object)
+func (m *MemoryStore) triplesLocked(pattern term.TriplePattern) TripleIterator {
+	return func(yield func(term.Triple) bool) {
+		sk := term.OptTermKey(pattern.Subject)
+		pk := term.OptPredKey(pattern.Predicate)
+		ok := term.OptTermKey(pattern.Object)
 
 		switch {
 		case sk != "" && pk != "" && ok != "":
@@ -251,20 +275,20 @@ func (m *MemoryStore) triplesLocked(pattern TriplePattern) TripleIterator {
 
 // Len returns the number of triples.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.__len__
-func (m *MemoryStore) Len(context Term) int {
+func (m *MemoryStore) Len(context term.Term) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.count
 }
 
 // Contexts returns an empty iterator (not context-aware).
-func (m *MemoryStore) Contexts(triple *Triple) TermIterator {
-	return func(yield func(Term) bool) {}
+func (m *MemoryStore) Contexts(triple *term.Triple) TermIterator {
+	return func(yield func(term.Term) bool) {}
 }
 
 // Bind associates a prefix with a namespace.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.bind
-func (m *MemoryStore) Bind(prefix string, namespace URIRef) {
+func (m *MemoryStore) Bind(prefix string, namespace term.URIRef) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nsPrefix[prefix] = namespace
@@ -273,7 +297,7 @@ func (m *MemoryStore) Bind(prefix string, namespace URIRef) {
 
 // Namespace returns the namespace URI for a prefix.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.namespace
-func (m *MemoryStore) Namespace(prefix string) (URIRef, bool) {
+func (m *MemoryStore) Namespace(prefix string) (term.URIRef, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	ns, ok := m.nsPrefix[prefix]
@@ -282,7 +306,7 @@ func (m *MemoryStore) Namespace(prefix string) (URIRef, bool) {
 
 // Prefix returns the prefix for a namespace URI.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.prefix
-func (m *MemoryStore) Prefix(namespace URIRef) (string, bool) {
+func (m *MemoryStore) Prefix(namespace term.URIRef) (string, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	p, ok := m.nsURI[namespace.Value()]
@@ -292,7 +316,7 @@ func (m *MemoryStore) Prefix(namespace URIRef) (string, bool) {
 // Namespaces returns an iterator over all namespace bindings.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.namespaces
 func (m *MemoryStore) Namespaces() NamespaceIterator {
-	return func(yield func(string, URIRef) bool) {
+	return func(yield func(string, term.URIRef) bool) {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
 		for prefix, ns := range m.nsPrefix {
@@ -301,23 +325,4 @@ func (m *MemoryStore) Namespaces() NamespaceIterator {
 			}
 		}
 	}
-}
-
-// termKey returns a stable string key for a term (its N3 representation).
-func termKey(t Term) string {
-	return t.N3()
-}
-
-func optTermKey(t Term) string {
-	if t == nil {
-		return ""
-	}
-	return t.N3()
-}
-
-func optPredKey(p *URIRef) string {
-	if p == nil {
-		return ""
-	}
-	return p.N3()
 }

@@ -1,4 +1,4 @@
-package rdflibgo
+package term
 
 import "fmt"
 
