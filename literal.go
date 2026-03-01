@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Literal represents an RDF literal.
+// Literal represents an RDF literal with a lexical form, optional language tag, and datatype.
 // Ported from: rdflib.term.Literal
 type Literal struct {
 	lexical  string
@@ -19,14 +19,14 @@ func (l Literal) termType() string { return "Literal" }
 // LiteralOption configures Literal construction.
 type LiteralOption func(*Literal)
 
-// WithLang sets the language tag.
+// WithLang sets the language tag. The tag is normalized to lowercase.
 func WithLang(lang string) LiteralOption {
 	return func(l *Literal) {
 		l.lang = strings.ToLower(lang)
 	}
 }
 
-// WithDatatype sets the datatype.
+// WithDatatype sets the datatype IRI.
 func WithDatatype(dt URIRef) LiteralOption {
 	return func(l *Literal) {
 		l.datatype = dt
@@ -34,6 +34,10 @@ func WithDatatype(dt URIRef) LiteralOption {
 }
 
 // NewLiteral creates a new Literal from a Go value.
+// Supported types: string, int, int64, float32, float64, bool.
+// Options WithLang and WithDatatype can override the defaults.
+// If WithLang is set, the datatype is forced to rdf:langString.
+// Ported from: rdflib.term.Literal.__new__
 func NewLiteral(value any, opts ...LiteralOption) Literal {
 	var lit Literal
 
@@ -42,16 +46,16 @@ func NewLiteral(value any, opts ...LiteralOption) Literal {
 		lit.lexical = v
 		lit.datatype = XSDString
 	case int:
-		lit.lexical = intToString(v)
+		lit.lexical = strconv.Itoa(v)
 		lit.datatype = XSDInteger
 	case int64:
-		lit.lexical = int64ToString(v)
+		lit.lexical = strconv.FormatInt(v, 10)
 		lit.datatype = XSDInteger
 	case float32:
-		lit.lexical = float32ToString(v)
+		lit.lexical = strconv.FormatFloat(float64(v), 'g', -1, 32)
 		lit.datatype = XSDFloat
 	case float64:
-		lit.lexical = float64ToString(v)
+		lit.lexical = strconv.FormatFloat(v, 'g', -1, 64)
 		lit.datatype = XSDDouble
 	case bool:
 		if v {
@@ -69,7 +73,7 @@ func NewLiteral(value any, opts ...LiteralOption) Literal {
 		opt(&lit)
 	}
 
-	// Language-tagged literals get rdf:langString datatype
+	// Language-tagged literals get rdf:langString datatype per RDF 1.1.
 	if lit.lang != "" {
 		lit.datatype = RDFLangString
 	}
@@ -86,7 +90,10 @@ func (l Literal) Language() string { return l.lang }
 // Datatype returns the datatype URIRef.
 func (l Literal) Datatype() URIRef { return l.datatype }
 
-// Value attempts to convert the lexical form to a Go value based on datatype.
+// Value converts the lexical form to a Go value based on datatype.
+// Returns int64 for xsd:integer/int/long, float32 for xsd:float,
+// float64 for xsd:double/decimal, bool for xsd:boolean, or the lexical string.
+// Ported from: rdflib.term.Literal.toPython
 func (l Literal) Value() any {
 	switch l.datatype {
 	case XSDInteger, XSDInt, XSDLong:
@@ -109,11 +116,22 @@ func (l Literal) Value() any {
 	return l.lexical
 }
 
+// String returns the lexical form of the literal.
 func (l Literal) String() string {
 	return l.lexical
 }
 
+// Equal returns true if other is a Literal with identical lexical form, language, and datatype.
+func (l Literal) Equal(other Term) bool {
+	if o, ok := other.(Literal); ok {
+		return l == o
+	}
+	return false
+}
+
 // N3 returns the N-Triples/N3 representation.
+// Uses shorthand forms for xsd:integer, xsd:double, xsd:decimal, and xsd:boolean.
+// Ported from: rdflib.term.Literal.n3
 func (l Literal) N3(ns ...NamespaceManager) string {
 	// Shortcut forms
 	switch l.datatype {
@@ -156,24 +174,49 @@ func (l Literal) N3(ns ...NamespaceManager) string {
 	return quoted
 }
 
-// Eq performs value-space comparison.
+// Eq performs value-space comparison: two literals are Eq if they have the same
+// datatype and their parsed Go values are equal.
+// This differs from == (struct equality) which compares lexical forms exactly.
+// Ported from: rdflib.term.Literal.eq
 func (l Literal) Eq(other Literal) bool {
-	// If datatypes differ, no value-space match
 	if l.datatype != other.datatype {
 		return false
 	}
-	// Compare parsed values
 	v1 := l.Value()
 	v2 := other.Value()
-	return fmt.Sprintf("%v", v1) == fmt.Sprintf("%v", v2)
+	switch a := v1.(type) {
+	case int64:
+		if b, ok := v2.(int64); ok {
+			return a == b
+		}
+	case float32:
+		if b, ok := v2.(float32); ok {
+			return a == b
+		}
+	case float64:
+		if b, ok := v2.(float64); ok {
+			return a == b
+		}
+	case bool:
+		if b, ok := v2.(bool); ok {
+			return a == b
+		}
+	case string:
+		if b, ok := v2.(string); ok {
+			return a == b
+		}
+	}
+	return false
 }
 
+// literalEscaper is a package-level replacer for escaping literal strings.
+var literalEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	"\n", `\n`,
+	"\r", `\r`,
+)
+
 func escapeLiteral(s string) string {
-	r := strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		"\n", `\n`,
-		"\r", `\r`,
-	)
-	return r.Replace(s)
+	return literalEscaper.Replace(s)
 }

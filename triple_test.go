@@ -13,10 +13,32 @@ func TestTripleString(t *testing.T) {
 	if got == "" {
 		t.Error("empty string")
 	}
+	if got != `(<http://example.org/s>, <http://example.org/p>, "hello")` {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestQuadString(t *testing.T) {
+	s, _ := NewURIRef("http://example.org/s")
+	p, _ := NewURIRef("http://example.org/p")
+	o := NewLiteral("hello")
+	g, _ := NewURIRef("http://example.org/g")
+
+	q := Quad{Triple: Triple{Subject: s, Predicate: p, Object: o}, Graph: g}
+	got := q.String()
+	if got == "" {
+		t.Error("empty string")
+	}
+
+	// Nil graph falls back to triple string
+	q2 := Quad{Triple: Triple{Subject: s, Predicate: p, Object: o}, Graph: nil}
+	expected := (Triple{Subject: s, Predicate: p, Object: o}).String()
+	if q2.String() != expected {
+		t.Error("nil graph should use triple string")
+	}
 }
 
 func TestTriplePatternMatchesAll(t *testing.T) {
-	// Ported from: rdflib triple pattern matching — all wildcards
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	o := NewLiteral("hello")
@@ -79,8 +101,41 @@ func TestTriplePatternMatchesObject(t *testing.T) {
 	}
 }
 
+func TestTriplePatternMatchesObjectURIRef(t *testing.T) {
+	s, _ := NewURIRef("http://example.org/s")
+	p, _ := NewURIRef("http://example.org/p")
+	o, _ := NewURIRef("http://example.org/o")
+	o2, _ := NewURIRef("http://example.org/other")
+	tr := Triple{Subject: s, Predicate: p, Object: o}
+
+	pat := TriplePattern{Object: o}
+	if !pat.Matches(tr) {
+		t.Error("should match same URIRef object")
+	}
+	pat2 := TriplePattern{Object: o2}
+	if pat2.Matches(tr) {
+		t.Error("should not match different URIRef object")
+	}
+}
+
+func TestTriplePatternMatchesBNodeSubject(t *testing.T) {
+	b := NewBNode("b1")
+	b2 := NewBNode("b2")
+	p, _ := NewURIRef("http://example.org/p")
+	o := NewLiteral("v")
+	tr := Triple{Subject: b, Predicate: p, Object: o}
+
+	patB := TriplePattern{Subject: b}
+	if !patB.Matches(tr) {
+		t.Error("should match same BNode subject")
+	}
+	patB2 := TriplePattern{Subject: b2}
+	if patB2.Matches(tr) {
+		t.Error("should not match different BNode subject")
+	}
+}
+
 func TestCompareTerm(t *testing.T) {
-	// Ported from: rdflib term ordering for serialization
 	u, _ := NewURIRef("http://example.org/a")
 	b := NewBNode("b1")
 	l := NewLiteral("hello")
@@ -101,5 +156,25 @@ func TestCompareTerm(t *testing.T) {
 	}
 	if CompareTerm(u, u) != 0 {
 		t.Error("same term should compare equal")
+	}
+
+	// Variable
+	v := NewVariable("x")
+	if CompareTerm(l, v) >= 0 {
+		t.Error("Literal should sort before Variable")
+	}
+}
+
+// --- Benchmarks ---
+
+func BenchmarkTriplePatternMatches(b *testing.B) {
+	s, _ := NewURIRef("http://example.org/s")
+	p, _ := NewURIRef("http://example.org/p")
+	o := NewLiteral("hello")
+	tr := Triple{Subject: s, Predicate: p, Object: o}
+	pat := TriplePattern{Subject: s, Predicate: &p, Object: o}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pat.Matches(tr)
 	}
 }

@@ -2,52 +2,55 @@ package rdflibgo
 
 import "fmt"
 
-// XSD namespace constants.
-// Ported from: rdflib.namespace.XSD
+// XSD namespace base URI.
 const XSDNamespace = "http://www.w3.org/2001/XMLSchema#"
 
-// NewURIRefUnsafe creates a URIRef without validation. Used for known-good constants.
+// newURIRefUnsafe creates a URIRef without validation. Used for known-good constants.
+func newURIRefUnsafe(value string) URIRef {
+	return URIRef{value: value}
+}
+
+// NewURIRefUnsafe creates a URIRef without validation. Exported for use in init-time
+// constants and tests. Do not use for user-provided input — use NewURIRef instead.
 func NewURIRefUnsafe(value string) URIRef {
 	return URIRef{value: value}
 }
 
 // XSD datatype constants.
+// Ported from: rdflib.namespace.XSD
 var (
-	XSDString   = NewURIRefUnsafe(XSDNamespace + "string")
-	XSDInteger  = NewURIRefUnsafe(XSDNamespace + "integer")
-	XSDInt      = NewURIRefUnsafe(XSDNamespace + "int")
-	XSDLong     = NewURIRefUnsafe(XSDNamespace + "long")
-	XSDFloat    = NewURIRefUnsafe(XSDNamespace + "float")
-	XSDDouble   = NewURIRefUnsafe(XSDNamespace + "double")
-	XSDDecimal  = NewURIRefUnsafe(XSDNamespace + "decimal")
-	XSDBoolean  = NewURIRefUnsafe(XSDNamespace + "boolean")
-	XSDDateTime = NewURIRefUnsafe(XSDNamespace + "dateTime")
-	XSDDate     = NewURIRefUnsafe(XSDNamespace + "date")
-	XSDTime     = NewURIRefUnsafe(XSDNamespace + "time")
-	XSDAnyURI   = NewURIRefUnsafe(XSDNamespace + "anyURI")
-
-	// RDF namespace constants used by Literal
-	RDFNamespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-	RDFLangString = NewURIRefUnsafe(RDFNamespace + "langString")
+	XSDString   = newURIRefUnsafe(XSDNamespace + "string")
+	XSDInteger  = newURIRefUnsafe(XSDNamespace + "integer")
+	XSDInt      = newURIRefUnsafe(XSDNamespace + "int")
+	XSDLong     = newURIRefUnsafe(XSDNamespace + "long")
+	XSDFloat    = newURIRefUnsafe(XSDNamespace + "float")
+	XSDDouble   = newURIRefUnsafe(XSDNamespace + "double")
+	XSDDecimal  = newURIRefUnsafe(XSDNamespace + "decimal")
+	XSDBoolean  = newURIRefUnsafe(XSDNamespace + "boolean")
+	XSDDateTime = newURIRefUnsafe(XSDNamespace + "dateTime")
+	XSDDate     = newURIRefUnsafe(XSDNamespace + "date")
+	XSDTime     = newURIRefUnsafe(XSDNamespace + "time")
+	XSDAnyURI   = newURIRefUnsafe(XSDNamespace + "anyURI")
 )
 
-// LexicalToGo converts a lexical form + datatype to a Go value.
-func LexicalToGo(lexical string, datatype URIRef) (any, error) {
-	// Deferred to Story 1.5 — basic types only
-	return lexical, nil
-}
+// RDF namespace constants used by Literal.
+const RDFNamespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
-// GoToLexical converts a Go value to lexical form + datatype.
+// RDFLangString is the datatype for language-tagged literals per RDF 1.1.
+var RDFLangString = newURIRefUnsafe(RDFNamespace + "langString")
+
+// GoToLexical converts a Go value to its lexical form and XSD datatype.
+// Ported from: rdflib.term — value-to-literal conversion
 func GoToLexical(value any) (string, URIRef) {
 	switch v := value.(type) {
 	case int:
-		return intToString(v), XSDInteger
+		return fmt.Sprintf("%d", v), XSDInteger
 	case int64:
-		return int64ToString(v), XSDInteger
+		return fmt.Sprintf("%d", v), XSDInteger
 	case float32:
-		return float32ToString(v), XSDFloat
+		return fmt.Sprintf("%g", v), XSDFloat
 	case float64:
-		return float64ToString(v), XSDDouble
+		return fmt.Sprintf("%g", v), XSDDouble
 	case bool:
 		if v {
 			return "true", XSDBoolean

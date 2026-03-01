@@ -1,6 +1,7 @@
 package rdflibgo
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strings"
@@ -8,19 +9,29 @@ import (
 	"github.com/google/uuid"
 )
 
-// NamespaceManager is a placeholder for namespace prefix mappings (future phase).
+// NamespaceManager provides prefix lookup for compact term representations.
 type NamespaceManager interface {
 	Prefix(uri string) (string, bool)
 }
 
 // Term is the interface implemented by all RDF term types.
 type Term interface {
+	// N3 returns the N-Triples/N3 representation of the term.
+	// An optional NamespaceManager can be provided for prefixed output.
 	N3(ns ...NamespaceManager) string
+
+	// String returns a human-readable string representation.
 	String() string
+
+	// Equal returns true if this term is identical to other.
+	Equal(other Term) bool
+
+	// termType is a sealed marker preventing external implementations.
 	termType() string
 }
 
 // Subject can be URIRef or BNode.
+// The subject() marker method restricts implementations to URIRef and BNode.
 type Subject interface {
 	Term
 	subject()
@@ -39,12 +50,23 @@ type URIRef struct {
 
 func (u URIRef) subject()        {}
 func (u URIRef) termType() string { return "URIRef" }
-func (u URIRef) Value() string    { return u.value }
 
-func (u URIRef) String() string {
-	return u.value
+// Value returns the IRI string.
+func (u URIRef) Value() string { return u.value }
+
+// String returns the IRI string.
+func (u URIRef) String() string { return u.value }
+
+// Equal returns true if other is a URIRef with the same value.
+func (u URIRef) Equal(other Term) bool {
+	if o, ok := other.(URIRef); ok {
+		return u.value == o.value
+	}
+	return false
 }
 
+// N3 returns the N-Triples representation: <iri>.
+// If a NamespaceManager is provided and can abbreviate the IRI, the prefixed form is returned.
 func (u URIRef) N3(ns ...NamespaceManager) string {
 	if len(ns) > 0 && ns[0] != nil {
 		if prefix, ok := ns[0].Prefix(u.value); ok {
@@ -70,9 +92,9 @@ func (u URIRef) Fragment() string {
 	return ""
 }
 
-// invalidIRIChars contains characters not allowed in IRIs.
-var invalidIRIChars = strings.NewReplacer() // we'll use a set instead
-
+// isValidIRI checks that an IRI does not contain forbidden characters per RFC 3987.
+// Forbidden: < > " space { } | \ ^ `
+// Ported from: rdflib.term._is_valid_uri
 func isValidIRI(s string) bool {
 	for _, c := range s {
 		switch c {
@@ -83,23 +105,30 @@ func isValidIRI(s string) bool {
 	return true
 }
 
-// NewURIRef creates a new URIRef, optionally resolving against a base IRI.
-func NewURIRef(value string, base ...string) (URIRef, error) {
-	if len(base) > 0 && base[0] != "" {
-		b, err := url.Parse(base[0])
+// NewURIRef creates a new URIRef, validating that it contains no forbidden characters.
+// Ported from: rdflib.term.URIRef.__new__
+func NewURIRef(value string) (URIRef, error) {
+	if !isValidIRI(value) {
+		return URIRef{}, fmt.Errorf("%w: %q contains forbidden characters", ErrInvalidIRI, value)
+	}
+	return URIRef{value: value}, nil
+}
+
+// NewURIRefWithBase creates a new URIRef by resolving value against a base IRI.
+// Ported from: rdflib.term.URIRef.__new__ with base parameter
+func NewURIRefWithBase(value, base string) (URIRef, error) {
+	if base != "" {
+		b, err := url.Parse(base)
 		if err != nil {
-			return URIRef{}, fmt.Errorf("invalid base IRI: %w", err)
+			return URIRef{}, fmt.Errorf("%w: invalid base %q: %v", ErrInvalidIRI, base, err)
 		}
 		ref, err := url.Parse(value)
 		if err != nil {
-			return URIRef{}, fmt.Errorf("invalid IRI: %w", err)
+			return URIRef{}, fmt.Errorf("%w: %q: %v", ErrInvalidIRI, value, err)
 		}
 		value = b.ResolveReference(ref).String()
 	}
-	if !isValidIRI(value) {
-		return URIRef{}, fmt.Errorf("invalid IRI: %q contains forbidden characters", value)
-	}
-	return URIRef{value: value}, nil
+	return NewURIRef(value)
 }
 
 // --- BNode ---
@@ -112,17 +141,28 @@ type BNode struct {
 
 func (b BNode) subject()        {}
 func (b BNode) termType() string { return "BNode" }
-func (b BNode) Value() string    { return b.value }
 
-func (b BNode) String() string {
-	return b.value
+// Value returns the blank node identifier.
+func (b BNode) Value() string { return b.value }
+
+// String returns the blank node identifier.
+func (b BNode) String() string { return b.value }
+
+// Equal returns true if other is a BNode with the same identifier.
+func (b BNode) Equal(other Term) bool {
+	if o, ok := other.(BNode); ok {
+		return b.value == o.value
+	}
+	return false
 }
 
+// N3 returns the N-Triples representation: _:id.
 func (b BNode) N3(ns ...NamespaceManager) string {
 	return "_:" + b.value
 }
 
 // Skolemize returns a URIRef that deterministically represents this blank node.
+// Ported from: rdflib.term.BNode.skolemize
 func (b BNode) Skolemize(authority string) URIRef {
 	if !strings.HasSuffix(authority, "/") {
 		authority += "/"
@@ -130,19 +170,20 @@ func (b BNode) Skolemize(authority string) URIRef {
 	return NewURIRefUnsafe(authority + ".well-known/genid/" + b.value)
 }
 
-// NewBNode creates a new BNode. If no id is provided, a unique one is generated.
+// NewBNode creates a new BNode with a unique auto-generated identifier.
+// The id format is "N" + 32 hex chars from a UUID4, matching Python rdflib's default.
+// Ported from: rdflib.term.BNode.__new__
 func NewBNode(id ...string) BNode {
 	if len(id) > 0 && id[0] != "" {
 		return BNode{value: id[0]}
 	}
 	u := uuid.New()
-	hex := strings.ReplaceAll(u.String(), "-", "")
-	return BNode{value: "N" + hex}
+	return BNode{value: "N" + hex.EncodeToString(u[:])}
 }
 
 // --- Variable ---
 
-// Variable represents a query variable.
+// Variable represents a SPARQL query variable.
 // Ported from: rdflib.term.Variable
 type Variable struct {
 	Name string
@@ -150,12 +191,22 @@ type Variable struct {
 
 func (v Variable) termType() string { return "Variable" }
 
+// String returns "?name".
 func (v Variable) String() string {
 	return "?" + v.Name
 }
 
+// N3 returns "?name".
 func (v Variable) N3(ns ...NamespaceManager) string {
 	return "?" + v.Name
+}
+
+// Equal returns true if other is a Variable with the same name.
+func (v Variable) Equal(other Term) bool {
+	if o, ok := other.(Variable); ok {
+		return v.Name == o.Name
+	}
+	return false
 }
 
 // NewVariable creates a new Variable.
