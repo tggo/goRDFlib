@@ -1366,6 +1366,15 @@ func (p *sparqlParser) parseAggregateCall(name string) (Expr, error) {
 		fe.Distinct = true
 	}
 
+	// COUNT(DISTINCT *)
+	if name == "COUNT" && p.pos < len(p.input) && p.input[p.pos] == '*' {
+		p.pos++
+		fe.Star = true
+		p.skipWS()
+		p.expect(')')
+		return fe, nil
+	}
+
 	// Parse argument
 	if p.pos < len(p.input) && p.input[p.pos] != ')' {
 		arg, err := p.parseOrExpr()
