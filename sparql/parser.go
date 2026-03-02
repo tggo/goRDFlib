@@ -176,11 +176,28 @@ func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
 		if p.matchKeywordCI("HAVING") {
 			p.pos += 6
 			p.skipWS()
-			expr, err := p.parseExpr()
-			if err != nil {
-				return err
+			// HAVING can have multiple constraint expressions (ANDed)
+			var havingExprs []Expr
+			for {
+				p.skipWS()
+				if p.pos >= len(p.input) || p.isKeyword() {
+					break
+				}
+				expr, err := p.parseExpr()
+				if err != nil {
+					break
+				}
+				havingExprs = append(havingExprs, expr)
 			}
-			q.Having = expr
+			if len(havingExprs) == 1 {
+				q.Having = havingExprs[0]
+			} else if len(havingExprs) > 1 {
+				combined := havingExprs[0]
+				for _, e := range havingExprs[1:] {
+					combined = &BinaryExpr{Op: "&&", Left: combined, Right: e}
+				}
+				q.Having = combined
+			}
 			continue
 		}
 		if p.matchKeywordCI("ORDER") {
@@ -624,7 +641,7 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 		return "", path, nil
 	}
 
-	// ! could be negated path if followed by a URI or (
+	// ! could be negated path if followed by a URI, (, or ^
 	if ch == '!' {
 		savedPos := p.pos
 		p.pos++
@@ -634,7 +651,7 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 			next = p.input[p.pos]
 		}
 		p.pos = savedPos
-		if next == '<' || next == '(' || (next != 0 && isNameChar(rune(next))) {
+		if next == '<' || next == '(' || next == '^' || (next != 0 && isNameChar(rune(next))) {
 			path, err := p.parsePathExpr()
 			if err != nil {
 				return "", nil, err
@@ -849,7 +866,15 @@ func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {
 
 func (p *sparqlParser) resolvePathURI() string {
 	p.skipWS()
-	if p.pos < len(p.input) && p.input[p.pos] == '<' {
+	if p.pos >= len(p.input) {
+		return ""
+	}
+	// 'a' shorthand for rdf:type
+	if p.input[p.pos] == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
+		p.pos++
+		return rdflibgo.RDF.Type.Value()
+	}
+	if p.input[p.pos] == '<' {
 		return p.readIRIRef()
 	}
 	// Prefixed name

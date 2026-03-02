@@ -829,6 +829,13 @@ func evalBinaryOp(op string, left, right rdflibgo.Term) rdflibgo.Term {
 	case "||":
 		return rdflibgo.NewLiteral(effectiveBooleanValue(left) || effectiveBooleanValue(right))
 	case "+", "-", "*", "/":
+		if left == nil || right == nil {
+			return nil
+		}
+		// Both must be numeric
+		if !isNumericTerm(left) || !isNumericTerm(right) {
+			return nil
+		}
 		lf := toFloat64(left)
 		rf := toFloat64(right)
 		var result float64
@@ -847,6 +854,9 @@ func evalBinaryOp(op string, left, right rdflibgo.Term) rdflibgo.Term {
 		}
 		if isIntegral(left) && isIntegral(right) && op != "/" {
 			return rdflibgo.NewLiteral(int(result))
+		}
+		if isDecimal(left) || isDecimal(right) {
+			return rdflibgo.NewLiteral(formatDecimal(result), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 		}
 		return rdflibgo.NewLiteral(result)
 	}
@@ -955,6 +965,20 @@ func termValuesEqual(a, b rdflibgo.Term) bool {
 	}
 
 	return a.N3() == b.N3()
+}
+
+func isNumericTerm(t rdflibgo.Term) bool {
+	if l, ok := t.(rdflibgo.Literal); ok {
+		return isNumericDatatype(l.Datatype())
+	}
+	return false
+}
+
+func isDecimal(t rdflibgo.Term) bool {
+	if l, ok := t.(rdflibgo.Literal); ok {
+		return l.Datatype() == rdflibgo.XSDDecimal
+	}
+	return false
 }
 
 func formatDecimal(f float64) string {
