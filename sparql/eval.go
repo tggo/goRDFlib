@@ -1016,10 +1016,14 @@ func isDecimal(t rdflibgo.Term) bool {
 func formatDecimal(f float64) string {
 	// Use limited precision to avoid float64 artifacts like 11.100000000000001
 	s := strconv.FormatFloat(f, 'f', 10, 64)
-	// Trim trailing zeros but keep at least one decimal
+	// Trim trailing zeros but keep at least one decimal place
 	if strings.Contains(s, ".") {
 		s = strings.TrimRight(s, "0")
-		s = strings.TrimRight(s, ".")
+		if strings.HasSuffix(s, ".") {
+			s += "0"
+		}
+	} else {
+		s += ".0"
 	}
 	return s
 }

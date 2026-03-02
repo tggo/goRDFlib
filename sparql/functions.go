@@ -674,7 +674,8 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		s := lit.Lexical()
 		dt := lit.Datatype()
 		if dt == rdflibgo.XSDBoolean {
-			return val // pass through
+			// Normalize: "0"/"1" → "false"/"true"
+			return rdflibgo.NewLiteral(effectiveBooleanValue(val))
 		}
 		if isNumericDatatype(dt) {
 			f, err := strconv.ParseFloat(s, 64)
@@ -756,14 +757,19 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 			return nil
 		}
 		s := lit.Lexical()
-		if lit.Datatype() == rdflibgo.XSDBoolean {
-			if s == "true" {
+		dt := lit.Datatype()
+		if dt == rdflibgo.XSDBoolean {
+			if effectiveBooleanValue(val) {
 				return rdflibgo.NewLiteral("1.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 			}
 			return rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 		}
-		if _, err := strconv.ParseFloat(s, 64); err == nil {
-			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		// Reject scientific notation strings (not valid xsd:decimal)
+		if !isNumericDatatype(dt) && strings.ContainsAny(s, "eE") {
+			return nil
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return rdflibgo.NewLiteral(formatDecimal(f), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 		}
 		return nil
 
@@ -775,7 +781,39 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		if !isLit {
 			return nil
 		}
-		return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.XSDString))
+		// Canonical string representation per datatype
+		dt := lit.Datatype()
+		s := lit.Lexical()
+		if dt == rdflibgo.XSDBoolean {
+			if effectiveBooleanValue(val) {
+				s = "true"
+			} else {
+				s = "false"
+			}
+		} else if dt == rdflibgo.XSDInteger || dt == rdflibgo.XSDInt || dt == rdflibgo.XSDLong {
+			if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+				s = strconv.FormatInt(v, 10)
+			}
+		} else if dt == rdflibgo.XSDDecimal {
+			if f, err := strconv.ParseFloat(s, 64); err == nil {
+				if f == float64(int64(f)) {
+					s = strconv.FormatInt(int64(f), 10)
+				} else {
+					s = strconv.FormatFloat(f, 'f', -1, 64)
+				}
+			}
+		} else if dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDFloat {
+			if f, err := strconv.ParseFloat(s, 64); err == nil {
+				if f == float64(int64(f)) && f != 0 {
+					s = strconv.FormatInt(int64(f), 10)
+				} else if f == 0 {
+					s = "0"
+				} else {
+					s = strconv.FormatFloat(f, 'f', -1, 64)
+				}
+			}
+		}
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDString))
 	}
 	return nil
 }
