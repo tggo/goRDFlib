@@ -304,10 +304,13 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "STRDT":
 		vals := evalArgs()
 		if len(vals) == 2 && vals[0] != nil {
-			// STRDT requires a simple literal
+			// STRDT requires a simple literal (no language, xsd:string or no datatype)
+			if !isStringLiteral(vals[0]) {
+				return nil // type error: non-string input
+			}
 			if l, ok := vals[0].(rdflibgo.Literal); ok {
 				if l.Language() != "" {
-					return nil // type error
+					return nil // type error: has language tag
 				}
 			}
 			if u, ok := vals[1].(rdflibgo.URIRef); ok {

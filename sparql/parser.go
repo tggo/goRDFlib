@@ -2057,6 +2057,16 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 			}
 			seen[pe.Var] = true
 		}
+
+		// Check for scope conflict: project expression variable from inner subquery
+		if q.Where != nil {
+			innerVars := collectPatternVars(q.Where)
+			for _, pe := range q.ProjectExprs {
+				if innerVars[pe.Var] {
+					return fmt.Errorf("sparql parse error: variable ?%s already defined in inner scope", pe.Var)
+				}
+			}
+		}
 	}
 	return nil
 }
