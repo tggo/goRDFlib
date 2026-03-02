@@ -140,10 +140,33 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "CONCAT":
 		vals := evalArgs()
 		var sb strings.Builder
+		// Track language and datatype: preserve only if ALL args match
+		var commonLang *string
+		var commonDt *rdflibgo.URIRef
 		for _, v := range vals {
 			sb.WriteString(termString(v))
+			if l, ok := v.(rdflibgo.Literal); ok {
+				lang := l.Language()
+				dt := l.Datatype()
+				if commonLang == nil {
+					commonLang = &lang
+				} else if *commonLang != lang {
+					empty := ""
+					commonLang = &empty
+				}
+				if commonDt == nil {
+					commonDt = &dt
+				} else if commonDt.Value() != dt.Value() {
+					xsdStr := rdflibgo.XSDString
+					commonDt = &xsdStr
+				}
+			}
 		}
-		return rdflibgo.NewLiteral(sb.String())
+		var opts []rdflibgo.LiteralOption
+		if commonLang != nil && *commonLang != "" {
+			opts = append(opts, rdflibgo.WithLang(*commonLang))
+		}
+		return rdflibgo.NewLiteral(sb.String(), opts...)
 	case "REGEX":
 		vals := evalArgs()
 		if len(vals) >= 2 {
