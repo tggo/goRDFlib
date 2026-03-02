@@ -21,6 +21,7 @@ type ParsedQuery struct {
 	GroupBy        []Expr
 	GroupByAliases []string // parallel to GroupBy: variable name if (expr AS ?var), else ""
 	Having         Expr
+	BaseURI        string
 }
 
 // ProjectExpr is a (expr AS ?var) in SELECT.

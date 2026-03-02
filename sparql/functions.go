@@ -362,10 +362,17 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "IRI", "URI":
 		vals := evalArgs()
 		if len(vals) == 1 && vals[0] != nil {
+			var s string
 			if u, ok := vals[0].(rdflibgo.URIRef); ok {
-				return u
+				s = u.Value()
+			} else {
+				s = termString(vals[0])
 			}
-			return rdflibgo.NewURIRefUnsafe(termString(vals[0]))
+			// Resolve relative URI against base
+			if base, ok := prefixes["__base__"]; ok && !strings.Contains(s, ":") {
+				s = base + s
+			}
+			return rdflibgo.NewURIRefUnsafe(s)
 		}
 	case "BNODE":
 		if len(args) == 0 {

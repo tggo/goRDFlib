@@ -55,7 +55,7 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		if p.matchKeywordCI("BASE") {
 			p.pos += 4
 			p.skipWS()
-			p.readIRIRef() // stored but not used in simple impl
+			q.BaseURI = p.readIRIRef()
 			continue
 		}
 		break

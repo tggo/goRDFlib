@@ -13,6 +13,13 @@ import (
 
 // EvalQuery evaluates a parsed SPARQL query against a graph.
 func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
+	// Store base URI in prefixes for function access
+	if q.BaseURI != "" {
+		if q.Prefixes == nil {
+			q.Prefixes = make(map[string]string)
+		}
+		q.Prefixes["__base__"] = q.BaseURI
+	}
 	solutions := evalPattern(g, q.Where, q.Prefixes)
 
 	if initBindings != nil {
