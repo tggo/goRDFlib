@@ -116,6 +116,11 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		return nil, err
 	}
 
+	// Semantic validation
+	if err := p.validate(q); err != nil {
+		return nil, err
+	}
+
 	// Post-query VALUES clause
 	p.skipWS()
 	if p.matchKeywordCI("VALUES") {
@@ -1032,6 +1037,13 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 		}
 	}
 
+	// Validate: each row must have the same number of values as variables
+	for _, row := range values {
+		if len(row) != len(vars) {
+			return nil, p.errorf("wrong number of values in VALUES clause: expected %d, got %d", len(vars), len(row))
+		}
+	}
+
 	return &ValuesPattern{Vars: vars, Values: values}, nil
 }
 
@@ -1851,6 +1863,71 @@ func (p *sparqlParser) isKeyword() bool {
 
 func (p *sparqlParser) errorf(format string, args ...any) error {
 	return fmt.Errorf("sparql parse error at pos %d: %s", p.pos, fmt.Sprintf(format, args...))
+}
+
+func (p *sparqlParser) validate(q *ParsedQuery) error {
+	if q.Type == "SELECT" {
+		// SELECT * with GROUP BY is invalid
+		if q.Variables == nil && len(q.GroupBy) > 0 {
+			return fmt.Errorf("sparql parse error: SELECT * not allowed with GROUP BY")
+		}
+
+		// With GROUP BY, all selected variables must be grouped or aggregated
+		if len(q.GroupBy) > 0 && q.Variables != nil {
+			grouped := make(map[string]bool)
+			for _, g := range q.GroupBy {
+				if ve, ok := g.(*VarExpr); ok {
+					grouped[ve.Name] = true
+				}
+			}
+			for _, alias := range q.GroupByAliases {
+				if alias != "" {
+					grouped[alias] = true
+				}
+			}
+			// Variables from project expressions (aggregates) are ok
+			for _, pe := range q.ProjectExprs {
+				grouped[pe.Var] = true
+			}
+			for _, v := range q.Variables {
+				if !grouped[v] {
+					return fmt.Errorf("sparql parse error: variable ?%s not in GROUP BY or aggregate", v)
+				}
+			}
+		}
+
+		// Without GROUP BY but with aggregates, plain variables are invalid
+		if len(q.GroupBy) == 0 && len(q.ProjectExprs) > 0 {
+			hasAgg := false
+			for _, pe := range q.ProjectExprs {
+				if containsAggregate(pe.Expr) {
+					hasAgg = true
+					break
+				}
+			}
+			if hasAgg {
+				aggVars := make(map[string]bool)
+				for _, pe := range q.ProjectExprs {
+					aggVars[pe.Var] = true
+				}
+				for _, v := range q.Variables {
+					if !aggVars[v] {
+						return fmt.Errorf("sparql parse error: variable ?%s must be aggregated (no GROUP BY)", v)
+					}
+				}
+			}
+		}
+
+		// Duplicate AS variables
+		seen := make(map[string]bool)
+		for _, pe := range q.ProjectExprs {
+			if seen[pe.Var] {
+				return fmt.Errorf("sparql parse error: duplicate variable ?%s in SELECT", pe.Var)
+			}
+			seen[pe.Var] = true
+		}
+	}
+	return nil
 }
 
 func isNameChar(r rune) bool {
