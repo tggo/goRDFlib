@@ -41,6 +41,10 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 			p.pos += 6
 			p.skipWS()
 			prefix := p.readUntil(':')
+			// Validate prefix: must start with letter or be empty
+			if prefix != "" && len(prefix) > 0 && !(prefix[0] >= 'a' && prefix[0] <= 'z' || prefix[0] >= 'A' && prefix[0] <= 'Z') {
+				return nil, p.errorf("invalid prefix name: %q", prefix)
+			}
 			p.pos++ // skip ':'
 			p.skipWS()
 			iri := p.readIRIRef()
@@ -116,14 +120,32 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		return nil, err
 	}
 
+	// Validate CONSTRUCT WHERE shorthand: only simple BGPs allowed
+	if q.Type == "CONSTRUCT" && len(q.Construct) == 0 {
+		if err := validateConstructWhere(q.Where); err != nil {
+			return nil, err
+		}
+	}
+
 	// Semantic validation
 	if err := p.validate(q); err != nil {
 		return nil, err
 	}
 
-	// Post-query VALUES clause
+	// Post-query VALUES/BINDINGS clause
 	p.skipWS()
-	if p.matchKeywordCI("VALUES") {
+	if p.matchKeywordCI("BINDINGS") {
+		p.pos += 8
+		vp, err := p.parseValues()
+		if err != nil {
+			return nil, err
+		}
+		if q.Where == nil {
+			q.Where = vp
+		} else {
+			q.Where = &JoinPattern{Left: q.Where, Right: vp}
+		}
+	} else if p.matchKeywordCI("VALUES") {
 		p.pos += 6
 		vp, err := p.parseValues()
 		if err != nil {
@@ -1674,7 +1696,7 @@ func (p *sparqlParser) readPNLocal() string {
 		} else if ch == '%' && p.pos+2 < len(p.input) {
 			// Percent-encoded char: %HH
 			p.pos += 3
-		} else if ch == '\\' && p.pos+1 < len(p.input) {
+		} else if ch == '\\' && p.pos+1 < len(p.input) && isPNLocalEscChar(p.input[p.pos+1]) {
 			// PN_LOCAL_ESC: backslash-escaped char
 			p.pos += 2
 		} else {
@@ -1947,6 +1969,25 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 	return nil
 }
 
+func validateConstructWhere(p Pattern) error {
+	if p == nil {
+		return nil
+	}
+	switch pat := p.(type) {
+	case *BGP:
+		return nil // simple BGP is fine
+	case *JoinPattern:
+		if err := validateConstructWhere(pat.Left); err != nil {
+			return err
+		}
+		return validateConstructWhere(pat.Right)
+	case *FilterPattern:
+		return fmt.Errorf("sparql parse error: FILTER not allowed in CONSTRUCT WHERE")
+	default:
+		return fmt.Errorf("sparql parse error: complex pattern not allowed in CONSTRUCT WHERE")
+	}
+}
+
 // unescapePNLocal removes backslash escapes from PN_LOCAL_ESC sequences.
 func unescapePNLocal(s string) string {
 	if !strings.ContainsAny(s, `\%`) {
@@ -1966,6 +2007,11 @@ func unescapePNLocal(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// isPNLocalEscChar returns true if the char can be escaped with \ in PN_LOCAL.
+func isPNLocalEscChar(ch byte) bool {
+	return strings.ContainsRune(`_~.-!$&'()*+,;=/?#@%`, rune(ch))
 }
 
 func isNameChar(r rune) bool {
