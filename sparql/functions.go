@@ -535,29 +535,24 @@ func stringResult(s string, source rdflibgo.Term) rdflibgo.Literal {
 	return rdflibgo.NewLiteral(s)
 }
 
-// strArgCompatible checks if two string arguments are type-compatible per SPARQL spec.
-// Compatible if: both simple literals, or both have same language, or one is simple and other has lang.
+// strArgCompatible checks if two string arguments are type-compatible for
+// STRBEFORE/STRAFTER per SPARQL spec. Compatible if:
+// - Both are simple/xsd:string literals (no lang)
+// - Both have the same language tag
+// - Second arg is simple/xsd:string (no lang)
 func strArgCompatible(a, b rdflibgo.Term) bool {
 	la, aLit := a.(rdflibgo.Literal)
 	lb, bLit := b.(rdflibgo.Literal)
 	if !aLit || !bLit {
-		return false // non-literals are incompatible
+		return false
 	}
 	aLang := la.Language()
 	bLang := lb.Language()
-	// If both have language tags, they must match
-	if aLang != "" && bLang != "" {
+	// If second arg has a language, first must have the same language
+	if bLang != "" {
 		return strings.EqualFold(aLang, bLang)
 	}
-	// If one has a typed datatype (not xsd:string) and other has lang, incompatible
-	aDt := la.Datatype()
-	bDt := lb.Datatype()
-	if aLang != "" && bDt != rdflibgo.XSDString && bDt.Value() != "" {
-		return false
-	}
-	if bLang != "" && aDt != rdflibgo.XSDString && aDt.Value() != "" {
-		return false
-	}
+	// Second arg is simple — compatible with anything
 	return true
 }
 
