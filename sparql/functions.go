@@ -649,37 +649,116 @@ func newUUID() string {
 }
 
 func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
-	s := termString(val)
+	lit, isLit := val.(rdflibgo.Literal)
+	_, isURI := val.(rdflibgo.URIRef)
+
 	switch name {
 	case "XSD:BOOLEAN":
+		if isURI {
+			return nil // can't cast URI to boolean
+		}
+		if !isLit {
+			return nil
+		}
+		s := lit.Lexical()
+		dt := lit.Datatype()
+		if dt == rdflibgo.XSDBoolean {
+			return val // pass through
+		}
+		if isNumericDatatype(dt) {
+			f, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return nil
+			}
+			return rdflibgo.NewLiteral(f != 0)
+		}
+		// String/plain literal
 		switch strings.ToLower(s) {
 		case "true", "1":
 			return rdflibgo.NewLiteral(true)
-		default:
+		case "false", "0":
 			return rdflibgo.NewLiteral(false)
+		default:
+			return nil // can't cast arbitrary string to boolean
 		}
+
 	case "XSD:INTEGER":
-		// Try to parse
+		if !isLit {
+			return nil
+		}
+		s := lit.Lexical()
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
 			return rdflibgo.NewLiteral(int(f), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 		}
-		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		if lit.Datatype() == rdflibgo.XSDBoolean {
+			if s == "true" {
+				return rdflibgo.NewLiteral(1, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			}
+			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		}
+		return nil
+
 	case "XSD:FLOAT":
+		if !isLit {
+			return nil
+		}
+		s := lit.Lexical()
+		if lit.Datatype() == rdflibgo.XSDBoolean {
+			if s == "true" {
+				s = "1.0"
+			} else {
+				s = "0.0"
+			}
+		}
 		if f, err := strconv.ParseFloat(s, 32); err == nil {
-			return rdflibgo.NewLiteral(fmt.Sprintf("%g", float32(f)), rdflibgo.WithDatatype(rdflibgo.XSDFloat))
+			return rdflibgo.NewLiteral(strconv.FormatFloat(float64(float32(f)), 'E', -1, 32), rdflibgo.WithDatatype(rdflibgo.XSDFloat))
 		}
-		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDFloat))
+		return nil
+
 	case "XSD:DOUBLE":
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return rdflibgo.NewLiteral(fmt.Sprintf("%g", f), rdflibgo.WithDatatype(rdflibgo.XSDDouble))
+		if !isLit {
+			return nil
 		}
-		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDouble))
+		s := lit.Lexical()
+		if lit.Datatype() == rdflibgo.XSDBoolean {
+			if s == "true" {
+				s = "1.0"
+			} else {
+				s = "0.0"
+			}
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return rdflibgo.NewLiteral(strconv.FormatFloat(f, 'E', -1, 64), rdflibgo.WithDatatype(rdflibgo.XSDDouble))
+		}
+		return nil
+
 	case "XSD:DECIMAL":
-		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		if !isLit {
+			return nil
+		}
+		s := lit.Lexical()
+		if lit.Datatype() == rdflibgo.XSDBoolean {
+			if s == "true" {
+				return rdflibgo.NewLiteral("1.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+			}
+			return rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		}
+		if _, err := strconv.ParseFloat(s, 64); err == nil {
+			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		}
+		return nil
+
 	case "XSD:STRING":
-		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDString))
+		if isURI {
+			u := val.(rdflibgo.URIRef)
+			return rdflibgo.NewLiteral(u.Value(), rdflibgo.WithDatatype(rdflibgo.XSDString))
+		}
+		if !isLit {
+			return nil
+		}
+		return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.XSDString))
 	}
-	return val
+	return nil
 }
 
 func compareTermValues(a, b rdflibgo.Term) int {
