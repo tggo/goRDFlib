@@ -300,7 +300,7 @@ func TestNTParserUnicodeEscape4(t *testing.T) {
 
 func TestNTParserIRIWithMalformedEscape(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://s/\uZZZZ> <http://p> "hello" .` + "\n"))
+	err := Parse(g, strings.NewReader(`<http://s/\uZZZZ> <http://p> "hello" .`+"\n"))
 	if err == nil {
 		t.Error("expected error for malformed IRI escape")
 	}

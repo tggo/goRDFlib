@@ -52,7 +52,7 @@ type URIRef struct {
 	key   string // cached TermKey
 }
 
-func (u URIRef) subject()        {}
+func (u URIRef) subject()         {}
 func (u URIRef) termType() string { return "URIRef" }
 
 // Value returns the IRI string.
@@ -155,7 +155,7 @@ type BNode struct {
 	key   string // cached TermKey
 }
 
-func (b BNode) subject()        {}
+func (b BNode) subject()         {}
 func (b BNode) termType() string { return "BNode" }
 
 // Value returns the blank node identifier.

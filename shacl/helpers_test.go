@@ -2,8 +2,6 @@ package shacl
 
 import (
 	"testing"
-
-	
 )
 
 func TestIsValidInteger(t *testing.T) {

@@ -1,6 +1,5 @@
 package shacl
 
-
 func parseConstraints(g *Graph, s *Shape, shapes map[string]*Shape) []Constraint {
 	var result []Constraint
 	id := s.ID

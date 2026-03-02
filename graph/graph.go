@@ -390,4 +390,3 @@ func (g *Graph) Connected() bool {
 
 // Base returns the base URI set on this graph.
 func (g *Graph) Base() string { return g.base }
-

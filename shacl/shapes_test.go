@@ -3,8 +3,6 @@ package shacl
 import (
 	"strings"
 	"testing"
-
-	
 )
 
 const shapesPrefixes = `

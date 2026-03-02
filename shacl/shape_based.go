@@ -1,6 +1,5 @@
 package shacl
 
-
 // NodeConstraint implements sh:node.
 type NodeConstraint struct {
 	ShapeRef Term

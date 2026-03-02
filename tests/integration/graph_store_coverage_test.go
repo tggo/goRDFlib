@@ -327,4 +327,3 @@ func TestMemoryStoreTripleSubjectObject(t *testing.T) {
 		t.Errorf("expected 2, got %d", count)
 	}
 }
-

@@ -3,8 +3,6 @@ package shacl
 import (
 	"sort"
 	"testing"
-
-	
 )
 
 const (

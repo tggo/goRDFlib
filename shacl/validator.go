@@ -1,6 +1,5 @@
 package shacl
 
-
 // Validate validates dataGraph against shapesGraph and returns a validation report.
 func Validate(dataGraph, shapesGraph *Graph) ValidationReport {
 	shapes := parseShapes(shapesGraph)

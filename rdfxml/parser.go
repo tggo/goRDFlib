@@ -20,8 +20,8 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		o(&cfg)
 	}
 	p := &rdfxmlParser{
-		g:        g,
-		base:     cfg.base,
+		g:          g,
+		base:       cfg.base,
 		bnodeMap:   make(map[string]rdflibgo.BNode),
 		usedIDs:    make(map[string]bool),
 		nsPrefixes: make(map[string]string),
@@ -30,53 +30,53 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 }
 
 type rdfxmlParser struct {
-	g        *rdflibgo.Graph
-	base         string
-	bnodeMap     map[string]rdflibgo.BNode
-	usedIDs      map[string]bool   // track rdf:ID values for uniqueness
-	nsPrefixes   map[string]string // prefix → namespace URI (in-scope)
-	nsPrefixOrder []string         // insertion order of prefixes
+	g             *rdflibgo.Graph
+	base          string
+	bnodeMap      map[string]rdflibgo.BNode
+	usedIDs       map[string]bool   // track rdf:ID values for uniqueness
+	nsPrefixes    map[string]string // prefix → namespace URI (in-scope)
+	nsPrefixOrder []string          // insertion order of prefixes
 }
 
 // rdfNames that are not allowed as node element names.
 var forbiddenNodeElementNames = map[string]bool{
-	rdfNS + "RDF":            true,
-	rdfNS + "Description":    false, // allowed
-	rdfNS + "ID":             true,
-	rdfNS + "about":          true,
-	rdfNS + "parseType":      true,
-	rdfNS + "resource":       true,
-	rdfNS + "nodeID":         true,
-	rdfNS + "datatype":       true,
-	rdfNS + "li":             true,
-	rdfNS + "aboutEach":      true,
+	rdfNS + "RDF":             true,
+	rdfNS + "Description":     false, // allowed
+	rdfNS + "ID":              true,
+	rdfNS + "about":           true,
+	rdfNS + "parseType":       true,
+	rdfNS + "resource":        true,
+	rdfNS + "nodeID":          true,
+	rdfNS + "datatype":        true,
+	rdfNS + "li":              true,
+	rdfNS + "aboutEach":       true,
 	rdfNS + "aboutEachPrefix": true,
-	rdfNS + "bagID":          true,
+	rdfNS + "bagID":           true,
 }
 
 // rdfNames that are not allowed as property element names.
 var forbiddenPropertyElementNames = map[string]bool{
-	rdfNS + "RDF":            true,
-	rdfNS + "Description":    true,
-	rdfNS + "ID":             true,
-	rdfNS + "about":          true,
-	rdfNS + "parseType":      true,
-	rdfNS + "resource":       true,
-	rdfNS + "nodeID":         true,
-	rdfNS + "datatype":       true,
-	rdfNS + "aboutEach":      true,
+	rdfNS + "RDF":             true,
+	rdfNS + "Description":     true,
+	rdfNS + "ID":              true,
+	rdfNS + "about":           true,
+	rdfNS + "parseType":       true,
+	rdfNS + "resource":        true,
+	rdfNS + "nodeID":          true,
+	rdfNS + "datatype":        true,
+	rdfNS + "aboutEach":       true,
 	rdfNS + "aboutEachPrefix": true,
-	rdfNS + "bagID":          true,
+	rdfNS + "bagID":           true,
 }
 
 // rdfNames that are not allowed as property attribute URIs.
 var forbiddenPropertyAttributeNames = map[string]bool{
-	rdfNS + "RDF":         true,
-	rdfNS + "Description": true,
-	rdfNS + "li":          true,
-	rdfNS + "aboutEach":   true,
+	rdfNS + "RDF":             true,
+	rdfNS + "Description":     true,
+	rdfNS + "li":              true,
+	rdfNS + "aboutEach":       true,
 	rdfNS + "aboutEachPrefix": true,
-	rdfNS + "bagID":       true,
+	rdfNS + "bagID":           true,
 }
 
 // coreRDFAttrs are rdf attributes handled specially, not as property attributes.

@@ -4,8 +4,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	
 )
 
 // ParseExpectedReport reads a validation report from the graph given a report node.

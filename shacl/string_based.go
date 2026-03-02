@@ -3,8 +3,6 @@ package shacl
 import (
 	"regexp"
 	"unicode/utf8"
-
-	
 )
 
 // MinLengthConstraint implements sh:minLength.

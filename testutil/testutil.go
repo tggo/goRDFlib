@@ -126,7 +126,7 @@ func isomorphic(exp, act []triple) bool {
 	}
 
 	// Backtracking search.
-	mapping := make(map[string]string, len(expBNodes))   // exp -> act
+	mapping := make(map[string]string, len(expBNodes)) // exp -> act
 	usedAct := make(map[string]bool, len(actBNodes))
 
 	// Sort expBNodes by candidate count (most constrained first).

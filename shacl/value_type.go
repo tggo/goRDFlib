@@ -2,8 +2,6 @@ package shacl
 
 import (
 	"math/big"
-
-	
 )
 
 // ClassConstraint implements sh:class.

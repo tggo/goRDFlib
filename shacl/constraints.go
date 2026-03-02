@@ -1,6 +1,5 @@
 package shacl
 
-
 func makeResult(shape *Shape, focusNode Term, value Term, component string) ValidationResult {
 	r := ValidationResult{
 		FocusNode:                 focusNode,

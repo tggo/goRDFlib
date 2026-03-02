@@ -3,8 +3,6 @@ package shacl
 import (
 	"strings"
 	"testing"
-
-	
 )
 
 func mustParseWithPrefixes(t *testing.T, turtle string) *Graph {

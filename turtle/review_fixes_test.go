@@ -84,13 +84,13 @@ func TestIsValidLocalName(t *testing.T) {
 		{"_hidden", true},
 		{"a.b", true},
 		{"", false},
-		{"hello world", false},   // space
-		{"a@b", false},           // @ not in PN_LOCAL
-		{"a!b", false},           // ! not in PN_LOCAL
-		{"a%b", false},           // bare % not valid
-		{"a#b", false},           // # not valid
-		{"ends.", false},         // trailing dot
-		{":colon", true},        // colon is valid in PN_LOCAL
+		{"hello world", false}, // space
+		{"a@b", false},         // @ not in PN_LOCAL
+		{"a!b", false},         // ! not in PN_LOCAL
+		{"a%b", false},         // bare % not valid
+		{"a#b", false},         // # not valid
+		{"ends.", false},       // trailing dot
+		{":colon", true},       // colon is valid in PN_LOCAL
 	}
 	for _, tt := range tests {
 		got := isValidLocalName(tt.input)

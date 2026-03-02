@@ -3,8 +3,6 @@ package shacl
 import (
 	"strings"
 	"testing"
-
-	
 )
 
 func TestResultKey_BlankNormalization(t *testing.T) {
@@ -121,4 +119,3 @@ func TestCompareReports_DoesNotMutateInput(t *testing.T) {
 		t.Error("CompareReports mutated input slice order")
 	}
 }
-

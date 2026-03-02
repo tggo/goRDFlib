@@ -6,11 +6,11 @@ import (
 
 	. "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/jsonld"
-	"github.com/tggo/goRDFlib/testutil"
 	"github.com/tggo/goRDFlib/nq"
 	"github.com/tggo/goRDFlib/nt"
 	"github.com/tggo/goRDFlib/rdfxml"
 	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/testutil"
 	"github.com/tggo/goRDFlib/turtle"
 )
 

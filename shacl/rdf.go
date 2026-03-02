@@ -68,14 +68,14 @@ type Term struct {
 	language string
 }
 
-func (t Term) Kind() TermKind  { return t.kind }
-func (t Term) Value() string   { return t.value }
+func (t Term) Kind() TermKind   { return t.kind }
+func (t Term) Value() string    { return t.value }
 func (t Term) Datatype() string { return t.datatype }
 func (t Term) Language() string { return t.language }
-func (t Term) IsNone() bool    { return t.kind == TermNone }
-func (t Term) IsIRI() bool     { return t.kind == TermIRI }
-func (t Term) IsLiteral() bool { return t.kind == TermLiteral }
-func (t Term) IsBlank() bool   { return t.kind == TermBlankNode }
+func (t Term) IsNone() bool     { return t.kind == TermNone }
+func (t Term) IsIRI() bool      { return t.kind == TermIRI }
+func (t Term) IsLiteral() bool  { return t.kind == TermLiteral }
+func (t Term) IsBlank() bool    { return t.kind == TermBlankNode }
 
 func (t Term) String() string {
 	switch t.kind {

@@ -1,6 +1,5 @@
 package shacl
 
-
 // HasValueConstraint implements sh:hasValue.
 type HasValueConstraint struct {
 	Value Term

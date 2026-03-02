@@ -1,6 +1,5 @@
 package shacl
 
-
 // AndConstraint implements sh:and.
 type AndConstraint struct {
 	Shapes []Term

@@ -4,22 +4,20 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	
 )
 
 var (
-	benchReport  ValidationReport
-	benchTerms2  []Term
-	benchCmp     int
-	benchCmpOk   bool
+	benchReport ValidationReport
+	benchTerms2 []Term
+	benchCmp    int
+	benchCmpOk  bool
 )
 
 func BenchmarkValidate(b *testing.B) {
 	type benchCase struct {
-		name       string
-		numShapes  int
-		numNodes   int
+		name      string
+		numShapes int
+		numNodes  int
 	}
 	cases := []benchCase{
 		{"small_5shapes_50nodes", 5, 50},

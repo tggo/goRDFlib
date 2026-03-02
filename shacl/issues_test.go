@@ -2,8 +2,6 @@ package shacl
 
 import (
 	"testing"
-
-	
 )
 
 // Tests ported from pySHACL issue-based regression tests.

@@ -13,7 +13,9 @@ func TestMemoryStoreAddAndLen(t *testing.T) {
 	pred, _ := term.NewURIRef("http://example.org/p")
 	obj := term.NewLiteral("hello")
 	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: obj}, nil)
-	if s.Len(nil) != 1 { t.Errorf("expected 1, got %d", s.Len(nil)) }
+	if s.Len(nil) != 1 {
+		t.Errorf("expected 1, got %d", s.Len(nil))
+	}
 }
 
 func TestMemoryStoreDuplicateAdd(t *testing.T) {
@@ -23,7 +25,9 @@ func TestMemoryStoreDuplicateAdd(t *testing.T) {
 	obj := term.NewLiteral("hello")
 	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: obj}, nil)
 	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: obj}, nil)
-	if s.Len(nil) != 1 { t.Errorf("duplicate add should not increase count, got %d", s.Len(nil)) }
+	if s.Len(nil) != 1 {
+		t.Errorf("duplicate add should not increase count, got %d", s.Len(nil))
+	}
 }
 
 func TestMemoryStoreRemove(t *testing.T) {
@@ -33,7 +37,9 @@ func TestMemoryStoreRemove(t *testing.T) {
 	obj := term.NewLiteral("hello")
 	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: obj}, nil)
 	s.Remove(term.TriplePattern{Subject: sub, Predicate: &pred, Object: obj}, nil)
-	if s.Len(nil) != 0 { t.Errorf("expected 0 after remove, got %d", s.Len(nil)) }
+	if s.Len(nil) != 0 {
+		t.Errorf("expected 0 after remove, got %d", s.Len(nil))
+	}
 }
 
 func TestMemoryStoreTriplesSubjectPattern(t *testing.T) {
@@ -46,7 +52,9 @@ func TestMemoryStoreTriplesSubjectPattern(t *testing.T) {
 	s.Add(term.Triple{Subject: s2, Predicate: p, Object: o}, nil)
 	count := 0
 	s.Triples(term.TriplePattern{Subject: s1}, nil)(func(term.Triple) bool { count++; return true })
-	if count != 1 { t.Errorf("expected 1 match for s1, got %d", count) }
+	if count != 1 {
+		t.Errorf("expected 1 match for s1, got %d", count)
+	}
 }
 
 func TestMemoryStoreTriplesPredPattern(t *testing.T) {
@@ -59,7 +67,9 @@ func TestMemoryStoreTriplesPredPattern(t *testing.T) {
 	s.Add(term.Triple{Subject: sub, Predicate: p2, Object: o}, nil)
 	count := 0
 	s.Triples(term.TriplePattern{Predicate: &p1}, nil)(func(term.Triple) bool { count++; return true })
-	if count != 1 { t.Errorf("expected 1 match for p1, got %d", count) }
+	if count != 1 {
+		t.Errorf("expected 1 match for p1, got %d", count)
+	}
 }
 
 func TestMemoryStoreTriplesAll(t *testing.T) {
@@ -70,7 +80,9 @@ func TestMemoryStoreTriplesAll(t *testing.T) {
 	s.Add(term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("b")}, nil)
 	count := 0
 	s.Triples(term.TriplePattern{}, nil)(func(term.Triple) bool { count++; return true })
-	if count != 2 { t.Errorf("expected 2, got %d", count) }
+	if count != 2 {
+		t.Errorf("expected 2, got %d", count)
+	}
 }
 
 func TestMemoryStoreAddNConcurrent(t *testing.T) {
@@ -83,9 +95,13 @@ func TestMemoryStoreAddNConcurrent(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { s.AddN(quads); close(done) }()
-	for i := 0; i < 10; i++ { _ = s.Len(nil) }
+	for i := 0; i < 10; i++ {
+		_ = s.Len(nil)
+	}
 	<-done
-	if s.Len(nil) != 100 { t.Errorf("expected 100 after AddN, got %d", s.Len(nil)) }
+	if s.Len(nil) != 100 {
+		t.Errorf("expected 100 after AddN, got %d", s.Len(nil))
+	}
 }
 
 func TestMemoryStoreRemoveConcurrent(t *testing.T) {
@@ -97,9 +113,13 @@ func TestMemoryStoreRemoveConcurrent(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { s.Remove(term.TriplePattern{Subject: sub}, nil); close(done) }()
-	for i := 0; i < 10; i++ { _ = s.Len(nil) }
+	for i := 0; i < 10; i++ {
+		_ = s.Len(nil)
+	}
 	<-done
-	if s.Len(nil) != 0 { t.Errorf("expected 0 after remove, got %d", s.Len(nil)) }
+	if s.Len(nil) != 0 {
+		t.Errorf("expected 0 after remove, got %d", s.Len(nil))
+	}
 }
 
 func TestMemoryStoreObjectPattern(t *testing.T) {
@@ -112,7 +132,9 @@ func TestMemoryStoreObjectPattern(t *testing.T) {
 	s.Add(term.Triple{Subject: s2, Predicate: p, Object: o}, nil)
 	count := 0
 	s.Triples(term.TriplePattern{Object: o}, nil)(func(term.Triple) bool { count++; return true })
-	if count != 2 { t.Errorf("expected 2 match for object pattern, got %d", count) }
+	if count != 2 {
+		t.Errorf("expected 2 match for object pattern, got %d", count)
+	}
 }
 
 func TestMemoryStoreExactPattern(t *testing.T) {
@@ -123,7 +145,9 @@ func TestMemoryStoreExactPattern(t *testing.T) {
 	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: obj}, nil)
 	count := 0
 	s.Triples(term.TriplePattern{Subject: sub, Predicate: &pred, Object: obj}, nil)(func(term.Triple) bool { count++; return true })
-	if count != 1 { t.Errorf("expected 1, got %d", count) }
+	if count != 1 {
+		t.Errorf("expected 1, got %d", count)
+	}
 }
 
 func TestMemoryStoreNamespaces(t *testing.T) {
@@ -131,16 +155,22 @@ func TestMemoryStoreNamespaces(t *testing.T) {
 	ns, _ := term.NewURIRef("http://example.org/ns#")
 	s.Bind("ex", ns)
 	got, ok := s.Namespace("ex")
-	if !ok || got != ns { t.Errorf("namespace lookup failed") }
+	if !ok || got != ns {
+		t.Errorf("namespace lookup failed")
+	}
 	prefix, ok := s.Prefix(ns)
-	if !ok || prefix != "ex" { t.Errorf("prefix lookup failed") }
+	if !ok || prefix != "ex" {
+		t.Errorf("prefix lookup failed")
+	}
 }
 
 func TestMemoryStoreContexts(t *testing.T) {
 	s := NewMemoryStore()
 	count := 0
 	s.Contexts(nil)(func(term.Term) bool { count++; return true })
-	if count != 0 { t.Errorf("expected 0 contexts, got %d", count) }
+	if count != 0 {
+		t.Errorf("expected 0 contexts, got %d", count)
+	}
 }
 
 func BenchmarkMemoryStoreAdd(b *testing.B) {

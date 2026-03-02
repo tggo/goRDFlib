@@ -23,11 +23,11 @@ type Serializer interface {
 // --- Plugin Registry ---
 
 var (
-	parsersMu   sync.RWMutex
-	parsers     = make(map[string]func() Parser)
+	parsersMu sync.RWMutex
+	parsers   = make(map[string]func() Parser)
 
 	serializersMu sync.RWMutex
-	serializers    = make(map[string]func() Serializer)
+	serializers   = make(map[string]func() Serializer)
 
 	storesMu sync.RWMutex
 	stores   = make(map[string]func() store.Store)
@@ -91,14 +91,14 @@ func GetStore(name string) (store.Store, bool) {
 // --- MIME type and file extension mappings ---
 
 var mimeToFormat = map[string]string{
-	"text/turtle":               "turtle",
-	"application/x-turtle":      "turtle",
-	"application/n-triples":     "nt",
-	"application/n-quads":       "nquads",
-	"application/rdf+xml":       "xml",
-	"application/ld+json":       "json-ld",
-	"text/n3":                   "turtle",
-	"text/plain":                "nt",
+	"text/turtle":           "turtle",
+	"application/x-turtle":  "turtle",
+	"application/n-triples": "nt",
+	"application/n-quads":   "nquads",
+	"application/rdf+xml":   "xml",
+	"application/ld+json":   "json-ld",
+	"text/n3":               "turtle",
+	"text/plain":            "nt",
 }
 
 var extToFormat = map[string]string{
@@ -170,4 +170,3 @@ func FormatFromContent(data []byte) (string, bool) {
 	}
 	return "", false
 }
-

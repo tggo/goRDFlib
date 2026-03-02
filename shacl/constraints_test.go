@@ -2,8 +2,6 @@ package shacl
 
 import (
 	"testing"
-
-	
 )
 
 // helpers
@@ -23,7 +21,7 @@ func testShape() *Shape {
 	}
 }
 
-func intLit(v string) Term  { return Literal(v, XSD+"integer", "") }
+func intLit(v string) Term        { return Literal(v, XSD+"integer", "") }
 func langLit(v, lang string) Term { return Literal(v, "", lang) }
 
 // --- ClassConstraint ---
@@ -721,7 +719,7 @@ func TestClosedConstraint(t *testing.T) {
 
 	g.Add(focus, namePred, Literal("Alice", "", ""))
 	g.Add(focus, agePred, intLit("30"))
-	g.Add(focus, IRI(RDFType), IRI(ex + "Person"))
+	g.Add(focus, IRI(RDFType), IRI(ex+"Person"))
 
 	ctx := testCtx(g)
 	s := testShape()

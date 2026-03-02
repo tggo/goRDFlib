@@ -1,6 +1,5 @@
 package shacl
 
-
 // ValidationReport represents a SHACL validation report (sh:ValidationReport).
 type ValidationReport struct {
 	Conforms bool

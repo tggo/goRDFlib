@@ -1,6 +1,5 @@
 package shacl
 
-
 // Shape represents either a NodeShape or a PropertyShape.
 type Shape struct {
 	ID          Term

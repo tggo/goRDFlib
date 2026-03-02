@@ -4,8 +4,6 @@ import (
 	"math/big"
 	"strings"
 	"time"
-
-	
 )
 
 // MinExclusiveConstraint implements sh:minExclusive.

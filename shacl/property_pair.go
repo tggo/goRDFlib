@@ -1,6 +1,5 @@
 package shacl
 
-
 // EqualsConstraint implements sh:equals.
 type EqualsConstraint struct{ Path Term }
 

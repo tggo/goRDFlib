@@ -1,6 +1,5 @@
 package shacl
 
-
 // PathKind distinguishes the different SHACL property path types.
 type PathKind int
 
@@ -45,10 +44,10 @@ func (k PathKind) String() string {
 // PropertyPath represents a parsed SHACL property path.
 type PropertyPath struct {
 	Kind     PathKind
-	Pred     Term        // for PathPredicate
+	Pred     Term            // for PathPredicate
 	Sub      *PropertyPath   // for PathInverse, PathZeroOrMore, PathOneOrMore, PathZeroOrOne
 	Elements []*PropertyPath // for PathSequence, PathAlternative
-	Node     Term        // original RDF node (for complex path result reporting)
+	Node     Term            // original RDF node (for complex path result reporting)
 }
 
 func parsePath(g *Graph, node Term) *PropertyPath {
