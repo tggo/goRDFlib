@@ -666,8 +666,7 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 	if ch == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
 		p.pos++
 		pred := "<" + rdflibgo.RDF.Type.Value() + ">"
-		p.skipWS()
-		if p.pos < len(p.input) && isPathModifier(p.input[p.pos]) {
+		if p.pos < len(p.input) && (isPathModifier(p.input[p.pos]) || (p.input[p.pos] == '?' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))))) {
 			p.pos = savedPos
 			path, err := p.parsePathExpr()
 			if err != nil {
@@ -684,15 +683,18 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 		return "", nil, nil
 	}
 
-	// Check if followed by path operators (/, |, *, +, ?)
-	p.skipWS()
-	if p.pos < len(p.input) && isPathModifier(p.input[p.pos]) {
-		p.pos = savedPos
-		path, err := p.parsePathExpr()
-		if err != nil {
-			return "", nil, err
+	// Check if followed by path operators (/, |, *, +)
+	// Also check ? when not followed by a name char (variable)
+	if p.pos < len(p.input) {
+		ch2 := p.input[p.pos]
+		if isPathModifier(ch2) || (ch2 == '?' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1])))) {
+			p.pos = savedPos
+			path, err := p.parsePathExpr()
+			if err != nil {
+				return "", nil, err
+			}
+			return "", path, nil
 		}
-		return "", path, nil
 	}
 
 	return pred, nil, nil

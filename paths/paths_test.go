@@ -150,8 +150,10 @@ func TestPathCycleDetection(t *testing.T) {
 
 	path := paths.ZeroOrMore(paths.AsPath(p))
 	pairs := collectPairs(g, path, a, nil)
-	if len(pairs) != 3 {
-		t.Errorf("expected 3 pairs with cycle, got %d: %v", len(pairs), pairs)
+	// a→b→a cycle with ZeroOrMore from a: (a,a) via zero-length, (a,b) via one step
+	// b→a loop is handled by cycle detection, no duplicate (a,a)
+	if len(pairs) != 2 {
+		t.Errorf("expected 2 pairs with cycle, got %d: %v", len(pairs), pairs)
 	}
 }
 

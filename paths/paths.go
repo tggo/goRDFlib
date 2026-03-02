@@ -183,7 +183,7 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 		}
 
 		if subj != nil {
-			// Forward evaluation
+			// Forward evaluation from a known subject
 			if p.Zero {
 				if obj == nil || term.TermKey(subj) == term.TermKey(obj) {
 					if !emit(subj, subj) {
@@ -192,21 +192,21 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 				}
 			}
 			seen := make(map[string]bool)
-			p.fwd(g, subj, obj, seen, emit)
+			p.fwdFrom(g, subj, subj, obj, seen, emit)
 		} else if obj != nil {
-			// Backward evaluation
+			// Backward evaluation to a known object
 			if p.Zero {
 				if s, ok := obj.(term.Subject); ok {
 					if !emit(obj, obj) {
 						return
 					}
 					seen := make(map[string]bool)
-					p.bwd(g, s, seen, emit)
+					p.bwdTo(g, s, obj, seen, emit)
 				}
 			} else {
 				if s, ok := obj.(term.Subject); ok {
 					seen := make(map[string]bool)
-					p.bwd(g, s, seen, emit)
+					p.bwdTo(g, s, obj, seen, emit)
 				}
 			}
 		} else {
@@ -221,47 +221,49 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 			for _, n := range g.AllNodes() {
 				if s, ok := n.(term.Subject); ok {
 					seen := make(map[string]bool)
-					p.fwd(g, s, nil, seen, emit)
+					p.fwdFrom(g, s, s, nil, seen, emit)
 				}
 			}
 		}
 	}
 }
 
-func (p *MulPath) fwd(g *graph.Graph, node term.Subject, obj term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+// fwdFrom traverses forward from node, emitting (origin, reachable) pairs.
+func (p *MulPath) fwdFrom(g *graph.Graph, origin term.Term, node term.Subject, obj term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
 	k := term.TermKey(node)
 	if seen[k] {
 		return
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, node, obj)(func(s, o term.Term) bool {
-		if !emit(s, o) {
+	p.Path.Eval(g, node, obj)(func(_, o term.Term) bool {
+		if !emit(origin, o) {
 			return false
 		}
 		if p.More {
 			if next, ok := o.(term.Subject); ok {
-				p.fwd(g, next, obj, seen, emit)
+				p.fwdFrom(g, origin, next, obj, seen, emit)
 			}
 		}
 		return true
 	})
 }
 
-func (p *MulPath) bwd(g *graph.Graph, node term.Subject, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+// bwdTo traverses backward from node, emitting (reachable, target) pairs.
+func (p *MulPath) bwdTo(g *graph.Graph, node term.Subject, target term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
 	k := term.TermKey(node)
 	if seen[k] {
 		return
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, nil, node)(func(s, o term.Term) bool {
-		if !emit(s, o) {
+	p.Path.Eval(g, nil, node)(func(s, _ term.Term) bool {
+		if !emit(s, target) {
 			return false
 		}
 		if p.More {
 			if prev, ok := s.(term.Subject); ok {
-				p.bwd(g, prev, seen, emit)
+				p.bwdTo(g, prev, target, seen, emit)
 			}
 		}
 		return true
