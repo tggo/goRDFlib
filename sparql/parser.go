@@ -2058,6 +2058,32 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 			seen[pe.Var] = true
 		}
 
+		// Validate that project expressions only reference grouped variables or aggregates
+		if len(q.GroupBy) > 0 {
+			grouped := make(map[string]bool)
+			for _, g := range q.GroupBy {
+				if ve, ok := g.(*VarExpr); ok {
+					grouped[ve.Name] = true
+				}
+			}
+			for _, alias := range q.GroupByAliases {
+				if alias != "" {
+					grouped[alias] = true
+				}
+			}
+			for _, pe := range q.ProjectExprs {
+				if !containsAggregate(pe.Expr) {
+					// Check that all variable references are grouped
+					refs := collectExprVars(pe.Expr)
+					for v := range refs {
+						if !grouped[v] {
+							return fmt.Errorf("sparql parse error: variable ?%s in expression not in GROUP BY", v)
+						}
+					}
+				}
+			}
+		}
+
 		// Check for scope conflict: project expression variable from inner subquery
 		if q.Where != nil {
 			innerVars := collectPatternVars(q.Where)
@@ -2153,6 +2179,34 @@ func collectVarsInto(p Pattern, vars map[string]bool) {
 		for _, v := range pat.Query.Variables {
 			vars[v] = true
 		}
+	}
+}
+
+func collectExprVars(expr Expr) map[string]bool {
+	vars := make(map[string]bool)
+	collectExprVarsInto(expr, vars)
+	return vars
+}
+
+func collectExprVarsInto(expr Expr, vars map[string]bool) {
+	if expr == nil {
+		return
+	}
+	switch e := expr.(type) {
+	case *VarExpr:
+		vars[e.Name] = true
+	case *BinaryExpr:
+		collectExprVarsInto(e.Left, vars)
+		collectExprVarsInto(e.Right, vars)
+	case *UnaryExpr:
+		collectExprVarsInto(e.Arg, vars)
+	case *FuncExpr:
+		if !isAggregateFuncName(e.Name) {
+			for _, a := range e.Args {
+				collectExprVarsInto(a, vars)
+			}
+		}
+		// Don't descend into aggregate function args
 	}
 }
 
