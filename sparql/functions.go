@@ -243,6 +243,9 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "IF":
 		if len(args) == 3 {
 			cond := evalExpr(args[0], bindings, prefixes)
+			if cond == nil {
+				return nil // error in condition propagates
+			}
 			if effectiveBooleanValue(cond) {
 				return evalExpr(args[1], bindings, prefixes)
 			}
@@ -395,7 +398,7 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 		vals := evalArgs()
 		if len(vals) == 1 {
 			if s, ok := extractDatePart(termString(vals[0]), "seconds"); ok {
-				return rdflibgo.NewLiteral(s)
+				return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 			}
 		}
 	case "TIMEZONE":

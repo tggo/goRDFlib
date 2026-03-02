@@ -272,6 +272,7 @@ func evalAggExpr(expr Expr, group []map[string]rdflibgo.Term, prefixes map[strin
 
 func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
 	var vals []rdflibgo.Term
+	hasError := false
 	for _, s := range group {
 		if fe.Star {
 			vals = append(vals, rdflibgo.NewLiteral(1))
@@ -279,6 +280,12 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 			v := evalExpr(fe.Args[0], s, prefixes)
 			if v != nil {
 				vals = append(vals, v)
+				// For numeric aggregates, non-numeric values are errors
+				if fe.Name == "SUM" || fe.Name == "AVG" {
+					if !isNumericTerm(v) {
+						hasError = true
+					}
+				}
 			}
 		}
 	}
@@ -300,6 +307,9 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 	case "COUNT":
 		return rdflibgo.NewLiteral(len(vals), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 	case "SUM":
+		if hasError {
+			return nil
+		}
 		sum := 0.0
 		allInt := true
 		hasDecimal := false
@@ -320,6 +330,9 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 		}
 		return rdflibgo.NewLiteral(sum)
 	case "AVG":
+		if hasError {
+			return nil
+		}
 		if len(vals) == 0 {
 			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 		}

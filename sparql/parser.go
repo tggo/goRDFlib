@@ -808,45 +808,55 @@ func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {
 		return inner, nil
 	}
 
-	// Negated property set: !uri or !(uri1|uri2|^uri3)
+	// Negated property set: !uri, !^uri, !(uri1|^uri2|uri3)
 	if ch == '!' {
 		p.pos++
 		p.skipWS()
 		if p.pos < len(p.input) && p.input[p.pos] == '(' {
 			p.pos++
-			var excluded []term.URIRef
+			var fwdExcluded, invExcluded []term.URIRef
 			for {
 				p.skipWS()
 				if p.pos < len(p.input) && p.input[p.pos] == ')' {
 					p.pos++
 					break
 				}
-				if len(excluded) > 0 {
+				if len(fwdExcluded)+len(invExcluded) > 0 {
 					p.skipWS()
 					if p.pos < len(p.input) && p.input[p.pos] == '|' {
 						p.pos++
 					}
 				}
 				p.skipWS()
-				// skip ^ for inverse in negated set (we just collect the URIs)
+				inverse := false
 				if p.pos < len(p.input) && p.input[p.pos] == '^' {
 					p.pos++
+					inverse = true
 				}
 				uri := p.resolvePathURI()
 				if uri != "" {
-					excluded = append(excluded, term.NewURIRefUnsafe(uri))
+					if inverse {
+						invExcluded = append(invExcluded, term.NewURIRefUnsafe(uri))
+					} else {
+						fwdExcluded = append(fwdExcluded, term.NewURIRefUnsafe(uri))
+					}
 				}
 			}
-			return paths.Negated(excluded...), nil
+			return p.buildNegatedPath(fwdExcluded, invExcluded), nil
 		}
-		// Single negated URI
-		// skip ^ for inverse
+		// Single negated URI or ^URI
+		inverse := false
 		if p.pos < len(p.input) && p.input[p.pos] == '^' {
 			p.pos++
+			inverse = true
 		}
 		uri := p.resolvePathURI()
 		if uri != "" {
-			return paths.Negated(term.NewURIRefUnsafe(uri)), nil
+			u := term.NewURIRefUnsafe(uri)
+			if inverse {
+				return paths.Inv(paths.Negated(u)), nil
+			}
+			return paths.Negated(u), nil
 		}
 		return nil, p.errorf("expected URI in negated path")
 	}
@@ -864,6 +874,20 @@ func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {
 	}
 
 	return nil, p.errorf("expected path element, got %c", ch)
+}
+
+// buildNegatedPath creates a path for !(fwd1|fwd2|^inv1|^inv2).
+// Forward exclusions use NegatedPath; inverse exclusions use Inv(NegatedPath).
+// Combined with Alternative if both exist.
+func (p *sparqlParser) buildNegatedPath(fwd, inv []term.URIRef) paths.Path {
+	if len(inv) == 0 {
+		return paths.Negated(fwd...)
+	}
+	if len(fwd) == 0 {
+		return paths.Inv(paths.Negated(inv...))
+	}
+	// Both forward and inverse: Alternative of (not-fwd) and ^(not-inv)
+	return paths.Alternative(paths.Negated(fwd...), paths.Inv(paths.Negated(inv...)))
 }
 
 func (p *sparqlParser) resolvePathURI() string {
