@@ -121,6 +121,11 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		return nil, err
 	}
 
+	// Validate BIND scope
+	if err := validateBindScope(q.Where); err != nil {
+		return nil, err
+	}
+
 	// Validate CONSTRUCT WHERE shorthand: only simple BGPs allowed
 	if q.Type == "CONSTRUCT" && len(q.Construct) == 0 {
 		if err := validateConstructWhere(q.Where); err != nil {
@@ -2054,6 +2059,91 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 		}
 	}
 	return nil
+}
+
+// validateBindScope checks that BIND variables don't conflict with variables already in scope.
+func validateBindScope(p Pattern) error {
+	if p == nil {
+		return nil
+	}
+	switch pat := p.(type) {
+	case *BindPattern:
+		// Check if BIND variable is already used in the inner pattern
+		vars := collectPatternVars(pat.Pattern)
+		if vars[pat.Var] {
+			return fmt.Errorf("sparql parse error: BIND variable ?%s already in scope", pat.Var)
+		}
+		return validateBindScope(pat.Pattern)
+	case *JoinPattern:
+		if err := validateBindScope(pat.Left); err != nil {
+			return err
+		}
+		return validateBindScope(pat.Right)
+	case *OptionalPattern:
+		if err := validateBindScope(pat.Main); err != nil {
+			return err
+		}
+		return validateBindScope(pat.Optional)
+	case *UnionPattern:
+		if err := validateBindScope(pat.Left); err != nil {
+			return err
+		}
+		return validateBindScope(pat.Right)
+	case *FilterPattern:
+		return validateBindScope(pat.Pattern)
+	case *MinusPattern:
+		if err := validateBindScope(pat.Left); err != nil {
+			return err
+		}
+		return validateBindScope(pat.Right)
+	case *SubqueryPattern:
+		return validateBindScope(pat.Query.Where)
+	}
+	return nil
+}
+
+func collectPatternVars(p Pattern) map[string]bool {
+	vars := make(map[string]bool)
+	collectVarsInto(p, vars)
+	return vars
+}
+
+func collectVarsInto(p Pattern, vars map[string]bool) {
+	if p == nil {
+		return
+	}
+	switch pat := p.(type) {
+	case *BGP:
+		for _, t := range pat.Triples {
+			if strings.HasPrefix(t.Subject, "?") {
+				vars[t.Subject[1:]] = true
+			}
+			if strings.HasPrefix(t.Predicate, "?") {
+				vars[t.Predicate[1:]] = true
+			}
+			if strings.HasPrefix(t.Object, "?") {
+				vars[t.Object[1:]] = true
+			}
+		}
+	case *JoinPattern:
+		collectVarsInto(pat.Left, vars)
+		collectVarsInto(pat.Right, vars)
+	case *OptionalPattern:
+		collectVarsInto(pat.Main, vars)
+		collectVarsInto(pat.Optional, vars)
+	case *UnionPattern:
+		collectVarsInto(pat.Left, vars)
+		collectVarsInto(pat.Right, vars)
+	case *FilterPattern:
+		collectVarsInto(pat.Pattern, vars)
+	case *BindPattern:
+		collectVarsInto(pat.Pattern, vars)
+		vars[pat.Var] = true
+	case *SubqueryPattern:
+		for _, v := range pat.Query.Variables {
+			vars[v] = true
+		}
+	}
 }
 
 func validateConstructWhere(p Pattern) error {
