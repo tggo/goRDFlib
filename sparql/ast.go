@@ -1,21 +1,31 @@
 package sparql
 
-import rdflibgo "github.com/tggo/goRDFlib"
+import (
+	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/paths"
+)
 
 // ParsedQuery is the parsed representation of a SPARQL query.
 // Ported from: rdflib.plugins.sparql.parserutils.CompValue
 type ParsedQuery struct {
-	Type      string // "SELECT", "ASK", "CONSTRUCT"
-	Distinct  bool
-	Variables []string // projection vars (nil = *)
-	Where     Pattern
-	OrderBy   []OrderExpr
-	Limit     int // -1 = no limit
-	Offset    int
-	Prefixes  map[string]string // prefix → namespace
-	Construct []TripleTemplate  // CONSTRUCT template
-	GroupBy   []Expr
-	Having    Expr
+	Type         string // "SELECT", "ASK", "CONSTRUCT"
+	Distinct     bool
+	Variables    []string // projection vars (nil = *)
+	ProjectExprs []ProjectExpr
+	Where        Pattern
+	OrderBy      []OrderExpr
+	Limit        int // -1 = no limit
+	Offset       int
+	Prefixes     map[string]string // prefix → namespace
+	Construct    []TripleTemplate  // CONSTRUCT template
+	GroupBy      []Expr
+	Having       Expr
+}
+
+// ProjectExpr is a (expr AS ?var) in SELECT.
+type ProjectExpr struct {
+	Expr Expr
+	Var  string
 }
 
 // TripleTemplate is a triple pattern used in CONSTRUCT.
@@ -44,6 +54,7 @@ func (b *BGP) patternType() string { return "BGP" }
 // Triple is a triple pattern with possible variables.
 type Triple struct {
 	Subject, Predicate, Object string // "?var" or N3 term
+	PredicatePath              paths.Path
 }
 
 // JoinPattern joins two patterns.
@@ -92,6 +103,20 @@ type ValuesPattern struct {
 
 func (v *ValuesPattern) patternType() string { return "Values" }
 
+// MinusPattern removes solutions from left that are compatible with right.
+type MinusPattern struct {
+	Left, Right Pattern
+}
+
+func (m *MinusPattern) patternType() string { return "Minus" }
+
+// SubqueryPattern wraps a sub-SELECT query as a pattern.
+type SubqueryPattern struct {
+	Query *ParsedQuery
+}
+
+func (s *SubqueryPattern) patternType() string { return "Subquery" }
+
 // Expr is a filter/bind expression.
 type Expr interface {
 	exprType() string
@@ -124,8 +149,19 @@ type UnaryExpr struct {
 func (e *UnaryExpr) exprType() string { return "Unary" }
 
 type FuncExpr struct {
-	Name string
-	Args []Expr
+	Name      string
+	Args      []Expr
+	Distinct  bool   // COUNT(DISTINCT ?x)
+	Separator string // GROUP_CONCAT(... ; SEPARATOR=",")
+	Star      bool   // COUNT(*)
 }
 
 func (e *FuncExpr) exprType() string { return "Func" }
+
+// ExistsExpr evaluates EXISTS { pattern } or NOT EXISTS { pattern }.
+type ExistsExpr struct {
+	Pattern Pattern
+	Not     bool
+}
+
+func (e *ExistsExpr) exprType() string { return "Exists" }

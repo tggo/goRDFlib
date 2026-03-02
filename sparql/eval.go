@@ -7,15 +7,14 @@ import (
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
 )
 
 // EvalQuery evaluates a parsed SPARQL query against a graph.
-// Ported from: rdflib.plugins.sparql.evaluate.evalQuery
 func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
-	// Evaluate WHERE clause
 	solutions := evalPattern(g, q.Where, q.Prefixes)
 
-	// Apply initial bindings filter
 	if initBindings != nil {
 		solutions = filterByBindings(solutions, initBindings)
 	}
@@ -26,6 +25,10 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 	case "ASK":
 		return &Result{Type: "ASK", AskResult: len(solutions) > 0}, nil
 	case "CONSTRUCT":
+		// CONSTRUCT WHERE shorthand: derive template from WHERE BGP
+		if len(q.Construct) == 0 && q.Where != nil {
+			q.Construct = extractTemplateFromPattern(q.Where)
+		}
 		return evalConstruct(g, q, solutions)
 	default:
 		return nil, fmt.Errorf("unsupported query type: %s", q.Type)
@@ -33,6 +36,25 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 }
 
 func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) (*Result, error) {
+	// Aggregation
+	if len(q.GroupBy) > 0 || hasAggregates(q) {
+		solutions = evalAggregation(q, solutions)
+	}
+
+	// Project expressions
+	if len(q.ProjectExprs) > 0 {
+		for i, s := range solutions {
+			for _, pe := range q.ProjectExprs {
+				val := evalExpr(pe.Expr, s, q.Prefixes)
+				if val != nil {
+					ns := copyBindings(s)
+					ns[pe.Var] = val
+					solutions[i] = ns
+				}
+			}
+		}
+	}
+
 	// ORDER BY
 	if len(q.OrderBy) > 0 {
 		slices.SortFunc(solutions, func(a, b map[string]rdflibgo.Term) int {
@@ -112,6 +134,228 @@ func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflib
 	return &Result{Type: "SELECT", Vars: vars, Bindings: solutions}, nil
 }
 
+// --- Aggregation ---
+
+func hasAggregates(q *ParsedQuery) bool {
+	for _, pe := range q.ProjectExprs {
+		if containsAggregate(pe.Expr) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAggregate(expr Expr) bool {
+	switch e := expr.(type) {
+	case *FuncExpr:
+		if isAggregateFuncName(e.Name) {
+			return true
+		}
+		for _, a := range e.Args {
+			if containsAggregate(a) {
+				return true
+			}
+		}
+	case *BinaryExpr:
+		return containsAggregate(e.Left) || containsAggregate(e.Right)
+	case *UnaryExpr:
+		return containsAggregate(e.Arg)
+	}
+	return false
+}
+
+func isAggregateFuncName(name string) bool {
+	switch name {
+	case "COUNT", "SUM", "AVG", "MIN", "MAX", "GROUP_CONCAT", "SAMPLE":
+		return true
+	}
+	return false
+}
+
+func evalAggregation(q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+	type group struct {
+		keyBinds map[string]rdflibgo.Term
+		members  []map[string]rdflibgo.Term
+	}
+
+	groups := make(map[string]*group)
+	var order []string
+
+	for _, s := range solutions {
+		var keyParts []string
+		keyBinds := make(map[string]rdflibgo.Term)
+		for _, gExpr := range q.GroupBy {
+			val := evalExpr(gExpr, s, q.Prefixes)
+			if val != nil {
+				keyParts = append(keyParts, val.N3())
+			} else {
+				keyParts = append(keyParts, "")
+			}
+			if ve, ok := gExpr.(*VarExpr); ok && val != nil {
+				keyBinds[ve.Name] = val
+			}
+		}
+		k := strings.Join(keyParts, "|")
+		if _, exists := groups[k]; !exists {
+			groups[k] = &group{keyBinds: keyBinds}
+			order = append(order, k)
+		}
+		groups[k].members = append(groups[k].members, s)
+	}
+
+	// Empty input with aggregates → one empty group
+	if len(groups) == 0 && hasAggregates(q) {
+		groups[""] = &group{keyBinds: map[string]rdflibgo.Term{}}
+		order = append(order, "")
+	}
+
+	var result []map[string]rdflibgo.Term
+	for _, k := range order {
+		grp := groups[k]
+		row := copyBindings(grp.keyBinds)
+
+		for _, pe := range q.ProjectExprs {
+			val := evalAggExpr(pe.Expr, grp.members, q.Prefixes)
+			if val != nil {
+				row[pe.Var] = val
+			}
+		}
+
+		if q.Having != nil {
+			hval := evalAggExpr(q.Having, grp.members, q.Prefixes)
+			if !effectiveBooleanValue(hval) {
+				continue
+			}
+		}
+
+		result = append(result, row)
+	}
+	return result
+}
+
+func evalAggExpr(expr Expr, group []map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *FuncExpr:
+		if isAggregateFuncName(e.Name) {
+			return evalAggregate(e, group, prefixes)
+		}
+		if len(group) > 0 {
+			return evalFunc(e.Name, e.Args, group[0], prefixes)
+		}
+		return nil
+	case *BinaryExpr:
+		left := evalAggExpr(e.Left, group, prefixes)
+		right := evalAggExpr(e.Right, group, prefixes)
+		return evalBinaryOp(e.Op, left, right)
+	case *UnaryExpr:
+		arg := evalAggExpr(e.Arg, group, prefixes)
+		return evalUnaryOp(e.Op, arg)
+	case *VarExpr:
+		if len(group) > 0 {
+			return group[0][e.Name]
+		}
+		return nil
+	case *LiteralExpr:
+		return e.Value
+	case *IRIExpr:
+		return rdflibgo.NewURIRefUnsafe(e.Value)
+	}
+	return nil
+}
+
+func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
+	var vals []rdflibgo.Term
+	for _, s := range group {
+		if fe.Star {
+			vals = append(vals, rdflibgo.NewLiteral(1))
+		} else if len(fe.Args) > 0 {
+			v := evalExpr(fe.Args[0], s, prefixes)
+			if v != nil {
+				vals = append(vals, v)
+			}
+		}
+	}
+
+	if fe.Distinct {
+		seen := make(map[string]bool)
+		var unique []rdflibgo.Term
+		for _, v := range vals {
+			k := v.N3()
+			if !seen[k] {
+				seen[k] = true
+				unique = append(unique, v)
+			}
+		}
+		vals = unique
+	}
+
+	switch fe.Name {
+	case "COUNT":
+		return rdflibgo.NewLiteral(len(vals), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+	case "SUM":
+		sum := 0.0
+		allInt := true
+		for _, v := range vals {
+			sum += toFloat64(v)
+			if !isIntegral(v) {
+				allInt = false
+			}
+		}
+		if allInt {
+			return rdflibgo.NewLiteral(int(sum), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		}
+		return rdflibgo.NewLiteral(sum)
+	case "AVG":
+		if len(vals) == 0 {
+			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		}
+		sum := 0.0
+		for _, v := range vals {
+			sum += toFloat64(v)
+		}
+		return rdflibgo.NewLiteral(sum / float64(len(vals)))
+	case "MIN":
+		if len(vals) == 0 {
+			return nil
+		}
+		m := vals[0]
+		for _, v := range vals[1:] {
+			if compareTermValues(v, m) < 0 {
+				m = v
+			}
+		}
+		return m
+	case "MAX":
+		if len(vals) == 0 {
+			return nil
+		}
+		m := vals[0]
+		for _, v := range vals[1:] {
+			if compareTermValues(v, m) > 0 {
+				m = v
+			}
+		}
+		return m
+	case "GROUP_CONCAT":
+		var parts []string
+		for _, v := range vals {
+			parts = append(parts, termString(v))
+		}
+		return rdflibgo.NewLiteral(strings.Join(parts, fe.Separator))
+	case "SAMPLE":
+		if len(vals) > 0 {
+			return vals[0]
+		}
+		return nil
+	}
+	return nil
+}
+
+// --- CONSTRUCT ---
+
 func evalConstruct(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) (*Result, error) {
 	result := rdflibgo.NewGraph()
 	for _, sol := range solutions {
@@ -131,6 +375,20 @@ func evalConstruct(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdf
 		}
 	}
 	return &Result{Type: "CONSTRUCT", Graph: result}, nil
+}
+
+func extractTemplateFromPattern(p Pattern) []TripleTemplate {
+	switch pat := p.(type) {
+	case *BGP:
+		var tmpl []TripleTemplate
+		for _, t := range pat.Triples {
+			tmpl = append(tmpl, TripleTemplate{Subject: t.Subject, Predicate: t.Predicate, Object: t.Object})
+		}
+		return tmpl
+	case *JoinPattern:
+		return append(extractTemplateFromPattern(pat.Left), extractTemplateFromPattern(pat.Right)...)
+	}
+	return nil
 }
 
 func resolveTemplateValue(s string, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
@@ -158,8 +416,8 @@ func resolveTermRef(s string, prefixes map[string]string) rdflibgo.Term {
 	return nil
 }
 
-// evalPattern evaluates a SPARQL pattern, returning solution bindings.
-// Ported from: rdflib.plugins.sparql.evaluate.evalPart
+// --- Pattern evaluation ---
+
 func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string) []map[string]rdflibgo.Term {
 	if pattern == nil {
 		return []map[string]rdflibgo.Term{{}}
@@ -173,7 +431,6 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string)
 		left := evalPattern(g, p.Left, prefixes)
 		var result []map[string]rdflibgo.Term
 		for _, lb := range left {
-			// Evaluate right with left bindings pushed in
 			right := evalPatternWithBindings(g, p.Right, lb, prefixes)
 			for _, rb := range right {
 				result = append(result, mergeBindings(lb, rb))
@@ -205,7 +462,12 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string)
 		inner := evalPattern(g, p.Pattern, prefixes)
 		var result []map[string]rdflibgo.Term
 		for _, b := range inner {
-			val := evalExpr(p.Expr, b, prefixes)
+			var val rdflibgo.Term
+			if containsExists(p.Expr) {
+				val = evalExprWithGraph(p.Expr, b, prefixes, g)
+			} else {
+				val = evalExpr(p.Expr, b, prefixes)
+			}
 			if effectiveBooleanValue(val) {
 				result = append(result, b)
 			}
@@ -230,16 +492,57 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string)
 		for _, row := range p.Values {
 			b := make(map[string]rdflibgo.Term)
 			for i, v := range p.Vars {
-				if i < len(row) {
+				if i < len(row) && row[i] != nil {
 					b[v] = row[i]
 				}
 			}
 			result = append(result, b)
 		}
 		return result
+
+	case *MinusPattern:
+		left := evalPattern(g, p.Left, prefixes)
+		right := evalPattern(g, p.Right, prefixes)
+		var result []map[string]rdflibgo.Term
+		for _, lb := range left {
+			excluded := false
+			for _, rb := range right {
+				if minusCompatible(lb, rb) {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				result = append(result, lb)
+			}
+		}
+		return result
+
+	case *SubqueryPattern:
+		subResult, err := EvalQuery(g, p.Query, nil)
+		if err != nil {
+			return nil
+		}
+		if subResult.Type == "SELECT" {
+			return subResult.Bindings
+		}
+		return nil
 	}
 
 	return []map[string]rdflibgo.Term{{}}
+}
+
+func minusCompatible(a, b map[string]rdflibgo.Term) bool {
+	shared := false
+	for k, va := range a {
+		if vb, ok := b[k]; ok {
+			shared = true
+			if va.N3() != vb.N3() {
+				return false
+			}
+		}
+	}
+	return shared
 }
 
 func evalPatternWithBindings(g *rdflibgo.Graph, pattern Pattern, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
@@ -247,7 +550,6 @@ func evalPatternWithBindings(g *rdflibgo.Graph, pattern Pattern, bindings map[st
 	case *BGP:
 		return evalBGP(g, p.Triples, bindings, prefixes)
 	default:
-		// For non-BGP patterns, evaluate and filter compatible
 		results := evalPattern(g, pattern, prefixes)
 		var compatible []map[string]rdflibgo.Term
 		for _, r := range results {
@@ -259,8 +561,8 @@ func evalPatternWithBindings(g *rdflibgo.Graph, pattern Pattern, bindings map[st
 	}
 }
 
-// evalBGP evaluates a Basic Graph Pattern.
-// Ported from: rdflib.plugins.sparql.evaluate.evalBGP
+// --- BGP evaluation ---
+
 func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
 	if len(triples) == 0 {
 		return []map[string]rdflibgo.Term{bindings}
@@ -269,7 +571,10 @@ func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.T
 	tp := triples[0]
 	rest := triples[1:]
 
-	// Resolve subject/predicate/object (substitute bound variables)
+	if tp.PredicatePath != nil {
+		return evalPathTriple(g, tp, rest, bindings, prefixes)
+	}
+
 	var subj rdflibgo.Subject
 	var pred *rdflibgo.URIRef
 	var obj rdflibgo.Term
@@ -295,7 +600,6 @@ func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.T
 	g.Triples(subj, pred, obj)(func(t rdflibgo.Triple) bool {
 		nb := copyBindings(bindings)
 
-		// Bind unbound variables
 		if strings.HasPrefix(tp.Subject, "?") {
 			v := tp.Subject[1:]
 			if _, bound := nb[v]; !bound {
@@ -315,7 +619,46 @@ func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.T
 			}
 		}
 
-		// Recurse on remaining triples
+		subResults := evalBGP(g, rest, nb, prefixes)
+		results = append(results, subResults...)
+		return true
+	})
+
+	return results
+}
+
+func evalPathTriple(g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
+	gg := (*graph.Graph)(g)
+
+	var subj term.Subject
+	sVal := resolvePatternTerm(tp.Subject, bindings, prefixes)
+	if sVal != nil {
+		if s, ok := sVal.(term.Subject); ok {
+			subj = s
+		}
+	}
+
+	var obj term.Term
+	oVal := resolvePatternTerm(tp.Object, bindings, prefixes)
+	obj = oVal
+
+	var results []map[string]rdflibgo.Term
+	tp.PredicatePath.Eval(gg, subj, obj)(func(s, o term.Term) bool {
+		nb := copyBindings(bindings)
+
+		if strings.HasPrefix(tp.Subject, "?") {
+			v := tp.Subject[1:]
+			if _, bound := nb[v]; !bound {
+				nb[v] = s
+			}
+		}
+		if strings.HasPrefix(tp.Object, "?") {
+			v := tp.Object[1:]
+			if _, bound := nb[v]; !bound {
+				nb[v] = o
+			}
+		}
+
 		subResults := evalBGP(g, rest, nb, prefixes)
 		results = append(results, subResults...)
 		return true
@@ -330,7 +673,7 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 		if val, ok := bindings[v]; ok {
 			return val
 		}
-		return nil // unbound variable = wildcard
+		return nil
 	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
 		return rdflibgo.NewURIRefUnsafe(s[1 : len(s)-1])
@@ -363,8 +706,8 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 	return nil
 }
 
-// evalExpr evaluates a SPARQL expression.
-// Ported from: rdflib.plugins.sparql.operators
+// --- Expression evaluation ---
+
 func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
 	if expr == nil {
 		return nil
@@ -373,27 +716,69 @@ func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]
 	switch e := expr.(type) {
 	case *VarExpr:
 		return bindings[e.Name]
-
 	case *LiteralExpr:
 		return e.Value
-
 	case *IRIExpr:
 		return rdflibgo.NewURIRefUnsafe(e.Value)
-
 	case *BinaryExpr:
 		left := evalExpr(e.Left, bindings, prefixes)
 		right := evalExpr(e.Right, bindings, prefixes)
 		return evalBinaryOp(e.Op, left, right)
-
 	case *UnaryExpr:
 		arg := evalExpr(e.Arg, bindings, prefixes)
 		return evalUnaryOp(e.Op, arg)
-
 	case *FuncExpr:
 		return evalFunc(e.Name, e.Args, bindings, prefixes)
+	case *ExistsExpr:
+		return nil // needs graph; handled via evalExprWithGraph
 	}
 
 	return nil
+}
+
+func evalExprWithGraph(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph) rdflibgo.Term {
+	if expr == nil {
+		return nil
+	}
+	switch e := expr.(type) {
+	case *ExistsExpr:
+		results := evalPatternWithBindings(g, e.Pattern, bindings, prefixes)
+		exists := len(results) > 0
+		if e.Not {
+			exists = !exists
+		}
+		return rdflibgo.NewLiteral(exists)
+	case *BinaryExpr:
+		left := evalExprWithGraph(e.Left, bindings, prefixes, g)
+		right := evalExprWithGraph(e.Right, bindings, prefixes, g)
+		return evalBinaryOp(e.Op, left, right)
+	case *UnaryExpr:
+		arg := evalExprWithGraph(e.Arg, bindings, prefixes, g)
+		return evalUnaryOp(e.Op, arg)
+	default:
+		return evalExpr(expr, bindings, prefixes)
+	}
+}
+
+func containsExists(expr Expr) bool {
+	if expr == nil {
+		return false
+	}
+	switch e := expr.(type) {
+	case *ExistsExpr:
+		return true
+	case *BinaryExpr:
+		return containsExists(e.Left) || containsExists(e.Right)
+	case *UnaryExpr:
+		return containsExists(e.Arg)
+	case *FuncExpr:
+		for _, a := range e.Args {
+			if containsExists(a) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func evalBinaryOp(op string, left, right rdflibgo.Term) rdflibgo.Term {
@@ -531,9 +916,6 @@ func solutionKey(s map[string]rdflibgo.Term, vars []string) string {
 	return strings.Join(parts, "|")
 }
 
-// termValuesEqual implements SPARQL value equality (=).
-// Numeric values are compared by numeric value, plain literals by lexical form,
-// and URIRefs by IRI string. This avoids incorrect N3-based comparison.
 func termValuesEqual(a, b rdflibgo.Term) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -542,21 +924,17 @@ func termValuesEqual(a, b rdflibgo.Term) bool {
 	lb, bIsLit := b.(rdflibgo.Literal)
 
 	if aIsLit && bIsLit {
-		// Try numeric comparison first
 		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
 		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
 		if errA == nil && errB == nil && isNumericDatatype(la.Datatype()) && isNumericDatatype(lb.Datatype()) {
 			return fa == fb
 		}
-		// Same datatype or both plain: compare lexical + language
 		if la.Language() != "" || lb.Language() != "" {
 			return la.Lexical() == lb.Lexical() && la.Language() == lb.Language()
 		}
-		// Compare lexical values for same or compatible datatypes
 		return la.Lexical() == lb.Lexical()
 	}
 
-	// URIRef == URIRef, BNode == BNode: use N3
 	return a.N3() == b.N3()
 }
 
