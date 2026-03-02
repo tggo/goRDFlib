@@ -79,11 +79,19 @@ func main() {
 }
 ```
 
-## Test Coverage
+## W3C Conformance
 
-```
-485 tests, 90% statement coverage, 0 race conditions
-```
+All parsers are validated against the official [W3C RDF test suites](https://github.com/w3c/rdf-tests):
+
+| Format | Tests | Pass | Status |
+|--------|-------|------|--------|
+| Turtle | 313 | 313 | 100% |
+| N-Triples | 70 | 70 | 100% |
+| N-Quads | 87 | 87 | 100% |
+| RDF/XML | 166 | 164 | 98.8% |
+| SHACL | 98 | 98 | 100% |
+
+The 2 remaining RDF/XML failures are XML Literal canonicalization tests (Exclusive C14N with namespace propagation).
 
 ```bash
 go test ./...
@@ -101,10 +109,8 @@ The porting process followed a 14-phase plan covering core data model, store, gr
 
 - SPARQL engine covers core features but not the full SPARQL 1.1 specification (no UPDATE, no aggregates beyond basic, no sub-queries)
 - JSON-LD processing delegates to [piprate/json-gold](https://github.com/piprate/json-gold) which may attempt remote context fetches
-- RDF/XML parser does not handle all edge cases (e.g., `rdf:li`, full XML Literal namespace preservation)
-- N-Quads parser currently discards the graph context (4th element)
+- RDF/XML parser does not implement Exclusive XML Canonicalization for `parseType="Literal"` (2 of 166 W3C tests)
 - No TriG format support yet
-- Graph isomorphism (blank-node-aware comparison) not yet implemented
 
 ## License
 
