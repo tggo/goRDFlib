@@ -22,17 +22,20 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	p := &rdfxmlParser{
 		g:        g,
 		base:     cfg.base,
-		bnodeMap: make(map[string]rdflibgo.BNode),
-		usedIDs:  make(map[string]bool),
+		bnodeMap:   make(map[string]rdflibgo.BNode),
+		usedIDs:    make(map[string]bool),
+		nsPrefixes: make(map[string]string),
 	}
 	return p.parse(r)
 }
 
 type rdfxmlParser struct {
 	g        *rdflibgo.Graph
-	base     string
-	bnodeMap map[string]rdflibgo.BNode
-	usedIDs  map[string]bool // track rdf:ID values for uniqueness
+	base         string
+	bnodeMap     map[string]rdflibgo.BNode
+	usedIDs      map[string]bool   // track rdf:ID values for uniqueness
+	nsPrefixes   map[string]string // prefix → namespace URI (in-scope)
+	nsPrefixOrder []string         // insertion order of prefixes
 }
 
 // rdfNames that are not allowed as node element names.
@@ -109,6 +112,7 @@ func (p *rdfxmlParser) parse(r io.Reader) error {
 }
 
 func (p *rdfxmlParser) parseRDFRoot(decoder *xml.Decoder, root xml.StartElement) error {
+	p.collectNamespaces(root)
 	for _, attr := range root.Attr {
 		if isXMLAttr(attr, "base") {
 			p.base = attr.Value
@@ -137,6 +141,8 @@ func (p *rdfxmlParser) parseRDFRoot(decoder *xml.Decoder, root xml.StartElement)
 // Returns the subject used for this node element.
 func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElement, parentLang string) (rdflibgo.Subject, error) {
 	elemURI := el.Name.Space + el.Name.Local
+
+	p.collectNamespaces(el)
 
 	// Validate node element name.
 	if forbidden, ok := forbiddenNodeElementNames[elemURI]; ok && forbidden {
@@ -401,7 +407,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 
 	// Case 4: parseType="Literal" → XML literal
 	if parseType == "Literal" {
-		content, err := readInnerXML(decoder)
+		content, err := readInnerXML(decoder, p.nsPrefixes, p.nsPrefixOrder)
 		if err != nil {
 			return err
 		}
@@ -619,6 +625,17 @@ func isValidNCName(s string) bool {
 	return true
 }
 
+func (p *rdfxmlParser) collectNamespaces(el xml.StartElement) {
+	for _, attr := range el.Attr {
+		if attr.Name.Space == "xmlns" {
+			if _, exists := p.nsPrefixes[attr.Name.Local]; !exists {
+				p.nsPrefixOrder = append(p.nsPrefixOrder, attr.Name.Local)
+			}
+			p.nsPrefixes[attr.Name.Local] = attr.Value
+		}
+	}
+}
+
 func isRDFAttr(attr xml.Attr) bool {
 	return attr.Name.Space == rdfNS || (attr.Name.Space == "" && coreRDFAttrs[attr.Name.Local])
 }
@@ -635,7 +652,13 @@ func isAnyXMLAttr(attr xml.Attr) bool {
 	return attr.Name.Space == "xml" || attr.Name.Space == xmlNS
 }
 
-func readInnerXML(decoder *xml.Decoder) (string, error) {
+func readInnerXML(decoder *xml.Decoder, nsMap map[string]string, nsOrder []string) (string, error) {
+	// Build reverse map: namespace URI → prefix.
+	nsToPrefix := make(map[string]string, len(nsMap))
+	for prefix, ns := range nsMap {
+		nsToPrefix[ns] = prefix
+	}
+
 	var sb strings.Builder
 	depth := 1
 	for depth > 0 {
@@ -647,16 +670,24 @@ func readInnerXML(decoder *xml.Decoder) (string, error) {
 		case xml.StartElement:
 			depth++
 			sb.WriteString("<")
-			if t.Name.Space != "" {
-				sb.WriteString(t.Name.Space)
-				sb.WriteString(":")
-			}
 			sb.WriteString(t.Name.Local)
+
+			// Add in-scope namespace declarations.
+			for _, prefix := range nsOrder {
+				ns := nsMap[prefix]
+				sb.WriteString(fmt.Sprintf(` xmlns:%s="%s"`, prefix, ns))
+			}
+
 			for _, attr := range t.Attr {
+				if attr.Name.Space == "xmlns" {
+					continue // skip xmlns declarations (we add our own)
+				}
 				sb.WriteString(" ")
-				if attr.Name.Space != "" && attr.Name.Space != "xmlns" {
-					sb.WriteString(attr.Name.Space)
-					sb.WriteString(":")
+				if attr.Name.Space != "" {
+					if prefix, ok := nsToPrefix[attr.Name.Space]; ok {
+						sb.WriteString(prefix)
+						sb.WriteString(":")
+					}
 				}
 				sb.WriteString(attr.Name.Local)
 				sb.WriteString(`="`)
@@ -668,10 +699,6 @@ func readInnerXML(decoder *xml.Decoder) (string, error) {
 			depth--
 			if depth > 0 {
 				sb.WriteString("</")
-				if t.Name.Space != "" {
-					sb.WriteString(t.Name.Space)
-					sb.WriteString(":")
-				}
 				sb.WriteString(t.Name.Local)
 				sb.WriteString(">")
 			}
