@@ -1,2 +1,0 @@
-PREFIX :    <http://example/>
-RULE { } WHERE { :sx :p1 :o NOT { ?a ?b ?c } }

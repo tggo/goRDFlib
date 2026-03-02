@@ -1,4 +1,0 @@
-PREFIX : <http://example/>
-
-RULE { :x :q ?o } WHERE { :s :p ?z . ?z :q ?o }
-

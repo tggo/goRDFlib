@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -202,9 +201,12 @@ func (p *turtleParser) predicateObjectList(subj rdflibgo.Subject) error {
 		if p.pos >= len(p.input) || p.input[p.pos] != ';' {
 			break
 		}
-		p.pos++ // skip ';'
-		p.skipWS()
-		// Allow trailing ';' before '.'
+		// Consume one or more consecutive semicolons.
+		for p.pos < len(p.input) && p.input[p.pos] == ';' {
+			p.pos++
+			p.skipWS()
+		}
+		// Allow trailing ';' before '.' or ']'
 		if p.pos >= len(p.input) || p.input[p.pos] == '.' || p.input[p.pos] == ']' {
 			break
 		}
@@ -383,11 +385,18 @@ func (p *turtleParser) readIRI() (string, error) {
 			if err != nil {
 				return "", err
 			}
+			if err := validateIRI(unescaped); err != nil {
+				return "", p.errorf("%s", err)
+			}
 			return unescaped, nil
 		}
 		if ch == '\\' {
 			p.pos += 2 // skip escape (handled in unescape)
 			continue
+		}
+		// Reject characters not allowed in IRIs per Turtle grammar.
+		if ch <= 0x20 || ch == '{' || ch == '}' || ch == '|' || ch == '^' || ch == '`' {
+			return "", p.errorf("invalid character %q in IRI", ch)
 		}
 		p.pos++
 	}
@@ -400,25 +409,64 @@ func (p *turtleParser) readPrefixedName() (string, error) {
 	if !p.expect(':') {
 		return "", p.errorf("expected ':' in prefixed name")
 	}
-	local := p.readLocalName()
+	local, err := p.readLocalName()
+	if err != nil {
+		return "", err
+	}
 	ns, ok := p.prefixes[prefix]
 	if !ok {
 		return "", p.errorf("undefined prefix %q", prefix)
 	}
-	return ns + local, nil
+	return ns + unescapeLocalName(local), nil
 }
 
-// readBlankNodeLabel reads _:label.
+// unescapeLocalName processes backslash escapes and percent-encoding in local names.
+// In Turtle, local names allow \-escaped reserved characters like \#, \~, \., etc.
+// The backslash is removed, yielding the literal character.
+func unescapeLocalName(s string) string {
+	if !strings.ContainsAny(s, "\\") {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+			sb.WriteByte(s[i])
+		} else {
+			sb.WriteByte(s[i])
+		}
+	}
+	return sb.String()
+}
+
+// readBlankNodeLabel reads _:label per the BLANK_NODE_LABEL grammar rule.
 func (p *turtleParser) readBlankNodeLabel() (rdflibgo.BNode, error) {
 	p.pos += 2 // skip "_:"
 	start := p.pos
-	for p.pos < len(p.input) && !isDelimiter(p.input[p.pos]) {
-		p.pos++
+	if p.pos >= len(p.input) {
+		return rdflibgo.BNode{}, p.errorf("empty blank node label after _:")
 	}
-	// Strip trailing '.' if present (not part of blank node label)
+	// First char: PN_CHARS_U | [0-9]
+	r, size := utf8.DecodeRuneInString(p.input[p.pos:])
+	if !isPNCharsU(r) && !(r >= '0' && r <= '9') {
+		return rdflibgo.BNode{}, p.errorf("invalid blank node label start: %c", r)
+	}
+	p.pos += size
+	// Subsequent chars: (PN_CHARS | '.')*
+	for p.pos < len(p.input) {
+		r, size = utf8.DecodeRuneInString(p.input[p.pos:])
+		if isPNChar(r) || r == '.' {
+			p.pos += size
+		} else {
+			break
+		}
+	}
+	// Trim trailing dots.
+	for p.pos > start && p.input[p.pos-1] == '.' {
+		p.pos--
+	}
 	label := p.input[start:p.pos]
-	label = strings.TrimRight(label, ".")
-	p.pos = start + len(label)
 	if label == "" {
 		return rdflibgo.BNode{}, p.errorf("empty blank node label after _:")
 	}
@@ -559,7 +607,10 @@ done:
 	// Language tag or datatype
 	if p.pos < len(p.input) && p.input[p.pos] == '@' {
 		p.pos++
-		lang := p.readLangTag()
+		lang, err := p.readLangTag()
+		if err != nil {
+			return rdflibgo.Literal{}, err
+		}
 		lopts = append(lopts, rdflibgo.WithLang(lang))
 	} else if p.pos+1 < len(p.input) && p.input[p.pos] == '^' && p.input[p.pos+1] == '^' {
 		p.pos += 2
@@ -584,6 +635,10 @@ func (p *turtleParser) readEscape() (string, error) {
 		return "\r", nil
 	case 't':
 		return "\t", nil
+	case 'b':
+		return "\b", nil
+	case 'f':
+		return "\f", nil
 	case '\\':
 		return "\\", nil
 	case '"':
@@ -609,6 +664,10 @@ func (p *turtleParser) readUnicodeEscape(n int) (string, error) {
 	if err != nil {
 		return "", p.errorf("invalid unicode escape: %s", hex)
 	}
+	// Reject surrogate code points (U+D800..U+DFFF).
+	if code >= 0xD800 && code <= 0xDFFF {
+		return "", p.errorf("invalid surrogate in unicode escape: %s", hex)
+	}
 	return string(rune(code)), nil
 }
 
@@ -629,15 +688,21 @@ func (p *turtleParser) tryNumeric() (rdflibgo.Literal, bool) {
 
 	hasDot := false
 	if p.pos < len(p.input) && p.input[p.pos] == '.' {
-		// Peek: if next char is not a digit, this dot is a statement terminator
-		if p.pos+1 < len(p.input) && p.input[p.pos+1] >= '0' && p.input[p.pos+1] <= '9' {
+		next := byte(0)
+		if p.pos+1 < len(p.input) {
+			next = p.input[p.pos+1]
+		}
+		if next >= '0' && next <= '9' {
 			hasDot = true
 			p.pos++ // skip '.'
 			for p.pos < len(p.input) && p.input[p.pos] >= '0' && p.input[p.pos] <= '9' {
 				p.pos++
 			}
+		} else if hasDigitsBefore && (next == 'e' || next == 'E') {
+			// e.g. 123.E+1 — dot followed by exponent, no fractional digits
+			hasDot = true
+			p.pos++ // skip '.'
 		} else if !hasDigitsBefore {
-			// Just a dot, not a number
 			p.pos = start
 			return rdflibgo.Literal{}, false
 		}
@@ -679,8 +744,12 @@ func (p *turtleParser) tryNumeric() (rdflibgo.Literal, bool) {
 	return rdflibgo.NewLiteral(lexical, rdflibgo.WithDatatype(dt)), true
 }
 
-func (p *turtleParser) readLangTag() string {
+func (p *turtleParser) readLangTag() (string, error) {
 	start := p.pos
+	// First char must be a letter.
+	if p.pos >= len(p.input) || !((p.input[p.pos] >= 'a' && p.input[p.pos] <= 'z') || (p.input[p.pos] >= 'A' && p.input[p.pos] <= 'Z')) {
+		return "", p.errorf("invalid language tag: must start with a letter")
+	}
 	for p.pos < len(p.input) {
 		ch := p.input[p.pos]
 		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '-' || (ch >= '0' && ch <= '9') {
@@ -689,7 +758,7 @@ func (p *turtleParser) readLangTag() string {
 			break
 		}
 	}
-	return p.input[start:p.pos]
+	return p.input[start:p.pos], nil
 }
 
 func (p *turtleParser) readDatatypeIRI() (string, error) {
@@ -714,40 +783,80 @@ func (p *turtleParser) readPrefixName() string {
 		if r == ':' || (r < 128 && isDelimiter(byte(r))) {
 			break
 		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' {
-			break
+		if p.pos == start {
+			// First char: must be PN_CHARS_BASE
+			if !isPNCharsBase(r) {
+				break
+			}
+		} else {
+			// Subsequent chars: PN_CHARS | '.'
+			if !isPNChar(r) && r != '.' {
+				break
+			}
 		}
 		p.pos += size
 	}
-	return p.input[start:p.pos]
-}
-
-func (p *turtleParser) readLocalName() string {
-	start := p.pos
-	for p.pos < len(p.input) {
-		ch := p.input[p.pos]
-		if ch == '\\' && p.pos+1 < len(p.input) {
-			p.pos += 2 // escaped char in local name
-			continue
-		}
-		if ch == '%' && p.pos+2 < len(p.input) {
-			p.pos += 3 // percent-encoded
-			continue
-		}
-		r, size := utf8.DecodeRuneInString(p.input[p.pos:])
-		if (r < 128 && isDelimiter(byte(r))) || r == ';' || r == ',' || r == '.' || r == '[' || r == ']' || r == '(' || r == ')' {
-			break
-		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '.' && r != '\u00B7' {
-			break
-		}
-		p.pos += size
-	}
-	// Trim trailing dots (not part of local name)
+	// Trim trailing dots (not allowed at end of prefix name).
 	for p.pos > start && p.input[p.pos-1] == '.' {
 		p.pos--
 	}
 	return p.input[start:p.pos]
+}
+
+func (p *turtleParser) readLocalName() (string, error) {
+	start := p.pos
+	first := true
+	for p.pos < len(p.input) {
+		ch := p.input[p.pos]
+		if ch == '\\' && p.pos+1 < len(p.input) {
+			next := p.input[p.pos+1]
+			// Only reserved character escapes allowed in local names, not \u or \U.
+			if next == 'u' || next == 'U' {
+				return "", p.errorf("\\%c escape not allowed in local name", next)
+			}
+			p.pos += 2
+			first = false
+			continue
+		}
+		if ch == '%' {
+			// Validate percent encoding: must be %HH.
+			if p.pos+2 >= len(p.input) || !isHexDigit(p.input[p.pos+1]) || !isHexDigit(p.input[p.pos+2]) {
+				return "", p.errorf("invalid percent encoding in local name")
+			}
+			p.pos += 3
+			first = false
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(p.input[p.pos:])
+		if first {
+			// First char of local name: PN_CHARS_U | ':' | [0-9] | PLX (handled above)
+			if !isPNCharsU(r) && r != ':' && !(r >= '0' && r <= '9') {
+				break
+			}
+		} else {
+			// Subsequent: PN_CHARS | '.' | ':' | PLX (handled above)
+			if r == ':' || r == '.' {
+				p.pos += size
+				continue
+			}
+			if r == ';' || r == ',' || r == '[' || r == ']' || r == '(' || r == ')' || r == '#' {
+				break
+			}
+			if r < 128 && isDelimiter(byte(r)) {
+				break
+			}
+			if !isPNChar(r) {
+				break
+			}
+		}
+		p.pos += size
+		first = false
+	}
+	// Trim trailing dots (not allowed at end of local name).
+	for p.pos > start && p.input[p.pos-1] == '.' {
+		p.pos--
+	}
+	return p.input[start:p.pos], nil
 }
 
 func (p *turtleParser) skipWS() {
@@ -811,7 +920,13 @@ func (p *turtleParser) resolveIRI(iri string) string {
 	if err != nil {
 		return iri
 	}
-	return b.ResolveReference(ref).String()
+	resolved := b.ResolveReference(ref).String()
+	// Go's url.ResolveReference drops an empty fragment. In RDF, <#> resolved
+	// against a base must preserve the '#' separator.
+	if strings.Contains(iri, "#") && !strings.Contains(resolved, "#") {
+		resolved += "#"
+	}
+	return resolved
 }
 
 func (p *turtleParser) unescapeIRI(s string) (string, error) {
@@ -832,6 +947,9 @@ func (p *turtleParser) unescapeIRI(s string) (string, error) {
 				if err != nil {
 					return "", p.errorf("invalid \\u escape in IRI: %s", s[i+1:i+5])
 				}
+				if code >= 0xD800 && code <= 0xDFFF {
+					return "", p.errorf("invalid surrogate in IRI escape: %s", s[i+1:i+5])
+				}
 				sb.WriteRune(rune(code))
 				i += 5
 			case 'U':
@@ -841,6 +959,9 @@ func (p *turtleParser) unescapeIRI(s string) (string, error) {
 				code, err := strconv.ParseUint(s[i+1:i+9], 16, 32)
 				if err != nil {
 					return "", p.errorf("invalid \\U escape in IRI: %s", s[i+1:i+9])
+				}
+				if code >= 0xD800 && code <= 0xDFFF {
+					return "", p.errorf("invalid surrogate in IRI escape: %s", s[i+1:i+9])
 				}
 				sb.WriteRune(rune(code))
 				i += 9
@@ -865,6 +986,31 @@ func isDelimiter(ch byte) bool {
 
 func isWhitespace(ch byte) bool {
 	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+// isPNChar matches PN_CHARS (PN_CHARS_U | '-' | digit | combining marks).
+func isPNChar(r rune) bool {
+	return isPNCharsU(r) ||
+		r == '-' ||
+		(r >= '0' && r <= '9') ||
+		r == 0x00B7 ||
+		(r >= 0x0300 && r <= 0x036F) ||
+		(r >= 0x203F && r <= 0x2040)
+}
+
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}
+
+// validateIRI checks that the unescaped IRI doesn't contain characters
+// forbidden by the Turtle grammar (space, <, >, {, }, |, ^, `, controls).
+func validateIRI(s string) error {
+	for _, r := range s {
+		if r <= 0x20 || r == '<' || r == '>' || r == '{' || r == '}' || r == '|' || r == '^' || r == '`' {
+			return fmt.Errorf("invalid character U+%04X in IRI", r)
+		}
+	}
+	return nil
 }
 
 func isAbsoluteIRI(s string) bool {

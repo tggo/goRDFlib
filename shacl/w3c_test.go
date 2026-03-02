@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const testSuiteBase = "testdata/data-shapes/data-shapes-test-suite/tests"
+const testSuiteBase = "../testdata/w3c/data-shapes/data-shapes-test-suite/tests"
 
 func TestW3CCoreTests(t *testing.T) {
 	categories := []string{

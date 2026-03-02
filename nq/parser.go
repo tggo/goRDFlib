@@ -59,23 +59,11 @@ func parseNQLine(g *rdflibgo.Graph, line string, lineNum int, handler QuadHandle
 	p.SkipSpaces()
 
 	// Optional 4th element: graph context
-	var graphCtx rdflibgo.Term
-	if p.Pos < len(p.Line) && p.Line[p.Pos] != '.' {
-		if p.Line[p.Pos] == '<' {
-			iri, ierr := p.ReadIRI()
-			if ierr != nil {
-				return fmt.Errorf("line %d: graph: %w", lineNum, ierr)
-			}
-			validated, verr := rdflibgo.NewURIRef(iri)
-			if verr != nil {
-				return fmt.Errorf("line %d: graph: %w", lineNum, verr)
-			}
-			graphCtx = validated
-		} else if strings.HasPrefix(p.Line[p.Pos:], "_:") {
-			graphCtx = p.ReadBNode()
-		}
-		p.SkipSpaces()
+	graphCtx, err := p.ReadGraphLabel()
+	if err != nil {
+		return err
 	}
+	p.SkipSpaces()
 
 	if !p.Expect('.') {
 		return fmt.Errorf("line %d: expected '.'", lineNum)

@@ -1,3 +1,0 @@
-PREFIX :    <http://example/>
-
-RULE { } WHERE { FILTER( true ) ?s ?p ?o NOT { ?x ?y ?o FILTER ( isURI(?s) ) } }

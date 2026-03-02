@@ -4,3 +4,10 @@
 [submodule "python/pySHACL"]
 	path = python/pySHACL
 	url = https://github.com/RDFLib/pySHACL
+[submodule "testdata/w3c/rdf-tests"]
+	path = testdata/w3c/rdf-tests
+	url = https://github.com/w3c/rdf-tests.git
+[submodule "testdata/w3c/data-shapes"]
+	path = testdata/w3c/data-shapes
+	url = https://github.com/w3c/data-shapes.git
+	branch = gh-pages

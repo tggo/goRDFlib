@@ -522,7 +522,20 @@ func isPNCharsU(r rune) bool {
 
 // isPNCharsBase returns true if the rune matches PN_CHARS_BASE from the Turtle grammar.
 func isPNCharsBase(r rune) bool {
-	return unicode.IsLetter(r)
+	return (r >= 'A' && r <= 'Z') ||
+		(r >= 'a' && r <= 'z') ||
+		(r >= 0x00C0 && r <= 0x00D6) ||
+		(r >= 0x00D8 && r <= 0x00F6) ||
+		(r >= 0x00F8 && r <= 0x02FF) ||
+		(r >= 0x0370 && r <= 0x037D) ||
+		(r >= 0x037F && r <= 0x1FFF) ||
+		(r >= 0x200C && r <= 0x200D) ||
+		(r >= 0x2070 && r <= 0x218F) ||
+		(r >= 0x2C00 && r <= 0x2FEF) ||
+		(r >= 0x3001 && r <= 0xD7FF) ||
+		(r >= 0xF900 && r <= 0xFDCF) ||
+		(r >= 0xFDF0 && r <= 0xFFFD) ||
+		(r >= 0x10000 && r <= 0xEFFFF)
 }
 
 // listStr serializes an rdf:List as Turtle collection syntax: ( item1 item2 ... )
