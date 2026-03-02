@@ -317,6 +317,9 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "STRBEFORE":
 		vals := evalArgs()
 		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
+			if !isStringLiteral(vals[0]) || !isStringLiteral(vals[1]) {
+				return nil
+			}
 			if !strArgCompatible(vals[0], vals[1]) {
 				return nil
 			}
@@ -334,6 +337,9 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "STRAFTER":
 		vals := evalArgs()
 		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
+			if !isStringLiteral(vals[0]) || !isStringLiteral(vals[1]) {
+				return nil
+			}
 			if !strArgCompatible(vals[0], vals[1]) {
 				return nil
 			}
@@ -533,6 +539,16 @@ func stringResult(s string, source rdflibgo.Term) rdflibgo.Literal {
 		}
 	}
 	return rdflibgo.NewLiteral(s)
+}
+
+// isStringLiteral checks if a term is a string-type literal (plain, xsd:string, or lang-tagged).
+func isStringLiteral(t rdflibgo.Term) bool {
+	l, ok := t.(rdflibgo.Literal)
+	if !ok {
+		return false
+	}
+	dt := l.Datatype()
+	return dt == rdflibgo.XSDString || l.Language() != "" || dt.Value() == ""
 }
 
 // strArgCompatible checks if two string arguments are type-compatible for
