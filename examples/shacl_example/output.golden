@@ -1,0 +1,18 @@
+=== Valid data ===
+Conforms: true
+Violations: 0
+
+=== Invalid data ===
+Conforms: false
+Violations: 2
+
+Violation 1:
+  Focus node: <http://example.org/Bob>
+  Path: <http://schema.org/gender>
+  Value: "unknown"
+  Constraint: <http://www.w3.org/ns/shacl#InConstraintComponent>
+
+Violation 2:
+  Focus node: <http://example.org/Bob>
+  Path: <http://schema.org/givenName>
+  Constraint: <http://www.w3.org/ns/shacl#MinCountConstraintComponent>

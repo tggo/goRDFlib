@@ -1,0 +1,25 @@
+Conforms: false
+Total violations: 5
+
+[1] <http://example.org/Gadget>
+    Path: <http://example.org/category>
+    Constraint: <http://www.w3.org/ns/shacl#MinCountConstraintComponent>
+
+[2] <http://example.org/Gadget>
+    Path: <http://example.org/name>
+    Constraint: <http://www.w3.org/ns/shacl#MinCountConstraintComponent>
+
+[3] <http://example.org/Gadget>
+    Path: <http://example.org/price>
+    Value: "-5.00"^^<http://www.w3.org/2001/XMLSchema#decimal>
+    Constraint: <http://www.w3.org/ns/shacl#MinInclusiveConstraintComponent>
+
+[4] <http://example.org/Gadget>
+    Path: <http://example.org/status>
+    Value: "unknown"
+    Constraint: <http://www.w3.org/ns/shacl#InConstraintComponent>
+
+[5] <http://example.org/Office>
+    Path: <http://example.org/country>
+    Value: "US"
+    Constraint: <http://www.w3.org/ns/shacl#ClosedConstraintComponent>

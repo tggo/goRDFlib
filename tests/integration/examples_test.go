@@ -19,6 +19,8 @@ func TestExamples(t *testing.T) {
 		"property_paths_example",
 		"resource_example",
 		"transitive_example",
+		"shacl_example",
+		"shacl_constraints_example",
 	}
 
 	for _, name := range examples {
