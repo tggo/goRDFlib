@@ -132,15 +132,43 @@ func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
 				p.pos += 2
 				p.skipWS()
 				for {
+					p.skipWS()
+					if p.pos >= len(p.input) || p.isKeyword() {
+						break
+					}
+					// Check for (expr AS ?var) in GROUP BY
+					if p.pos < len(p.input) && p.input[p.pos] == '(' {
+						saved := p.pos
+						p.pos++
+						p.skipWS()
+						expr, err := p.parseOrExpr()
+						if err != nil {
+							p.pos = saved
+							break
+						}
+						p.skipWS()
+						if p.matchKeywordCI("AS") {
+							p.pos += 2
+							p.skipWS()
+							v := p.readVar()
+							q.GroupBy = append(q.GroupBy, expr)
+							q.GroupByAliases = append(q.GroupByAliases, v)
+							q.Variables = append(q.Variables, v)
+						} else {
+							q.GroupBy = append(q.GroupBy, expr)
+							q.GroupByAliases = append(q.GroupByAliases, "")
+						}
+						p.skipWS()
+						p.expect(')')
+						continue
+					}
 					expr, err := p.parseExpr()
 					if err != nil {
 						break
 					}
 					q.GroupBy = append(q.GroupBy, expr)
+					q.GroupByAliases = append(q.GroupByAliases, "")
 					p.skipWS()
-					if p.pos >= len(p.input) || p.isKeyword() {
-						break
-					}
 				}
 			}
 			continue
@@ -1242,6 +1270,14 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	p.skipWS()
 	if p.pos < len(p.input) && p.input[p.pos] == '(' {
 		upperName := strings.ToUpper(name)
+		// Resolve prefixed function names (e.g. xsd:integer -> full IRI)
+		if idx := strings.Index(name, ":"); idx >= 0 {
+			prefix := name[:idx]
+			local := name[idx+1:]
+			if ns, ok := p.prefixes[prefix]; ok {
+				upperName = strings.ToUpper(ns + local)
+			}
+		}
 		if isAggregateName(upperName) {
 			return p.parseAggregateCall(upperName)
 		}

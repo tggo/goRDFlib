@@ -4,13 +4,18 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
 	"math"
+	"math/rand"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	rdflibgo "github.com/tggo/goRDFlib"
 )
 
@@ -68,7 +73,14 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "STR":
 		vals := evalArgs()
 		if len(vals) == 1 && vals[0] != nil {
-			return rdflibgo.NewLiteral(vals[0].String())
+			switch v := vals[0].(type) {
+			case rdflibgo.URIRef:
+				return rdflibgo.NewLiteral(v.Value())
+			case rdflibgo.Literal:
+				return rdflibgo.NewLiteral(v.Lexical())
+			default:
+				return rdflibgo.NewLiteral(vals[0].String())
+			}
 		}
 	case "STRLEN":
 		vals := evalArgs()
@@ -88,7 +100,7 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 				start = 0
 			}
 			if start >= len(runes) {
-				return rdflibgo.NewLiteral("")
+				return stringResult("", vals[0])
 			}
 			if len(vals) >= 3 {
 				length := int(toFloat64(vals[2]))
@@ -96,19 +108,19 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 				if end > len(runes) {
 					end = len(runes)
 				}
-				return rdflibgo.NewLiteral(string(runes[start:end]))
+				return stringResult(string(runes[start:end]), vals[0])
 			}
-			return rdflibgo.NewLiteral(string(runes[start:]))
+			return stringResult(string(runes[start:]), vals[0])
 		}
 	case "UCASE":
 		vals := evalArgs()
 		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(strings.ToUpper(termString(vals[0])))
+			return stringResult(strings.ToUpper(termString(vals[0])), vals[0])
 		}
 	case "LCASE":
 		vals := evalArgs()
 		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(strings.ToLower(termString(vals[0])))
+			return stringResult(strings.ToLower(termString(vals[0])), vals[0])
 		}
 	case "STRSTARTS":
 		vals := evalArgs()
@@ -244,12 +256,184 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 			}
 		}
 		return nil
+	case "LANGMATCHES":
+		vals := evalArgs()
+		if len(vals) == 2 {
+			tag := strings.ToLower(termString(vals[0]))
+			range_ := strings.ToLower(termString(vals[1]))
+			if range_ == "*" {
+				return rdflibgo.NewLiteral(tag != "")
+			}
+			return rdflibgo.NewLiteral(tag == range_ || strings.HasPrefix(tag, range_+"-"))
+		}
+		return rdflibgo.NewLiteral(false)
 	case "SAMETERM":
 		vals := evalArgs()
 		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
 			return rdflibgo.NewLiteral(vals[0].N3() == vals[1].N3())
 		}
 		return rdflibgo.NewLiteral(false)
+
+	// String constructors
+	case "STRLANG":
+		vals := evalArgs()
+		if len(vals) == 2 {
+			return rdflibgo.NewLiteral(termString(vals[0]), rdflibgo.WithLang(termString(vals[1])))
+		}
+	case "STRDT":
+		vals := evalArgs()
+		if len(vals) == 2 {
+			if u, ok := vals[1].(rdflibgo.URIRef); ok {
+				return rdflibgo.NewLiteral(termString(vals[0]), rdflibgo.WithDatatype(u))
+			}
+		}
+	case "STRBEFORE":
+		vals := evalArgs()
+		if len(vals) == 2 {
+			s := termString(vals[0])
+			arg := termString(vals[1])
+			if arg == "" {
+				return rdflibgo.NewLiteral("")
+			}
+			idx := strings.Index(s, arg)
+			if idx < 0 {
+				return rdflibgo.NewLiteral("")
+			}
+			return rdflibgo.NewLiteral(s[:idx])
+		}
+	case "STRAFTER":
+		vals := evalArgs()
+		if len(vals) == 2 {
+			s := termString(vals[0])
+			arg := termString(vals[1])
+			if arg == "" {
+				return rdflibgo.NewLiteral("")
+			}
+			idx := strings.Index(s, arg)
+			if idx < 0 {
+				return rdflibgo.NewLiteral("")
+			}
+			return rdflibgo.NewLiteral(s[idx+len(arg):])
+		}
+	case "ENCODE_FOR_URI":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			return rdflibgo.NewLiteral(encodeForURI(termString(vals[0])))
+		}
+	case "IRI", "URI":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			if u, ok := vals[0].(rdflibgo.URIRef); ok {
+				return u
+			}
+			return rdflibgo.NewURIRefUnsafe(termString(vals[0]))
+		}
+	case "BNODE":
+		if len(args) == 0 {
+			return rdflibgo.NewBNode("")
+		}
+		vals := evalArgs()
+		if len(vals) == 1 {
+			return rdflibgo.NewBNode(termString(vals[0]))
+		}
+
+	// Date/time functions
+	case "NOW":
+		return rdflibgo.NewLiteral(timeNow(), rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime")))
+	case "YEAR":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if y, ok := extractDatePart(termString(vals[0]), "year"); ok {
+				return rdflibgo.NewLiteral(y, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			}
+		}
+	case "MONTH":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if m, ok := extractDatePart(termString(vals[0]), "month"); ok {
+				return rdflibgo.NewLiteral(m, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			}
+		}
+	case "DAY":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if d, ok := extractDatePart(termString(vals[0]), "day"); ok {
+				return rdflibgo.NewLiteral(d, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			}
+		}
+	case "HOURS":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if h, ok := extractDatePart(termString(vals[0]), "hours"); ok {
+				return rdflibgo.NewLiteral(h, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			}
+		}
+	case "MINUTES":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if m, ok := extractDatePart(termString(vals[0]), "minutes"); ok {
+				return rdflibgo.NewLiteral(m, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			}
+		}
+	case "SECONDS":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if s, ok := extractDatePart(termString(vals[0]), "seconds"); ok {
+				return rdflibgo.NewLiteral(s)
+			}
+		}
+	case "TIMEZONE":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if tz, ok := extractTimezone(termString(vals[0])); ok {
+				return rdflibgo.NewLiteral(tz, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dayTimeDuration")))
+			}
+		}
+	case "TZ":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if tz, ok := extractTZ(termString(vals[0])); ok {
+				return rdflibgo.NewLiteral(tz)
+			}
+		}
+
+	// Hash
+	case "SHA384":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			h := sha512.Sum384([]byte(termString(vals[0])))
+			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
+		}
+	case "SHA512":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			h := sha512.Sum512([]byte(termString(vals[0])))
+			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
+		}
+
+	// Random/UUID
+	case "RAND":
+		return rdflibgo.NewLiteral(randFloat(), rdflibgo.WithDatatype(rdflibgo.XSDDouble))
+	case "UUID":
+		return rdflibgo.NewURIRefUnsafe("urn:uuid:" + newUUID())
+	case "STRUUID":
+		return rdflibgo.NewLiteral(newUUID())
+
+	// Cast functions
+	case "XSD:BOOLEAN", "XSD:INTEGER", "XSD:FLOAT", "XSD:DOUBLE", "XSD:DECIMAL", "XSD:STRING":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			return castXSD(name, vals[0])
+		}
+	}
+
+	// Try cast with full IRI
+	if strings.HasPrefix(name, "HTTP://WWW.W3.ORG/2001/XMLSCHEMA#") {
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			localName := strings.ToUpper(name[len("HTTP://WWW.W3.ORG/2001/XMLSCHEMA#"):])
+			return castXSD("XSD:"+localName, vals[0])
+		}
 	}
 
 	return nil
@@ -303,6 +487,140 @@ func termString(t rdflibgo.Term) string {
 		return ""
 	}
 	return t.String()
+}
+
+// stringResult creates a literal preserving language/datatype from the source term.
+func stringResult(s string, source rdflibgo.Term) rdflibgo.Literal {
+	if l, ok := source.(rdflibgo.Literal); ok {
+		if lang := l.Language(); lang != "" {
+			return rdflibgo.NewLiteral(s, rdflibgo.WithLang(lang))
+		}
+		if dt := l.Datatype(); dt != rdflibgo.XSDString {
+			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(dt))
+		}
+	}
+	return rdflibgo.NewLiteral(s)
+}
+
+func encodeForURI(s string) string {
+	return url.QueryEscape(s)
+}
+
+func timeNow() string {
+	return time.Now().UTC().Format("2006-01-02T15:04:05Z")
+}
+
+func extractDatePart(dt, part string) (string, bool) {
+	// Parse ISO 8601 datetime: 2011-01-10T14:45:13.815-05:00
+	t, err := time.Parse(time.RFC3339, dt)
+	if err != nil {
+		t, err = time.Parse("2006-01-02T15:04:05", dt)
+		if err != nil {
+			t, err = time.Parse("2006-01-02", dt)
+			if err != nil {
+				return "", false
+			}
+		}
+	}
+	switch part {
+	case "year":
+		return strconv.Itoa(t.Year()), true
+	case "month":
+		return strconv.Itoa(int(t.Month())), true
+	case "day":
+		return strconv.Itoa(t.Day()), true
+	case "hours":
+		return strconv.Itoa(t.Hour()), true
+	case "minutes":
+		return strconv.Itoa(t.Minute()), true
+	case "seconds":
+		sec := float64(t.Second()) + float64(t.Nanosecond())/1e9
+		if t.Nanosecond() == 0 {
+			return fmt.Sprintf("%d", t.Second()), true
+		}
+		return fmt.Sprintf("%g", sec), true
+	}
+	return "", false
+}
+
+func extractTimezone(dt string) (string, bool) {
+	t, err := time.Parse(time.RFC3339, dt)
+	if err != nil {
+		return "", false
+	}
+	_, offset := t.Zone()
+	if offset == 0 {
+		return "PT0S", true
+	}
+	hours := offset / 3600
+	minutes := (offset % 3600) / 60
+	sign := ""
+	if hours < 0 {
+		sign = "-"
+		hours = -hours
+		minutes = -minutes
+	}
+	if minutes == 0 {
+		return fmt.Sprintf("%sPT%dH", sign, hours), true
+	}
+	return fmt.Sprintf("%sPT%dH%dM", sign, hours, minutes), true
+}
+
+func extractTZ(dt string) (string, bool) {
+	// Return timezone string like "Z", "-05:00", etc.
+	if strings.HasSuffix(dt, "Z") {
+		return "Z", true
+	}
+	// Look for +HH:MM or -HH:MM at end
+	if len(dt) >= 6 {
+		tz := dt[len(dt)-6:]
+		if (tz[0] == '+' || tz[0] == '-') && tz[3] == ':' {
+			return tz, true
+		}
+	}
+	return "", true // no timezone info
+}
+
+func randFloat() float64 {
+	return rand.Float64()
+}
+
+func newUUID() string {
+	return uuid.New().String()
+}
+
+func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
+	s := termString(val)
+	switch name {
+	case "XSD:BOOLEAN":
+		switch strings.ToLower(s) {
+		case "true", "1":
+			return rdflibgo.NewLiteral(true)
+		default:
+			return rdflibgo.NewLiteral(false)
+		}
+	case "XSD:INTEGER":
+		// Try to parse
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return rdflibgo.NewLiteral(int(f), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		}
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+	case "XSD:FLOAT":
+		if f, err := strconv.ParseFloat(s, 32); err == nil {
+			return rdflibgo.NewLiteral(fmt.Sprintf("%g", float32(f)), rdflibgo.WithDatatype(rdflibgo.XSDFloat))
+		}
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDFloat))
+	case "XSD:DOUBLE":
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return rdflibgo.NewLiteral(fmt.Sprintf("%g", f), rdflibgo.WithDatatype(rdflibgo.XSDDouble))
+		}
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDouble))
+	case "XSD:DECIMAL":
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+	case "XSD:STRING":
+		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDString))
+	}
+	return val
 }
 
 func compareTermValues(a, b rdflibgo.Term) int {

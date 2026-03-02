@@ -44,14 +44,14 @@ func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflib
 	// Project expressions
 	if len(q.ProjectExprs) > 0 {
 		for i, s := range solutions {
+			ns := copyBindings(s)
 			for _, pe := range q.ProjectExprs {
-				val := evalExpr(pe.Expr, s, q.Prefixes)
+				val := evalExpr(pe.Expr, ns, q.Prefixes)
 				if val != nil {
-					ns := copyBindings(s)
 					ns[pe.Var] = val
-					solutions[i] = ns
 				}
 			}
+			solutions[i] = ns
 		}
 	}
 
@@ -184,7 +184,7 @@ func evalAggregation(q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map
 	for _, s := range solutions {
 		var keyParts []string
 		keyBinds := make(map[string]rdflibgo.Term)
-		for _, gExpr := range q.GroupBy {
+		for i, gExpr := range q.GroupBy {
 			val := evalExpr(gExpr, s, q.Prefixes)
 			if val != nil {
 				keyParts = append(keyParts, val.N3())
@@ -193,6 +193,10 @@ func evalAggregation(q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map
 			}
 			if ve, ok := gExpr.(*VarExpr); ok && val != nil {
 				keyBinds[ve.Name] = val
+			}
+			// Check if this GROUP BY expr has an AS alias
+			if val != nil && i < len(q.GroupByAliases) && q.GroupByAliases[i] != "" {
+				keyBinds[q.GroupByAliases[i]] = val
 			}
 		}
 		k := strings.Join(keyParts, "|")
@@ -203,8 +207,8 @@ func evalAggregation(q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map
 		groups[k].members = append(groups[k].members, s)
 	}
 
-	// Empty input with aggregates → one empty group
-	if len(groups) == 0 && hasAggregates(q) {
+	// Empty input with aggregates but no explicit GROUP BY → one empty group
+	if len(groups) == 0 && hasAggregates(q) && len(q.GroupBy) == 0 {
 		groups[""] = &group{keyBinds: map[string]rdflibgo.Term{}}
 		order = append(order, "")
 	}
@@ -298,14 +302,21 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 	case "SUM":
 		sum := 0.0
 		allInt := true
+		hasDecimal := false
 		for _, v := range vals {
 			sum += toFloat64(v)
 			if !isIntegral(v) {
 				allInt = false
 			}
+			if l, ok := v.(rdflibgo.Literal); ok && l.Datatype() == rdflibgo.XSDDecimal {
+				hasDecimal = true
+			}
 		}
 		if allInt {
 			return rdflibgo.NewLiteral(int(sum), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		}
+		if hasDecimal {
+			return rdflibgo.NewLiteral(formatDecimal(sum), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 		}
 		return rdflibgo.NewLiteral(sum)
 	case "AVG":
@@ -313,10 +324,18 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 		}
 		sum := 0.0
+		hasDecimal := false
 		for _, v := range vals {
 			sum += toFloat64(v)
+			if l, ok := v.(rdflibgo.Literal); ok && l.Datatype() == rdflibgo.XSDDecimal {
+				hasDecimal = true
+			}
 		}
-		return rdflibgo.NewLiteral(sum / float64(len(vals)))
+		avg := sum / float64(len(vals))
+		if hasDecimal {
+			return rdflibgo.NewLiteral(formatDecimal(avg), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		}
+		return rdflibgo.NewLiteral(avg)
 	case "MIN":
 		if len(vals) == 0 {
 			return nil
@@ -936,6 +955,17 @@ func termValuesEqual(a, b rdflibgo.Term) bool {
 	}
 
 	return a.N3() == b.N3()
+}
+
+func formatDecimal(f float64) string {
+	// Use limited precision to avoid float64 artifacts like 11.100000000000001
+	s := strconv.FormatFloat(f, 'f', 10, 64)
+	// Trim trailing zeros but keep at least one decimal
+	if strings.Contains(s, ".") {
+		s = strings.TrimRight(s, "0")
+		s = strings.TrimRight(s, ".")
+	}
+	return s
 }
 
 func isNumericDatatype(dt rdflibgo.URIRef) bool {

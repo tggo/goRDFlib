@@ -18,8 +18,9 @@ type ParsedQuery struct {
 	Offset       int
 	Prefixes     map[string]string // prefix → namespace
 	Construct    []TripleTemplate  // CONSTRUCT template
-	GroupBy      []Expr
-	Having       Expr
+	GroupBy        []Expr
+	GroupByAliases []string // parallel to GroupBy: variable name if (expr AS ?var), else ""
+	Having         Expr
 }
 
 // ProjectExpr is a (expr AS ?var) in SELECT.
