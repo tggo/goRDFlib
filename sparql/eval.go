@@ -12,6 +12,10 @@ import (
 )
 
 // EvalQuery evaluates a parsed SPARQL query against a graph.
+// namedGraphs stores named graph data for GRAPH clause evaluation.
+// This is set per-query by EvalQuery and accessed during pattern evaluation.
+var activeNamedGraphs map[string]*rdflibgo.Graph
+
 func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
 	// Store base URI in prefixes for function access
 	if q.BaseURI != "" {
@@ -19,6 +23,10 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 			q.Prefixes = make(map[string]string)
 		}
 		q.Prefixes["__base__"] = q.BaseURI
+	}
+	// Set named graphs for GRAPH clause
+	if q.NamedGraphs != nil {
+		activeNamedGraphs = q.NamedGraphs
 	}
 	solutions := evalPattern(g, q.Where, q.Prefixes)
 
@@ -573,8 +581,7 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string)
 		return result
 
 	case *GraphPattern:
-		// Simplified: evaluate inner pattern against the same graph
-		return evalPattern(g, p.Pattern, prefixes)
+		return evalGraphPattern(g, p, prefixes)
 
 	case *SubqueryPattern:
 		subResult, err := EvalQuery(g, p.Query, nil)
@@ -588,6 +595,55 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string)
 	}
 
 	return []map[string]rdflibgo.Term{{}}
+}
+
+func evalGraphPattern(g *rdflibgo.Graph, gp *GraphPattern, prefixes map[string]string) []map[string]rdflibgo.Term {
+	if activeNamedGraphs == nil || len(activeNamedGraphs) == 0 {
+		// No named graphs available — evaluate against default graph
+		return evalPattern(g, gp.Pattern, prefixes)
+	}
+
+	graphName := gp.Name // e.g., "?g" or "<http://...>"
+	isVar := strings.HasPrefix(graphName, "?")
+
+	if isVar {
+		// GRAPH ?g { ... } — iterate over all named graphs
+		varName := graphName[1:]
+		var results []map[string]rdflibgo.Term
+		for name, namedG := range activeNamedGraphs {
+			inner := evalPattern(namedG, gp.Pattern, prefixes)
+			graphURI := rdflibgo.NewURIRefUnsafe(name)
+			for _, b := range inner {
+				nb := copyBindings(b)
+				nb[varName] = graphURI
+				results = append(results, nb)
+			}
+		}
+		return results
+	}
+
+	// GRAPH <specific-uri> { ... }
+	resolved := resolvePatternTerm(graphName, nil, prefixes)
+	if resolved == nil {
+		return nil
+	}
+	graphIRI := ""
+	if u, ok := resolved.(rdflibgo.URIRef); ok {
+		graphIRI = u.Value()
+	} else {
+		graphIRI = resolved.String()
+	}
+
+	if namedG, ok := activeNamedGraphs[graphIRI]; ok {
+		return evalPattern(namedG, gp.Pattern, prefixes)
+	}
+	// Try matching by filename suffix (for relative URIs like <ng-01.ttl>)
+	for name, namedG := range activeNamedGraphs {
+		if strings.HasSuffix(name, "/"+graphIRI) || strings.HasSuffix(name, graphIRI) {
+			return evalPattern(namedG, gp.Pattern, prefixes)
+		}
+	}
+	return nil
 }
 
 func minusCompatible(a, b map[string]rdflibgo.Term) bool {

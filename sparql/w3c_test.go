@@ -53,14 +53,29 @@ func TestW3C(t *testing.T) {
 }
 
 func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
-	// Load data
+	// Load default graph data
 	g := rdflibgo.NewGraph()
 	if entry.Data != "" {
 		loadDataFile(t, g, entry.Data)
 	}
-	// Load named graph data into default graph (simplified)
-	for _, gd := range entry.GraphData {
-		loadDataFile(t, g, gd)
+
+	// Load named graphs
+	var namedGraphs map[string]*rdflibgo.Graph
+	if len(entry.GraphData) > 0 {
+		namedGraphs = make(map[string]*rdflibgo.Graph)
+		for _, gd := range entry.GraphData {
+			ng := rdflibgo.NewGraph()
+			loadDataFile(t, ng, gd)
+			graphName := "file://" + gd
+			namedGraphs[graphName] = ng
+		}
+		// If no explicit default graph data, add named graph data to default
+		// (only for queries that don't use GRAPH patterns)
+		if entry.Data == "" {
+			for _, gd := range entry.GraphData {
+				loadDataFile(t, g, gd)
+			}
+		}
 	}
 
 	// Read query
@@ -75,7 +90,19 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	queryStr := string(queryBytes)
 
 	// Execute query
-	result, err := sparql.Query(g, queryStr)
+	var result *sparql.Result
+	if namedGraphs != nil {
+		pq, perr := sparql.Parse(queryStr)
+		if perr != nil {
+			t.Fatalf("query parse failed: %v", perr)
+		}
+		pq.NamedGraphs = namedGraphs
+		var evalErr error
+		result, evalErr = sparql.EvalQuery(g, pq, nil)
+		err = evalErr
+	} else {
+		result, err = sparql.Query(g, queryStr)
+	}
 	if err != nil {
 		t.Fatalf("query execution failed: %v", err)
 	}
