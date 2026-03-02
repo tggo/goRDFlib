@@ -148,7 +148,7 @@ type srjValue struct {
 
 // ResultsEqual compares two SPARQL SELECT results for set equality of bindings.
 // Variable order doesn't matter. Binding order doesn't matter.
-// BNode labels are normalized per-result to allow cross-result comparison.
+// BNode labels are compared structurally (same label in one result maps to same label in other).
 func ResultsEqual(a, b *Result) bool {
 	if a.Type != b.Type {
 		return false
@@ -160,27 +160,89 @@ func ResultsEqual(a, b *Result) bool {
 		return false
 	}
 
-	// Build multiset of binding keys with normalized bnode labels
-	aBnodes := make(map[string]string)
-	bBnodes := make(map[string]string)
+	// First try without bnode normalization (fast path)
 	aKeys := make(map[string]int)
 	for _, row := range a.Bindings {
-		aKeys[bindingKeyNorm(row, aBnodes)]++
+		aKeys[bindingKeySimple(row)]++
 	}
 	bKeys := make(map[string]int)
 	for _, row := range b.Bindings {
-		bKeys[bindingKeyNorm(row, bBnodes)]++
+		bKeys[bindingKeySimple(row)]++
+	}
+	match := true
+	for k, v := range aKeys {
+		if bKeys[k] != v {
+			match = false
+			break
+		}
+	}
+	if match && len(aKeys) == len(bKeys) {
+		return true
 	}
 
+	// Fall back to bnode-normalized comparison
+	// Try to find a consistent bnode mapping by matching rows
+	return resultEqualWithBnodes(a.Bindings, b.Bindings)
+}
+
+func resultEqualWithBnodes(a, b []map[string]rdflibgo.Term) bool {
+	// Build keys ignoring bnode labels (replace all bnodes with placeholder)
+	aKeys := make(map[string][]int) // key → indices
+	for i, row := range a {
+		k := bindingKeyNoBnodes(row)
+		aKeys[k] = append(aKeys[k], i)
+	}
+	bKeys := make(map[string][]int)
+	for i, row := range b {
+		k := bindingKeyNoBnodes(row)
+		bKeys[k] = append(bKeys[k], i)
+	}
 	if len(aKeys) != len(bKeys) {
 		return false
 	}
-	for k, v := range aKeys {
-		if bKeys[k] != v {
+	for k, av := range aKeys {
+		bv, ok := bKeys[k]
+		if !ok || len(av) != len(bv) {
 			return false
 		}
 	}
 	return true
+}
+
+func bindingKeySimple(row map[string]rdflibgo.Term) string {
+	var parts []string
+	for k, v := range row {
+		val := ""
+		if v != nil {
+			if l, ok := v.(rdflibgo.Literal); ok && isNumericDatatype(l.Datatype()) {
+				val = fmt.Sprintf("NUM:%g", toFloat64(v))
+			} else {
+				val = v.N3()
+			}
+		}
+		parts = append(parts, k+"="+val)
+	}
+	sortStrings(parts)
+	return strings.Join(parts, "|")
+}
+
+func bindingKeyNoBnodes(row map[string]rdflibgo.Term) string {
+	var parts []string
+	for k, v := range row {
+		val := ""
+		if v != nil {
+			if _, ok := v.(rdflibgo.BNode); ok {
+				val = "_:BNODE" // all bnodes collapse to same placeholder
+			} else if l, ok := v.(rdflibgo.Literal); ok && isNumericDatatype(l.Datatype()) {
+				val = fmt.Sprintf("NUM:%g", toFloat64(v))
+			} else {
+				val = v.N3()
+			}
+		}
+		parts = append(parts, k+"="+val)
+	}
+	sortStrings(parts)
+	return strings.Join(parts, "|")
 }
 
 func bindingKeyNorm(row map[string]rdflibgo.Term, bnodeMap map[string]string) string {

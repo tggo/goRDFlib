@@ -379,11 +379,14 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 		}
 	case "BNODE":
 		if len(args) == 0 {
-			return rdflibgo.NewBNode("")
+			return rdflibgo.NewBNode("") // unique each call
 		}
 		vals := evalArgs()
 		if len(vals) == 1 {
-			return rdflibgo.NewBNode(termString(vals[0]))
+			// BNODE(str): same str → same bnode within a query
+			key := termString(vals[0])
+			// Use a deterministic bnode label based on the input
+			return rdflibgo.NewBNode("bnode_" + key)
 		}
 
 	// Date/time functions
