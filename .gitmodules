@@ -1,3 +1,6 @@
 [submodule "python/rdflib"]
 	path = python/rdflib
 	url = git@github.com:RDFLib/rdflib
+[submodule "python/pySHACL"]
+	path = python/pySHACL
+	url = https://github.com/RDFLib/pySHACL
