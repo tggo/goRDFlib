@@ -114,7 +114,7 @@ func (ts *turtleState) trackNS(t rdflibgo.Term) {
 	uri := u.Value()
 	ts.g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		nsStr := ns.Value()
-		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) {
+		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(prefix) {
 			ts.usedNS[prefix] = ns
 		}
 		return true
@@ -493,6 +493,34 @@ func (ts *turtleState) qnameOrFull(u rdflibgo.URIRef) string {
 		}
 	}
 	return u.N3()
+}
+
+// isValidPrefixName checks if a string is a valid Turtle PN_PREFIX (prefix label).
+// Empty string is valid (default prefix). Otherwise, must match PN_CHARS_BASE
+// for the first character, and PN_CHARS (plus dot in middle) for the rest.
+func isValidPrefixName(s string) bool {
+	if s == "" {
+		return true // default prefix
+	}
+	runes := []rune(s)
+	if !isPNCharsBase(runes[0]) {
+		return false
+	}
+	for i := 1; i < len(runes); i++ {
+		c := runes[i]
+		if isPNCharsBase(c) || c == '_' || c == '-' || c == '\u00B7' ||
+			unicode.IsDigit(c) ||
+			(c >= '\u0300' && c <= '\u036F') || (c >= '\u203F' && c <= '\u2040') ||
+			c == '.' {
+			continue
+		}
+		return false
+	}
+	// Last character must not be '.'
+	if runes[len(runes)-1] == '.' {
+		return false
+	}
+	return true
 }
 
 // isValidLocalName checks if a string is valid as a Turtle PN_LOCAL name.

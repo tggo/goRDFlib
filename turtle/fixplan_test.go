@@ -162,3 +162,25 @@ func TestTurtleEscapeSequences(t *testing.T) {
 		}
 	}
 }
+
+// RDFLib #771 — Turtle prefix with space should produce valid output
+func TestPrefixWithSpace(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Bind("bad prefix", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("val"))
+
+	var buf bytes.Buffer
+	err := Serialize(g, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	// Output should be valid Turtle — re-parse must succeed
+	g2 := rdflibgo.NewGraph()
+	err = Parse(g2, strings.NewReader(out))
+	if err != nil {
+		t.Errorf("#771: prefix with space produced invalid Turtle:\n%s\nError: %v", out, err)
+	}
+}

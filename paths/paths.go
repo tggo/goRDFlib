@@ -231,6 +231,9 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 }
 
 // fwdFrom traverses forward from node, emitting (origin, reachable) pairs.
+// The obj parameter is not passed to the inner path evaluation to avoid
+// restricting the DFS frontier — all neighbors must be explored for correct
+// transitive closure. Filtering by obj is done at the emit/done level.
 func (p *MulPath) fwdFrom(g *graph.Graph, origin term.Term, node term.Subject, obj term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
 	k := term.TermKey(node)
 	if seen[k] {
@@ -238,7 +241,17 @@ func (p *MulPath) fwdFrom(g *graph.Graph, origin term.Term, node term.Subject, o
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, node, obj)(func(_, o term.Term) bool {
+	p.Path.Eval(g, node, nil)(func(_, o term.Term) bool {
+		// Only emit pairs that match the obj constraint (if any)
+		if obj != nil && term.TermKey(o) != term.TermKey(obj) {
+			// Don't emit this pair, but still recurse through it
+			if p.More {
+				if next, ok := o.(term.Subject); ok {
+					p.fwdFrom(g, origin, next, obj, seen, emit)
+				}
+			}
+			return true
+		}
 		if !emit(origin, o) {
 			return false
 		}

@@ -804,6 +804,113 @@ func TestStrdtPreservesUnknownDatatype(t *testing.T) {
 	}
 }
 
+// RDFLib #715 — Property path + transitive closure
+func TestPropertyPathPlus(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	a := rdflibgo.NewURIRefUnsafe(ex + "A")
+	b := rdflibgo.NewURIRefUnsafe(ex + "B")
+	c := rdflibgo.NewURIRefUnsafe(ex + "C")
+	p := rdflibgo.NewURIRefUnsafe(ex + "p")
+
+	// Chain: A -p-> B -p-> C
+	g.Add(a, p, b)
+	g.Add(b, p, c)
+
+	// A p+ C should be true (A→B→C)
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?end WHERE { :A :p+ ?end }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := extractVarValues(r.Bindings, "end")
+	// Should find B (direct) and C (transitive)
+	if len(got) != 2 {
+		t.Errorf("#715: :A :p+ ?end expected 2 results (B,C), got %d: %v", len(got), got)
+	}
+
+	// ASK: A p+ C should be true
+	r2, err := Query(g, `
+		PREFIX : <http://example.org/>
+		ASK { :A :p+ :C }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r2.AskResult {
+		t.Error("#715: ASK { :A :p+ :C } should be true (transitive chain A→B→C)")
+	}
+}
+
+// RDFLib #715 variant — must NOT produce spurious results
+func TestPropertyPathPlusNoSpurious(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	a := rdflibgo.NewURIRefUnsafe(ex + "A")
+	b := rdflibgo.NewURIRefUnsafe(ex + "B")
+	x := rdflibgo.NewURIRefUnsafe(ex + "X")
+	y := rdflibgo.NewURIRefUnsafe(ex + "Y")
+	isa := rdflibgo.NewURIRefUnsafe(ex + "isa")
+
+	// A isa X, A isa Y, B isa X (but B does NOT isa Y directly or transitively)
+	g.Add(a, isa, x)
+	g.Add(a, isa, y)
+	g.Add(b, isa, x)
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		ASK { :B :isa+ :Y }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.AskResult {
+		t.Error("#715: ASK { :B :isa+ :Y } should be false — no chain from B to Y")
+	}
+}
+
+// RDFLib #714 — BNode + property paths combined
+func TestBnodePlusPropertyPath(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	a := rdflibgo.NewURIRefUnsafe(ex + "A")
+	p := rdflibgo.NewURIRefUnsafe(ex + "p")
+	q := rdflibgo.NewURIRefUnsafe(ex + "q")
+	bn := rdflibgo.NewBNode("")
+	g.Add(a, p, bn)
+	g.Add(bn, q, rdflibgo.NewLiteral("val"))
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?v WHERE { :A :p [ :q ?v ] }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("BNode+path: expected 1 result, got %d", len(r.Bindings))
+	}
+	if r.Bindings[0]["v"].(rdflibgo.Literal).Lexical() != "val" {
+		t.Error("BNode+path: wrong value")
+	}
+}
+
+// RDFLib #196 — Lexical form preservation
+func TestLexicalFormPreservation(t *testing.T) {
+	// "2.50"^^xsd:decimal should stay "2.50", not normalize to "2.5"
+	lit := rdflibgo.NewLiteral("2.50", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+	if lit.Lexical() != "2.50" {
+		t.Errorf("#196: lexical form not preserved: got %q, want %q", lit.Lexical(), "2.50")
+	}
+	// Roundtrip through N3
+	n3 := lit.N3()
+	if !strings.Contains(n3, "2.50") {
+		t.Errorf("#196: N3() normalized lexical form: %s", n3)
+	}
+}
+
 func extractVarValues(bindings []map[string]rdflibgo.Term, varName string) []string {
 	var result []string
 	for _, b := range bindings {
