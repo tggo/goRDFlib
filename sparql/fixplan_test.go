@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -908,6 +909,155 @@ func TestLexicalFormPreservation(t *testing.T) {
 	n3 := lit.N3()
 	if !strings.Contains(n3, "2.50") {
 		t.Errorf("#196: N3() normalized lexical form: %s", n3)
+	}
+}
+
+// RDFLib #910 — UNION with identical results must NOT deduplicate
+func TestUnionIdenticalBranches(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
+
+	r, err := Query(g, `SELECT * { { BIND("a" AS ?a) } UNION { BIND("a" AS ?a) } }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 2 {
+		t.Errorf("#910: UNION identical branches: expected 2 rows, got %d", len(r.Bindings))
+	}
+}
+
+// RDFLib #3381 — ASK { FILTER(false) } must return false
+func TestAskFilterFalse(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"),
+		rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("x"))
+
+	r, err := Query(g, `ASK { FILTER(false) }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.AskResult {
+		t.Error("#3381: ASK { FILTER(false) } should return false")
+	}
+}
+
+// RDFLib #3382 — GROUP BY on empty result should return 0 rows
+func TestGroupByEmptyResult(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	// Empty graph — no triples match
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?s (COUNT(?o) AS ?n) WHERE {
+			?s :nonexistent ?o
+		} GROUP BY ?s
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 0 {
+		t.Errorf("#3382: GROUP BY on empty result: expected 0 rows, got %d: %v", len(r.Bindings), r.Bindings)
+	}
+}
+
+// RDFLib #936 — HAVING with variable comparison
+func TestHavingVariableComparison(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	s := rdflibgo.NewURIRefUnsafe(ex + "s")
+	p1 := rdflibgo.NewURIRefUnsafe(ex + "p1")
+	p2 := rdflibgo.NewURIRefUnsafe(ex + "p2")
+	excluded := rdflibgo.NewURIRefUnsafe(ex + "excluded")
+	g.Add(s, p1, rdflibgo.NewLiteral("a"))
+	g.Add(s, p2, rdflibgo.NewLiteral("b"))
+	g.Add(s, excluded, rdflibgo.NewLiteral("c"))
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?p (COUNT(?o) AS ?n) WHERE {
+			?s ?p ?o
+		} GROUP BY ?p HAVING (?p != :excluded)
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 2 {
+		t.Errorf("#936: HAVING filter: expected 2 groups, got %d", len(r.Bindings))
+	}
+}
+
+// RDFLib #1967 — Property path on long list (no stack overflow)
+func TestPropertyPathLongList(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	// Build a chain of 500 nodes: n0 -> n1 -> n2 -> ... -> n499
+	ex := "http://example.org/"
+	p := rdflibgo.NewURIRefUnsafe(ex + "next")
+	for i := 0; i < 499; i++ {
+		from := rdflibgo.NewURIRefUnsafe(ex + "n" + strconv.Itoa(i))
+		to := rdflibgo.NewURIRefUnsafe(ex + "n" + strconv.Itoa(i+1))
+		g.Add(from, p, to)
+	}
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT (COUNT(?end) AS ?c) WHERE { :n0 :next+ ?end }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(r.Bindings))
+	}
+	c := r.Bindings[0]["c"].(rdflibgo.Literal).Lexical()
+	if c != "499" {
+		t.Errorf("#1967: long chain path+: expected 499 reachable nodes, got %s", c)
+	}
+}
+
+// RDFLib #2011 — Comma-separated blank node objects
+func TestCommaSeparatedBnodeObjects(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	s := rdflibgo.NewURIRefUnsafe(ex + "s")
+	p := rdflibgo.NewURIRefUnsafe(ex + "fields")
+	name := rdflibgo.NewURIRefUnsafe(ex + "name")
+	bn1 := rdflibgo.NewBNode("")
+	bn2 := rdflibgo.NewBNode("")
+	g.Add(s, p, bn1)
+	g.Add(s, p, bn2)
+	g.Add(bn1, name, rdflibgo.NewLiteral("field1"))
+	g.Add(bn2, name, rdflibgo.NewLiteral("field2"))
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?v WHERE {
+			:s :fields [ :name ?v ]
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 2 {
+		t.Errorf("#2011: blank node objects: expected 2 results, got %d", len(r.Bindings))
+	}
+}
+
+// RDFLib #2077 — Two prefixes mapping to same IRI
+func TestDuplicatePrefixes(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.com#"
+	g.Add(rdflibgo.NewURIRefUnsafe(ex+"A"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("val"))
+
+	r, err := Query(g, `
+		PREFIX foo: <http://example.com#>
+		PREFIX bar: <http://example.com#>
+		SELECT * WHERE { foo:A bar:p ?o }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Errorf("#2077: duplicate prefixes: expected 1 result, got %d", len(r.Bindings))
 	}
 }
 

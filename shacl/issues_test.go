@@ -615,3 +615,36 @@ hei:hei_cust_1281 a hei:Hei_customer ;
 		t.Fatal("expected non-conforming: 'Industrieweg' is shorter than 30 chars")
 	}
 }
+
+// pySHACL #160 — sh:inversePath should work in property shapes
+func TestInversePath(t *testing.T) {
+	t.Parallel()
+	shapes := `
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://example.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:PersonShape a sh:NodeShape ;
+    sh:targetClass ex:Person ;
+    sh:property [
+        sh:path [ sh:inversePath ex:knows ] ;
+        sh:minCount 1 ;
+    ] .
+`
+	data := `
+@prefix ex: <http://example.org/> .
+
+ex:Alice a ex:Person .
+ex:Bob a ex:Person .
+ex:Charlie ex:knows ex:Alice .
+`
+	// Alice is known by Charlie (inverse path satisfied), Bob is not known by anyone
+	report := dashValidate(t, shapes, data)
+	if report.Conforms {
+		t.Fatal("pySHACL#160: expected non-conforming: Bob has no incoming ex:knows")
+	}
+	// Should have exactly 1 violation (for Bob)
+	if len(report.Results) != 1 {
+		t.Errorf("pySHACL#160: expected 1 violation (for Bob), got %d", len(report.Results))
+	}
+}

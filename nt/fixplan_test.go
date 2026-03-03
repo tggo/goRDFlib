@@ -65,6 +65,34 @@ func TestR9_TrailingNewline(t *testing.T) {
 	}
 }
 
+// RDFLib #920 — Scheme-only URIs like <a:>
+func TestSchemeOnlyURI(t *testing.T) {
+	input := `<a:> <b:> <c:> .
+`
+	g := rdflibgo.NewGraph()
+	err := Parse(g, strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("#920: scheme-only URI parse failed: %v", err)
+	}
+	if g.Len() != 1 {
+		t.Errorf("#920: expected 1 triple, got %d", g.Len())
+	}
+}
+
+// RDFLib #888 — BNode labels with underscores
+func TestBnodeLabelWithUnderscore(t *testing.T) {
+	input := `_:node_a <urn:p> "lit" .
+`
+	g := rdflibgo.NewGraph()
+	err := Parse(g, strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("#888: bnode with underscore parse failed: %v", err)
+	}
+	if g.Len() != 1 {
+		t.Errorf("#888: expected 1 triple, got %d", g.Len())
+	}
+}
+
 // R10. Deterministic N-Triples serialization
 func TestR10_NTriplesDeterministic(t *testing.T) {
 	g := rdflibgo.NewGraph()
