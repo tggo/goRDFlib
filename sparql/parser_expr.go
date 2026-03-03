@@ -212,7 +212,7 @@ func (p *sparqlParser) parseUnaryExpr() (Expr, error) {
 			return &ExistsExpr{Pattern: pat, Not: true}, nil
 		}
 		p.pos = saved + 1
-		arg, err := p.parsePrimaryExpr()
+		arg, err := p.parseUnaryExpr()
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +220,7 @@ func (p *sparqlParser) parseUnaryExpr() (Expr, error) {
 	}
 	if p.pos < len(p.input) && p.input[p.pos] == '-' {
 		p.pos++
-		arg, err := p.parsePrimaryExpr()
+		arg, err := p.parseUnaryExpr()
 		if err != nil {
 			return nil, err
 		}
@@ -258,6 +258,9 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	// String literal
 	if ch == '"' || ch == '\'' {
 		t := p.readTermOrVar()
+		if p.tripleTermError != nil {
+			return nil, p.tripleTermError
+		}
 		if err := validateStringEscapes(t); err != nil {
 			return nil, p.errorf("%s", err)
 		}
@@ -270,8 +273,54 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 		return &LiteralExpr{Value: p.resolveTermValue(t)}, nil
 	}
 
-	// IRI
+	// IRI or triple term
 	if ch == '<' {
+		if p.pos+1 < len(p.input) && p.input[p.pos+1] == '<' {
+			saved := p.pos
+			p.pos += 2
+			p.skipWS()
+			// Check if it's a triple term <<( or a reified triple <<
+			if p.pos < len(p.input) && p.input[p.pos] == '(' {
+				p.pos++ // skip (
+				p.skipWS()
+				// Parse inner S, P, O as expressions
+				sExpr, err := p.parseExprOrTermInTriple()
+				if err != nil {
+					return nil, err
+				}
+				// Validate: subject must not be a literal constant or nested triple term
+				if le, ok := sExpr.(*LiteralExpr); ok && le.Value != nil {
+					if _, isLit := le.Value.(rdflibgo.Literal); isLit {
+						return nil, p.errorf("literal in subject position of triple term")
+					}
+				}
+				if fe, ok := sExpr.(*FuncExpr); ok && fe.Name == "TRIPLE" {
+					return nil, p.errorf("triple term in subject position of triple term")
+				}
+				p.skipWS()
+				pExpr, err := p.parseExprOrTermInTriple()
+				if err != nil {
+					return nil, err
+				}
+				p.skipWS()
+				oExpr, err := p.parseExprOrTermInTriple()
+				if err != nil {
+					return nil, err
+				}
+				p.skipWS()
+				if p.pos < len(p.input) && p.input[p.pos] == ')' {
+					p.pos++
+				}
+				p.skipWS()
+				if p.pos+1 < len(p.input) && p.input[p.pos] == '>' && p.input[p.pos+1] == '>' {
+					p.pos += 2
+				}
+				return &FuncExpr{Name: "TRIPLE", Args: []Expr{sExpr, pExpr, oExpr}}, nil
+			}
+			// Reified triple << s p o >> in expression context — not allowed
+			p.pos = saved
+			return nil, p.errorf("reified triple syntax << ... >> not allowed in expressions, use <<( ... )>> for triple terms")
+		}
 		iri := p.readIRIRef()
 		return &IRIExpr{Value: iri}, nil
 	}
@@ -432,4 +481,52 @@ func (p *sparqlParser) parseAggregateCall(name string) (Expr, error) {
 	p.skipWS()
 	p.expect(')')
 	return fe, nil
+}
+
+// parseExprOrTermInTriple parses a single term inside a triple term in expression context.
+// Handles variables, IRIs, literals, prefixed names, and nested triple terms.
+func (p *sparqlParser) parseExprOrTermInTriple() (Expr, error) {
+	p.skipWS()
+	if p.pos >= len(p.input) {
+		return nil, p.errorf("unexpected end in triple term expression")
+	}
+	ch := p.input[p.pos]
+	if ch == '?' || ch == '$' {
+		v := p.readVar()
+		return &VarExpr{Name: v}, nil
+	}
+	if ch == '<' {
+		if p.pos+1 < len(p.input) && p.input[p.pos+1] == '<' {
+			// Nested triple term
+			return p.parsePrimaryExpr()
+		}
+		iri := p.readIRIRef()
+		return &IRIExpr{Value: iri}, nil
+	}
+	if ch == '"' || ch == '\'' {
+		t := p.readTermOrVar()
+		return &LiteralExpr{Value: p.resolveTermValue(t)}, nil
+	}
+	// Bnode property lists and collections not allowed in triple term expressions
+	if ch == '[' || ch == '(' {
+		return nil, p.errorf("bnode property list or collection not allowed in triple term expression")
+	}
+	// Blank node _:label
+	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
+		t := p.readTermOrVar()
+		return &LiteralExpr{Value: p.resolveTermValue(t)}, nil
+	}
+	// Numeric, boolean, prefixed name
+	t := p.readTermOrVar()
+	if t == "" {
+		return nil, p.errorf("unexpected token in triple term")
+	}
+	val := p.resolveTermValue(t)
+	if val == nil {
+		return &LiteralExpr{Value: rdflibgo.NewLiteral(t)}, nil
+	}
+	if u, ok := val.(rdflibgo.URIRef); ok {
+		return &IRIExpr{Value: u.Value()}, nil
+	}
+	return &LiteralExpr{Value: val}, nil
 }

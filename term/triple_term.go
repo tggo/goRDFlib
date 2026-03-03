@@ -6,37 +6,38 @@ package term
 // The predicate must be a URIRef. The object can be any Term including another TripleTerm.
 // Safe for concurrent use; immutable after construction.
 type TripleTerm struct {
-	subject   Subject
-	predicate URIRef
-	object    Term
-	key       string // cached TermKey
+	subj Subject
+	pred URIRef
+	obj  Term
+	key  string // cached TermKey
 }
 
 func (t TripleTerm) termType() string { return "TripleTerm" }
+func (t TripleTerm) subject()         {} // implements Subject interface
 
 // Subject returns the subject of the triple term.
-func (t TripleTerm) Subject() Subject { return t.subject }
+func (t TripleTerm) Subject() Subject { return t.subj }
 
 // Predicate returns the predicate of the triple term.
-func (t TripleTerm) Predicate() URIRef { return t.predicate }
+func (t TripleTerm) Predicate() URIRef { return t.pred }
 
 // Object returns the object of the triple term.
-func (t TripleTerm) Object() Term { return t.object }
+func (t TripleTerm) Object() Term { return t.obj }
 
 // N3 returns the N-Triples/N3 representation: <<( <s> <p> <o> )>>.
 func (t TripleTerm) N3(ns ...NamespaceManager) string {
-	return "<<( " + t.subject.N3(ns...) + " " + t.predicate.N3(ns...) + " " + t.object.N3(ns...) + " )>>"
+	return "<<( " + t.subj.N3(ns...) + " " + t.pred.N3(ns...) + " " + t.obj.N3(ns...) + " )>>"
 }
 
 // String returns a human-readable representation.
 func (t TripleTerm) String() string {
-	return "<<( " + t.subject.String() + " " + t.predicate.String() + " " + t.object.String() + " )>>"
+	return "<<( " + t.subj.String() + " " + t.pred.String() + " " + t.obj.String() + " )>>"
 }
 
 // Equal returns true if other is a TripleTerm with equal subject, predicate, and object.
 func (t TripleTerm) Equal(other Term) bool {
 	if o, ok := other.(TripleTerm); ok {
-		return t.subject.Equal(o.subject) && t.predicate.Equal(o.predicate) && t.object.Equal(o.object)
+		return t.subj.Equal(o.subj) && t.pred.Equal(o.pred) && t.obj.Equal(o.obj)
 	}
 	return false
 }
@@ -51,9 +52,9 @@ func NewTripleTerm(subject Subject, predicate URIRef, object Term) TripleTerm {
 	}
 	key := "T:" + TermKey(subject) + "\x00" + TermKey(predicate) + "\x00" + TermKey(object)
 	return TripleTerm{
-		subject:   subject,
-		predicate: predicate,
-		object:    object,
-		key:       key,
+		subj: subject,
+		pred: predicate,
+		obj:  object,
+		key:  key,
 	}
 }

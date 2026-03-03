@@ -32,19 +32,7 @@ func ParseSRX(r io.Reader) (*Result, error) {
 	for _, r := range doc.Results.Results {
 		row := make(map[string]rdflibgo.Term)
 		for _, b := range r.Bindings {
-			if b.URI != "" {
-				row[b.Name] = rdflibgo.NewURIRefUnsafe(b.URI)
-			} else if b.BNode != "" {
-				row[b.Name] = rdflibgo.NewBNode(b.BNode)
-			} else if b.Literal != nil {
-				var opts []rdflibgo.LiteralOption
-				if b.Literal.Lang != "" {
-					opts = append(opts, rdflibgo.WithLang(b.Literal.Lang))
-				} else if b.Literal.Datatype != "" {
-					opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(b.Literal.Datatype)))
-				}
-				row[b.Name] = rdflibgo.NewLiteral(b.Literal.Value, opts...)
-			}
+			row[b.Name] = parseSRXBinding(b)
 		}
 		bindings = append(bindings, row)
 	}
@@ -76,16 +64,89 @@ type srxResult struct {
 }
 
 type srxBinding struct {
-	Name    string      `xml:"name,attr"`
-	URI     string      `xml:"uri"`
-	BNode   string      `xml:"bnode"`
+	Name    string     `xml:"name,attr"`
+	URI     string     `xml:"uri"`
+	BNode   string     `xml:"bnode"`
 	Literal *srxLiteral `xml:"literal"`
+	Triple  *srxTriple `xml:"triple"`
 }
 
 type srxLiteral struct {
 	Value    string `xml:",chardata"`
 	Lang     string `xml:"http://www.w3.org/XML/1998/namespace lang,attr"`
 	Datatype string `xml:"datatype,attr"`
+}
+
+type srxTriple struct {
+	Subject   srxTripleComponent `xml:"subject"`
+	Predicate srxTripleComponent `xml:"predicate"`
+	Object    srxTripleComponent `xml:"object"`
+}
+
+type srxTripleComponent struct {
+	URI     string      `xml:"uri"`
+	BNode   string      `xml:"bnode"`
+	Literal *srxLiteral `xml:"literal"`
+	Triple  *srxTriple  `xml:"triple"`
+}
+
+func parseSRXBinding(b srxBinding) rdflibgo.Term {
+	if b.URI != "" {
+		return rdflibgo.NewURIRefUnsafe(b.URI)
+	}
+	if b.BNode != "" {
+		return rdflibgo.NewBNode(b.BNode)
+	}
+	if b.Literal != nil {
+		return parseSRXLiteral(b.Literal)
+	}
+	if b.Triple != nil {
+		return parseSRXTriple(b.Triple)
+	}
+	return nil
+}
+
+func parseSRXLiteral(lit *srxLiteral) rdflibgo.Literal {
+	var opts []rdflibgo.LiteralOption
+	if lit.Lang != "" {
+		if idx := strings.Index(lit.Lang, "--"); idx >= 0 {
+			opts = append(opts, rdflibgo.WithLang(lit.Lang[:idx]))
+			opts = append(opts, rdflibgo.WithDir(lit.Lang[idx+2:]))
+		} else {
+			opts = append(opts, rdflibgo.WithLang(lit.Lang))
+		}
+	} else if lit.Datatype != "" {
+		opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(lit.Datatype)))
+	}
+	return rdflibgo.NewLiteral(lit.Value, opts...)
+}
+
+func parseSRXTripleComponent(c srxTripleComponent) rdflibgo.Term {
+	if c.URI != "" {
+		return rdflibgo.NewURIRefUnsafe(c.URI)
+	}
+	if c.BNode != "" {
+		return rdflibgo.NewBNode(c.BNode)
+	}
+	if c.Literal != nil {
+		return parseSRXLiteral(c.Literal)
+	}
+	if c.Triple != nil {
+		return parseSRXTriple(c.Triple)
+	}
+	return nil
+}
+
+func parseSRXTriple(t *srxTriple) rdflibgo.Term {
+	s := parseSRXTripleComponent(t.Subject)
+	p := parseSRXTripleComponent(t.Predicate)
+	o := parseSRXTripleComponent(t.Object)
+	subj, _ := s.(rdflibgo.Subject)
+	pred, _ := p.(rdflibgo.URIRef)
+	if subj == nil || o == nil {
+		return nil
+	}
+	return rdflibgo.NewTripleTerm(subj, pred, o)
 }
 
 // ParseSRJ parses SPARQL Results JSON (.srj) from a reader into a *Result.
@@ -105,20 +166,7 @@ func ParseSRJ(r io.Reader) (*Result, error) {
 	for _, row := range doc.Results.Bindings {
 		b := make(map[string]rdflibgo.Term)
 		for k, v := range row {
-			switch v.Type {
-			case "uri":
-				b[k] = rdflibgo.NewURIRefUnsafe(v.Value)
-			case "bnode":
-				b[k] = rdflibgo.NewBNode(v.Value)
-			case "literal", "typed-literal":
-				var opts []rdflibgo.LiteralOption
-				if v.Lang != "" {
-					opts = append(opts, rdflibgo.WithLang(v.Lang))
-				} else if v.Datatype != "" {
-					opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(v.Datatype)))
-				}
-				b[k] = rdflibgo.NewLiteral(v.Value, opts...)
-			}
+			b[k] = parseSRJValue(v)
 		}
 		bindings = append(bindings, b)
 	}
@@ -141,10 +189,66 @@ type srjResults struct {
 }
 
 type srjValue struct {
-	Type     string `json:"type"`
-	Value    string `json:"value"`
-	Lang     string `json:"xml:lang,omitempty"`
-	Datatype string `json:"datatype,omitempty"`
+	Type     string          `json:"type"`
+	Value    json.RawMessage `json:"value"`
+	Lang     string          `json:"xml:lang,omitempty"`
+	Dir      string          `json:"its:dir,omitempty"`
+	Datatype string          `json:"datatype,omitempty"`
+}
+
+type srjTripleValue struct {
+	Subject   srjValue `json:"subject"`
+	Predicate srjValue `json:"predicate"`
+	Object    srjValue `json:"object"`
+}
+
+func parseSRJValue(v srjValue) rdflibgo.Term {
+	switch v.Type {
+	case "uri":
+		return rdflibgo.NewURIRefUnsafe(srjString(v.Value))
+	case "bnode":
+		return rdflibgo.NewBNode(srjString(v.Value))
+	case "literal", "typed-literal":
+		var opts []rdflibgo.LiteralOption
+		if v.Lang != "" {
+			if idx := strings.Index(v.Lang, "--"); idx >= 0 {
+				opts = append(opts, rdflibgo.WithLang(v.Lang[:idx]))
+				opts = append(opts, rdflibgo.WithDir(v.Lang[idx+2:]))
+			} else {
+				opts = append(opts, rdflibgo.WithLang(v.Lang))
+			}
+		} else if v.Datatype != "" {
+			opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(v.Datatype)))
+		}
+		if v.Dir != "" {
+			opts = append(opts, rdflibgo.WithDir(v.Dir))
+		}
+		return rdflibgo.NewLiteral(srjString(v.Value), opts...)
+	case "triple":
+		var tv srjTripleValue
+		if err := json.Unmarshal(v.Value, &tv); err != nil {
+			return nil
+		}
+		s := parseSRJValue(tv.Subject)
+		p := parseSRJValue(tv.Predicate)
+		o := parseSRJValue(tv.Object)
+		subj, _ := s.(rdflibgo.Subject)
+		pred, _ := p.(rdflibgo.URIRef)
+		if subj == nil || o == nil {
+			return nil
+		}
+		return rdflibgo.NewTripleTerm(subj, pred, o)
+	}
+	return nil
+}
+
+// srjString extracts a string from a json.RawMessage (which may be a JSON string).
+func srjString(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return string(raw)
+	}
+	return s
 }
 
 // ResultsEqual compares two SPARQL SELECT results for set equality of bindings.
@@ -228,10 +332,37 @@ func bindingKeyWith(row map[string]rdflibgo.Term, collapseBnodes bool) string {
 				val = fmt.Sprintf("NUM:%g", toFloat64(v))
 			} else {
 				val = v.N3()
+				if collapseBnodes {
+					// Also normalize bnodes inside triple term N3 representations
+					val = normalizeBnodesInN3(val)
+				}
 			}
 		}
 		parts = append(parts, k+"="+val)
 	}
 	slices.Sort(parts)
 	return strings.Join(parts, "|")
+}
+
+// normalizeBnodesInN3 replaces all bnode references (e.g., _:XXXX) in N3 strings with _:BNODE.
+func normalizeBnodesInN3(s string) string {
+	if !strings.Contains(s, "_:") {
+		return s
+	}
+	var sb strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+2 <= len(s) && s[i] == '_' && s[i+1] == ':' {
+			sb.WriteString("_:BNODE")
+			i += 2
+			// Skip the bnode label
+			for i < len(s) && (s[i] >= 'a' && s[i] <= 'z' || s[i] >= 'A' && s[i] <= 'Z' || s[i] >= '0' && s[i] <= '9' || s[i] == '_' || s[i] == '-' || s[i] == '.') {
+				i++
+			}
+		} else {
+			sb.WriteByte(s[i])
+			i++
+		}
+	}
+	return sb.String()
 }

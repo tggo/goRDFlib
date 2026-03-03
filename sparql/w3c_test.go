@@ -191,7 +191,7 @@ func loadDataFile(t *testing.T, g *rdflibgo.Graph, path string) {
 		if err := rdfxml.Parse(g, f, rdfxml.WithBase(base)); err != nil {
 			t.Fatalf("failed to parse RDF/XML data %s: %v", path, err)
 		}
-	case ".nt":
+	case ".nt", ".nq":
 		if err := nt.Parse(g, f, nt.WithBase(base)); err != nil {
 			t.Fatalf("failed to parse N-Triples data %s: %v", path, err)
 		}

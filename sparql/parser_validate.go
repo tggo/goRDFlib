@@ -6,6 +6,15 @@ import (
 )
 
 func (p *sparqlParser) validate(q *ParsedQuery) error {
+	// Validate nested aggregates in project expressions
+	for _, pe := range q.ProjectExprs {
+		if err := validateNoNestedAggregates(pe.Expr); err != nil {
+			return err
+		}
+	}
+
+
+
 	if q.Type == "SELECT" {
 		// SELECT * with GROUP BY is invalid
 		if q.Variables == nil && len(q.GroupBy) > 0 {
@@ -236,6 +245,113 @@ func validateConstructWhere(p Pattern) error {
 	default:
 		return fmt.Errorf("sparql parse error: complex pattern not allowed in CONSTRUCT WHERE")
 	}
+}
+
+// validateNoNestedAggregates checks that aggregate expressions don't contain nested aggregates.
+func validateNoNestedAggregates(expr Expr) error {
+	switch e := expr.(type) {
+	case *FuncExpr:
+		if isAggregateFuncName(e.Name) {
+			// Check that arguments don't contain aggregates
+			for _, a := range e.Args {
+				if containsAggregate(a) {
+					return fmt.Errorf("sparql parse error: nested aggregate functions not allowed")
+				}
+			}
+		}
+		for _, a := range e.Args {
+			if err := validateNoNestedAggregates(a); err != nil {
+				return err
+			}
+		}
+	case *BinaryExpr:
+		if err := validateNoNestedAggregates(e.Left); err != nil {
+			return err
+		}
+		return validateNoNestedAggregates(e.Right)
+	case *UnaryExpr:
+		return validateNoNestedAggregates(e.Arg)
+	}
+	return nil
+}
+
+// validateTripleTerms validates triple term constraints in patterns.
+func validateTripleTerms(p Pattern) error {
+	if p == nil {
+		return nil
+	}
+	switch pat := p.(type) {
+	case *BGP:
+		for _, t := range pat.Triples {
+			if err := validateTripleTermString(t.Subject, "subject"); err != nil {
+				return err
+			}
+			if err := validateTripleTermString(t.Object, "object"); err != nil {
+				return err
+			}
+		}
+	case *JoinPattern:
+		if err := validateTripleTerms(pat.Left); err != nil {
+			return err
+		}
+		return validateTripleTerms(pat.Right)
+	case *OptionalPattern:
+		if err := validateTripleTerms(pat.Main); err != nil {
+			return err
+		}
+		return validateTripleTerms(pat.Optional)
+	case *UnionPattern:
+		if err := validateTripleTerms(pat.Left); err != nil {
+			return err
+		}
+		return validateTripleTerms(pat.Right)
+	case *FilterPattern:
+		return validateTripleTerms(pat.Pattern)
+	case *BindPattern:
+		return validateTripleTerms(pat.Pattern)
+	case *ValuesPattern:
+		return nil
+	case *SubqueryPattern:
+		return validateTripleTerms(pat.Query.Where)
+	}
+	return nil
+}
+
+// validateTripleTermString checks that a triple term string is valid:
+// - No collection syntax inside triple terms
+// - Subject of triple term must not be a literal or another triple term
+func validateTripleTermString(s, position string) error {
+	if !strings.HasPrefix(s, "<<( ") {
+		return nil
+	}
+	inner := s[4 : len(s)-4]
+	parts := splitTripleTermPartsParser(inner)
+	if len(parts) != 3 {
+		return nil
+	}
+	// Check subject: must not be a literal
+	subj := parts[0]
+	if strings.HasPrefix(subj, "\"") || strings.HasPrefix(subj, "'") {
+		return fmt.Errorf("sparql parse error: literal in subject position of triple term")
+	}
+	if strings.HasPrefix(subj, "<<( ") {
+		return fmt.Errorf("sparql parse error: triple term in subject position of triple term")
+	}
+	// Check for collection syntax inside
+	for _, p := range parts {
+		if strings.HasPrefix(p, "?_coll") {
+			return fmt.Errorf("sparql parse error: collection syntax not allowed inside triple term")
+		}
+	}
+	// Recursively validate nested triple terms
+	for _, p := range parts {
+		if strings.HasPrefix(p, "<<( ") {
+			if err := validateTripleTermString(p, "nested"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // unescapePNLocal removes backslash escapes from PN_LOCAL_ESC sequences.

@@ -159,8 +159,9 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "CONCAT":
 		vals := evalArgs()
 		var sb strings.Builder
-		// Track language and datatype: preserve only if ALL args match
+		// Track language and direction: preserve only if ALL args match
 		var commonLang *string
+		var commonDir *string
 		hasError := false
 		for _, v := range vals {
 			if v == nil {
@@ -175,11 +176,18 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 			sb.WriteString(termString(v))
 			if l, ok := v.(rdflibgo.Literal); ok {
 				lang := l.Language()
+				dir := l.Dir()
 				if commonLang == nil {
 					commonLang = &lang
 				} else if *commonLang != lang {
 					empty := ""
 					commonLang = &empty
+				}
+				if commonDir == nil {
+					commonDir = &dir
+				} else if *commonDir != dir {
+					empty := ""
+					commonDir = &empty
 				}
 			}
 		}
@@ -187,8 +195,29 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 			return nil
 		}
 		var opts []rdflibgo.LiteralOption
-		if commonLang != nil && *commonLang != "" {
+		if commonLang != nil && *commonLang != "" && commonDir != nil && *commonDir != "" {
+			// All have same lang AND same dir
 			opts = append(opts, rdflibgo.WithLang(*commonLang))
+			opts = append(opts, rdflibgo.WithDir(*commonDir))
+		} else if commonLang != nil && *commonLang != "" && (commonDir == nil || *commonDir == "") {
+			// Check if any had dir — if some had dir and some didn't, no lang
+			allHaveDir := true
+			noneHaveDir := true
+			for _, v := range vals {
+				if l, ok := v.(rdflibgo.Literal); ok {
+					if l.Dir() != "" {
+						noneHaveDir = false
+					} else {
+						allHaveDir = false
+					}
+				}
+			}
+			if noneHaveDir {
+				// Pure lang, no dir — preserve lang
+				opts = append(opts, rdflibgo.WithLang(*commonLang))
+			}
+			// If mixed dir/no-dir, drop everything (no opts)
+			_ = allHaveDir
 		}
 		return rdflibgo.NewLiteral(sb.String(), opts...)
 	case "REGEX":
@@ -238,10 +267,11 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	// Term accessors
 	case "LANG":
 		vals := evalArgs()
-		if len(vals) == 1 {
+		if len(vals) == 1 && vals[0] != nil {
 			if l, ok := vals[0].(rdflibgo.Literal); ok {
 				return rdflibgo.NewLiteral(l.Language())
 			}
+			return nil // type error for non-literals
 		}
 		return rdflibgo.NewLiteral("")
 	case "DATATYPE":
@@ -335,18 +365,24 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	// String constructors
 	case "STRLANG":
 		vals := evalArgs()
-		if len(vals) == 2 && vals[0] != nil {
+		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
 			// STRLANG requires a simple literal (no language, no datatype other than xsd:string)
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				if l.Language() != "" {
-					return nil // type error
-				}
-				dt := l.Datatype()
-				if dt != rdflibgo.XSDString && dt.Value() != "" {
-					return nil // type error
-				}
+			l, ok := vals[0].(rdflibgo.Literal)
+			if !ok {
+				return nil // type error: non-literal
 			}
-			return rdflibgo.NewLiteral(termString(vals[0]), rdflibgo.WithLang(termString(vals[1])))
+			if l.Language() != "" {
+				return nil // type error
+			}
+			dt := l.Datatype()
+			if dt != rdflibgo.XSDString && dt.Value() != "" {
+				return nil // type error: has non-string datatype
+			}
+			lang := termString(vals[1])
+			if lang == "" {
+				return nil // empty language tag is an error
+			}
+			return rdflibgo.NewLiteral(l.Lexical(), rdflibgo.WithLang(lang))
 		}
 	case "STRDT":
 		vals := evalArgs()
@@ -523,6 +559,103 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 		return rdflibgo.NewURIRefUnsafe("urn:uuid:" + newUUID())
 	case "STRUUID":
 		return rdflibgo.NewLiteral(newUUID())
+
+	// Triple term functions (SPARQL 1.2)
+	case "ISTRIPLE":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			_, ok := vals[0].(rdflibgo.TripleTerm)
+			return rdflibgo.NewLiteral(ok)
+		}
+		return rdflibgo.NewLiteral(false)
+	case "TRIPLE":
+		vals := evalArgs()
+		if len(vals) == 3 && vals[0] != nil && vals[1] != nil && vals[2] != nil {
+			subj, ok := vals[0].(rdflibgo.Subject)
+			if !ok {
+				return nil
+			}
+			pred, ok := vals[1].(rdflibgo.URIRef)
+			if !ok {
+				return nil
+			}
+			return rdflibgo.NewTripleTerm(subj, pred, vals[2])
+		}
+	case "SUBJECT":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			if tt, ok := vals[0].(rdflibgo.TripleTerm); ok {
+				return tt.Subject()
+			}
+		}
+	case "PREDICATE":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			if tt, ok := vals[0].(rdflibgo.TripleTerm); ok {
+				return tt.Predicate()
+			}
+		}
+	case "OBJECT":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			if tt, ok := vals[0].(rdflibgo.TripleTerm); ok {
+				return tt.Object()
+			}
+		}
+
+	// Language direction functions (SPARQL 1.2)
+	case "LANGDIR":
+		vals := evalArgs()
+		if len(vals) == 1 && vals[0] != nil {
+			if l, ok := vals[0].(rdflibgo.Literal); ok {
+				return rdflibgo.NewLiteral(l.Dir())
+			}
+			return nil // type error for non-literals
+		}
+		return rdflibgo.NewLiteral("")
+	case "HASLANG":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if l, ok := vals[0].(rdflibgo.Literal); ok {
+				return rdflibgo.NewLiteral(l.Language() != "")
+			}
+		}
+		return rdflibgo.NewLiteral(false)
+	case "HASLANGDIR":
+		vals := evalArgs()
+		if len(vals) == 1 {
+			if l, ok := vals[0].(rdflibgo.Literal); ok {
+				return rdflibgo.NewLiteral(l.Dir() != "")
+			}
+		}
+		return rdflibgo.NewLiteral(false)
+	case "STRLANGDIR":
+		vals := evalArgs()
+		if len(vals) == 3 && vals[0] != nil {
+			// STRLANGDIR requires a simple literal (like STRLANG)
+			l, ok := vals[0].(rdflibgo.Literal)
+			if !ok {
+				return nil // non-literal
+			}
+			if l.Language() != "" {
+				return nil // type error
+			}
+			dt := l.Datatype()
+			if dt != rdflibgo.XSDString && dt.Value() != "" {
+				return nil // type error
+			}
+			lang := termString(vals[1])
+			dir := termString(vals[2])
+			// Direction must be exactly "ltr" or "rtl" (case-sensitive)
+			if dir != "ltr" && dir != "rtl" {
+				return nil // invalid or empty direction
+			}
+			// Per RDF 1.2, dirLangString requires a language tag
+			if lang == "" {
+				return nil // empty lang with dir is invalid
+			}
+			return rdflibgo.NewLiteral(l.Lexical(), rdflibgo.WithLang(lang), rdflibgo.WithDir(dir))
+		}
 
 	// Cast functions
 	case "XSD:BOOLEAN", "XSD:INTEGER", "XSD:FLOAT", "XSD:DOUBLE", "XSD:DECIMAL", "XSD:STRING":
@@ -884,6 +1017,22 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 	return nil
 }
 
+// termTypeOrder returns a numeric order for term types per SPARQL ordering:
+// Blanks < IRIs < Literals < TripleTerms
+func termTypeOrder(t rdflibgo.Term) int {
+	switch t.(type) {
+	case rdflibgo.BNode:
+		return 0
+	case rdflibgo.URIRef:
+		return 1
+	case rdflibgo.Literal:
+		return 2
+	case rdflibgo.TripleTerm:
+		return 3
+	}
+	return 4
+}
+
 func compareTermValues(a, b rdflibgo.Term) int {
 	if a == nil && b == nil {
 		return 0
@@ -894,13 +1043,21 @@ func compareTermValues(a, b rdflibgo.Term) int {
 	if b == nil {
 		return 1
 	}
+
+	// Different term types: compare by type order
+	aOrder := termTypeOrder(a)
+	bOrder := termTypeOrder(b)
+	if aOrder != bOrder {
+		return aOrder - bOrder
+	}
+
+	// Same term type
 	la, okA := a.(rdflibgo.Literal)
 	lb, okB := b.(rdflibgo.Literal)
 	if okA && okB {
 		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
 		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
-		if errA == nil && errB == nil {
-			// NaN is not comparable per SPARQL/XSD spec
+		if errA == nil && errB == nil && isNumericDatatype(la.Datatype()) && isNumericDatatype(lb.Datatype()) {
 			if math.IsNaN(fa) || math.IsNaN(fb) {
 				return strings.Compare(a.N3(), b.N3())
 			}
@@ -913,5 +1070,26 @@ func compareTermValues(a, b rdflibgo.Term) int {
 			return 0
 		}
 	}
+
+	// URIs: compare by value, not N3 (to avoid angle bracket interference)
+	uA, aIsURI := a.(rdflibgo.URIRef)
+	uB, bIsURI := b.(rdflibgo.URIRef)
+	if aIsURI && bIsURI {
+		return strings.Compare(uA.Value(), uB.Value())
+	}
+
+	// Triple terms: compare component by component
+	ttA, aIsTT := a.(rdflibgo.TripleTerm)
+	ttB, bIsTT := b.(rdflibgo.TripleTerm)
+	if aIsTT && bIsTT {
+		if c := compareTermValues(ttA.Subject(), ttB.Subject()); c != 0 {
+			return c
+		}
+		if c := compareTermValues(ttA.Predicate(), ttB.Predicate()); c != 0 {
+			return c
+		}
+		return compareTermValues(ttA.Object(), ttB.Object())
+	}
+
 	return strings.Compare(a.N3(), b.N3())
 }

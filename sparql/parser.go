@@ -23,19 +23,24 @@ func ParseUpdate(input string) (*ParsedUpdate, error) {
 }
 
 type sparqlParser struct {
-	input      string
-	pos        int
-	prefixes   map[string]string
-	bnodeCount int
+	input          string
+	pos            int
+	prefixes       map[string]string
+	bnodeCount     int
+	reifierTriples []Triple // pending rdf:reifies triples from reified triple syntax
+	tripleTermError error   // deferred error from triple term validation
 }
 
 func (p *sparqlParser) parse() (*ParsedQuery, error) {
+	// Preprocess codepoint escapes outside strings
+	p.input = preprocessCodepointEscapes(p.input)
+
 	q := &ParsedQuery{
 		Limit:    -1,
 		Prefixes: p.prefixes,
 	}
 
-	// Prologue: PREFIX and BASE
+	// Prologue: PREFIX, BASE, VERSION
 	for {
 		p.skipWS()
 		if p.matchKeywordCI("PREFIX") {
@@ -56,6 +61,12 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 			p.pos += 4
 			p.skipWS()
 			q.BaseURI = p.readIRIRef()
+			continue
+		}
+		if p.matchKeywordCI("VERSION") {
+			if err := p.parseVersion(); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		break

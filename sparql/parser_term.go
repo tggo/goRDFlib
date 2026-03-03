@@ -13,6 +13,38 @@ func (p *sparqlParser) resolveTermValue(s string) rdflibgo.Term {
 	if s == "" {
 		return rdflibgo.NewLiteral("")
 	}
+	// Triple term: <<( s p o )>>
+	if strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>") {
+		inner := s[4 : len(s)-4]
+		parts := splitTripleTermPartsParser(inner)
+		if len(parts) == 3 {
+			st := p.resolveTermValue(parts[0])
+			pt := p.resolveTermValue(parts[1])
+			ot := p.resolveTermValue(parts[2])
+			if st == nil || pt == nil || ot == nil {
+				return nil
+			}
+			// Validate: subject must not be a TripleTerm or Literal
+			if _, ok := st.(rdflibgo.TripleTerm); ok {
+				p.tripleTermError = fmt.Errorf("sparql parse error: triple term in subject position of triple term")
+				return nil
+			}
+			if _, ok := st.(rdflibgo.Literal); ok {
+				p.tripleTermError = fmt.Errorf("sparql parse error: literal in subject position of triple term")
+				return nil
+			}
+			subj, ok := st.(rdflibgo.Subject)
+			if !ok {
+				return nil
+			}
+			pred, ok := pt.(rdflibgo.URIRef)
+			if !ok {
+				return nil
+			}
+			return rdflibgo.NewTripleTerm(subj, pred, ot)
+		}
+		return nil
+	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
 		return rdflibgo.NewURIRefUnsafe(s[1 : len(s)-1])
 	}
@@ -103,7 +135,14 @@ func parseLiteralString(s string) rdflibgo.Literal {
 
 	var opts []rdflibgo.LiteralOption
 	if strings.HasPrefix(rest, "@") {
-		opts = append(opts, rdflibgo.WithLang(rest[1:]))
+		langDir := rest[1:]
+		if idx := strings.Index(langDir, "--"); idx >= 0 {
+			// Directional language tag: lang--dir (e.g., "en--ltr")
+			opts = append(opts, rdflibgo.WithLang(langDir[:idx]))
+			opts = append(opts, rdflibgo.WithDir(langDir[idx+2:]))
+		} else {
+			opts = append(opts, rdflibgo.WithLang(langDir))
+		}
 	} else if strings.HasPrefix(rest, "^^") {
 		dt := rest[2:]
 		if strings.HasPrefix(dt, "<") && strings.HasSuffix(dt, ">") {
@@ -120,28 +159,100 @@ func unescapeSPARQLString(s string) string {
 	return sparqlStringUnescaper.Replace(s)
 }
 
-// validateStringEscapes checks for invalid \u/\U unicode escape sequences (surrogates).
-func validateStringEscapes(s string) error {
+// validateLangDir checks that a directional language tag (lang--dir) has a valid direction.
+func validateLangDir(s string) error {
+	// Find the @lang part at the end
+	// s is a raw token like `"foo"@en--ltr`
+	atIdx := -1
+	// Find @ after the closing quote
+	inQuote := false
+	q := byte(0)
 	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			if s[i+1] == 'u' && i+5 < len(s) {
-				hex := s[i+2 : i+6]
-				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
-					if cp >= 0xD800 && cp <= 0xDFFF {
-						return fmt.Errorf("invalid unicode surrogate U+%04X in string literal", cp)
-					}
-				}
-				i += 5
-			} else if s[i+1] == 'U' && i+9 < len(s) {
-				hex := s[i+2 : i+10]
-				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
-					if cp >= 0xD800 && cp <= 0xDFFF {
-						return fmt.Errorf("invalid unicode surrogate U+%08X in string literal", cp)
-					}
-				}
-				i += 9
-			} else {
+		if !inQuote {
+			if s[i] == '"' || s[i] == '\'' {
+				inQuote = true
+				q = s[i]
+			}
+		} else {
+			if s[i] == '\\' {
 				i++
+				continue
+			}
+			if s[i] == q {
+				inQuote = false
+			}
+		}
+		if !inQuote && s[i] == '@' {
+			atIdx = i
+		}
+	}
+	if atIdx < 0 {
+		return nil
+	}
+	langDir := s[atIdx+1:]
+	if idx := strings.Index(langDir, "--"); idx >= 0 {
+		dir := strings.ToLower(langDir[idx+2:])
+		if dir != "ltr" && dir != "rtl" {
+			return fmt.Errorf("invalid base direction %q in language tag (must be ltr or rtl)", langDir[idx+2:])
+		}
+	}
+	return nil
+}
+
+// validateStringEscapes checks for invalid escape sequences in string literals.
+func validateStringEscapes(s string) error {
+	if s == "" {
+		return nil
+	}
+	// Find the string content (between quotes)
+	quote := s[0]
+	long := len(s) >= 6 && s[1] == quote && s[2] == quote
+	var content string
+	if long {
+		q3 := string([]byte{quote, quote, quote})
+		end := strings.Index(s[3:], q3)
+		if end >= 0 {
+			content = s[3 : 3+end]
+		}
+	} else {
+		end := strings.Index(s[1:], string(quote))
+		if end >= 0 {
+			content = s[1 : 1+end]
+		}
+	}
+
+	for i := 0; i < len(content); i++ {
+		if content[i] == '\\' && i+1 < len(content) {
+			next := content[i+1]
+			switch next {
+			case 't', 'n', 'r', '\\', '"', '\'':
+				i++ // valid escape
+			case 'u':
+				if i+5 < len(content) {
+					hex := content[i+2 : i+6]
+					if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
+						if cp >= 0xD800 && cp <= 0xDFFF {
+							return fmt.Errorf("invalid unicode surrogate U+%04X in string literal", cp)
+						}
+					}
+					i += 5
+				} else {
+					return fmt.Errorf("invalid \\u escape in string literal")
+				}
+			case 'U':
+				if i+9 < len(content) {
+					hex := content[i+2 : i+10]
+					if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
+						if cp >= 0xD800 && cp <= 0xDFFF {
+							return fmt.Errorf("invalid unicode surrogate U+%08X in string literal", cp)
+						}
+					}
+					i += 9
+				} else {
+					return fmt.Errorf("invalid \\U escape in string literal")
+				}
+			default:
+				return fmt.Errorf("invalid escape sequence \\%c in string literal", next)
 			}
 		}
 	}
@@ -204,4 +315,117 @@ func (p *sparqlParser) errorf(format string, args ...any) error {
 
 func isNameChar(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+}
+
+// splitTripleTermPartsParser splits the inner part of a triple term into 3 components.
+func splitTripleTermPartsParser(s string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '<' && i+1 < len(s) && s[i+1] == '<' {
+			depth++
+			i++
+		} else if s[i] == '>' && i+1 < len(s) && s[i+1] == '>' {
+			depth--
+			i++
+		} else if s[i] == '"' || s[i] == '\'' {
+			q := s[i]
+			i++
+			for i < len(s) && s[i] != q {
+				if s[i] == '\\' {
+					i++
+				}
+				i++
+			}
+		} else if s[i] == ' ' && depth == 0 {
+			part := strings.TrimSpace(s[start:i])
+			if part != "" {
+				parts = append(parts, part)
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		part := strings.TrimSpace(s[start:])
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return parts
+}
+
+// parseVersion parses a VERSION directive. Accepts single-quoted or double-quoted strings.
+// Triple-quoted strings are rejected.
+func (p *sparqlParser) parseVersion() error {
+	p.pos += 7 // skip "VERSION"
+	p.skipWS()
+	if p.pos >= len(p.input) {
+		return p.errorf("expected version string after VERSION")
+	}
+	ch := p.input[p.pos]
+	if ch != '"' && ch != '\'' {
+		return p.errorf("expected quoted string after VERSION, got %c", ch)
+	}
+	// Reject triple-quoted strings
+	if p.pos+2 < len(p.input) && p.input[p.pos+1] == ch && p.input[p.pos+2] == ch {
+		return p.errorf("triple-quoted strings not allowed in VERSION")
+	}
+	p.pos++ // skip opening quote
+	for p.pos < len(p.input) && p.input[p.pos] != ch {
+		p.pos++
+	}
+	if p.pos < len(p.input) {
+		p.pos++ // skip closing quote
+	}
+	return nil
+}
+
+// preprocessCodepointEscapes processes \uHHHH and \UHHHHHHHH escapes everywhere in the input.
+// Per SPARQL 1.2 spec, codepoint escapes are processed at the lexical level before any other processing.
+// Returns the input with escapes replaced by the actual Unicode characters.
+func preprocessCodepointEscapes(input string) string {
+	if !strings.ContainsRune(input, '\\') {
+		return input
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(input))
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+
+		// Process \u and \U escapes everywhere
+		if ch == '\\' && i+1 < len(input) {
+			if input[i+1] == 'u' && i+5 < len(input) {
+				hex := input[i+2 : i+6]
+				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
+					// Don't convert surrogates — they remain as-is for later validation
+					if cp >= 0xD800 && cp <= 0xDFFF {
+						sb.WriteString(input[i : i+6])
+						i += 5
+						continue
+					}
+					sb.WriteRune(rune(cp))
+					i += 5
+					continue
+				}
+			} else if input[i+1] == 'U' && i+9 < len(input) {
+				hex := input[i+2 : i+10]
+				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
+					if cp >= 0xD800 && cp <= 0xDFFF {
+						sb.WriteString(input[i : i+10])
+						i += 9
+						continue
+					}
+					sb.WriteRune(rune(cp))
+					i += 9
+					continue
+				}
+			}
+		}
+
+		sb.WriteByte(ch)
+	}
+	return sb.String()
 }

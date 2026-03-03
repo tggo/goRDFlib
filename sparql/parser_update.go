@@ -6,9 +6,38 @@ import (
 	"github.com/tggo/goRDFlib/term"
 )
 
+// convertInternalVarsToBnodes replaces internal parser-generated variables (?_reifier*, ?_bnode*, ?_coll*)
+// with blank node labels (_:reifier*, etc.) for use in DATA operations where variables aren't allowed.
+func convertInternalVarsToBnodes(triples []Triple) {
+	mapping := make(map[string]string)
+	convert := func(s string) string {
+		if !strings.HasPrefix(s, "?_") {
+			return s
+		}
+		name := s[1:] // strip ?
+		if strings.HasPrefix(name, "_reifier") || strings.HasPrefix(name, "_bnode") || strings.HasPrefix(name, "_coll") {
+			if bn, ok := mapping[s]; ok {
+				return bn
+			}
+			bn := "_:" + name[1:] // strip leading _
+			mapping[s] = bn
+			return bn
+		}
+		return s
+	}
+	for i := range triples {
+		triples[i].Subject = convert(triples[i].Subject)
+		triples[i].Predicate = convert(triples[i].Predicate)
+		triples[i].Object = convert(triples[i].Object)
+	}
+}
+
 // --- SPARQL Update parsing ---
 
 func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
+	// Preprocess codepoint escapes outside strings
+	p.input = preprocessCodepointEscapes(p.input)
+
 	u := &ParsedUpdate{
 		Prefixes: p.prefixes,
 	}
@@ -19,9 +48,15 @@ func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
 		opIndex := len(u.Operations)
 		_ = opIndex
 
-		// Prologue: PREFIX and BASE (can appear before each operation)
+		// Prologue: PREFIX, BASE, VERSION (can appear before each operation)
 		for {
 			p.skipWS()
+			if p.matchKeywordCI("VERSION") {
+				if err := p.parseVersion(); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if p.matchKeywordCI("PREFIX") {
 				p.pos += 6
 				p.skipWS()
@@ -311,6 +346,8 @@ func (p *sparqlParser) parseQuadData(isDelete bool) ([]QuadPattern, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Convert internal reifier/bnode variables to fresh blank node labels in DATA context
+		convertInternalVarsToBnodes(triples)
 		for _, t := range triples {
 			if isDelete {
 				if strings.HasPrefix(t.Subject, "_:") || strings.HasPrefix(t.Object, "_:") {

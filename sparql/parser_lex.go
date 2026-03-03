@@ -35,6 +35,10 @@ func (p *sparqlParser) readTermOrVar() string {
 	}
 
 	if ch == '<' {
+		// Check for triple term <<( ... )>> or reified triple << ... >>
+		if p.pos+1 < len(p.input) && p.input[p.pos+1] == '<' {
+			return p.readTripleTermOrReified()
+		}
 		return "<" + p.readIRIRef() + ">"
 	}
 
@@ -42,6 +46,10 @@ func (p *sparqlParser) readTermOrVar() string {
 		s := p.readStringLiteral()
 		if err := validateStringEscapes(s); err != nil {
 			return "" // will cause a parse error downstream
+		}
+		if err := validateLangDir(s); err != nil {
+			p.tripleTermError = err
+			return ""
 		}
 		return s
 	}
@@ -367,6 +375,100 @@ func (p *sparqlParser) parseCollectionTriples() (string, []Triple, error) {
 	}
 
 	return head, triples, nil
+}
+
+// readTripleTermOrReified handles <<( s p o )>> (triple term) and << s p o [~ id] >> (reified triple).
+// For triple terms, returns "<<( s p o )>>".
+// For reified triples, returns a reifier id and stores pending triples in p.reifierTriples.
+func (p *sparqlParser) readTripleTermOrReified() string {
+	p.pos += 2 // skip <<
+	p.skipWS()
+
+	if p.pos < len(p.input) && p.input[p.pos] == '(' {
+		// Triple term: <<( s p o )>>
+		p.pos++ // skip (
+		p.skipWS()
+		s := p.readTermOrVar()
+		p.skipWS()
+		pred := p.readTermOrVar()
+		p.skipWS()
+		o := p.readTermOrVar()
+		p.skipWS()
+		if p.pos < len(p.input) && p.input[p.pos] == ')' {
+			p.pos++
+		}
+		p.skipWS()
+		if p.pos+1 < len(p.input) && p.input[p.pos] == '>' && p.input[p.pos+1] == '>' {
+			p.pos += 2
+		}
+		// Validate: no collections inside triple terms
+		for _, part := range []string{s, pred, o} {
+			if strings.HasPrefix(part, "?_coll") {
+				p.tripleTermError = fmt.Errorf("sparql parse error: collection syntax not allowed inside triple term")
+				return ""
+			}
+		}
+		// Validate: predicate must not be a bnode
+		if strings.HasPrefix(pred, "?_bnode") {
+			p.tripleTermError = fmt.Errorf("sparql parse error: bnode not allowed as predicate in triple term")
+			return ""
+		}
+		return "<<( " + s + " " + pred + " " + o + " )>>"
+	}
+
+	// Reified triple: << s p o [~ id] >>
+	s := p.readTermOrVar()
+	p.skipWS()
+	pred := p.readTermOrVar()
+	p.skipWS()
+	o := p.readTermOrVar()
+	p.skipWS()
+
+	// Validate: no collections inside reified triples
+	for _, part := range []string{s, pred, o} {
+		if strings.HasPrefix(part, "?_coll") {
+			p.tripleTermError = fmt.Errorf("sparql parse error: collection syntax not allowed inside reified triple")
+			return ""
+		}
+	}
+	// Validate: predicate must not be a bnode
+	if strings.HasPrefix(pred, "?_bnode") {
+		p.tripleTermError = fmt.Errorf("sparql parse error: bnode not allowed as predicate in reified triple")
+		return ""
+	}
+
+	// Optional ~ reifier
+	var reifierID string
+	if p.pos < len(p.input) && p.input[p.pos] == '~' {
+		p.pos++ // skip ~
+		p.skipWS()
+		reifierID = p.readTermOrVar()
+	}
+
+	// Expect >>
+	p.skipWS()
+	if p.pos+1 < len(p.input) && p.input[p.pos] == '>' && p.input[p.pos+1] == '>' {
+		p.pos += 2
+	}
+
+	// Generate reifier variable if none specified
+	if reifierID == "" {
+		p.bnodeCount++
+		reifierID = fmt.Sprintf("?_reifier%d", p.bnodeCount)
+	}
+
+	// Build the triple term string for the rdf:reifies triple
+	tripleTermStr := "<<( " + s + " " + pred + " " + o + " )>>"
+	rdfReifies := "<http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies>"
+
+	// Store the reifier triple: reifierID rdf:reifies <<( s p o )>>
+	p.reifierTriples = append(p.reifierTriples, Triple{
+		Subject:   reifierID,
+		Predicate: rdfReifies,
+		Object:    tripleTermStr,
+	})
+
+	return reifierID
 }
 
 func (p *sparqlParser) readIRIRef() string {

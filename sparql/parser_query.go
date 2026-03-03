@@ -1,5 +1,7 @@
 package sparql
 
+import "fmt"
+
 // parseSelect parses SELECT DISTINCT/REDUCED and variable list.
 func (p *sparqlParser) parseSelect(q *ParsedQuery) error {
 	p.skipWS()
@@ -62,6 +64,16 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 	}
 	p.pos++
 
+	rdfReifies := "<http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies>"
+
+	// Helper to flush reifier triples into construct template
+	flushReifiers := func() {
+		for _, rt := range p.reifierTriples {
+			q.Construct = append(q.Construct, TripleTemplate{Subject: rt.Subject, Predicate: rt.Predicate, Object: rt.Object})
+		}
+		p.reifierTriples = nil
+	}
+
 	for {
 		p.skipWS()
 		if p.pos >= len(p.input) {
@@ -85,6 +97,7 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			pred := p.readTermOrVar()
 			p.skipWS()
 			obj := p.readTermOrVar()
+			flushReifiers()
 			q.Construct = append(q.Construct, TripleTemplate{Subject: head, Predicate: pred, Object: obj})
 			p.skipWS()
 			if p.pos < len(p.input) && p.input[p.pos] == '.' {
@@ -93,6 +106,7 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			continue
 		}
 		s := p.readTermOrVar()
+		flushReifiers()
 		if s == "" {
 			return p.errorf("unexpected token in CONSTRUCT template")
 		}
@@ -102,7 +116,11 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 		// Object list (,) and predicate-object list (;)
 		for {
 			obj := p.readTermOrVar()
+			flushReifiers()
 			q.Construct = append(q.Construct, TripleTemplate{Subject: s, Predicate: pred, Object: obj})
+			p.skipWS()
+			// Check for annotation/reifier syntax after object in CONSTRUCT
+			p.parseConstructAnnotations(q, s, pred, obj, rdfReifies)
 			p.skipWS()
 			if p.pos < len(p.input) && p.input[p.pos] == ',' {
 				p.pos++
@@ -122,7 +140,10 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			p.skipWS()
 			for {
 				obj := p.readTermOrVar()
+				flushReifiers()
 				q.Construct = append(q.Construct, TripleTemplate{Subject: s, Predicate: pred, Object: obj})
+				p.skipWS()
+				p.parseConstructAnnotations(q, s, pred, obj, rdfReifies)
 				p.skipWS()
 				if p.pos < len(p.input) && p.input[p.pos] == ',' {
 					p.pos++
@@ -138,6 +159,101 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 		}
 	}
 	return nil
+}
+
+// parseConstructAnnotations handles ~ reifier and {| annotation |} in CONSTRUCT templates.
+func (p *sparqlParser) parseConstructAnnotations(q *ParsedQuery, s, pred, obj, rdfReifies string) {
+	tripleTermStr := "<<( " + s + " " + pred + " " + obj + " )>>"
+
+	for {
+		p.skipWS()
+		if p.pos >= len(p.input) {
+			break
+		}
+
+		// ~ reifier
+		if p.input[p.pos] == '~' {
+			p.pos++
+			p.skipWS()
+			reifierID := p.readTermOrVar()
+			// Flush any nested reifier triples
+			for _, rt := range p.reifierTriples {
+				q.Construct = append(q.Construct, TripleTemplate{Subject: rt.Subject, Predicate: rt.Predicate, Object: rt.Object})
+			}
+			p.reifierTriples = nil
+			q.Construct = append(q.Construct, TripleTemplate{
+				Subject:   reifierID,
+				Predicate: rdfReifies,
+				Object:    tripleTermStr,
+			})
+
+			p.skipWS()
+			if p.pos+1 < len(p.input) && p.input[p.pos] == '{' && p.input[p.pos+1] == '|' {
+				p.pos += 2
+				p.parseConstructAnnotationBlock(q, reifierID)
+			}
+			continue
+		}
+
+		// {| annotation |}
+		if p.pos+1 < len(p.input) && p.input[p.pos] == '{' && p.input[p.pos+1] == '|' {
+			p.pos += 2
+			p.bnodeCount++
+			reifierID := fmt.Sprintf("?_reifier%d", p.bnodeCount)
+			q.Construct = append(q.Construct, TripleTemplate{
+				Subject:   reifierID,
+				Predicate: rdfReifies,
+				Object:    tripleTermStr,
+			})
+			p.parseConstructAnnotationBlock(q, reifierID)
+			continue
+		}
+
+		break
+	}
+}
+
+// parseConstructAnnotationBlock parses {| pred obj [; pred obj]* |} inside CONSTRUCT.
+func (p *sparqlParser) parseConstructAnnotationBlock(q *ParsedQuery, reifierID string) {
+	for {
+		p.skipWS()
+		if p.pos >= len(p.input) {
+			break
+		}
+		if p.pos+1 < len(p.input) && p.input[p.pos] == '|' && p.input[p.pos+1] == '}' {
+			p.pos += 2
+			break
+		}
+
+		pred := p.readTermOrVar()
+		if pred == "" {
+			break
+		}
+		p.skipWS()
+
+		for {
+			obj := p.readTermOrVar()
+			for _, rt := range p.reifierTriples {
+				q.Construct = append(q.Construct, TripleTemplate{Subject: rt.Subject, Predicate: rt.Predicate, Object: rt.Object})
+			}
+			p.reifierTriples = nil
+			if obj == "" {
+				break
+			}
+			q.Construct = append(q.Construct, TripleTemplate{Subject: reifierID, Predicate: pred, Object: obj})
+			p.skipWS()
+			if p.pos < len(p.input) && p.input[p.pos] == ',' {
+				p.pos++
+				continue
+			}
+			break
+		}
+		p.skipWS()
+		if p.pos < len(p.input) && p.input[p.pos] == ';' {
+			p.pos++
+			continue
+		}
+	}
 }
 
 func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
