@@ -3,6 +3,7 @@ package sparql
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -494,7 +495,7 @@ func resolveTermRef(s string, prefixes map[string]string) rdflibgo.Term {
 		iri := s[1 : len(s)-1]
 		// Resolve relative IRI against base
 		if base, ok := prefixes[baseURIKey]; ok && iri != "" && !strings.Contains(iri, "://") {
-			iri = base + iri
+			iri = resolveRelativeIRI(base, iri)
 		}
 		return rdflibgo.NewURIRefUnsafe(iri)
 	}
@@ -596,8 +597,14 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string,
 	case *BindPattern:
 		inner := evalPattern(g, p.Pattern, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
+		useGraphEval := containsExists(p.Expr)
 		for _, b := range inner {
-			val := evalExpr(p.Expr, b, prefixes)
+			var val rdflibgo.Term
+			if useGraphEval {
+				val = evalExprWithGraph(p.Expr, b, prefixes, g, namedGraphs)
+			} else {
+				val = evalExpr(p.Expr, b, prefixes)
+			}
 			nb := copyBindings(b)
 			if val != nil {
 				nb[p.Var] = val
@@ -616,7 +623,7 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string,
 					val := row[i]
 					// Resolve relative IRIs in VALUES against base
 					if u, ok := val.(rdflibgo.URIRef); ok && base != "" && !strings.Contains(u.Value(), ":") {
-						val = rdflibgo.NewURIRefUnsafe(base + u.Value())
+						val = rdflibgo.NewURIRefUnsafe(resolveRelativeIRI(base, u.Value()))
 					}
 					b[v] = val
 				}
@@ -892,7 +899,7 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 		// Resolve relative IRI against base
 		if !strings.Contains(iri, ":") {
 			if base, ok := prefixes[baseURIKey]; ok {
-				iri = base + iri
+				iri = resolveRelativeIRI(base, iri)
 			}
 		}
 		return rdflibgo.NewURIRefUnsafe(iri)
@@ -923,6 +930,24 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 		}
 	}
 	return nil
+}
+
+// resolveRelativeIRI resolves a relative IRI reference against a base URI
+// per RFC 3986 §5.
+func resolveRelativeIRI(base, ref string) string {
+	if ref == "" {
+		return base
+	}
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return base + ref
+	}
+	refURL, err := url.Parse(ref)
+	if err != nil {
+		return base + ref
+	}
+	resolved := baseURL.ResolveReference(refURL)
+	return resolved.String()
 }
 
 // resolveTripleTermPattern resolves a triple term pattern string to a TripleTerm.
@@ -1078,7 +1103,7 @@ func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]
 		iri := e.Value
 		if !strings.Contains(iri, ":") {
 			if base, ok := prefixes[baseURIKey]; ok {
-				iri = base + iri
+				iri = resolveRelativeIRI(base, iri)
 			}
 		}
 		return rdflibgo.NewURIRefUnsafe(iri)

@@ -681,7 +681,7 @@ func effectiveBooleanValue(t rdflibgo.Term) bool {
 	if l, ok := t.(rdflibgo.Literal); ok {
 		switch l.Datatype() {
 		case rdflibgo.XSDBoolean:
-			return l.Lexical() == "true"
+			return l.Lexical() == "true" || l.Lexical() == "1"
 		case rdflibgo.XSDInteger, rdflibgo.XSDInt, rdflibgo.XSDLong:
 			v, _ := strconv.ParseInt(l.Lexical(), 10, 64)
 			return v != 0
@@ -895,7 +895,7 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		s := lit.Lexical()
 		dt := lit.Datatype()
 		if dt == rdflibgo.XSDBoolean {
-			if s == "true" {
+			if s == "true" || s == "1" {
 				return rdflibgo.NewLiteral(1, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 			}
 			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
@@ -903,6 +903,9 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		if isNumericDatatype(dt) {
 			// From numeric: truncate to integer
 			if f, err := strconv.ParseFloat(s, 64); err == nil {
+				if math.IsNaN(f) || math.IsInf(f, 0) || f > float64(math.MaxInt64) || f < float64(math.MinInt64) {
+					return nil
+				}
 				return rdflibgo.NewLiteral(int64(f), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 			}
 		}
@@ -918,7 +921,7 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		}
 		s := lit.Lexical()
 		if lit.Datatype() == rdflibgo.XSDBoolean {
-			if s == "true" {
+			if s == "true" || s == "1" {
 				s = "1.0"
 			} else {
 				s = "0.0"
@@ -935,7 +938,7 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		}
 		s := lit.Lexical()
 		if lit.Datatype() == rdflibgo.XSDBoolean {
-			if s == "true" {
+			if s == "true" || s == "1" {
 				s = "1.0"
 			} else {
 				s = "0.0"
