@@ -14,6 +14,8 @@
 ![W3C N-Quads](https://img.shields.io/badge/W3C_N--Quads-87%2F87-brightgreen)
 ![W3C RDF/XML](https://img.shields.io/badge/W3C_RDF%2FXML-166%2F166-brightgreen)
 ![W3C RDF/XML 1.2](https://img.shields.io/badge/W3C_RDF%2FXML_1.2-32%2F32-brightgreen)
+![W3C TriG](https://img.shields.io/badge/W3C_TriG-356%2F356-brightgreen)
+![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-60%2F60-brightgreen)
 ![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-98%2F98-brightgreen)
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
@@ -61,6 +63,7 @@ All formats include both parser and serializer:
 | Format | Parser | Serializer | W3C Tests |
 |--------|:------:|:----------:|-----------|
 | Turtle 1.2 | yes | yes | 313/313 + 97/97 RDF 1.2 (100%) |
+| TriG 1.2 | yes | yes | 356/356 + 60/60 RDF 1.2 (100%) |
 | N-Triples 1.2 | yes | yes | 70/70 + 29/29 RDF 1.2 (100%) |
 | N-Quads 1.2 | yes | yes | 87/87 + 28/28 RDF 1.2 (100%) |
 | RDF/XML 1.2 | yes | yes | 166/166 + 32/32 RDF 1.2 (100%) |
@@ -195,7 +198,7 @@ Full W3C SHACL Core validation engine -- **98/98 W3C tests pass (100%)**.
 
 ### Plugin System
 
-- Format auto-detection by filename extension (`.ttl`, `.nt`, `.nq`, `.rdf`, `.owl`, `.jsonld`)
+- Format auto-detection by filename extension (`.ttl`, `.trig`, `.nt`, `.nq`, `.rdf`, `.owl`, `.jsonld`)
 - MIME type detection (`text/turtle`, `application/rdf+xml`, etc.)
 - Content sniffing (XML headers, JSON, `@prefix`, etc.)
 - Extensible parser, serializer, and store registries
@@ -401,7 +404,6 @@ This project is a Go port of [RDFLib](https://github.com/RDFLib/rdflib) (v7.x), 
 ## Known Limitations
 
 - SPARQL UPDATE LOAD requires SILENT flag (no remote graph fetching)
-- No TriG format support yet
 - JSON-LD processing delegates to [piprate/json-gold](https://github.com/piprate/json-gold) which may attempt remote context fetches
 
 ## License
