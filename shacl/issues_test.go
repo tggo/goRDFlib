@@ -648,3 +648,36 @@ ex:Charlie ex:knows ex:Alice .
 		t.Errorf("pySHACL#160: expected 1 violation (for Bob), got %d", len(report.Results))
 	}
 }
+
+// pySHACL #213 — sh:qualifiedMinCount should fire even when path has zero values
+func TestQualifiedMinCountZeroValues(t *testing.T) {
+	t.Parallel()
+	shapes := `
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://example.com/ns#> .
+
+ex:MyShape a sh:NodeShape ;
+    sh:targetClass ex:MyFirstClass ;
+    sh:property [
+        sh:path ex:myProperty ;
+        sh:qualifiedValueShape [ sh:class ex:MySecondClass ] ;
+        sh:qualifiedMinCount 1 ;
+    ] .
+`
+	data := `
+@prefix ex: <http://example.com/ns#> .
+@prefix kb: <http://example.com/kb#> .
+
+kb:bad a ex:MyFirstClass .
+
+kb:ok a ex:MyFirstClass ;
+    ex:myProperty [ a ex:MySecondClass ] .
+`
+	report := dashValidate(t, shapes, data)
+	if report.Conforms {
+		t.Fatal("pySHACL#213: expected non-conforming: kb:bad has no qualifying values")
+	}
+	if len(report.Results) != 1 {
+		t.Errorf("pySHACL#213: expected 1 violation (for kb:bad), got %d", len(report.Results))
+	}
+}
