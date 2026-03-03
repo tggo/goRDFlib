@@ -97,6 +97,10 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 			t.Fatalf("query parse failed: %v", perr)
 		}
 		pq.NamedGraphs = namedGraphs
+		// Set base URI for relative IRI resolution
+		if pq.BaseURI == "" {
+			pq.BaseURI = "file://" + filepath.Dir(queryPath) + "/"
+		}
 		var evalErr error
 		result, evalErr = sparql.EvalQuery(g, pq, nil)
 		err = evalErr

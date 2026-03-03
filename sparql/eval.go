@@ -28,6 +28,10 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 	if q.NamedGraphs != nil {
 		activeNamedGraphs = q.NamedGraphs
 	}
+	// Store base URI for relative IRI resolution
+	if q.BaseURI != "" && q.Prefixes != nil {
+		q.Prefixes["__base__"] = q.BaseURI
+	}
 	solutions := evalPattern(g, q.Where, q.Prefixes)
 
 	if initBindings != nil {
@@ -551,11 +555,17 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string)
 
 	case *ValuesPattern:
 		var result []map[string]rdflibgo.Term
+		base, _ := prefixes["__base__"]
 		for _, row := range p.Values {
 			b := make(map[string]rdflibgo.Term)
 			for i, v := range p.Vars {
 				if i < len(row) && row[i] != nil {
-					b[v] = row[i]
+					val := row[i]
+					// Resolve relative IRIs in VALUES against base
+					if u, ok := val.(rdflibgo.URIRef); ok && base != "" && !strings.Contains(u.Value(), ":") {
+						val = rdflibgo.NewURIRefUnsafe(base + u.Value())
+					}
+					b[v] = val
 				}
 			}
 			result = append(result, b)
@@ -611,8 +621,10 @@ func evalGraphPattern(g *rdflibgo.Graph, gp *GraphPattern, prefixes map[string]s
 		varName := graphName[1:]
 		var results []map[string]rdflibgo.Term
 		for name, namedG := range activeNamedGraphs {
-			inner := evalPattern(namedG, gp.Pattern, prefixes)
 			graphURI := rdflibgo.NewURIRefUnsafe(name)
+			// Push graph binding into inner pattern evaluation
+			initBindings := map[string]rdflibgo.Term{varName: graphURI}
+			inner := evalPatternWithBindings(namedG, gp.Pattern, initBindings, prefixes)
 			for _, b := range inner {
 				nb := copyBindings(b)
 				nb[varName] = graphURI
@@ -790,7 +802,14 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 		return nil
 	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
-		return rdflibgo.NewURIRefUnsafe(s[1 : len(s)-1])
+		iri := s[1 : len(s)-1]
+		// Resolve relative IRI against base
+		if !strings.Contains(iri, ":") {
+			if base, ok := prefixes["__base__"]; ok {
+				iri = base + iri
+			}
+		}
+		return rdflibgo.NewURIRefUnsafe(iri)
 	}
 	if s == "true" {
 		return rdflibgo.NewLiteral(true)
@@ -833,7 +852,13 @@ func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]
 	case *LiteralExpr:
 		return e.Value
 	case *IRIExpr:
-		return rdflibgo.NewURIRefUnsafe(e.Value)
+		iri := e.Value
+		if !strings.Contains(iri, ":") {
+			if base, ok := prefixes["__base__"]; ok {
+				iri = base + iri
+			}
+		}
+		return rdflibgo.NewURIRefUnsafe(iri)
 	case *BinaryExpr:
 		left := evalExpr(e.Left, bindings, prefixes)
 		right := evalExpr(e.Right, bindings, prefixes)
