@@ -971,6 +971,34 @@ func TestParseSRXLiteralDirLang(t *testing.T) {
 	}
 }
 
+// SPARQL 1.2: its:dir attribute in SRX literals
+func TestParseSRXLiteralITSDir(t *testing.T) {
+	xmlData := `<?xml version="1.0"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#"
+        xmlns:its="http://www.w3.org/2005/11/its">
+  <head><variable name="v"/></head>
+  <results>
+    <result>
+      <binding name="v"><literal xml:lang="ar" its:dir="rtl">قطة</literal></binding>
+    </result>
+  </results>
+</sparql>`
+	result, err := ParseSRX(strings.NewReader(xmlData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Bindings) != 1 {
+		t.Fatalf("expected 1 binding, got %d", len(result.Bindings))
+	}
+	lit := result.Bindings[0]["v"].(rdflibgo.Literal)
+	if lit.Language() != "ar" {
+		t.Errorf("expected lang 'ar', got %q", lit.Language())
+	}
+	if lit.Dir() != "rtl" {
+		t.Errorf("expected dir 'rtl', got %q", lit.Dir())
+	}
+}
+
 // ---- parseSRJValue: bnode, typed-literal, triple, directional lang ----
 
 func TestParseSRJValueBNode(t *testing.T) {

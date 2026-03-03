@@ -74,6 +74,7 @@ type srxBinding struct {
 type srxLiteral struct {
 	Value    string `xml:",chardata"`
 	Lang     string `xml:"http://www.w3.org/XML/1998/namespace lang,attr"`
+	Dir      string `xml:"http://www.w3.org/2005/11/its dir,attr"`
 	Datatype string `xml:"datatype,attr"`
 }
 
@@ -110,10 +111,15 @@ func parseSRXLiteral(lit *srxLiteral) rdflibgo.Literal {
 	var opts []rdflibgo.LiteralOption
 	if lit.Lang != "" {
 		if idx := strings.Index(lit.Lang, "--"); idx >= 0 {
+			// Legacy: direction embedded in lang tag as lang--dir
 			opts = append(opts, rdflibgo.WithLang(lit.Lang[:idx]))
 			opts = append(opts, rdflibgo.WithDir(lit.Lang[idx+2:]))
 		} else {
 			opts = append(opts, rdflibgo.WithLang(lit.Lang))
+		}
+		// SPARQL 1.2: its:dir attribute takes precedence over --dir suffix
+		if lit.Dir != "" {
+			opts = append(opts, rdflibgo.WithDir(lit.Dir))
 		}
 	} else if lit.Datatype != "" {
 		opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(lit.Datatype)))
