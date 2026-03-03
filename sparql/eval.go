@@ -56,6 +56,33 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 		if len(q.Construct) == 0 && q.Where != nil {
 			q.Construct = extractTemplateFromPattern(q.Where)
 		}
+		// Apply ORDER BY, LIMIT, OFFSET to solutions (same as SELECT)
+		if len(q.OrderBy) > 0 {
+			slices.SortFunc(solutions, func(a, b map[string]rdflibgo.Term) int {
+				for _, ob := range q.OrderBy {
+					va := evalExpr(ob.Expr, a, q.Prefixes)
+					vb := evalExpr(ob.Expr, b, q.Prefixes)
+					c := compareTermValues(va, vb)
+					if ob.Desc {
+						c = -c
+					}
+					if c != 0 {
+						return c
+					}
+				}
+				return 0
+			})
+		}
+		if q.Offset > 0 {
+			if q.Offset >= len(solutions) {
+				solutions = nil
+			} else {
+				solutions = solutions[q.Offset:]
+			}
+		}
+		if q.Limit >= 0 && q.Limit < len(solutions) {
+			solutions = solutions[:q.Limit]
+		}
 		return evalConstruct(g, q, solutions)
 	default:
 		return nil, fmt.Errorf("unsupported query type: %s", q.Type)
