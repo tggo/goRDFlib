@@ -433,6 +433,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 
 	var result Pattern
 	var currentTriples []Triple
+	var deferredFilters []Expr // FILTER has whole-group scope, applied at end
 
 	flushTriples := func() {
 		if len(currentTriples) > 0 {
@@ -457,12 +458,22 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			if result == nil {
 				result = &BGP{}
 			}
+			// Apply deferred FILTERs (whole-group scope)
+			for _, fexpr := range deferredFilters {
+				result = &FilterPattern{Pattern: result, Expr: fexpr}
+			}
 			return result, nil
 		}
 
 		// Subquery: SELECT inside group graph pattern
 		if p.matchKeywordCI("SELECT") {
 			flushTriples()
+			// Check for invalid empty group before subquery: { {} SELECT ... }
+			if result != nil {
+				if bgp, ok := result.(*BGP); ok && len(bgp.Triples) == 0 {
+					return nil, p.errorf("empty group pattern before subquery is not allowed")
+				}
+			}
 			subQ, err := p.parseSubQuery()
 			if err != nil {
 				return nil, err
@@ -537,7 +548,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			continue
 		}
 
-		// FILTER
+		// FILTER (deferred — SPARQL FILTER has whole-group scope)
 		if p.matchKeywordCI("FILTER") {
 			p.pos += 6
 			flushTriples()
@@ -546,10 +557,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			if err != nil {
 				return nil, err
 			}
-			if result == nil {
-				result = &BGP{}
-			}
-			result = &FilterPattern{Pattern: result, Expr: expr}
+			deferredFilters = append(deferredFilters, expr)
 			continue
 		}
 
@@ -1402,6 +1410,9 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	// String literal
 	if ch == '"' || ch == '\'' {
 		t := p.readTermOrVar()
+		if err := validateStringEscapes(t); err != nil {
+			return nil, p.errorf("%s", err)
+		}
 		return &LiteralExpr{Value: p.resolveTermValue(t)}, nil
 	}
 
@@ -1606,7 +1617,11 @@ func (p *sparqlParser) readTermOrVar() string {
 	}
 
 	if ch == '"' || ch == '\'' {
-		return p.readStringLiteral()
+		s := p.readStringLiteral()
+		if err := validateStringEscapes(s); err != nil {
+			return "" // will cause a parse error downstream
+		}
+		return s
 	}
 
 	// Blank node with property list: [ pred obj ; ... ]
@@ -1617,6 +1632,20 @@ func (p *sparqlParser) readTermOrVar() string {
 	// Collection syntax: ( term1 term2 ... )
 	if ch == '(' {
 		return p.readCollectionAsTerm()
+	}
+
+	// Blank node: _:label
+	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
+		start := p.pos
+		p.pos += 2 // skip "_:"
+		for p.pos < len(p.input) && (isNameChar(rune(p.input[p.pos])) || p.input[p.pos] == '.' || p.input[p.pos] == '-') {
+			p.pos++
+		}
+		// Trim trailing dots
+		for p.pos > start+2 && p.input[p.pos-1] == '.' {
+			p.pos--
+		}
+		return p.input[start:p.pos]
 	}
 
 	// 'a' as rdf:type shorthand
@@ -1970,6 +1999,10 @@ func (p *sparqlParser) resolveTermValue(s string) rdflibgo.Term {
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
 		return rdflibgo.NewURIRefUnsafe(s[1 : len(s)-1])
 	}
+	if strings.HasPrefix(s, "_:") {
+		label := s[2:]
+		return rdflibgo.NewBNode(label)
+	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
 		// Check for prefixed datatype (^^prefix:local)
 		if idx := strings.Index(s, "^^"); idx >= 0 {
@@ -2068,6 +2101,34 @@ var sparqlStringUnescaper = strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\n`, "\n"
 
 func unescapeSPARQLString(s string) string {
 	return sparqlStringUnescaper.Replace(s)
+}
+
+// validateStringEscapes checks for invalid \u/\U unicode escape sequences (surrogates).
+func validateStringEscapes(s string) error {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			if s[i+1] == 'u' && i+5 < len(s) {
+				hex := s[i+2 : i+6]
+				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
+					if cp >= 0xD800 && cp <= 0xDFFF {
+						return fmt.Errorf("invalid unicode surrogate U+%04X in string literal", cp)
+					}
+				}
+				i += 5
+			} else if s[i+1] == 'U' && i+9 < len(s) {
+				hex := s[i+2 : i+10]
+				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
+					if cp >= 0xD800 && cp <= 0xDFFF {
+						return fmt.Errorf("invalid unicode surrogate U+%08X in string literal", cp)
+					}
+				}
+				i += 9
+			} else {
+				i++
+			}
+		}
+	}
+	return nil
 }
 
 func (p *sparqlParser) skipWS() {

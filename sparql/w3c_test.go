@@ -212,17 +212,88 @@ func loadExpectedResult(t *testing.T, path string, g *rdflibgo.Graph) (*sparql.R
 	case ".srj":
 		return sparql.ParseSRJ(f)
 	case ".ttl":
-		// CONSTRUCT result: load as graph and compare
+		// Could be CONSTRUCT result or RDF Result Set
 		expected := rdflibgo.NewGraph()
 		base := "file://" + path
 		if err := turtle.Parse(expected, f, turtle.WithBase(base)); err != nil {
 			return nil, err
+		}
+		// Check if it's an RDF Result Set (contains rs:ResultSet)
+		rsType := rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/sw/DataAccess/tests/result-set#ResultSet")
+		rdfType := rdflibgo.RDF.Type
+		isResultSet := false
+		for range expected.Triples(nil, &rdfType, rsType) {
+			isResultSet = true
+			break
+		}
+		if isResultSet {
+			return parseRDFResultSet(expected), nil
 		}
 		return &sparql.Result{Type: "CONSTRUCT", Graph: expected}, nil
 	default:
 		t.Skipf("unsupported result format: %s", ext)
 		return nil, nil
 	}
+}
+
+// parseRDFResultSet parses a SPARQL result set encoded in RDF (rs:ResultSet).
+func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
+	rs := "http://www.w3.org/2001/sw/DataAccess/tests/result-set#"
+	rsSolution := rdflibgo.NewURIRefUnsafe(rs + "solution")
+	rsBinding := rdflibgo.NewURIRefUnsafe(rs + "binding")
+	rsVariable := rdflibgo.NewURIRefUnsafe(rs + "variable")
+	rsValue := rdflibgo.NewURIRefUnsafe(rs + "value")
+	rsResultVar := rdflibgo.NewURIRefUnsafe(rs + "resultVariable")
+
+	// Find result set node
+	rsType := rdflibgo.NewURIRefUnsafe(rs + "ResultSet")
+	rdfType := rdflibgo.RDF.Type
+	var rsNode rdflibgo.Subject
+	for t := range g.Triples(nil, &rdfType, rsType) {
+		rsNode = t.Subject
+		break
+	}
+	if rsNode == nil {
+		return &sparql.Result{Type: "SELECT"}
+	}
+
+	// Get variable names
+	var vars []string
+	for t := range g.Triples(rsNode, &rsResultVar, nil) {
+		if l, ok := t.Object.(rdflibgo.Literal); ok {
+			vars = append(vars, l.Lexical())
+		}
+	}
+
+	// Get solutions
+	var bindings []map[string]rdflibgo.Term
+	for sol := range g.Triples(rsNode, &rsSolution, nil) {
+		solNode, ok := sol.Object.(rdflibgo.Subject)
+		if !ok {
+			continue
+		}
+		row := make(map[string]rdflibgo.Term)
+		for bind := range g.Triples(solNode, &rsBinding, nil) {
+			bindNode, ok := bind.Object.(rdflibgo.Subject)
+			if !ok {
+				continue
+			}
+			var varName string
+			var value rdflibgo.Term
+			if v, ok := g.Value(bindNode, &rsVariable, nil); ok {
+				varName = v.(rdflibgo.Literal).Lexical()
+			}
+			if v, ok := g.Value(bindNode, &rsValue, nil); ok {
+				value = v
+			}
+			if varName != "" {
+				row[varName] = value
+			}
+		}
+		bindings = append(bindings, row)
+	}
+
+	return &sparql.Result{Type: "SELECT", Vars: vars, Bindings: bindings}
 }
 
 func formatBindings(bindings []map[string]rdflibgo.Term) string {
