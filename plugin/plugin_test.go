@@ -119,3 +119,103 @@ func TestRegisterAndGetStore(t *testing.T) {
 		t.Error("expected false for unregistered store")
 	}
 }
+
+// --- Duplicate registration panic tests ---
+
+func TestRegisterParserDuplicatePanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("expected panic on duplicate parser registration")
+		}
+	}()
+	plugin.RegisterParser("dup-parser-format", func() plugin.Parser { return &mockParser{} })
+	plugin.RegisterParser("dup-parser-format", func() plugin.Parser { return &mockParser{} })
+}
+
+func TestRegisterSerializerDuplicatePanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("expected panic on duplicate serializer registration")
+		}
+	}()
+	plugin.RegisterSerializer("dup-serializer-format", func() plugin.Serializer { return &mockSerializer{} })
+	plugin.RegisterSerializer("dup-serializer-format", func() plugin.Serializer { return &mockSerializer{} })
+}
+
+func TestRegisterStoreDuplicatePanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("expected panic on duplicate store registration")
+		}
+	}()
+	plugin.RegisterStore("dup-store-name", func() store.Store { return store.NewMemoryStore() })
+	plugin.RegisterStore("dup-store-name", func() store.Store { return store.NewMemoryStore() })
+}
+
+// --- FormatFromContent edge case tests ---
+
+func TestFormatFromContentEmpty(t *testing.T) {
+	_, ok := plugin.FormatFromContent([]byte{})
+	if ok {
+		t.Error("expected false for empty data")
+	}
+}
+
+func TestFormatFromContentJSONLDArray(t *testing.T) {
+	// JSON-LD can start with '[' (array of objects)
+	f, ok := plugin.FormatFromContent([]byte(`[{"@context": {}}]`))
+	if !ok || f != "json-ld" {
+		t.Errorf("FormatFromContent('[...') = %q, %v; want json-ld, true", f, ok)
+	}
+}
+
+func TestFormatFromContentAtBase(t *testing.T) {
+	f, ok := plugin.FormatFromContent([]byte(`@base <http://example.org/> .`))
+	if !ok || f != "turtle" {
+		t.Errorf("FormatFromContent('@base ...') = %q, %v; want turtle, true", f, ok)
+	}
+}
+
+func TestFormatFromContentBASEKeyword(t *testing.T) {
+	f, ok := plugin.FormatFromContent([]byte(`BASE <http://example.org/>`))
+	if !ok || f != "turtle" {
+		t.Errorf("FormatFromContent('BASE ...') = %q, %v; want turtle, true", f, ok)
+	}
+}
+
+func TestFormatFromContentNQuads(t *testing.T) {
+	// N-Quads: subject predicate object graph .  (5 fields)
+	nq := `<http://example.org/s> <http://example.org/p> "hello" <http://example.org/g> .`
+	f, ok := plugin.FormatFromContent([]byte(nq))
+	if !ok || f != "nquads" {
+		t.Errorf("FormatFromContent(nquads line) = %q, %v; want nquads, true", f, ok)
+	}
+}
+
+func TestFormatFromContentNQuadsBlankSubject(t *testing.T) {
+	// N-Quads with blank node subject
+	nq := `_:b0 <http://example.org/p> "val" <http://example.org/g> .`
+	f, ok := plugin.FormatFromContent([]byte(nq))
+	if !ok || f != "nquads" {
+		t.Errorf("FormatFromContent(nquads blank subject) = %q, %v; want nquads, true", f, ok)
+	}
+}
+
+func TestFormatFromContentUnknown(t *testing.T) {
+	_, ok := plugin.FormatFromContent([]byte(`# just a comment with no recognisable prefix`))
+	if ok {
+		t.Error("expected false for unrecognised content")
+	}
+}
+
+func TestFormatFromContentBOM(t *testing.T) {
+	// UTF-8 BOM followed by XML declaration
+	bom := "\xEF\xBB\xBF<?xml version=\"1.0\"?>"
+	f, ok := plugin.FormatFromContent([]byte(bom))
+	if !ok || f != "xml" {
+		t.Errorf("FormatFromContent(BOM+xml) = %q, %v; want xml, true", f, ok)
+	}
+}

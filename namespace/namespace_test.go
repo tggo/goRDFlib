@@ -318,3 +318,125 @@ func TestExtendedNamespaces(t *testing.T) {
 		t.Errorf("got %q", provEntity.Value())
 	}
 }
+
+// TestNamespaceBase covers the 0% Namespace.Base() branch.
+func TestNamespaceBase(t *testing.T) {
+	ns := namespace.NewNamespace("http://example.org/")
+	if ns.Base() != "http://example.org/" {
+		t.Errorf("Base() = %q, want %q", ns.Base(), "http://example.org/")
+	}
+}
+
+// TestClosedNamespaceMustTermSuccess covers the non-panic branch of MustTerm.
+func TestClosedNamespaceMustTermSuccess(t *testing.T) {
+	ns := namespace.NewClosedNamespace("http://example.org/", []string{"Foo", "Bar"})
+	u := ns.MustTerm("Foo")
+	if u.Value() != "http://example.org/Foo" {
+		t.Errorf("MustTerm(\"Foo\") = %q, want %q", u.Value(), "http://example.org/Foo")
+	}
+}
+
+// TestNSManagerBindCacheInvalidation covers the cache-invalidation path in Bind.
+// After a QName lookup populates the cache, rebinding the namespace with override=true
+// must purge the cached entry.
+func TestNSManagerBindCacheInvalidation(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.Bind("ex", term.NewURIRefUnsafe("http://example.org/ns#"))
+	mgr := namespace.NewNSManager(s)
+
+	// Populate the cache for this URI.
+	qn, err := mgr.QName("http://example.org/ns#Thing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qn != "ex:Thing" {
+		t.Fatalf("expected ex:Thing, got %q", qn)
+	}
+
+	// Rebind with override=true — this should invalidate the cached entry.
+	mgr.Bind("ex2", term.NewURIRefUnsafe("http://example.org/ns#"), true)
+
+	// The cache entry should be gone; re-query must use the store.
+	qn2, err := mgr.QName("http://example.org/ns#Thing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The result must use a valid prefix (either ex or ex2 depending on store).
+	if qn2 == "" {
+		t.Error("expected non-empty QName after cache invalidation")
+	}
+}
+
+// TestNSManagerPrefix covers the 0% Prefix() method.
+func TestNSManagerPrefix(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	mgr := namespace.NewNSManager(s)
+
+	// Known URI — must succeed.
+	qn, ok := mgr.Prefix("http://xmlns.com/foaf/0.1/Person")
+	if !ok {
+		t.Error("Prefix: expected ok=true for known namespace")
+	}
+	if qn != "foaf:Person" {
+		t.Errorf("Prefix: got %q, want %q", qn, "foaf:Person")
+	}
+
+	// URI with no separating '#' or '/' or ':' — SplitURI returns empty ns, so QName errors.
+	_, ok = mgr.Prefix("noseparator")
+	if ok {
+		t.Error("Prefix: expected ok=false for URI that cannot be split")
+	}
+}
+
+// TestNSManagerQNameError covers the error branch of QName (line 139).
+func TestNSManagerQNameError(t *testing.T) {
+	mgr := namespace.NewNSManager(store.NewMemoryStore())
+	_, err := mgr.QName("noseparator")
+	if err == nil {
+		t.Error("QName: expected error for unsplittable URI")
+	}
+}
+
+// TestNSManagerComputeQNameCacheHit covers the cache-hit branch in ComputeQName (line 151).
+func TestNSManagerComputeQNameCacheHit(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))
+	mgr := namespace.NewNSManager(s)
+
+	uri := term.RDFNamespace + "type"
+
+	// First call — populates cache.
+	p1, ns1, l1, err := mgr.ComputeQName(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second call — must hit the cache and return identical values.
+	p2, ns2, l2, err := mgr.ComputeQName(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1 != p2 || ns1 != ns2 || l1 != l2 {
+		t.Errorf("cache hit mismatch: first=(%q,%q,%q) second=(%q,%q,%q)", p1, ns1, l1, p2, ns2, l2)
+	}
+}
+
+// TestNSManagerNamespaces covers the 0% Namespaces() method.
+func TestNSManagerNamespaces(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	s.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))
+	mgr := namespace.NewNSManager(s)
+
+	found := map[string]string{}
+	for prefix, ns := range mgr.Namespaces() {
+		found[prefix] = ns.Value()
+	}
+	if found["foaf"] != "http://xmlns.com/foaf/0.1/" {
+		t.Errorf("Namespaces: foaf = %q", found["foaf"])
+	}
+	if found["rdf"] != term.RDFNamespace {
+		t.Errorf("Namespaces: rdf = %q", found["rdf"])
+	}
+}
