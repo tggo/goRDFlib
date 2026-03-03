@@ -1475,6 +1475,105 @@ func TestUpdateSnapshotWhere(t *testing.T) {
 	// At minimum, should not crash. Ideally produces 4 and 14.
 }
 
+// RDFLib #1113 — Property path + returns spurious cross-links
+func TestPropertyPathPlusNoSpurious1113(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	rdfsSubClassOf := rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#subClassOf")
+	aaaa := rdflibgo.NewURIRefUnsafe(ex + "AAAA")
+	bbbb := rdflibgo.NewURIRefUnsafe(ex + "BBBB")
+	cccc := rdflibgo.NewURIRefUnsafe(ex + "CCCC")
+	dddd := rdflibgo.NewURIRefUnsafe(ex + "DDDD")
+
+	g.Add(cccc, rdfsSubClassOf, aaaa)
+	g.Add(dddd, rdfsSubClassOf, bbbb)
+	g.Add(dddd, rdfsSubClassOf, aaaa)
+
+	r, err := Query(g, `
+		PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+		SELECT ?class ?subclass WHERE {
+			?class rdfs:subClassOf+ ?subclass
+		} ORDER BY ?class ?subclass
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Expected: CCCC→AAAA, DDDD→AAAA, DDDD→BBBB (3 results)
+	// Bug would add CCCC→BBBB (4 results)
+	if len(r.Bindings) != 3 {
+		t.Errorf("#1113: expected 3 results, got %d", len(r.Bindings))
+		for _, b := range r.Bindings {
+			t.Logf("  %s → %s", b["class"].(rdflibgo.URIRef).Value(), b["subclass"].(rdflibgo.URIRef).Value())
+		}
+	}
+}
+
+// RDFLib #1467 — GROUP_CONCAT with OPTIONAL should not produce "None"
+func TestGroupConcatOptionalNone(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	s := rdflibgo.NewURIRefUnsafe(ex + "s")
+	typ := rdflibgo.NewURIRefUnsafe(ex + "type")
+	_ = rdflibgo.NewURIRefUnsafe(ex + "label")
+	thing := rdflibgo.NewURIRefUnsafe(ex + "Thing")
+
+	g.Add(s, typ, thing)
+	// s has NO label — OPTIONAL will be unbound
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?s (GROUP_CONCAT(?label; SEPARATOR="|") AS ?labels) WHERE {
+			?s :type :Thing .
+			OPTIONAL { ?s :label ?label }
+		} GROUP BY ?s
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(r.Bindings))
+	}
+	labels := r.Bindings[0]["labels"]
+	if labels != nil {
+		val := labels.(rdflibgo.Literal).Lexical()
+		if val == "None" || val == "<nil>" || val == "null" {
+			t.Errorf("#1467: GROUP_CONCAT produced %q instead of empty string", val)
+		}
+	}
+}
+
+// RDFLib #2081 — Collection syntax in SPARQL queries
+func TestCollectionSyntaxInQuery(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	bob := rdflibgo.NewURIRefUnsafe(ex + "Bob")
+	hasChildren := rdflibgo.NewURIRefUnsafe(ex + "hasChildren")
+	dick := rdflibgo.NewURIRefUnsafe(ex + "Dick")
+	jane := rdflibgo.NewURIRefUnsafe(ex + "Jane")
+
+	// Build the list: Bob hasChildren (Dick Jane)
+	bn1 := rdflibgo.NewBNode("")
+	bn2 := rdflibgo.NewBNode("")
+	g.Add(bob, hasChildren, bn1)
+	g.Add(bn1, rdflibgo.RDF.First, dick)
+	g.Add(bn1, rdflibgo.RDF.Rest, bn2)
+	g.Add(bn2, rdflibgo.RDF.First, jane)
+	g.Add(bn2, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?s WHERE {
+			?s ex:hasChildren (ex:Dick ex:Jane)
+		}
+	`)
+	if err != nil {
+		t.Fatalf("#2081: collection syntax in query failed: %v", err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Errorf("#2081: expected 1 result (Bob), got %d", len(r.Bindings))
+	}
+}
+
 func extractVarValues(bindings []map[string]rdflibgo.Term, varName string) []string {
 	var result []string
 	for _, b := range bindings {
