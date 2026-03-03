@@ -2,9 +2,11 @@ package sparql
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
@@ -21,6 +23,10 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 	}
 	if q.BaseURI != "" {
 		q.Prefixes[baseURIKey] = q.BaseURI
+	}
+	// Set query start time so NOW() returns a stable value per SPARQL spec.
+	if _, ok := q.Prefixes[queryStartTimeKey]; !ok {
+		q.Prefixes[queryStartTimeKey] = time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	}
 	solutions := evalPattern(g, q.Where, q.Prefixes, q.NamedGraphs)
 
@@ -347,6 +353,10 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 			}
 		}
 		if allInt {
+			// Check for int64 overflow before casting
+			if sum > float64(math.MaxInt64) || sum < float64(math.MinInt64) || math.IsNaN(sum) || math.IsInf(sum, 0) {
+				return rdflibgo.NewLiteral(sum)
+			}
 			return rdflibgo.NewLiteral(int64(sum), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 		}
 		if hasDecimal {
@@ -619,8 +629,15 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string,
 		return evalGraphPattern(g, p, prefixes, namedGraphs)
 
 	case *SubqueryPattern:
-		subQ := *p.Query // shallow copy to avoid mutating AST
-		subQ.NamedGraphs = namedGraphs
+		subQ := *p.Query // shallow copy; deep-copy mutable fields below
+		// Deep-copy NamedGraphs to avoid mutating the original AST
+		if namedGraphs != nil {
+			ng := make(map[string]*rdflibgo.Graph, len(namedGraphs))
+			for k, v := range namedGraphs {
+				ng[k] = v
+			}
+			subQ.NamedGraphs = ng
+		}
 		subResult, err := EvalQuery(g, &subQ, nil)
 		if err != nil {
 			return nil
@@ -1021,7 +1038,7 @@ func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
 // --- Binding helpers ---
 
 func mergeBindings(a, b map[string]rdflibgo.Term) map[string]rdflibgo.Term {
-	result := make(map[string]rdflibgo.Term)
+	result := make(map[string]rdflibgo.Term, len(a)+len(b))
 	for k, v := range a {
 		result[k] = v
 	}
@@ -1097,6 +1114,10 @@ func termValuesEqual(a, b rdflibgo.Term) bool {
 		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
 		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
 		if errA == nil && errB == nil && isNumericDatatype(la.Datatype()) && isNumericDatatype(lb.Datatype()) {
+			// NaN != NaN per SPARQL/XSD spec
+			if math.IsNaN(fa) || math.IsNaN(fb) {
+				return false
+			}
 			return fa == fb
 		}
 		if la.Language() != "" || lb.Language() != "" {

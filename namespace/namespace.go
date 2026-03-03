@@ -84,6 +84,7 @@ func (ns ClosedNamespace) Base() string {
 // --- NamespaceManager ---
 
 // NSManager manages prefix ↔ namespace bindings.
+// All methods are safe for concurrent use.
 // Ported from: rdflib.namespace.NamespaceManager
 type NSManager struct {
 	mu    sync.RWMutex
@@ -115,8 +116,13 @@ func (m *NSManager) Bind(prefix string, namespace term.URIRef, override bool) {
 			m.store.Bind(prefix, namespace)
 		}
 	}
-	// Invalidate cache
-	m.cache = make(map[string][3]string)
+	// Selectively invalidate cache entries whose namespace matches the newly bound one.
+	nsStr := namespace.Value()
+	for uri := range m.cache {
+		if strings.HasPrefix(uri, nsStr) {
+			delete(m.cache, uri)
+		}
+	}
 }
 
 // Prefix implements NamespaceManager interface for use with Term.N3().

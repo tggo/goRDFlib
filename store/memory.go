@@ -7,6 +7,7 @@ import (
 )
 
 // MemoryStore is a thread-safe in-memory triple store with 3 indices (SPO, POS, OSP).
+// All methods are safe for concurrent use.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory
 type MemoryStore struct {
 	mu sync.RWMutex

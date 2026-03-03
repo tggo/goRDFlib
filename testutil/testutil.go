@@ -108,14 +108,16 @@ func isomorphic(exp, act []triple) bool {
 	expSigs := bnodeSigs(exp)
 	actSigs := bnodeSigs(act)
 
+	// Build reverse index: signature → actual bnodes with that signature.
+	actSigIndex := make(map[string][]string, len(actBNodes))
+	for ab, asig := range actSigs {
+		actSigIndex[asig] = append(actSigIndex[asig], ab)
+	}
+
 	// Build candidate map: for each exp bnode, which act bnodes have the same signature.
 	candidates := make(map[string][]string, len(expBNodes))
 	for eb, esig := range expSigs {
-		for ab, asig := range actSigs {
-			if esig == asig {
-				candidates[eb] = append(candidates[eb], ab)
-			}
-		}
+		candidates[eb] = actSigIndex[esig]
 	}
 
 	// Check that every exp bnode has at least one candidate.

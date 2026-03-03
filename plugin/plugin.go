@@ -38,6 +38,9 @@ var (
 func RegisterParser(name string, factory func() Parser) {
 	parsersMu.Lock()
 	defer parsersMu.Unlock()
+	if _, exists := parsers[name]; exists {
+		panic("plugin: duplicate parser registration for format " + name)
+	}
 	parsers[name] = factory
 }
 
@@ -56,6 +59,9 @@ func GetParser(name string) (Parser, bool) {
 func RegisterSerializer(name string, factory func() Serializer) {
 	serializersMu.Lock()
 	defer serializersMu.Unlock()
+	if _, exists := serializers[name]; exists {
+		panic("plugin: duplicate serializer registration for format " + name)
+	}
 	serializers[name] = factory
 }
 
@@ -74,6 +80,9 @@ func GetSerializer(name string) (Serializer, bool) {
 func RegisterStore(name string, factory func() store.Store) {
 	storesMu.Lock()
 	defer storesMu.Unlock()
+	if _, exists := stores[name]; exists {
+		panic("plugin: duplicate store registration for name " + name)
+	}
 	stores[name] = factory
 }
 
@@ -145,7 +154,10 @@ func FormatFromContent(data []byte) (string, bool) {
 	if n > 500 {
 		n = 500
 	}
-	s := strings.TrimSpace(string(data[:n]))
+	s := string(data[:n])
+	// Strip UTF-8 BOM if present
+	s = strings.TrimPrefix(s, "\xEF\xBB\xBF")
+	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "<?xml") || strings.HasPrefix(s, "<rdf:RDF") {
 		return "xml", true
 	}

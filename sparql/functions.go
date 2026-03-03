@@ -7,17 +7,36 @@ import (
 	"crypto/sha512"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	rdflibgo "github.com/tggo/goRDFlib"
 )
+
+// queryStartTimeKey is used to pass the query start time through the prefixes map.
+const queryStartTimeKey = "__query_start_time__"
+
+// regexCache caches compiled regular expressions to avoid recompilation per row.
+var regexCache sync.Map // pattern string → *regexp.Regexp
+
+func cachedRegexpCompile(pattern string) (*regexp.Regexp, error) {
+	if v, ok := regexCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	regexCache.Store(pattern, re)
+	return re, nil
+}
 
 // evalFunc evaluates a SPARQL built-in function.
 // Ported from: rdflib.plugins.sparql.operators
@@ -183,7 +202,7 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 			if strings.Contains(flags, "i") {
 				pattern = "(?i)" + pattern
 			}
-			re, err := regexp.Compile(pattern)
+			re, err := cachedRegexpCompile(pattern)
 			if err != nil {
 				return rdflibgo.NewLiteral(false)
 			}
@@ -209,7 +228,7 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 			if strings.Contains(flags, "i") {
 				pattern = "(?i)" + pattern
 			}
-			re, err := regexp.Compile(pattern)
+			re, err := cachedRegexpCompile(pattern)
 			if err != nil {
 				return vals[0]
 			}
@@ -419,7 +438,13 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 
 	// Date/time functions
 	case "NOW":
-		return rdflibgo.NewLiteral(timeNow(), rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime")))
+		// Per SPARQL 1.1 spec §17.4.5.1, NOW() must return the same value
+		// throughout a single query evaluation.
+		nowStr := prefixes[queryStartTimeKey]
+		if nowStr == "" {
+			nowStr = timeNow()
+		}
+		return rdflibgo.NewLiteral(nowStr, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime")))
 	case "YEAR":
 		vals := evalArgs()
 		if len(vals) == 1 {
@@ -693,7 +718,7 @@ func extractTZ(dt string) (string, bool) {
 }
 
 func randFloat() float64 {
-	return rand.Float64()
+	return rand.Float64() // math/rand/v2: goroutine-safe global source
 }
 
 func newUUID() string {
@@ -875,6 +900,10 @@ func compareTermValues(a, b rdflibgo.Term) int {
 		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
 		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
 		if errA == nil && errB == nil {
+			// NaN is not comparable per SPARQL/XSD spec
+			if math.IsNaN(fa) || math.IsNaN(fb) {
+				return strings.Compare(a.N3(), b.N3())
+			}
 			if fa < fb {
 				return -1
 			}

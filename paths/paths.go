@@ -1,6 +1,8 @@
 package paths
 
 import (
+	"strings"
+
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -53,14 +55,14 @@ func Sequence(paths ...Path) *SequencePath {
 }
 
 func (p *SequencePath) pathString() string {
-	s := ""
+	var sb strings.Builder
 	for i, a := range p.Args {
 		if i > 0 {
-			s += "/"
+			sb.WriteByte('/')
 		}
-		s += a.pathString()
+		sb.WriteString(a.pathString())
 	}
-	return s
+	return sb.String()
 }
 
 func (p *SequencePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -104,14 +106,14 @@ func Alternative(paths ...Path) *AlternativePath {
 }
 
 func (p *AlternativePath) pathString() string {
-	s := ""
+	var sb strings.Builder
 	for i, a := range p.Args {
 		if i > 0 {
-			s += "|"
+			sb.WriteByte('|')
 		}
-		s += a.pathString()
+		sb.WriteString(a.pathString())
 	}
-	return s
+	return sb.String()
 }
 
 func (p *AlternativePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -282,14 +284,16 @@ func Negated(excluded ...term.URIRef) *NegatedPath {
 }
 
 func (p *NegatedPath) pathString() string {
-	s := "!("
+	var sb strings.Builder
+	sb.WriteString("!(")
 	for i, u := range p.Excluded {
 		if i > 0 {
-			s += "|"
+			sb.WriteByte('|')
 		}
-		s += u.N3()
+		sb.WriteString(u.N3())
 	}
-	return s + ")"
+	sb.WriteByte(')')
+	return sb.String()
 }
 
 func (p *NegatedPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {

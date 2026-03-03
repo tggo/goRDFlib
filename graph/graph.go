@@ -6,6 +6,7 @@ import (
 )
 
 // Graph is an RDF graph backed by a Store.
+// Graph is not safe for concurrent use without external synchronization.
 // Ported from: rdflib.graph.Graph
 type Graph struct {
 	store      store.Store

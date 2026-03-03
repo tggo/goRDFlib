@@ -7,6 +7,7 @@ import (
 )
 
 // Collection provides a high-level API for RDF lists (rdf:first/rdf:rest/rdf:nil).
+// Collection is not safe for concurrent use without external synchronization.
 type Collection struct {
 	graph *Graph
 	head  term.Subject

@@ -1,6 +1,7 @@
 package term
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -18,9 +19,16 @@ func (l Literal) termType() string { return "Literal" }
 // LiteralOption configures Literal construction.
 type LiteralOption func(*Literal)
 
+// langTagRegex validates BCP 47 / RFC 5646 language tags (simplified).
+var langTagRegex = regexp.MustCompile(`^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$`)
+
 // WithLang sets the language tag. The tag is normalized to lowercase.
+// Invalid tags (per RFC 5646 simplified pattern) are silently ignored.
 func WithLang(lang string) LiteralOption {
 	return func(l *Literal) {
+		if lang != "" && !langTagRegex.MatchString(lang) {
+			return // invalid tag, skip
+		}
 		l.lang = strings.ToLower(lang)
 	}
 }
