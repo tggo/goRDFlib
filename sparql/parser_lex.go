@@ -148,7 +148,11 @@ func (p *sparqlParser) readStringLiteral() string {
 	for p.pos < len(p.input) {
 		ch := p.input[p.pos]
 		if ch == '\\' {
-			p.pos += 2
+			if p.pos+1 < len(p.input) {
+				p.pos += 2
+			} else {
+				p.pos++
+			}
 			continue
 		}
 		if long {
@@ -359,7 +363,11 @@ func (p *sparqlParser) parseCollectionTriples() (string, []Triple, error) {
 			elem = bn
 			triples = append(triples, extraTriples...)
 		} else {
+			before := p.pos
 			elem = p.readTermOrVar()
+			if elem == "" && p.pos == before {
+				return "", nil, p.errorf("unexpected token in collection")
+			}
 		}
 
 		triples = append(triples, Triple{Subject: bnode, Predicate: rdfFirst, Object: elem})

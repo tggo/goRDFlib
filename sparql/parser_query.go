@@ -299,8 +299,12 @@ func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
 						p.expect(')')
 						continue
 					}
+					before := p.pos
 					expr, err := p.parseExpr()
 					if err != nil {
+						break
+					}
+					if p.pos == before {
 						break
 					}
 					q.GroupBy = append(q.GroupBy, expr)
@@ -320,8 +324,12 @@ func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
 				if p.pos >= len(p.input) || p.isKeyword() {
 					break
 				}
+				before := p.pos
 				expr, err := p.parseExpr()
 				if err != nil {
+					break
+				}
+				if p.pos == before {
 					break
 				}
 				havingExprs = append(havingExprs, expr)
@@ -390,8 +398,12 @@ func (p *sparqlParser) parseOrderBy(q *ParsedQuery) error {
 			p.skipWS()
 		}
 
+		before := p.pos
 		expr, err := p.parseExpr()
 		if err != nil {
+			break
+		}
+		if p.pos == before {
 			break
 		}
 		q.OrderBy = append(q.OrderBy, OrderExpr{Expr: expr, Desc: desc})

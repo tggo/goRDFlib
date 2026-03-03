@@ -483,9 +483,15 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 		p.pos++
 		for {
 			p.skipWS()
-			if p.pos < len(p.input) && p.input[p.pos] == ')' {
+			if p.pos >= len(p.input) {
+				return nil, p.errorf("unexpected end of input in VALUES variable list")
+			}
+			if p.input[p.pos] == ')' {
 				p.pos++
 				break
+			}
+			if p.input[p.pos] != '?' && p.input[p.pos] != '$' {
+				return nil, p.errorf("expected variable in VALUES, got %c", p.input[p.pos])
 			}
 			vars = append(vars, p.readVar())
 		}
@@ -518,9 +524,13 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 					p.pos += 5
 					row = append(row, nil)
 				} else {
+					before := p.pos
 					val := p.readTermValue()
 					if p.tripleTermError != nil {
 						return nil, p.tripleTermError
+					}
+					if p.pos == before {
+						return nil, p.errorf("unexpected token in VALUES row")
 					}
 					row = append(row, val)
 				}
@@ -531,9 +541,13 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 				p.pos += 5
 				values = append(values, []rdflibgo.Term{nil})
 			} else {
+				before := p.pos
 				val := p.readTermValue()
 				if p.tripleTermError != nil {
 					return nil, p.tripleTermError
+				}
+				if p.pos == before {
+					return nil, p.errorf("unexpected token in VALUES")
 				}
 				values = append(values, []rdflibgo.Term{val})
 			}

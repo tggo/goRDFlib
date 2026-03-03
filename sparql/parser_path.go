@@ -222,6 +222,7 @@ func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {
 					p.pos++
 					inverse = true
 				}
+				before := p.pos
 				uri := p.resolvePathURI()
 				if uri != "" {
 					if inverse {
@@ -229,6 +230,8 @@ func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {
 					} else {
 						fwdExcluded = append(fwdExcluded, term.NewURIRefUnsafe(uri))
 					}
+				} else if p.pos == before {
+					return nil, p.errorf("expected URI in negated property set")
 				}
 			}
 			return p.buildNegatedPath(fwdExcluded, invExcluded), nil

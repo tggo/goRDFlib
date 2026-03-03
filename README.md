@@ -327,12 +327,19 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | N-Quads | 87 | 87 | 100% |
 | RDF/XML | 166 | 166 | 100% |
 | RDF/XML 1.2 | 32 | 32 | 100% |
+| TriG 1.1 | 356 | 356 | 100% |
+| TriG 1.2 | 60 | 60 | 100% |
 | SHACL Core | 98 | 98 | 100% |
+| **Total** | **1644** | **1644** | **100%** |
 
 ```bash
 make test          # all tests
 make test-sparql   # W3C SPARQL 1.1 conformance
 ```
+
+### Fuzz Testing
+
+The SPARQL parser is fuzz-tested with `go test -fuzz` to detect panics and infinite loops on malformed input. Seed corpus includes all W3C SPARQL 1.1 and 1.2 test files.
 
 ## Performance
 
@@ -389,9 +396,11 @@ goRDFlib/
   nq/           N-Quads parser and serializer
   rdfxml/       RDF/XML parser and serializer
   jsonld/       JSON-LD parser and serializer
-  sparql/       SPARQL 1.1 query and update engine
+  trig/         TriG parser and serializer
+  sparql/       SPARQL 1.1/1.2 query and update engine
   paths/        Property path evaluation
   shacl/        SHACL Core validator
+  rdfloader/    HTTP/file URI loader for SPARQL LOAD
   plugin/       Format registry and auto-detection
   examples/     Runnable example programs
   benchmarks/   Performance benchmarks
@@ -404,6 +413,7 @@ This project is a Go port of [RDFLib](https://github.com/RDFLib/rdflib) (v7.x), 
 ## Known Limitations
 
 - JSON-LD processing delegates to [piprate/json-gold](https://github.com/piprate/json-gold) which may attempt remote context fetches
+- SPARQL UPDATE `LOAD` requires the `SILENT` flag when no loader is configured (default: `rdfloader.DefaultLoader` handles `http://`, `https://`, and `file://` URIs with auto-format detection)
 
 ## License
 

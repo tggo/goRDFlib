@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX : <http://example.com/ns#>\n\nDELETE DATA  {\xd7\x14\n\xcd\xc1\x16\xfbT\xb7\xa4\b\x83M֝\n    :s :p :o1  {| :added 'Test' |}\n}\n;\nINSERT DATA  {\n    :s :p :o2  {| :added 'Test' |}\n}\n\n\n")

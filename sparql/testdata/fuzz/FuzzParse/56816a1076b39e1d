@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX :  <http://example/>\n\nSELECT ?s WHERE {\n    VALUES ?o {\n        <<( :s :p \"o\" )>>\n        <<( :s :p 1 )>>\n        <<( :s :p true I>>\n        <<( :s :p <<( :st :pt :ot )>> )>>\n    }\n    ?s :p ?o .\n}\n")

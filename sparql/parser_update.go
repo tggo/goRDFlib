@@ -317,9 +317,13 @@ func (p *sparqlParser) parseQuadData(isDelete bool) ([]QuadPattern, error) {
 				if p.matchKeywordCI("GRAPH") {
 					return nil, p.errorf("nested GRAPH not allowed in DATA block")
 				}
+				before := p.pos
 				ts, err := p.parseTriplePatterns()
 				if err != nil {
 					return nil, err
+				}
+				if p.pos == before {
+					return nil, p.errorf("unexpected token in quad data")
 				}
 				triples = append(triples, ts...)
 			}
@@ -342,9 +346,13 @@ func (p *sparqlParser) parseQuadData(isDelete bool) ([]QuadPattern, error) {
 		}
 
 		// Parse default graph triples
+		before := p.pos
 		triples, err := p.parseTriplePatterns()
 		if err != nil {
 			return nil, err
+		}
+		if p.pos == before {
+			return nil, p.errorf("unexpected token in quad data")
 		}
 		// Convert internal reifier/bnode variables to fresh blank node labels in DATA context
 		convertInternalVarsToBnodes(triples)
@@ -414,9 +422,13 @@ func (p *sparqlParser) parseQuadPattern() ([]QuadPattern, error) {
 				if p.pos >= len(p.input) || p.input[p.pos] == '}' {
 					break
 				}
+				before := p.pos
 				ts, err := p.parseTriplePatterns()
 				if err != nil {
 					return nil, err
+				}
+				if p.pos == before {
+					return nil, p.errorf("unexpected token in quad template")
 				}
 				triples = append(triples, ts...)
 			}
@@ -428,9 +440,13 @@ func (p *sparqlParser) parseQuadPattern() ([]QuadPattern, error) {
 			continue
 		}
 
+		before := p.pos
 		triples, err := p.parseTriplePatterns()
 		if err != nil {
 			return nil, err
+		}
+		if p.pos == before {
+			return nil, p.errorf("unexpected token in quad template")
 		}
 		defaultTriples = append(defaultTriples, triples...)
 	}

@@ -143,9 +143,13 @@ func (p *sparqlParser) parseExprList() ([]Expr, error) {
 			p.expect(',')
 			p.skipWS()
 		}
+		before := p.pos
 		expr, err := p.parseOrExpr()
 		if err != nil {
 			return nil, err
+		}
+		if p.pos == before {
+			return nil, p.errorf("unexpected token in expression list")
 		}
 		list = append(list, expr)
 	}
@@ -394,9 +398,13 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 					p.skipWS()
 				}
 			}
+			before := p.pos
 			arg, err := p.parseOrExpr()
 			if err != nil {
 				return nil, err
+			}
+			if p.pos == before {
+				return nil, p.errorf("unexpected token in function arguments")
 			}
 			args = append(args, arg)
 		}

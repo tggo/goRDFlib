@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX:SELECT {FILTER$ IN(.<(: p\"\",<<(: p 1 )>>,<<( : : e )>>s :")

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("INSERT{00A 0(\x01")
