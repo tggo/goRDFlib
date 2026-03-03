@@ -29,10 +29,21 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 	if _, ok := q.Prefixes[queryStartTimeKey]; !ok {
 		q.Prefixes[queryStartTimeKey] = time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	}
-	solutions := evalPattern(g, q.Where, q.Prefixes, q.NamedGraphs)
-
-	if initBindings != nil {
-		solutions = filterByBindings(solutions, initBindings)
+	var solutions []map[string]rdflibgo.Term
+	if initBindings != nil && len(initBindings) > 0 {
+		solutions = evalPatternWithBindings(g, q.Where, initBindings, q.Prefixes, q.NamedGraphs)
+		// Ensure initBindings are present in all solution rows
+		for i, s := range solutions {
+			ns := copyBindings(s)
+			for k, v := range initBindings {
+				if _, ok := ns[k]; !ok {
+					ns[k] = v
+				}
+			}
+			solutions[i] = ns
+		}
+	} else {
+		solutions = evalPattern(g, q.Where, q.Prefixes, q.NamedGraphs)
 	}
 
 	switch q.Type {
@@ -1300,25 +1311,6 @@ func isCompatible(a, b map[string]rdflibgo.Term) bool {
 		}
 	}
 	return true
-}
-
-func filterByBindings(solutions []map[string]rdflibgo.Term, bindings map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
-	var result []map[string]rdflibgo.Term
-	for _, s := range solutions {
-		match := true
-		for k, v := range bindings {
-			if sv, ok := s[k]; ok {
-				if sv.N3() != v.N3() {
-					match = false
-					break
-				}
-			}
-		}
-		if match {
-			result = append(result, s)
-		}
-	}
-	return result
 }
 
 func solutionKey(s map[string]rdflibgo.Term, vars []string) string {

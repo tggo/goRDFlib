@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -766,8 +765,21 @@ func strArgCompatible(a, b rdflibgo.Term) bool {
 	return true
 }
 
+// encodeForURI implements SPARQL ENCODE_FOR_URI per §17.4.3.14.
+// Only RFC 3986 unreserved characters (A-Z a-z 0-9 - _ . ~) are left unencoded.
 func encodeForURI(s string) string {
-	return url.QueryEscape(s)
+	var b strings.Builder
+	b.Grow(len(s) * 3) // worst case
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '~' {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
 }
 
 func timeNow() string {
@@ -1067,6 +1079,18 @@ func compareTermValues(a, b rdflibgo.Term) int {
 			}
 			return 0
 		}
+		// Date/dateTime comparison
+		if isDateDatatype(la.Datatype()) && isDateDatatype(lb.Datatype()) {
+			if ta, tb, ok := parseDatePair(la, lb); ok {
+				if ta.Before(tb) {
+					return -1
+				}
+				if ta.After(tb) {
+					return 1
+				}
+				return 0
+			}
+		}
 	}
 
 	// URIs: compare by value, not N3 (to avoid angle bracket interference)
@@ -1090,4 +1114,51 @@ func compareTermValues(a, b rdflibgo.Term) int {
 	}
 
 	return strings.Compare(a.N3(), b.N3())
+}
+
+func isDateDatatype(dt rdflibgo.URIRef) bool {
+	return dt == rdflibgo.XSDDateTime || dt == rdflibgo.XSDDate || dt == rdflibgo.XSDTime
+}
+
+// parseDatePair attempts to parse two date/dateTime/time literals into time.Time values.
+func parseDatePair(a, b rdflibgo.Literal) (time.Time, time.Time, bool) {
+	ta, okA := parseDateTime(a.Lexical(), a.Datatype())
+	tb, okB := parseDateTime(b.Lexical(), b.Datatype())
+	if okA && okB {
+		return ta, tb, true
+	}
+	return time.Time{}, time.Time{}, false
+}
+
+func parseDateTime(s string, dt rdflibgo.URIRef) (time.Time, bool) {
+	var formats []string
+	switch dt {
+	case rdflibgo.XSDDateTime:
+		formats = []string{
+			"2006-01-02T15:04:05Z07:00",
+			"2006-01-02T15:04:05",
+			"2006-01-02T15:04:05.999999999Z07:00",
+			"2006-01-02T15:04:05.999999999",
+		}
+	case rdflibgo.XSDDate:
+		formats = []string{
+			"2006-01-02Z07:00",
+			"2006-01-02",
+		}
+	case rdflibgo.XSDTime:
+		formats = []string{
+			"15:04:05Z07:00",
+			"15:04:05",
+			"15:04:05.999999999Z07:00",
+			"15:04:05.999999999",
+		}
+	default:
+		return time.Time{}, false
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }

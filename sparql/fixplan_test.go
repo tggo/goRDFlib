@@ -487,6 +487,141 @@ func TestT3_DecimalPrecision(t *testing.T) {
 }
 
 // Helper to extract string values of a variable from bindings
+// RDFLib #2151 — ENCODE_FOR_URI must encode / and use %20 not +
+func TestEncodeForURI(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("hello world/foo"))
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT (ENCODE_FOR_URI(?o) AS ?enc) WHERE { :s :p ?o }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(r.Bindings))
+	}
+	enc := r.Bindings[0]["enc"].(rdflibgo.Literal).Lexical()
+	if strings.Contains(enc, "+") {
+		t.Errorf("ENCODE_FOR_URI used + for space: %s", enc)
+	}
+	if strings.Contains(enc, "/") {
+		t.Errorf("ENCODE_FOR_URI did not encode /: %s", enc)
+	}
+	if enc != "hello%20world%2Ffoo" {
+		t.Errorf("expected hello%%20world%%2Ffoo, got %s", enc)
+	}
+}
+
+// RDFLib #630 — xsd:dateTime comparison
+func TestDateTimeComparison(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	s := rdflibgo.NewURIRefUnsafe(ex + "event")
+	g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"start"),
+		rdflibgo.NewLiteral("2023-01-15T10:00:00", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
+	g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"end"),
+		rdflibgo.NewLiteral("2023-06-20T15:00:00", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		SELECT ?s WHERE {
+			?s :start ?start .
+			?s :end ?end .
+			FILTER(?start < ?end)
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("dateTime <: expected 1 result, got %d", len(r.Bindings))
+	}
+}
+
+// RDFLib #532 — xsd:date comparison in FILTER
+func TestDateComparison(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	ex := "http://example.org/"
+	for i, date := range []string{"2004-06-15", "2004-06-20", "2004-06-25"} {
+		s := rdflibgo.NewURIRefUnsafe(ex + "item" + string(rune('A'+i)))
+		g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"date"),
+			rdflibgo.NewLiteral(date, rdflibgo.WithDatatype(rdflibgo.XSDDate)))
+	}
+
+	r, err := Query(g, `
+		PREFIX : <http://example.org/>
+		PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+		SELECT ?s WHERE {
+			?s :date ?date .
+			FILTER(?date >= "2004-06-20"^^xsd:date)
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 2 {
+		t.Fatalf("date >=: expected 2 results, got %d", len(r.Bindings))
+	}
+}
+
+// RDFLib #586/#294 — initBindings visible in BIND and functions
+func TestInitBindingsInBind(t *testing.T) {
+	g := makeFixPlanGraph(t)
+	init := map[string]rdflibgo.Term{
+		"target": rdflibgo.NewURIRefUnsafe("http://example.org/Alice"),
+	}
+	q, err := Parse(`
+		PREFIX : <http://example.org/>
+		SELECT ?target ?name WHERE {
+			?target :name ?name .
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := EvalQuery(g, q, init)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("initBindings: expected 1 result (Alice only), got %d", len(r.Bindings))
+	}
+	name := r.Bindings[0]["name"].(rdflibgo.Literal).Lexical()
+	if name != "Alice" {
+		t.Errorf("initBindings: expected Alice, got %s", name)
+	}
+}
+
+func TestInitBindingsInProjectExpr(t *testing.T) {
+	g := makeFixPlanGraph(t)
+	init := map[string]rdflibgo.Term{
+		"target": rdflibgo.NewURIRefUnsafe("http://example.org/Alice"),
+	}
+	q, err := Parse(`
+		PREFIX : <http://example.org/>
+		SELECT ?target (STR(?target) AS ?uri) WHERE {
+			?target :name ?name .
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := EvalQuery(g, q, init)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 1 {
+		t.Fatalf("initBindings project: expected 1 result, got %d", len(r.Bindings))
+	}
+	uri := r.Bindings[0]["uri"]
+	if uri == nil {
+		t.Fatal("initBindings project: STR(?target) returned nil — initBindings not visible in projection")
+	}
+}
+
 func extractVarValues(bindings []map[string]rdflibgo.Term, varName string) []string {
 	var result []string
 	for _, b := range bindings {
