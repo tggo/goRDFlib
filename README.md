@@ -151,7 +151,7 @@ Full SPARQL 1.2 support -- **234/234 W3C tests pass (100%)**:
 - CLEAR, DROP (DEFAULT / NAMED / ALL / specific graph)
 - CREATE GRAPH
 - ADD, MOVE, COPY (between graphs)
-- LOAD SILENT (remote load with silent error handling)
+- LOAD (with `rdfloader.DefaultLoader` for http(s):// and file:// URIs, auto-format detection)
 
 **Dataset:** `sparql.Dataset` holds default graph + named graphs map for multi-graph update operations.
 
@@ -403,7 +403,6 @@ This project is a Go port of [RDFLib](https://github.com/RDFLib/rdflib) (v7.x), 
 
 ## Known Limitations
 
-- SPARQL UPDATE LOAD requires SILENT flag (no remote graph fetching)
 - JSON-LD processing delegates to [piprate/json-gold](https://github.com/piprate/json-gold) which may attempt remote context fetches
 
 ## License

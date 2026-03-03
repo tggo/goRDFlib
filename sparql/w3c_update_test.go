@@ -53,15 +53,11 @@ func runUpdateEvalTest(t *testing.T, entry w3c.TestEntry) {
 		t.Skip("no request file")
 	}
 
-	// Skip LOAD tests (require remote fetch)
 	reqBytes, err := os.ReadFile(entry.Request)
 	if err != nil {
 		t.Fatalf("failed to read request file: %v", err)
 	}
 	reqStr := string(reqBytes)
-	if strings.Contains(strings.ToUpper(reqStr), "LOAD") && !strings.Contains(strings.ToUpper(reqStr), "SILENT") {
-		t.Skip("LOAD without SILENT not supported")
-	}
 
 	// Build pre-data dataset
 	ds := &sparql.Dataset{

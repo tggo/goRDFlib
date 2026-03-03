@@ -1,17 +1,26 @@
 package sparql
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/term"
 )
+
+// Loader fetches RDF data from a URI and parses it into a graph.
+// Implementations must handle URI scheme dispatch (e.g. file://, http(s)://).
+type Loader interface {
+	Load(ctx context.Context, g *graph.Graph, uri string) error
+}
 
 // Dataset holds the default graph and named graphs for update evaluation.
 type Dataset struct {
 	Default     *rdflibgo.Graph
 	NamedGraphs map[string]*rdflibgo.Graph
+	Loader      Loader // optional; if nil, LOAD returns error (backward compat)
 }
 
 // EvalUpdate evaluates a parsed SPARQL Update request against a dataset.
@@ -276,9 +285,22 @@ func evalGraphMgmt(ds *Dataset, op *GraphMgmtOp, prefixes map[string]string) err
 		}
 
 	case "LOAD":
-		// LOAD requires fetching remote data - not supported for in-memory
-		if !op.Silent {
-			return fmt.Errorf("LOAD not supported for in-memory graphs")
+		if ds.Loader == nil {
+			if !op.Silent {
+				return fmt.Errorf("LOAD not supported: no Loader configured on Dataset")
+			}
+			return nil
+		}
+		target := getOrCreateGraph(ds, func() string {
+			if op.Into != "" {
+				return op.Into
+			}
+			return "DEFAULT"
+		}())
+		if err := ds.Loader.Load(context.Background(), target, op.Source); err != nil {
+			if !op.Silent {
+				return fmt.Errorf("LOAD <%s>: %w", op.Source, err)
+			}
 		}
 
 	case "ADD":
