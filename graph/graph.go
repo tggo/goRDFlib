@@ -6,7 +6,8 @@ import (
 )
 
 // Graph is an RDF graph backed by a Store.
-// Graph is not safe for concurrent use without external synchronization.
+// Safe for concurrent reads when backed by a thread-safe Store (MemoryStore,
+// BadgerStore, SQLiteStore). Write operations require external synchronization.
 // Ported from: rdflib.graph.Graph
 type Graph struct {
 	store      store.Store

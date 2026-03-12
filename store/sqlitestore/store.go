@@ -15,7 +15,8 @@ import (
 // SQLiteStore implements store.Store using SQLite as a persistent backend.
 // All methods are safe for concurrent use (WAL mode with busy_timeout).
 type SQLiteStore struct {
-	db *sql.DB
+	db    *sql.DB
+	stmts [8]*sql.Stmt // indexed by pattern bitmask: bit0=subject, bit1=predicate, bit2=object
 }
 
 // Option configures a SQLiteStore.
@@ -90,11 +91,43 @@ func New(opts ...Option) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("sqlitestore: schema: %w", err)
 	}
 
-	return &SQLiteStore{db: db}, nil
+	s := &SQLiteStore{db: db}
+
+	// Pre-prepare all 8 SELECT query patterns (graph always required).
+	// mask bit0=subject, bit1=predicate, bit2=object.
+	for mask := 0; mask < 8; mask++ {
+		q := "SELECT subject, predicate, object FROM triples WHERE graph = ?"
+		if mask&1 != 0 {
+			q += " AND subject = ?"
+		}
+		if mask&2 != 0 {
+			q += " AND predicate = ?"
+		}
+		if mask&4 != 0 {
+			q += " AND object = ?"
+		}
+		stmt, err := db.Prepare(q)
+		if err != nil {
+			// Close any already-prepared statements before returning.
+			for i := 0; i < mask; i++ {
+				s.stmts[i].Close()
+			}
+			db.Close()
+			return nil, fmt.Errorf("sqlitestore: prepare stmts[%d]: %w", mask, err)
+		}
+		s.stmts[mask] = stmt
+	}
+
+	return s, nil
 }
 
-// Close closes the SQLite database.
+// Close closes all prepared statements and the SQLite database.
 func (s *SQLiteStore) Close() error {
+	for _, stmt := range s.stmts {
+		if stmt != nil {
+			stmt.Close()
+		}
+	}
 	return s.db.Close()
 }
 
@@ -212,19 +245,48 @@ func (s *SQLiteStore) Set(t term.Triple, ctx term.Term) {
 // Triples returns an iterator over triples matching the pattern.
 func (s *SQLiteStore) Triples(pattern term.TriplePattern, ctx term.Term) store.TripleIterator {
 	return func(yield func(term.Triple) bool) {
-		query, args := s.buildQuery(pattern, ctx)
-		rows, err := s.db.Query(query, args...)
+		sk := term.OptTermKey(pattern.Subject)
+		pk := term.OptPredKey(pattern.Predicate)
+		ok := term.OptTermKey(pattern.Object)
+
+		mask := 0
+		if sk != "" {
+			mask |= 1
+		}
+		if pk != "" {
+			mask |= 2
+		}
+		if ok != "" {
+			mask |= 4
+		}
+
+		gk := graphKey(ctx)
+
+		// Build args: graph always first, then subject/predicate/object as bound.
+		args := make([]any, 0, 4)
+		args = append(args, gk)
+		if mask&1 != 0 {
+			args = append(args, sk)
+		}
+		if mask&2 != 0 {
+			args = append(args, pk)
+		}
+		if mask&4 != 0 {
+			args = append(args, ok)
+		}
+
+		rows, err := s.stmts[mask].Query(args...)
 		if err != nil {
 			return
 		}
 		defer rows.Close()
 
 		for rows.Next() {
-			var sk, pk, ok string
-			if err := rows.Scan(&sk, &pk, &ok); err != nil {
+			var rsk, rpk, rok string
+			if err := rows.Scan(&rsk, &rpk, &rok); err != nil {
 				continue
 			}
-			t, err := decodeRow(sk, pk, ok)
+			t, err := decodeRow(rsk, rpk, rok)
 			if err != nil {
 				continue
 			}
@@ -361,6 +423,104 @@ func (s *SQLiteStore) Namespaces() store.NamespaceIterator {
 	}
 }
 
+// TriplesWithLimit returns an iterator over triples matching the pattern with
+// store-level LIMIT and OFFSET applied.
+func (s *SQLiteStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) store.TripleIterator {
+	return func(yield func(term.Triple) bool) {
+		query, args := s.buildQuery(pattern, ctx)
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, limit, offset)
+
+		rows, err := s.db.Query(query, args...)
+		if err != nil {
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var sk, pk, ok string
+			if err := rows.Scan(&sk, &pk, &ok); err != nil {
+				continue
+			}
+			t, err := decodeRow(sk, pk, ok)
+			if err != nil {
+				continue
+			}
+			if !yield(t) {
+				return
+			}
+		}
+	}
+}
+
+// Count returns the number of triples matching the pattern without
+// materializing them.
+func (s *SQLiteStore) Count(pattern term.TriplePattern, ctx term.Term) int {
+	var sb strings.Builder
+	sb.WriteString("SELECT COUNT(*) FROM triples WHERE 1=1")
+	args := []any{}
+
+	sk := term.OptTermKey(pattern.Subject)
+	pk := term.OptPredKey(pattern.Predicate)
+	ok := term.OptTermKey(pattern.Object)
+
+	if sk != "" {
+		sb.WriteString(" AND subject = ?")
+		args = append(args, sk)
+	}
+	if pk != "" {
+		sb.WriteString(" AND predicate = ?")
+		args = append(args, pk)
+	}
+	if ok != "" {
+		sb.WriteString(" AND object = ?")
+		args = append(args, ok)
+	}
+
+	gk := graphKey(ctx)
+	sb.WriteString(" AND graph = ?")
+	args = append(args, gk)
+
+	var count int
+	if err := s.db.QueryRow(sb.String(), args...).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
+// Exists returns true if at least one triple matches the pattern.
+func (s *SQLiteStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
+	var sb strings.Builder
+	sb.WriteString("SELECT 1 FROM triples WHERE 1=1")
+	args := []any{}
+
+	sk := term.OptTermKey(pattern.Subject)
+	pk := term.OptPredKey(pattern.Predicate)
+	ok := term.OptTermKey(pattern.Object)
+
+	if sk != "" {
+		sb.WriteString(" AND subject = ?")
+		args = append(args, sk)
+	}
+	if pk != "" {
+		sb.WriteString(" AND predicate = ?")
+		args = append(args, pk)
+	}
+	if ok != "" {
+		sb.WriteString(" AND object = ?")
+		args = append(args, ok)
+	}
+
+	gk := graphKey(ctx)
+	sb.WriteString(" AND graph = ?")
+	args = append(args, gk)
+	sb.WriteString(" LIMIT 1")
+
+	var dummy int
+	err := s.db.QueryRow(sb.String(), args...).Scan(&dummy)
+	return err == nil
+}
+
 // graphKey returns the TermKey for a context term, or "" for the default graph.
 func graphKey(ctx term.Term) string {
 	if ctx == nil {
@@ -399,3 +559,6 @@ func decodeRow(sk, pk, ok string) (term.Triple, error) {
 
 // Compile-time check that SQLiteStore implements store.Store.
 var _ store.Store = (*SQLiteStore)(nil)
+
+// Compile-time check that SQLiteStore implements store.QueryableStore.
+var _ store.QueryableStore = (*SQLiteStore)(nil)

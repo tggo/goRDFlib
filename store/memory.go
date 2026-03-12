@@ -327,3 +327,55 @@ func (m *MemoryStore) Namespaces() NamespaceIterator {
 		}
 	}
 }
+
+// TriplesWithLimit returns matching triples skipping the first offset items then yielding
+// up to limit items. If limit <= 0, all remaining items after offset are yielded.
+// Safe for concurrent use.
+func (m *MemoryStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) TripleIterator {
+	return func(yield func(term.Triple) bool) {
+		m.mu.RLock()
+		defer m.mu.RUnlock()
+		skipped := 0
+		yielded := 0
+		m.triplesLocked(pattern)(func(t term.Triple) bool {
+			if skipped < offset {
+				skipped++
+				return true
+			}
+			if limit > 0 && yielded >= limit {
+				return false
+			}
+			yielded++
+			return yield(t)
+		})
+	}
+}
+
+// Count returns the number of triples matching the pattern.
+// Safe for concurrent use.
+func (m *MemoryStore) Count(pattern term.TriplePattern, ctx term.Term) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	m.triplesLocked(pattern)(func(term.Triple) bool {
+		n++
+		return true
+	})
+	return n
+}
+
+// Exists reports whether at least one triple matching the pattern exists.
+// Safe for concurrent use.
+func (m *MemoryStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	found := false
+	m.triplesLocked(pattern)(func(term.Triple) bool {
+		found = true
+		return false
+	})
+	return found
+}
+
+// Compile-time check: MemoryStore must implement QueryableStore.
+var _ QueryableStore = (*MemoryStore)(nil)

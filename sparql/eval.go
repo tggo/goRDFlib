@@ -11,6 +11,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -18,9 +19,17 @@ import (
 const baseURIKey = "__base__"
 
 // EvalQuery evaluates a parsed SPARQL query against a graph.
+// The caller's ParsedQuery is never mutated — prefixes are deep-copied,
+// making cached/reused ParsedQuery values safe.
 func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
-	if q.Prefixes == nil {
-		q.Prefixes = make(map[string]string)
+	// Deep-copy prefixes to avoid mutating the caller's ParsedQuery,
+	// making cached/reused ParsedQuery values safe.
+	qCopy := *q
+	origPrefixes := qCopy.Prefixes
+	q = &qCopy
+	q.Prefixes = make(map[string]string, len(origPrefixes)+2)
+	for k, v := range origPrefixes {
+		q.Prefixes[k] = v
 	}
 	if q.BaseURI != "" {
 		q.Prefixes[baseURIKey] = q.BaseURI
@@ -50,6 +59,13 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 	case "SELECT":
 		return evalSelect(g, q, solutions)
 	case "ASK":
+		// Pushdown: single BGP triple pattern → store.Exists
+		if tp := extractSimpleBGP(q.Where); tp != nil {
+			if qs, ok := g.Store().(store.QueryableStore); ok {
+				pat := buildStorePattern(tp, q.Prefixes)
+				return &Result{Type: "ASK", AskResult: qs.Exists(pat, g.Identifier())}, nil
+			}
+		}
 		return &Result{Type: "ASK", AskResult: len(solutions) > 0}, nil
 	case "CONSTRUCT":
 		// CONSTRUCT WHERE shorthand: derive template from WHERE BGP
@@ -92,7 +108,7 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) (*Result, error) {
 	// Aggregation
 	if len(q.GroupBy) > 0 || hasAggregates(q) {
-		solutions = evalAggregation(q, solutions)
+		solutions = evalAggregation(g, q, solutions)
 	}
 
 	// Project expressions
@@ -141,6 +157,40 @@ func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflib
 		solutions = unique
 	}
 
+	// Pushdown: LIMIT/OFFSET over a single BGP triple pattern with no
+	// ORDER BY, DISTINCT, GROUP BY, aggregates, or project expressions →
+	// use store.TriplesWithLimit to avoid materializing all results.
+	if (q.Limit >= 0 || q.Offset > 0) &&
+		len(q.OrderBy) == 0 && !q.Distinct &&
+		len(q.GroupBy) == 0 && !hasAggregates(q) &&
+		len(q.ProjectExprs) == 0 {
+		if tp := extractSimpleBGP(q.Where); tp != nil {
+			if qs, ok := g.Store().(store.QueryableStore); ok {
+				pat := buildStorePattern(tp, q.Prefixes)
+				limit := q.Limit
+				if limit < 0 {
+					limit = 0 // 0 means no limit in TriplesWithLimit
+				}
+				solutions = nil
+				qs.TriplesWithLimit(pat, g.Identifier(), limit, q.Offset)(func(t rdflibgo.Triple) bool {
+					row := make(map[string]rdflibgo.Term)
+					if strings.HasPrefix(tp.Subject, "?") {
+						row[tp.Subject[1:]] = t.Subject
+					}
+					if strings.HasPrefix(tp.Predicate, "?") {
+						row[tp.Predicate[1:]] = t.Predicate
+					}
+					if strings.HasPrefix(tp.Object, "?") {
+						row[tp.Object[1:]] = t.Object
+					}
+					solutions = append(solutions, row)
+					return true
+				})
+				goto projectVars
+			}
+		}
+	}
+
 	// OFFSET
 	if q.Offset > 0 {
 		if q.Offset >= len(solutions) {
@@ -155,6 +205,7 @@ func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflib
 		solutions = solutions[:q.Limit]
 	}
 
+projectVars:
 	// Determine variables
 	vars := q.Variables
 	if vars == nil && len(solutions) > 0 {
@@ -230,7 +281,25 @@ func isAggregateFuncName(name string) bool {
 	return false
 }
 
-func evalAggregation(q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+func evalAggregation(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+	// Pushdown: simple COUNT(*) or COUNT(?var) over a single unfiltered BGP
+	// with no GROUP BY → use store.Count to avoid materializing all results.
+	if len(q.GroupBy) == 0 && len(q.ProjectExprs) == 1 {
+		pe := q.ProjectExprs[0]
+		if fe, ok := pe.Expr.(*FuncExpr); ok && fe.Name == "COUNT" && !fe.Distinct {
+			if tp := extractSimpleBGP(q.Where); tp != nil {
+				if qs, okQ := g.Store().(store.QueryableStore); okQ {
+					pat := buildStorePattern(tp, q.Prefixes)
+					cnt := qs.Count(pat, g.Identifier())
+					row := map[string]rdflibgo.Term{
+						pe.Var: rdflibgo.NewLiteral(cnt, rdflibgo.WithDatatype(rdflibgo.XSDInteger)),
+					}
+					return []map[string]rdflibgo.Term{row}
+				}
+			}
+		}
+	}
+
 	type group struct {
 		keyBinds map[string]rdflibgo.Term
 		members  []map[string]rdflibgo.Term
@@ -1434,3 +1503,50 @@ func isNumericDatatype(dt rdflibgo.URIRef) bool {
 	return dt == rdflibgo.XSDInteger || dt == rdflibgo.XSDInt || dt == rdflibgo.XSDLong ||
 		dt == rdflibgo.XSDFloat || dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDDecimal
 }
+
+// --- QueryableStore pushdown helpers ---
+
+// extractSimpleBGP returns the single triple pattern if the WHERE clause is
+// a single BGP with one non-path triple whose terms can be fully resolved
+// (no variable-containing triple term patterns). Returns nil otherwise.
+func extractSimpleBGP(p Pattern) *Triple {
+	bgp, ok := p.(*BGP)
+	if !ok || len(bgp.Triples) != 1 {
+		return nil
+	}
+	tp := &bgp.Triples[0]
+	if tp.PredicatePath != nil {
+		return nil
+	}
+	// Reject triple term patterns with variables — the store cannot
+	// match them; they require the in-memory triple-term matcher.
+	if strings.HasPrefix(tp.Subject, "<<( ") && tripleTermHasVariables(tp.Subject) {
+		return nil
+	}
+	if strings.HasPrefix(tp.Object, "<<( ") && tripleTermHasVariables(tp.Object) {
+		return nil
+	}
+	return tp
+}
+
+// buildStorePattern converts a parsed triple pattern to a store.TriplePattern
+// by resolving concrete terms. Variables become nil (wildcard).
+func buildStorePattern(tp *Triple, prefixes map[string]string) term.TriplePattern {
+	var pat term.TriplePattern
+	s := resolvePatternTerm(tp.Subject, nil, prefixes)
+	if s != nil {
+		if subj, ok := s.(rdflibgo.Subject); ok {
+			pat.Subject = subj
+		}
+	}
+	p := resolvePatternTerm(tp.Predicate, nil, prefixes)
+	if p != nil {
+		if pred, ok := p.(rdflibgo.URIRef); ok {
+			pat.Predicate = &pred
+		}
+	}
+	o := resolvePatternTerm(tp.Object, nil, prefixes)
+	pat.Object = o
+	return pat
+}
+

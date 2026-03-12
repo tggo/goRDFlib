@@ -63,3 +63,19 @@ type TermPairIterator = iter.Seq2[term.Term, term.Term]
 
 // NamespaceIterator yields (prefix, namespace) pairs.
 type NamespaceIterator = iter.Seq2[string, term.URIRef]
+
+// QueryableStore is an optional interface that stores can implement to support
+// query pushdown optimizations (LIMIT/OFFSET, COUNT, EXISTS).
+// Not safe for concurrent use unless the underlying Store is also safe.
+type QueryableStore interface {
+	// TriplesWithLimit returns triples matching the pattern with store-level
+	// LIMIT and OFFSET applied, avoiding full materialization.
+	TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) TripleIterator
+
+	// Count returns the number of triples matching the pattern without
+	// materializing them.
+	Count(pattern term.TriplePattern, ctx term.Term) int
+
+	// Exists checks whether at least one triple matches the pattern.
+	Exists(pattern term.TriplePattern, ctx term.Term) bool
+}

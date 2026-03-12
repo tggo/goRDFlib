@@ -470,5 +470,134 @@ func (s *BadgerStore) scanTriplesInTxn(txn *badger.Txn, pattern term.TriplePatte
 	return nil
 }
 
+// TriplesWithLimit returns an iterator over triples matching the pattern in the
+// given context, skipping the first offset matches and yielding at most limit
+// triples. limit <= 0 means no limit.
+func (s *BadgerStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) store.TripleIterator {
+	return func(yield func(term.Triple) bool) {
+		gk := graphKey(ctx)
+		skipped := 0
+		yielded := 0
+		_ = s.db.View(func(txn *badger.Txn) error {
+			return s.scanTriplesInTxn(txn, pattern, gk, func(_, _, _ string, t term.Triple) bool {
+				if skipped < offset {
+					skipped++
+					return true // skip this triple
+				}
+				if limit > 0 && yielded >= limit {
+					return false // stop scanning
+				}
+				yielded++
+				return yield(t)
+			})
+		})
+	}
+}
+
+// Count returns the number of triples matching the pattern in the given context.
+// For exact lookups (all three terms bound) it checks key existence only.
+// For prefix-based patterns it performs a key-only scan to avoid value decoding.
+func (s *BadgerStore) Count(pattern term.TriplePattern, ctx term.Term) int {
+	gk := graphKey(ctx)
+	sk := term.OptTermKey(pattern.Subject)
+	pk := term.OptPredKey(pattern.Predicate)
+	ok := term.OptTermKey(pattern.Object)
+
+	count := 0
+	_ = s.db.View(func(txn *badger.Txn) error {
+		// Exact lookup: just check key existence.
+		if sk != "" && pk != "" && ok != "" {
+			if _, err := txn.Get(spoKey(gk, sk, pk, ok)); err == nil {
+				count = 1
+			}
+			return nil
+		}
+
+		// Prefix-based scan: key-only iteration avoids value decoding.
+		var prefix []byte
+		switch {
+		case sk != "" && pk != "":
+			prefix = makePrefixKey(pfxSPO, gk, sk, pk)
+		case sk != "" && ok != "":
+			prefix = makePrefixKey(pfxOSP, gk, ok, sk)
+		case sk != "":
+			prefix = makePrefixKey(pfxSPO, gk, sk)
+		case pk != "" && ok != "":
+			prefix = makePrefixKey(pfxPOS, gk, pk, ok)
+		case pk != "":
+			prefix = makePrefixKey(pfxPOS, gk, pk)
+		case ok != "":
+			prefix = makePrefixKey(pfxOSP, gk, ok)
+		default:
+			prefix = makePrefixKey(pfxSPO, gk)
+		}
+
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		opts.Prefix = prefix
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Seek(prefix); it.Valid(); it.Next() {
+			count++
+		}
+		return nil
+	})
+	return count
+}
+
+// Exists reports whether at least one triple matches the pattern in the given context.
+// For exact lookups (all three terms bound) it checks key existence only.
+// For prefix-based patterns it performs a key-only scan and returns on first match.
+func (s *BadgerStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
+	gk := graphKey(ctx)
+	sk := term.OptTermKey(pattern.Subject)
+	pk := term.OptPredKey(pattern.Predicate)
+	ok := term.OptTermKey(pattern.Object)
+
+	found := false
+	_ = s.db.View(func(txn *badger.Txn) error {
+		// Exact lookup: just check key existence.
+		if sk != "" && pk != "" && ok != "" {
+			if _, err := txn.Get(spoKey(gk, sk, pk, ok)); err == nil {
+				found = true
+			}
+			return nil
+		}
+
+		// Prefix-based scan: key-only iteration, stop on first hit.
+		var prefix []byte
+		switch {
+		case sk != "" && pk != "":
+			prefix = makePrefixKey(pfxSPO, gk, sk, pk)
+		case sk != "" && ok != "":
+			prefix = makePrefixKey(pfxOSP, gk, ok, sk)
+		case sk != "":
+			prefix = makePrefixKey(pfxSPO, gk, sk)
+		case pk != "" && ok != "":
+			prefix = makePrefixKey(pfxPOS, gk, pk, ok)
+		case pk != "":
+			prefix = makePrefixKey(pfxPOS, gk, pk)
+		case ok != "":
+			prefix = makePrefixKey(pfxOSP, gk, ok)
+		default:
+			prefix = makePrefixKey(pfxSPO, gk)
+		}
+
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		opts.Prefix = prefix
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		if it.Seek(prefix); it.Valid() {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
 // Compile-time check that BadgerStore implements store.Store.
 var _ store.Store = (*BadgerStore)(nil)
+
+// Compile-time check that BadgerStore implements store.QueryableStore.
+var _ store.QueryableStore = (*BadgerStore)(nil)
