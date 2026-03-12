@@ -19,6 +19,7 @@
 ![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-98%2F98-brightgreen)
 ![SPARQL Protocol](https://img.shields.io/badge/SPARQL_Protocol-99.7%25_coverage-brightgreen)
 ![Badger Store](https://img.shields.io/badge/Badger_Store-persistent_KV-blue)
+![SQLite Store](https://img.shields.io/badge/SQLite_Store-persistent_SQL-blue)
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
@@ -80,6 +81,15 @@ g := graph.NewGraph(graph.WithStore(s))
 g.Add(alice, name, rdf.NewLiteral("Alice"))
 // Data survives process restart
 ```
+
+### Persistent SQLite Store
+
+- **SQLiteStore** -- `store.Store` implementation backed by [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) (pure Go, zero CGo)
+- Standard relational schema with three indexes (SPO, POS, OSP)
+- WAL mode with busy_timeout for concurrent access
+- ACID transactions, human-readable database (inspectable with `sqlite3` CLI)
+- Options: `WithFile()`, `WithInMemory()`
+- Registered as `"sqlite"` store type via the plugin system
 
 ### Remote SPARQL Store
 
@@ -434,6 +444,7 @@ goRDFlib/
   trig/         TriG parser and serializer
   sparql/       SPARQL 1.1/1.2 query and update engine
   store/badgerstore/  Persistent Badger KV store (SPO/POS/OSP indexes)
+  store/sqlitestore/  Persistent SQLite store (pure Go)
   store/sparqlstore/  Remote SPARQL Protocol store + test server
   paths/        Property path evaluation
   shacl/        SHACL Core validator

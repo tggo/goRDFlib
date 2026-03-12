@@ -45,11 +45,25 @@
 
 ## Key Packages
 
-### store/sparqlstore
-- `SPARQLStore` implements `store.Store` via HTTP SPARQL Protocol (W3C SPARQL 1.1 Protocol)
+### Storage Backends
+The `store.Store` interface (13 methods) has four implementations:
+
+| Store | Package | Backend | Plugin name | Persistence |
+|-------|---------|---------|-------------|-------------|
+| MemoryStore | `store/` | In-memory maps | (default) | No |
+| BadgerStore | `store/badgerstore/` | Badger v4 LSM-tree KV | `"badger"` | Yes |
+| SQLiteStore | `store/sqlitestore/` | modernc.org/sqlite (pure Go) | `"sqlite"` | Yes |
+| SPARQLStore | `store/sparqlstore/` | HTTP SPARQL Protocol | `"sparql"` | Remote |
+
+- All stores use `term.TermKey()` for serialization; `term.TermFromKey()` for deserialization
+- BadgerStore: 3 KV indexes (SPO/POS/OSP) via prefix scans, MVCC concurrency
+- SQLiteStore: relational schema with 3 SQL indexes, WAL mode, inspectable with sqlite3 CLI
+- SPARQLStore: translates Store methods to SPARQL queries/updates over HTTP
+- BNode contexts treated as default graph in all persistent stores
+- Write ops silently ignore errors (store.Store interface constraint)
+
+### store/sparqlstore (details)
 - `Server` is an httptest-based SPARQL endpoint for integration testing
-- Files: `doc.go` (package doc), `store.go` (Store impl), `http.go` (HTTP client), `server.go` (test server), `register.go` (plugin registration)
-- Store interface has 13 methods; write ops silently ignore errors (interface constraint)
-- `wrapGraph` ignores BNode contexts — Graph passes BNode IDs as context, but bnodes can't name SPARQL graphs
-- Server queries `ds.Default` only; GRAPH clause queries against named graphs are not supported by the test server
+- Files: `doc.go`, `store.go`, `http.go`, `server.go`, `register.go`
+- Server queries `ds.Default` only; named graphs not queryable on test server
 - Test coverage: 99.7% (71 tests)
