@@ -3,27 +3,28 @@
 [![CI](https://github.com/tggo/goRDFlib/actions/workflows/ci.yml/badge.svg)](https://github.com/tggo/goRDFlib/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/tggo/goRDFlib.svg)](https://pkg.go.dev/github.com/tggo/goRDFlib)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tggo/goRDFlib)](https://goreportcard.com/report/github.com/tggo/goRDFlib)
+![W3C Tests](https://img.shields.io/badge/W3C_Tests-2439%2F2439-brightgreen)
 ![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-329%2F329-brightgreen)
 ![W3C SPARQL Update](https://img.shields.io/badge/W3C_SPARQL_1.1_Update-158%2F158-brightgreen)
-![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-234%2F234-brightgreen)
-![W3C Turtle](https://img.shields.io/badge/W3C_Turtle-313%2F313-brightgreen)
-![W3C Turtle 1.2](https://img.shields.io/badge/W3C_Turtle_1.2-97%2F97-brightgreen)
-![W3C N-Triples 1.2](https://img.shields.io/badge/W3C_N--Triples_1.2-29%2F29-brightgreen)
+![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-235%2F235-brightgreen)
+![W3C Turtle](https://img.shields.io/badge/W3C_Turtle-314%2F314-brightgreen)
+![W3C Turtle 1.2](https://img.shields.io/badge/W3C_Turtle_1.2-98%2F98-brightgreen)
+![W3C N-Triples](https://img.shields.io/badge/W3C_N--Triples-71%2F71-brightgreen)
+![W3C N-Triples 1.2](https://img.shields.io/badge/W3C_N--Triples_1.2-30%2F30-brightgreen)
+![W3C N-Quads](https://img.shields.io/badge/W3C_N--Quads-88%2F88-brightgreen)
 ![W3C N-Quads 1.2](https://img.shields.io/badge/W3C_N--Quads_1.2-28%2F28-brightgreen)
-![W3C N-Triples](https://img.shields.io/badge/W3C_N--Triples-70%2F70-brightgreen)
-![W3C N-Quads](https://img.shields.io/badge/W3C_N--Quads-87%2F87-brightgreen)
-![W3C RDF/XML](https://img.shields.io/badge/W3C_RDF%2FXML-166%2F166-brightgreen)
-![W3C RDF/XML 1.2](https://img.shields.io/badge/W3C_RDF%2FXML_1.2-32%2F32-brightgreen)
-![W3C TriG](https://img.shields.io/badge/W3C_TriG-356%2F356-brightgreen)
-![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-60%2F60-brightgreen)
-![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-98%2F98-brightgreen)
+![W3C RDF/XML](https://img.shields.io/badge/W3C_RDF%2FXML-167%2F167-brightgreen)
+![W3C RDF/XML 1.2](https://img.shields.io/badge/W3C_RDF%2FXML_1.2-31%2F31-brightgreen)
+![W3C TriG](https://img.shields.io/badge/W3C_TriG-357%2F357-brightgreen)
+![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-61%2F61-brightgreen)
+![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-461%2F461-brightgreen)
 ![SPARQL Protocol](https://img.shields.io/badge/SPARQL_Protocol-99.7%25_coverage-brightgreen)
 ![Badger Store](https://img.shields.io/badge/Badger_Store-persistent_KV-blue)
 ![SQLite Store](https://img.shields.io/badge/SQLite_Store-persistent_SQL-blue)
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
-> **Note:** This project is in active development. The core API is stabilizing but may still change. All W3C conformance suites pass at 100% (1644/1644 tests). Fuzz-tested for robustness.
+> **Note:** This project is in active development. The core API is stabilizing but may still change. All W3C conformance suites pass at 100% (2439/2439 tests). Fuzz-tested for robustness.
 
 ## About
 
