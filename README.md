@@ -18,6 +18,7 @@
 ![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-60%2F60-brightgreen)
 ![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-98%2F98-brightgreen)
 ![SPARQL Protocol](https://img.shields.io/badge/SPARQL_Protocol-99.7%25_coverage-brightgreen)
+![Badger Store](https://img.shields.io/badge/Badger_Store-persistent_KV-blue)
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
@@ -56,6 +57,29 @@ goRDFlib is a Go implementation of the core RDFLib functionality, ported from th
 - Thread-safe triple store with RWMutex
 - Three-way indexing (SPO, POS, OSP) for efficient pattern matching
 - Namespace binding storage
+
+### Persistent Badger Store
+
+- **BadgerStore** -- `store.Store` implementation backed by [Badger](https://github.com/dgraph-io/badger) LSM-tree KV engine (from the creators of Dgraph)
+- Three KV indexes (SPO, POS, OSP) for efficient triple pattern matching via prefix scans
+- Named graph support with graph key embedded in every index entry
+- ACID transactions, MVCC concurrency (safe for parallel reads/writes)
+- Pure Go -- zero CGo dependencies, cross-compile friendly
+- Options: `WithDir()`, `WithInMemory()`, `WithReadOnly()`, `WithLogger()`
+- Registered as `"badger"` store type via the plugin system
+
+```go
+import "github.com/tggo/goRDFlib/store/badgerstore"
+
+// Persistent store
+s, _ := badgerstore.New(badgerstore.WithDir("/path/to/data"))
+defer s.Close()
+
+// Use with Graph
+g := graph.NewGraph(graph.WithStore(s))
+g.Add(alice, name, rdf.NewLiteral("Alice"))
+// Data survives process restart
+```
 
 ### Remote SPARQL Store
 
@@ -399,7 +423,7 @@ The [examples/](examples/) directory contains runnable programs:
 ```
 goRDFlib/
   term/         Core RDF terms (URIRef, BNode, Literal, Variable)
-  store/        Thread-safe in-memory triple store
+  store/        Store interface + thread-safe in-memory triple store
   graph/        Graph, ConjunctiveGraph, Dataset, Resource, Collection
   namespace/    Built-in vocabularies and namespace management
   turtle/       Turtle parser and serializer
@@ -409,6 +433,7 @@ goRDFlib/
   jsonld/       JSON-LD parser and serializer
   trig/         TriG parser and serializer
   sparql/       SPARQL 1.1/1.2 query and update engine
+  store/badgerstore/  Persistent Badger KV store (SPO/POS/OSP indexes)
   store/sparqlstore/  Remote SPARQL Protocol store + test server
   paths/        Property path evaluation
   shacl/        SHACL Core validator
