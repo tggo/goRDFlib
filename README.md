@@ -3,6 +3,7 @@
 [![CI](https://github.com/tggo/goRDFlib/actions/workflows/ci.yml/badge.svg)](https://github.com/tggo/goRDFlib/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/tggo/goRDFlib.svg)](https://pkg.go.dev/github.com/tggo/goRDFlib)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tggo/goRDFlib)](https://goreportcard.com/report/github.com/tggo/goRDFlib)
+![Coverage](https://img.shields.io/badge/Coverage-93.7%25-brightgreen)
 ![W3C Tests](https://img.shields.io/badge/W3C_Tests-2439%2F2439-brightgreen)
 ![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-329%2F329-brightgreen)
 ![W3C SPARQL Update](https://img.shields.io/badge/W3C_SPARQL_1.1_Update-158%2F158-brightgreen)

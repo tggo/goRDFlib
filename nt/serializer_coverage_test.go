@@ -206,3 +206,173 @@ func TestParseWithBaseOption(t *testing.T) {
 		t.Errorf("expected 1 triple, got %d", g.Len())
 	}
 }
+
+// TestSerializeLiteralDirLang exercises the directional lang tag branch.
+func TestSerializeLiteralDirLang(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("مرحبا", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `@ar--rtl`) {
+		t.Errorf("expected directional lang tag, got:\n%s", out)
+	}
+}
+
+// TestSerializeMultipleTriplesOrder verifies deterministic sorted output.
+func TestSerializeMultipleTriplesOrder(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/z"), p, rdflibgo.NewLiteral("z"))
+	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), p, rdflibgo.NewLiteral("a"))
+
+	var buf1, buf2 bytes.Buffer
+	if err := Serialize(g, &buf1); err != nil {
+		t.Fatal(err)
+	}
+	if err := Serialize(g, &buf2); err != nil {
+		t.Fatal(err)
+	}
+	if buf1.String() != buf2.String() {
+		t.Error("N-Triples output not deterministic")
+	}
+	// Verify sorted: "a" line should come before "z" line
+	lines := strings.Split(strings.TrimSpace(buf1.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+	if lines[0] > lines[1] {
+		t.Error("lines not sorted")
+	}
+}
+
+// TestSerializeTripleTermNestedInSubject exercises TripleTerm containing a BNode.
+func TestSerializeTripleTermNestedInSubject(t *testing.T) {
+	bn := rdflibgo.NewBNode("inner")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
+	tt := rdflibgo.NewTripleTerm(bn, p, o)
+
+	g := rdflibgo.NewGraph()
+	outerP := rdflibgo.NewURIRefUnsafe("http://example.org/asserts")
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	g.Add(s, outerP, tt)
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "_:inner") {
+		t.Errorf("expected _:inner in triple term, got:\n%s", out)
+	}
+}
+
+// TestSerializeTripleTermLiteralObject exercises TripleTerm with literal object.
+func TestSerializeTripleTermLiteralObject(t *testing.T) {
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	o := rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en"))
+	tt := rdflibgo.NewTripleTerm(s, p, o)
+
+	g := rdflibgo.NewGraph()
+	outerP := rdflibgo.NewURIRefUnsafe("http://example.org/asserts")
+	g.Add(s, outerP, tt)
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"hello"@en`) {
+		t.Errorf("expected lang literal in triple term, got:\n%s", out)
+	}
+}
+
+// TestSerializeIRIWithSpecialChars exercises EscapeIRI with control chars and supplementary.
+func TestSerializeIRIWithSpecialChars(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	// IRI with supplementary plane character
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/\U0001F600")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("v"))
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `\U`) {
+		t.Errorf("expected \\U escape in IRI, got:\n%s", out)
+	}
+}
+
+// TestSerializeIRIWithControlChar exercises EscapeIRI with control character.
+func TestSerializeIRIWithControlChar(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/a\x01b")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("v"))
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `\u0001`) {
+		t.Errorf("expected \\u0001 in IRI, got:\n%s", out)
+	}
+}
+
+// TestSerializeIRIWithAngleBrackets exercises EscapeIRI with < and > chars.
+func TestSerializeIRIWithAngleBrackets(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/a<b>c")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("v"))
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	// Should escape < and > in IRI
+	out := buf.String()
+	if !strings.Contains(out, `\u003C`) && !strings.Contains(out, `\u003c`) {
+		t.Errorf("expected escaped angle brackets in IRI, got:\n%s", out)
+	}
+}
+
+// TestSerializeWriteErrorMultipleTriples covers the Fprintln error path with multiple triples.
+func TestSerializeWriteErrorMultipleTriples(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	for i := 0; i < 10; i++ {
+		s := rdflibgo.NewURIRefUnsafe("http://example.org/s" + string(rune('0'+i)))
+		g.Add(s, p, rdflibgo.NewLiteral("v"))
+	}
+	err := Serialize(g, &failWriter{})
+	if err == nil {
+		t.Error("expected write error, got nil")
+	}
+}
+
+// TestSerializeCarriageReturn exercises the \r escape in strings.
+func TestSerializeCarriageReturn(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
+	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
+	g.Add(s, p, rdflibgo.NewLiteral("a\rb"))
+
+	var buf bytes.Buffer
+	if err := Serialize(g, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `\r`) {
+		t.Error("expected \\r in output")
+	}
+}

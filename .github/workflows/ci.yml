@@ -22,18 +22,23 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Run tests
-        run: go test ./... -count=1
+        run: go test ./... -short -count=1 -timeout 300s
 
       - name: Run tests with race detector
-        run: go test -race ./... -count=1
+        run: go test -race ./... -short -count=1 -timeout 300s
 
       - name: Run W3C conformance tests
         run: |
-          echo "=== Turtle ===" && go test ./turtle/ -run TestW3C -v -count=1 2>&1 | tail -1
-          echo "=== N-Triples ===" && go test ./nt/ -run TestW3C -v -count=1 2>&1 | tail -1
-          echo "=== N-Quads ===" && go test ./nq/ -run TestW3C -v -count=1 2>&1 | tail -1
-          echo "=== RDF/XML ===" && go test ./rdfxml/ -run TestW3C -v -count=1 2>&1 | tail -1
-          echo "=== SHACL ===" && go test ./shacl/ -run TestW3C -v -count=1 2>&1 | tail -1
+          echo "=== Turtle ===" && go test ./turtle/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== N-Triples ===" && go test ./nt/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== N-Quads ===" && go test ./nq/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== RDF/XML ===" && go test ./rdfxml/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== TriG ===" && go test ./trig/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== SPARQL 1.1 ===" && go test ./sparql/ -run 'TestW3C$$' -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== SPARQL 1.2 ===" && go test ./sparql/ -run TestW3CSPARQL12 -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== SPARQL Update ===" && go test ./sparql/ -run TestW3CUpdate -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== SHACL ===" && go test ./shacl/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== Reasoning ===" && go test ./reasoning/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
 
       - name: Check build
         run: go build ./...

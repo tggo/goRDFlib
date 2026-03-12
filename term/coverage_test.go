@@ -552,3 +552,769 @@ func (m mockNS) Prefix(uri string) (string, bool) {
 	v, ok := m[uri]
 	return v, ok
 }
+
+// =============================================================================
+// decode.go — tripleTermFromN3
+// =============================================================================
+
+func TestTripleTermFromN3_Basic(t *testing.T) {
+	tt, err := tripleTermFromN3("<<( <http://example.org/s> <http://example.org/p> <http://example.org/o> )>>")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tt.Subject().(URIRef).Value() != "http://example.org/s" {
+		t.Errorf("subject: %v", tt.Subject())
+	}
+	if tt.Predicate().Value() != "http://example.org/p" {
+		t.Errorf("predicate: %v", tt.Predicate())
+	}
+	if tt.Object().(URIRef).Value() != "http://example.org/o" {
+		t.Errorf("object: %v", tt.Object())
+	}
+}
+
+func TestTripleTermFromN3_BNodeSubject(t *testing.T) {
+	tt, err := tripleTermFromN3("<<( _:b1 <http://example.org/p> <http://example.org/o> )>>")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := tt.Subject().(BNode); !ok {
+		t.Errorf("expected BNode subject, got %T", tt.Subject())
+	}
+}
+
+func TestTripleTermFromN3_LiteralObject(t *testing.T) {
+	tt, err := tripleTermFromN3(`<<( <http://example.org/s> <http://example.org/p> "hello" )>>`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit, ok := tt.Object().(Literal)
+	if !ok {
+		t.Fatalf("expected Literal object, got %T", tt.Object())
+	}
+	if lit.Lexical() != "hello" {
+		t.Errorf("literal lexical: %q", lit.Lexical())
+	}
+}
+
+func TestTripleTermFromN3_LangLiteralObject(t *testing.T) {
+	tt, err := tripleTermFromN3(`<<( <http://example.org/s> <http://example.org/p> "bonjour"@fr )>>`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit, ok := tt.Object().(Literal)
+	if !ok {
+		t.Fatalf("expected Literal object, got %T", tt.Object())
+	}
+	if lit.Language() != "fr" {
+		t.Errorf("expected lang fr, got %q", lit.Language())
+	}
+}
+
+func TestTripleTermFromN3_TypedLiteralObject(t *testing.T) {
+	tt, err := tripleTermFromN3(`<<( <http://example.org/s> <http://example.org/p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> )>>`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit, ok := tt.Object().(Literal)
+	if !ok {
+		t.Fatalf("expected Literal object, got %T", tt.Object())
+	}
+	if lit.Datatype() != XSDInteger {
+		t.Errorf("expected xsd:integer, got %v", lit.Datatype())
+	}
+}
+
+func TestTripleTermFromN3_InvalidFormat(t *testing.T) {
+	_, err := tripleTermFromN3("not a triple term")
+	if err == nil {
+		t.Error("expected error for invalid format")
+	}
+}
+
+func TestTripleTermFromN3_InvalidSubject(t *testing.T) {
+	// A literal cannot be a subject
+	_, err := tripleTermFromN3(`<<( "bad" <http://example.org/p> <http://example.org/o> )>>`)
+	if err == nil {
+		t.Error("expected error for literal subject")
+	}
+}
+
+func TestTripleTermFromN3_InvalidPredicate(t *testing.T) {
+	// A BNode cannot be a predicate
+	_, err := tripleTermFromN3("<<( <http://example.org/s> _:b1 <http://example.org/o> )>>")
+	if err == nil {
+		t.Error("expected error for non-URIRef predicate")
+	}
+}
+
+func TestTripleTermFromN3_Nested(t *testing.T) {
+	n3 := "<<( <http://example.org/s> <http://example.org/p> <<( <http://example.org/a> <http://example.org/b> <http://example.org/c> )>> )>>"
+	tt, err := tripleTermFromN3(n3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inner, ok := tt.Object().(TripleTerm)
+	if !ok {
+		t.Fatalf("expected nested TripleTerm, got %T", tt.Object())
+	}
+	if inner.Subject().(URIRef).Value() != "http://example.org/a" {
+		t.Errorf("inner subject: %v", inner.Subject())
+	}
+}
+
+// =============================================================================
+// decode.go — parseOneTermN3
+// =============================================================================
+
+func TestParseOneTermN3_URIRef(t *testing.T) {
+	term, rest, err := parseOneTermN3("<http://example.org/x> rest")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	u, ok := term.(URIRef)
+	if !ok {
+		t.Fatalf("expected URIRef, got %T", term)
+	}
+	if u.Value() != "http://example.org/x" {
+		t.Errorf("value: %q", u.Value())
+	}
+	if rest != " rest" {
+		t.Errorf("rest: %q", rest)
+	}
+}
+
+func TestParseOneTermN3_BNode(t *testing.T) {
+	term, rest, err := parseOneTermN3("_:node1 more")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	b, ok := term.(BNode)
+	if !ok {
+		t.Fatalf("expected BNode, got %T", term)
+	}
+	if b.Value() != "node1" {
+		t.Errorf("value: %q", b.Value())
+	}
+	if rest != " more" {
+		t.Errorf("rest: %q", rest)
+	}
+}
+
+func TestParseOneTermN3_BNodeNoRemainder(t *testing.T) {
+	term, rest, err := parseOneTermN3("_:node1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := term.(BNode); !ok {
+		t.Fatalf("expected BNode, got %T", term)
+	}
+	if rest != "" {
+		t.Errorf("rest should be empty, got %q", rest)
+	}
+}
+
+func TestParseOneTermN3_Literal(t *testing.T) {
+	term, rest, err := parseOneTermN3(`"hello" more`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit, ok := term.(Literal)
+	if !ok {
+		t.Fatalf("expected Literal, got %T", term)
+	}
+	if lit.Lexical() != "hello" {
+		t.Errorf("lexical: %q", lit.Lexical())
+	}
+	if rest != " more" {
+		t.Errorf("rest: %q", rest)
+	}
+}
+
+func TestParseOneTermN3_LiteralWithLang(t *testing.T) {
+	// parseOneTermN3 parses the literal via literalFromN3, and consumes via consumeLiteralN3
+	term, _, err := parseOneTermN3(`"hello"@en`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit := term.(Literal)
+	if lit.Language() != "en" {
+		t.Errorf("lang: %q", lit.Language())
+	}
+}
+
+func TestParseOneTermN3_LiteralWithDatatype(t *testing.T) {
+	term, _, err := parseOneTermN3(`"42"^^<http://www.w3.org/2001/XMLSchema#integer>`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit := term.(Literal)
+	if lit.Datatype() != XSDInteger {
+		t.Errorf("datatype: %v", lit.Datatype())
+	}
+}
+
+func TestParseOneTermN3_BareInteger(t *testing.T) {
+	term, rest, err := parseOneTermN3("42 more")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit := term.(Literal)
+	if lit.Lexical() != "42" {
+		t.Errorf("lexical: %q", lit.Lexical())
+	}
+	if lit.Datatype() != XSDInteger {
+		t.Errorf("datatype: %v", lit.Datatype())
+	}
+	if rest != " more" {
+		t.Errorf("rest: %q", rest)
+	}
+}
+
+func TestParseOneTermN3_BareIntegerNoRemainder(t *testing.T) {
+	term, rest, err := parseOneTermN3("42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit := term.(Literal)
+	if lit.Lexical() != "42" {
+		t.Errorf("lexical: %q", lit.Lexical())
+	}
+	if rest != "" {
+		t.Errorf("rest: %q", rest)
+	}
+}
+
+func TestParseOneTermN3_BareBoolean(t *testing.T) {
+	term, _, err := parseOneTermN3("true")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lit := term.(Literal)
+	if lit.Datatype() != XSDBoolean {
+		t.Errorf("datatype: %v", lit.Datatype())
+	}
+}
+
+func TestParseOneTermN3_Empty(t *testing.T) {
+	_, _, err := parseOneTermN3("")
+	if err == nil {
+		t.Error("expected error for empty input")
+	}
+}
+
+func TestParseOneTermN3_UnterminatedURI(t *testing.T) {
+	_, _, err := parseOneTermN3("<http://example.org/no-close")
+	if err == nil {
+		t.Error("expected error for unterminated URI")
+	}
+}
+
+func TestParseOneTermN3_TripleTerm(t *testing.T) {
+	input := "<<( <http://example.org/s> <http://example.org/p> <http://example.org/o> )>> rest"
+	term, rest, err := parseOneTermN3(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := term.(TripleTerm); !ok {
+		t.Fatalf("expected TripleTerm, got %T", term)
+	}
+	if rest != " rest" {
+		t.Errorf("rest: %q", rest)
+	}
+}
+
+// =============================================================================
+// decode.go — consumeLiteralN3
+// =============================================================================
+
+func TestConsumeLiteralN3_Simple(t *testing.T) {
+	n := consumeLiteralN3(`"hello" rest`)
+	if n != 7 { // "hello" is 7 bytes
+		t.Errorf("consumed %d, want 7", n)
+	}
+}
+
+func TestConsumeLiteralN3_WithLang(t *testing.T) {
+	n := consumeLiteralN3(`"hello"@en rest`)
+	if n != 10 { // "hello"@en
+		t.Errorf("consumed %d, want 10", n)
+	}
+}
+
+func TestConsumeLiteralN3_WithDatatype(t *testing.T) {
+	input := `"42"^^<http://www.w3.org/2001/XMLSchema#integer> rest`
+	n := consumeLiteralN3(input)
+	expected := len(`"42"^^<http://www.w3.org/2001/XMLSchema#integer>`)
+	if n != expected {
+		t.Errorf("consumed %d, want %d", n, expected)
+	}
+}
+
+func TestConsumeLiteralN3_TripleQuoted(t *testing.T) {
+	input := `"""hello world""" rest`
+	n := consumeLiteralN3(input)
+	if n != 17 { // """hello world"""
+		t.Errorf("consumed %d, want 17", n)
+	}
+}
+
+func TestConsumeLiteralN3_TripleQuotedWithLang(t *testing.T) {
+	input := `"""hello"""@en rest`
+	n := consumeLiteralN3(input)
+	if n != 14 { // """hello"""@en
+		t.Errorf("consumed %d, want 14", n)
+	}
+}
+
+func TestConsumeLiteralN3_Empty(t *testing.T) {
+	n := consumeLiteralN3("")
+	if n != 0 {
+		t.Errorf("consumed %d, want 0", n)
+	}
+}
+
+func TestConsumeLiteralN3_NotQuoted(t *testing.T) {
+	n := consumeLiteralN3("not-quoted")
+	if n != 0 {
+		t.Errorf("consumed %d, want 0", n)
+	}
+}
+
+func TestConsumeLiteralN3_UnterminatedSingle(t *testing.T) {
+	n := consumeLiteralN3(`"unterminated`)
+	if n != 13 { // returns len(s)
+		t.Errorf("consumed %d, want 13", n)
+	}
+}
+
+func TestConsumeLiteralN3_UnterminatedTriple(t *testing.T) {
+	n := consumeLiteralN3(`"""unterminated`)
+	if n != 15 { // returns len(s)
+		t.Errorf("consumed %d, want 15", n)
+	}
+}
+
+func TestConsumeLiteralN3_EscapedQuote(t *testing.T) {
+	input := `"say \"hi\"" rest`
+	n := consumeLiteralN3(input)
+	if n != 12 { // "say \"hi\""
+		t.Errorf("consumed %d, want 12", n)
+	}
+}
+
+func TestConsumeLiteralN3_WithDatatypeNoCloseBracket(t *testing.T) {
+	// ^^< without closing > — should still consume what it can
+	input := `"x"^^<http://no-close`
+	n := consumeLiteralN3(input)
+	// ^^< found but no >, so just i stays at position after ^^
+	if n != 5 { // "x"^^ — 5 bytes consumed (just the ^^ part, < not consumed without >)
+		t.Errorf("consumed %d, want 5", n)
+	}
+}
+
+// =============================================================================
+// decode.go — unescapeLiteral
+// =============================================================================
+
+func TestUnescapeLiteral_NoEscapes(t *testing.T) {
+	if got := unescapeLiteral("hello"); got != "hello" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_Quote(t *testing.T) {
+	if got := unescapeLiteral(`say \"hi\"`); got != `say "hi"` {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_Backslash(t *testing.T) {
+	if got := unescapeLiteral(`a\\b`); got != `a\b` {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_Newline(t *testing.T) {
+	if got := unescapeLiteral(`line1\nline2`); got != "line1\nline2" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_CarriageReturn(t *testing.T) {
+	if got := unescapeLiteral(`line1\rline2`); got != "line1\rline2" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_Tab(t *testing.T) {
+	if got := unescapeLiteral(`col1\tcol2`); got != "col1\tcol2" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_UnknownEscape(t *testing.T) {
+	// Unknown escape sequences should pass through the backslash
+	if got := unescapeLiteral(`\x`); got != `\x` {
+		t.Errorf("got %q, want %q", got, `\x`)
+	}
+}
+
+func TestUnescapeLiteral_TrailingBackslash(t *testing.T) {
+	// Trailing backslash without following char
+	if got := unescapeLiteral(`end\`); got != `end\` {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestUnescapeLiteral_AllEscapes(t *testing.T) {
+	input := `\"\\\n\r\t`
+	want := "\"\\\n\r\t"
+	if got := unescapeLiteral(input); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// =============================================================================
+// decode.go — TermFromKey with TripleTerm
+// =============================================================================
+
+func TestTermFromKey_TripleTermN3(t *testing.T) {
+	// TermFromKey with T: prefix expects N3 format, not the internal key format
+	key := "T:<<( <http://example.org/s> <http://example.org/p> <http://example.org/o> )>>"
+	decoded, err := TermFromKey(key)
+	if err != nil {
+		t.Fatalf("TermFromKey: %v", err)
+	}
+	tt, ok := decoded.(TripleTerm)
+	if !ok {
+		t.Fatalf("expected TripleTerm, got %T", decoded)
+	}
+	if tt.Subject().(URIRef).Value() != "http://example.org/s" {
+		t.Errorf("subject: %v", tt.Subject())
+	}
+}
+
+func TestTermFromKey_TripleTermWithLiteralObject(t *testing.T) {
+	key := `T:<<( <http://example.org/s> <http://example.org/p> "hello"@en )>>`
+	decoded, err := TermFromKey(key)
+	if err != nil {
+		t.Fatalf("TermFromKey: %v", err)
+	}
+	tt, ok := decoded.(TripleTerm)
+	if !ok {
+		t.Fatalf("expected TripleTerm, got %T", decoded)
+	}
+	lit, ok := tt.Object().(Literal)
+	if !ok {
+		t.Fatalf("expected Literal object, got %T", tt.Object())
+	}
+	if lit.Language() != "en" {
+		t.Errorf("lang: %q", lit.Language())
+	}
+}
+
+func TestTermFromKey_TripleTermInvalid(t *testing.T) {
+	_, err := TermFromKey("T:not-valid")
+	if err == nil {
+		t.Error("expected error for invalid triple term key")
+	}
+}
+
+// =============================================================================
+// decode.go — literalFromN3 edge cases
+// =============================================================================
+
+func TestLiteralFromN3_DoubleShorthand(t *testing.T) {
+	// "1.5e10" contains both "." and "eE", but literalFromN3 checks "." first → decimal
+	lit, err := literalFromN3("1.5e10")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit.Datatype() != XSDDecimal {
+		t.Errorf("expected xsd:decimal, got %v", lit.Datatype())
+	}
+	// Pure exponent form without dot → double
+	lit2, err := literalFromN3("15e10")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit2.Datatype() != XSDDouble {
+		t.Errorf("expected xsd:double, got %v", lit2.Datatype())
+	}
+}
+
+func TestLiteralFromN3_NegativeInteger(t *testing.T) {
+	lit, err := literalFromN3("-42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit.Lexical() != "-42" {
+		t.Errorf("lexical: %q", lit.Lexical())
+	}
+	if lit.Datatype() != XSDInteger {
+		t.Errorf("datatype: %v", lit.Datatype())
+	}
+}
+
+func TestLiteralFromN3_PositiveDecimal(t *testing.T) {
+	lit, err := literalFromN3("+3.14")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit.Datatype() != XSDDecimal {
+		t.Errorf("datatype: %v", lit.Datatype())
+	}
+}
+
+func TestLiteralFromN3_DirLangLiteral(t *testing.T) {
+	lit, err := literalFromN3(`"hello"@en--ltr`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit.Language() != "en" {
+		t.Errorf("lang: %q", lit.Language())
+	}
+	if lit.Dir() != "ltr" {
+		t.Errorf("dir: %q", lit.Dir())
+	}
+}
+
+func TestLiteralFromN3_TripleQuoted(t *testing.T) {
+	lit, err := literalFromN3(`"""hello\nworld"""`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit.Lexical() != "hello\nworld" {
+		t.Errorf("lexical: %q", lit.Lexical())
+	}
+}
+
+func TestLiteralFromN3_TripleQuotedUnterminated(t *testing.T) {
+	_, err := literalFromN3(`"""unterminated`)
+	if err == nil {
+		t.Error("expected error for unterminated triple-quoted literal")
+	}
+}
+
+func TestLiteralFromN3_SingleQuotedUnterminated(t *testing.T) {
+	_, err := literalFromN3(`"unterminated`)
+	if err == nil {
+		t.Error("expected error for unterminated literal")
+	}
+}
+
+func TestLiteralFromN3_InvalidDatatypeSuffix(t *testing.T) {
+	_, err := literalFromN3(`"x"^^invalid`)
+	if err == nil {
+		t.Error("expected error for invalid datatype suffix")
+	}
+}
+
+func TestLiteralFromN3_PlainStringLiteral(t *testing.T) {
+	lit, err := literalFromN3(`"hello"`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lit.Lexical() != "hello" {
+		t.Errorf("lexical: %q", lit.Lexical())
+	}
+	if lit.Datatype() != XSDString {
+		t.Errorf("datatype: %v", lit.Datatype())
+	}
+}
+
+// =============================================================================
+// key.go — TermKey default branch
+// =============================================================================
+
+// customTerm is a fake Term to hit the default branch of TermKey.
+// This should never happen in practice because termType() is sealed,
+// but we test the fallback for robustness.
+type customTerm struct{}
+
+func (c customTerm) N3(ns ...NamespaceManager) string { return "<custom>" }
+func (c customTerm) String() string                    { return "custom" }
+func (c customTerm) Equal(other Term) bool             { return false }
+func (c customTerm) termType() string                  { return "Custom" }
+
+func TestTermKey_DefaultBranch(t *testing.T) {
+	ct := customTerm{}
+	k := TermKey(ct)
+	if k != "<custom>" {
+		t.Errorf("default branch: %q", k)
+	}
+}
+
+// =============================================================================
+// order.go — termTypeOrder for Variable and default
+// =============================================================================
+
+func TestTermTypeOrder_Variable(t *testing.T) {
+	v := NewVariable("x")
+	order := termTypeOrder(v)
+	if order != 4 {
+		t.Errorf("Variable order: %d, want 4", order)
+	}
+}
+
+func TestTermTypeOrder_Default(t *testing.T) {
+	ct := customTerm{}
+	order := termTypeOrder(ct)
+	if order != 5 {
+		t.Errorf("default order: %d, want 5", order)
+	}
+}
+
+// =============================================================================
+// triple_term.go — termType() and subject() via interface
+// =============================================================================
+
+func TestTripleTermTermType(t *testing.T) {
+	s := NewURIRefUnsafe("http://example.org/s")
+	p := NewURIRefUnsafe("http://example.org/p")
+	o := NewURIRefUnsafe("http://example.org/o")
+	tt := NewTripleTerm(s, p, o)
+	if tt.termType() != "TripleTerm" {
+		t.Errorf("termType: %q", tt.termType())
+	}
+}
+
+func TestTripleTermSubjectMarker(t *testing.T) {
+	s := NewURIRefUnsafe("http://example.org/s")
+	p := NewURIRefUnsafe("http://example.org/p")
+	o := NewURIRefUnsafe("http://example.org/o")
+	tt := NewTripleTerm(s, p, o)
+	// TripleTerm implements Subject; call subject() for coverage.
+	tt.subject()
+	// Also verify it satisfies the Subject interface.
+	var subj Subject = tt
+	_ = subj
+}
+
+// =============================================================================
+// term.go — NewURIRefWithBase edge cases
+// =============================================================================
+
+func TestNewURIRefWithBase_RelativeResolution(t *testing.T) {
+	u, err := NewURIRefWithBase("bar", "http://example.org/foo/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.Value() != "http://example.org/foo/bar" {
+		t.Errorf("resolved: %q", u.Value())
+	}
+}
+
+func TestNewURIRefWithBase_AbsoluteValue(t *testing.T) {
+	u, err := NewURIRefWithBase("http://other.org/x", "http://example.org/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.Value() != "http://other.org/x" {
+		t.Errorf("resolved: %q", u.Value())
+	}
+}
+
+func TestNewURIRefWithBase_EmptyBase(t *testing.T) {
+	u, err := NewURIRefWithBase("http://example.org/x", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.Value() != "http://example.org/x" {
+		t.Errorf("resolved: %q", u.Value())
+	}
+}
+
+func TestNewURIRefWithBase_FragmentResolution(t *testing.T) {
+	u, err := NewURIRefWithBase("#frag", "http://example.org/page")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.Value() != "http://example.org/page#frag" {
+		t.Errorf("resolved: %q", u.Value())
+	}
+}
+
+func TestNewURIRefWithBase_QueryResolution(t *testing.T) {
+	u, err := NewURIRefWithBase("?query=1", "http://example.org/page")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.Value() != "http://example.org/page?query=1" {
+		t.Errorf("resolved: %q", u.Value())
+	}
+}
+
+// =============================================================================
+// literal.go — valueEqual remaining branch (float64)
+// =============================================================================
+
+func TestValueEqual_Float64(t *testing.T) {
+	a := NewLiteral(1.5)
+	b := NewLiteral(1.5)
+	if !a.ValueEqual(b) {
+		t.Error("float64 1.5 should value-equal 1.5")
+	}
+	c := NewLiteral(2.5)
+	if a.ValueEqual(c) {
+		t.Error("float64 1.5 should not value-equal 2.5")
+	}
+}
+
+// =============================================================================
+// decode.go — findClosingQuote edge cases
+// =============================================================================
+
+func TestFindClosingQuote_Escaped(t *testing.T) {
+	// Escaped quotes should be skipped
+	idx := findClosingQuote(`hello\"world"`)
+	if idx != 12 { // index of the unescaped quote
+		t.Errorf("got %d, want 12", idx)
+	}
+}
+
+func TestFindClosingQuote_NoClose(t *testing.T) {
+	idx := findClosingQuote(`no closing quote here`)
+	if idx != -1 {
+		t.Errorf("got %d, want -1", idx)
+	}
+}
+
+func TestFindClosingQuote_Immediate(t *testing.T) {
+	idx := findClosingQuote(`"rest`)
+	if idx != 0 {
+		t.Errorf("got %d, want 0", idx)
+	}
+}
+
+// =============================================================================
+// Round-trip: TermKey → TermFromKey for all term types
+// =============================================================================
+
+func TestTermRoundTrip_AllTypes(t *testing.T) {
+	terms := []Term{
+		NewURIRefUnsafe("http://example.org/test"),
+		NewBNode("node1"),
+		NewLiteral("hello"),
+		NewLiteral("bonjour", WithLang("fr")),
+		NewLiteral("hello", WithLang("en"), WithDir("ltr")),
+		NewLiteral(42),
+		NewLiteral(3.14),
+		NewLiteral(true),
+		NewLiteral("text with \"quotes\""),
+		NewLiteral("line1\nline2"),
+		NewLiteral("tabs\there"),
+	}
+	for _, original := range terms {
+		key := TermKey(original)
+		decoded, err := TermFromKey(key)
+		if err != nil {
+			t.Errorf("TermFromKey(%q): %v", key, err)
+			continue
+		}
+		if !original.Equal(decoded) {
+			t.Errorf("round-trip failed: %s -> %q -> %s", original.N3(), key, decoded.N3())
+		}
+	}
+}

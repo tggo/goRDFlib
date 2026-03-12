@@ -729,3 +729,140 @@ func TestLineParserReadLiteralInvalidDirLang(t *testing.T) {
 		t.Error("expected error for invalid lang in dir-lang")
 	}
 }
+
+// TestTermNil covers the unsupported type error in Term.
+func TestTermNilError(t *testing.T) {
+	_, err := Term(nil)
+	if err == nil {
+		t.Error("expected error for nil term")
+	}
+}
+
+// TestUnescapeIRIVariousErrors covers UnescapeIRI error paths.
+func TestUnescapeIRIVariousErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"truncated_u", `http://x/\u00`},
+		{"invalid_u", `http://x/\uGGGG`},
+		{"surrogate_u", `http://x/\uD800`},
+		{"truncated_U", `http://x/\U0000`},
+		{"invalid_U", `http://x/\UGGGGGGGG`},
+		{"surrogate_U", `http://x/\U0000D800`},
+		{"unknown_escape", `http://x/\x`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := UnescapeIRI(tc.input)
+			if err == nil {
+				t.Error("expected error")
+			}
+		})
+	}
+}
+
+// TestIsValidLangTagEdgeCases covers edge cases in language tag validation.
+func TestIsValidLangTagEdgeCases(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want bool
+	}{
+		{"", false},
+		{"en", true},
+		{"en-US", true},
+		{"en-123456789", false},
+		{"en-", false},
+		{"123", false},
+		{"en-US-variant", true},
+		{"a-b-c-d-e-f-g-h", true},
+	}
+	for _, tc := range tests {
+		got := isValidLangTag(tc.tag)
+		if got != tc.want {
+			t.Errorf("isValidLangTag(%q) = %v, want %v", tc.tag, got, tc.want)
+		}
+	}
+}
+
+// TestIsAbsoluteIRIEdgeCases covers edge cases in absolute IRI detection.
+func TestIsAbsoluteIRIEdgeCases(t *testing.T) {
+	tests := []struct {
+		iri  string
+		want bool
+	}{
+		{"", false},
+		{":", false},
+		{"1http://x", false},
+		{"http://x", true},
+		{"h+t://x", true},
+		{"h-t://x", true},
+		{"h.t://x", true},
+		{"h!t://x", false},
+	}
+	for _, tc := range tests {
+		got := isAbsoluteIRI(tc.iri)
+		if got != tc.want {
+			t.Errorf("isAbsoluteIRI(%q) = %v, want %v", tc.iri, got, tc.want)
+		}
+	}
+}
+
+// TestEscapeIRIControlChar covers \u escape for control chars in IRI.
+func TestEscapeIRIControlChar(t *testing.T) {
+	got := EscapeIRI("http://x/\x01")
+	if got != `http://x/\u0001` {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestEscapeIRIAngleBrackets covers < and > escaping in IRI.
+func TestEscapeIRIAngleBrackets(t *testing.T) {
+	got := EscapeIRI("http://x/<test>")
+	if got != `http://x/\u003Ctest\u003E` {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestEscapeStringCarriageReturn covers \r escaping.
+func TestEscapeStringCarriageReturn(t *testing.T) {
+	got := EscapeString("a\rb")
+	if got != `a\rb` {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestLiteralRDFLangStringNoLang covers the rdf:langString validation.
+func TestLiteralRDFLangStringNoLang(t *testing.T) {
+	p := &LineParser{
+		Line:    `"hello"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#langString>`,
+		Pos:     0,
+		LineNum: 1,
+	}
+	_, err := p.ReadLiteral()
+	if err == nil {
+		t.Error("expected error for rdf:langString without language tag")
+	}
+}
+
+// TestLiteralRDFDirLangStringNoLang covers the rdf:dirLangString validation.
+func TestLiteralRDFDirLangStringNoLang(t *testing.T) {
+	p := &LineParser{
+		Line:    `"hello"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString>`,
+		Pos:     0,
+		LineNum: 1,
+	}
+	_, err := p.ReadLiteral()
+	if err == nil {
+		t.Error("expected error for rdf:dirLangString without language tag")
+	}
+}
+
+// TestReadLiteralDatatypeRelative covers the relative datatype IRI error.
+func TestReadLiteralDatatypeRelative(t *testing.T) {
+	p := &LineParser{Line: `"hello"^^<relative>`, Pos: 0, LineNum: 1}
+	_, err := p.ReadLiteral()
+	if err == nil {
+		t.Error("expected error for relative datatype IRI")
+	}
+}
