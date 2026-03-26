@@ -343,6 +343,17 @@ func TestNTSerializerDatatypeIRIEscaped(t *testing.T) {
 	}
 }
 
+func TestWithErrorHandler(t *testing.T) {
+	opt := WithErrorHandler(func(lineNum int, line string, err error) (string, bool) {
+		return "", false
+	})
+	var cfg config
+	opt(&cfg)
+	if cfg.errorHandler == nil {
+		t.Error("WithErrorHandler: handler not set")
+	}
+}
+
 func TestNTParserErrorHandlerSkip(t *testing.T) {
 	input := `<http://example.org/s1> <http://example.org/p> "good" .
 <http://example.org/s 2> <http://example.org/p> "bad iri" .
@@ -409,5 +420,47 @@ func TestNTParserErrorHandlerRetryFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "retry failed") {
 		t.Errorf("expected 'retry failed' in error, got: %v", err)
+	}
+}
+
+func TestNTParserErrorHandlerMultipleErrors(t *testing.T) {
+	input := `<http://example.org/s1> <http://example.org/p> "good" .
+<bad 1> <http://example.org/p> "x" .
+<http://example.org/s2> <http://example.org/p> "good2" .
+<bad 2> <http://example.org/p> "y" .
+<http://example.org/s3> <http://example.org/p> "good3" .
+`
+	g := rdflibgo.NewGraph()
+	var skippedLines []int
+	err := Parse(g, strings.NewReader(input), WithErrorHandler(
+		func(lineNum int, line string, err error) (string, bool) {
+			skippedLines = append(skippedLines, lineNum)
+			return "", false
+		},
+	))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.Len() != 3 {
+		t.Errorf("expected 3 triples, got %d", g.Len())
+	}
+	if len(skippedLines) != 2 || skippedLines[0] != 2 || skippedLines[1] != 4 {
+		t.Errorf("expected skipped=[2,4], got %v", skippedLines)
+	}
+}
+
+func TestNTParserErrorHandlerReceivesLineText(t *testing.T) {
+	badLine := `<http://example.org/s 2> <http://example.org/p> "bad" .`
+	input := badLine + "\n"
+	g := rdflibgo.NewGraph()
+	var receivedLine string
+	Parse(g, strings.NewReader(input), WithErrorHandler(
+		func(lineNum int, line string, err error) (string, bool) {
+			receivedLine = line
+			return "", false
+		},
+	))
+	if receivedLine != badLine {
+		t.Errorf("handler received wrong line text: %q", receivedLine)
 	}
 }

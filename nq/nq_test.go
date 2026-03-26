@@ -187,6 +187,17 @@ func TestNQParserLangAndDatatype(t *testing.T) {
 	}
 }
 
+func TestWithErrorHandler(t *testing.T) {
+	opt := WithErrorHandler(func(lineNum int, line string, err error) (string, bool) {
+		return "", false
+	})
+	var cfg config
+	opt(&cfg)
+	if cfg.errorHandler == nil {
+		t.Error("WithErrorHandler: handler not set")
+	}
+}
+
 func TestNQParserErrorHandlerSkip(t *testing.T) {
 	input := `<http://example.org/s1> <http://example.org/p> "good" <http://example.org/g> .
 <http://example.org/s 2> <http://example.org/p> "bad iri" <http://example.org/g> .
@@ -253,5 +264,55 @@ func TestNQParserErrorHandlerRetryFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "retry failed") {
 		t.Errorf("expected 'retry failed' in error, got: %v", err)
+	}
+}
+
+func TestNQParserErrorHandlerMultipleErrors(t *testing.T) {
+	input := `<http://example.org/s1> <http://example.org/p> "good" <http://example.org/g> .
+<bad 1> <http://example.org/p> "x" <http://example.org/g> .
+<http://example.org/s2> <http://example.org/p> "good2" <http://example.org/g> .
+<bad 2> <http://example.org/p> "y" <http://example.org/g> .
+<http://example.org/s3> <http://example.org/p> "good3" <http://example.org/g> .
+`
+	g := rdflibgo.NewGraph()
+	var skippedLines []int
+	err := Parse(g, strings.NewReader(input), WithErrorHandler(
+		func(lineNum int, line string, err error) (string, bool) {
+			skippedLines = append(skippedLines, lineNum)
+			return "", false
+		},
+	))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.Len() != 3 {
+		t.Errorf("expected 3 triples, got %d", g.Len())
+	}
+	if len(skippedLines) != 2 || skippedLines[0] != 2 || skippedLines[1] != 4 {
+		t.Errorf("expected skipped=[2,4], got %v", skippedLines)
+	}
+}
+
+func TestNQParserErrorHandlerWithQuadHandler(t *testing.T) {
+	input := `<http://example.org/s> <http://example.org/p> "ok" <http://example.org/g> .
+<bad iri> <http://example.org/p> "fail" <http://example.org/g> .
+`
+	g := rdflibgo.NewGraph()
+	var graphs []string
+	err := Parse(g, strings.NewReader(input),
+		WithQuadHandler(func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term) {
+			if graph != nil {
+				graphs = append(graphs, graph.(rdflibgo.URIRef).Value())
+			}
+		}),
+		WithErrorHandler(func(lineNum int, line string, err error) (string, bool) {
+			return "", false
+		}),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(graphs) != 1 || graphs[0] != "http://example.org/g" {
+		t.Errorf("expected 1 graph callback, got %v", graphs)
 	}
 }
