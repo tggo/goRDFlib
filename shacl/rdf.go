@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/jsonld"
 	"github.com/tggo/goRDFlib/term"
 	"github.com/tggo/goRDFlib/turtle"
 )
@@ -262,6 +263,35 @@ func LoadTurtle(r io.Reader, base string) (*Graph, error) {
 // LoadTurtleString parses Turtle data from a string.
 func LoadTurtleString(data, base string) (*Graph, error) {
 	return LoadTurtle(strings.NewReader(data), base)
+}
+
+// LoadTurtleFile loads a Turtle file from disk.
+func LoadJsonLDFile(path string) (*Graph, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	base := "file://" + path
+	g := graph.NewGraph(graph.WithBase(base))
+	if err := jsonld.Parse(g, f, jsonld.WithBase(base)); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &Graph{g: g, baseURI: base}, nil
+}
+
+// LoadTurtle parses Turtle data from a reader.
+func LoadJsonLD(r io.Reader, base string) (*Graph, error) {
+	g := graph.NewGraph(graph.WithBase(base))
+	if err := jsonld.Parse(g, r, jsonld.WithBase(base)); err != nil {
+		return nil, err
+	}
+	return &Graph{g: g, baseURI: base}, nil
+}
+
+// LoadTurtleString parses Turtle data from a string.
+func LoadJsonLDString(data, base string) (*Graph, error) {
+	return LoadJsonLD(strings.NewReader(data), base)
 }
 
 func (g *Graph) ensureIndexes() {

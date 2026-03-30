@@ -19,6 +19,15 @@ func mustGraph(t *testing.T, ttl string) *Graph {
 	return g
 }
 
+func mustGraphJsonld(t *testing.T, jsonld string) *Graph {
+	t.Helper()
+	g, err := LoadJsonLDString(jsonld, "http://example.org/")
+	if err != nil {
+		t.Fatalf("failed to parse jsonld: %v", err)
+	}
+	return g
+}
+
 // helper to extract sorted IRI values from terms
 func termValues(terms []Term) []string {
 	var vals []string
