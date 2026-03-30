@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -8,6 +9,11 @@ import (
 func mustParseWithPrefixes(t *testing.T, turtle string) *Graph {
 	t.Helper()
 	return mustGraph(t, shapesPrefixes+turtle)
+}
+
+func mustParseJsonLDWithPrefixes(t *testing.T, jsonld string) *Graph {
+	t.Helper()
+	return mustGraphJsonld(t, jsonld)
 }
 
 func TestValidate_Conforming(t *testing.T) {
@@ -23,6 +29,84 @@ ex:Alice a ex:Person .
 	report := Validate(data, shapes)
 	if !report.Conforms {
 		t.Errorf("expected conforming report, got %d violations", len(report.Results))
+	}
+}
+
+func TestJsonLDValidate_Conforming(t *testing.T) {
+	t.Parallel()
+	shapes := mustParseJsonLDWithPrefixes(t, `{
+            "@context": {
+                "ex": "http://example.org/" ,
+                "sh": "http://www.w3.org/ns/shacl#" ,
+                "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            },
+            "@id": "ex:MyShape",
+            "@type": "sh:NodeShape",
+            "sh:targetNode": {
+                "@id": "ex:Alice"
+            },
+            "sh:nodeKind": {
+                "@id": "sh:IRI"
+            }
+        }`)
+	data := mustParseJsonLDWithPrefixes(t, `{
+            "@context": {
+                "ex": "http://example.org/"
+            },
+            "@id": "ex:Alice",
+            "@type": "ex:Person"
+        }`)
+	report := Validate(data, shapes)
+	fmt.Println(report)
+	if !report.Conforms {
+		t.Errorf("expected conforming report, got %d violations", len(report.Results))
+	}
+}
+
+func TestJsonLDValidate_NonConforming(t *testing.T) {
+	t.Parallel()
+	shapes := mustParseJsonLDWithPrefixes(t, `{
+  "@context": {
+    "ex": "http://example.org/" ,
+    "sh": "http://www.w3.org/ns/shacl#"
+  },
+  "@id": "ex:MyShape",
+  "@type": "sh:NodeShape",
+  "sh:targetNode": {
+    "@id": "ex:Alice"
+  },
+  "sh:property": {
+    "sh:path": {
+      "@id": "ex:name"
+    },
+    "sh:nodeKind": {
+      "@id": "sh:IRI"
+    }
+  }
+}`)
+	data := mustParseJsonLDWithPrefixes(t, `{
+  "@context": {
+    "ex": "http://example.org/"
+  },
+  "@id": "ex:Alice",
+  "ex:name": {
+    "@id": "http://example.org/AliceName"
+  }
+}`)
+	data = mustParseJsonLDWithPrefixes(t, `{
+  "@context": {
+    "ex": "http://example.org/"
+  },
+  "@id": "ex:Alice",
+  "ex:name": "Alice"
+}`)
+	report := Validate(data, shapes)
+
+	if report.Conforms {
+		t.Error("expected non-conforming report")
+	}
+	if len(report.Results) == 0 {
+		t.Error("expected at least one violation")
 	}
 }
 
