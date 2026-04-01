@@ -13,6 +13,7 @@ import (
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/jsonld"
+	"github.com/tggo/goRDFlib/nq"
 	"github.com/tggo/goRDFlib/term"
 	"github.com/tggo/goRDFlib/turtle"
 )
@@ -292,6 +293,35 @@ func LoadJsonLD(r io.Reader, base string) (*Graph, error) {
 // LoadJsonLDString parses JSON-LD data from a string.
 func LoadJsonLDString(data, base string) (*Graph, error) {
 	return LoadJsonLD(strings.NewReader(data), base)
+}
+
+// LoadNQuadsFile loads an N-Quads file from disk.
+func LoadNQuadsFile(path string) (*Graph, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	base := "file://" + path
+	g := graph.NewGraph(graph.WithBase(base))
+	if err := nq.Parse(g, f, nq.WithBase(base)); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &Graph{g: g, baseURI: base}, nil
+}
+
+// LoadNQuads parses N-Quads data from a reader.
+func LoadNQuads(r io.Reader, base string) (*Graph, error) {
+	g := graph.NewGraph(graph.WithBase(base))
+	if err := nq.Parse(g, r, nq.WithBase(base)); err != nil {
+		return nil, err
+	}
+	return &Graph{g: g, baseURI: base}, nil
+}
+
+// LoadNQuadsString parses N-Quads data from a string.
+func LoadNQuadsString(data, base string) (*Graph, error) {
+	return LoadNQuads(strings.NewReader(data), base)
 }
 
 func (g *Graph) ensureIndexes() {
