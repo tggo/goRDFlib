@@ -265,7 +265,7 @@ func LoadTurtleString(data, base string) (*Graph, error) {
 	return LoadTurtle(strings.NewReader(data), base)
 }
 
-// LoadTurtleFile loads a Turtle file from disk.
+// LoadJsonLDFile loads a JSON-LD file from disk.
 func LoadJsonLDFile(path string) (*Graph, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -280,7 +280,7 @@ func LoadJsonLDFile(path string) (*Graph, error) {
 	return &Graph{g: g, baseURI: base}, nil
 }
 
-// LoadTurtle parses Turtle data from a reader.
+// LoadJsonLD parses JSON-LD data from a reader.
 func LoadJsonLD(r io.Reader, base string) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
 	if err := jsonld.Parse(g, r, jsonld.WithBase(base)); err != nil {
@@ -289,7 +289,7 @@ func LoadJsonLD(r io.Reader, base string) (*Graph, error) {
 	return &Graph{g: g, baseURI: base}, nil
 }
 
-// LoadTurtleString parses Turtle data from a string.
+// LoadJsonLDString parses JSON-LD data from a string.
 func LoadJsonLDString(data, base string) (*Graph, error) {
 	return LoadJsonLD(strings.NewReader(data), base)
 }

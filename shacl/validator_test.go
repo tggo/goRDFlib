@@ -1,7 +1,6 @@
 package shacl
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -11,7 +10,7 @@ func mustParseWithPrefixes(t *testing.T, turtle string) *Graph {
 	return mustGraph(t, shapesPrefixes+turtle)
 }
 
-func mustParseJsonLDWithPrefixes(t *testing.T, jsonld string) *Graph {
+func mustParseJsonLD(t *testing.T, jsonld string) *Graph {
 	t.Helper()
 	return mustGraphJsonld(t, jsonld)
 }
@@ -34,7 +33,7 @@ ex:Alice a ex:Person .
 
 func TestJsonLDValidate_Conforming(t *testing.T) {
 	t.Parallel()
-	shapes := mustParseJsonLDWithPrefixes(t, `{
+	shapes := mustParseJsonLD(t, `{
             "@context": {
                 "ex": "http://example.org/" ,
                 "sh": "http://www.w3.org/ns/shacl#" ,
@@ -49,7 +48,7 @@ func TestJsonLDValidate_Conforming(t *testing.T) {
                 "@id": "sh:IRI"
             }
         }`)
-	data := mustParseJsonLDWithPrefixes(t, `{
+	data := mustParseJsonLD(t, `{
             "@context": {
                 "ex": "http://example.org/"
             },
@@ -57,7 +56,6 @@ func TestJsonLDValidate_Conforming(t *testing.T) {
             "@type": "ex:Person"
         }`)
 	report := Validate(data, shapes)
-	fmt.Println(report)
 	if !report.Conforms {
 		t.Errorf("expected conforming report, got %d violations", len(report.Results))
 	}
@@ -65,7 +63,7 @@ func TestJsonLDValidate_Conforming(t *testing.T) {
 
 func TestJsonLDValidate_NonConforming(t *testing.T) {
 	t.Parallel()
-	shapes := mustParseJsonLDWithPrefixes(t, `{
+	shapes := mustParseJsonLD(t, `{
   "@context": {
     "ex": "http://example.org/" ,
     "sh": "http://www.w3.org/ns/shacl#"
@@ -84,16 +82,7 @@ func TestJsonLDValidate_NonConforming(t *testing.T) {
     }
   }
 }`)
-	data := mustParseJsonLDWithPrefixes(t, `{
-  "@context": {
-    "ex": "http://example.org/"
-  },
-  "@id": "ex:Alice",
-  "ex:name": {
-    "@id": "http://example.org/AliceName"
-  }
-}`)
-	data = mustParseJsonLDWithPrefixes(t, `{
+	data := mustParseJsonLD(t, `{
   "@context": {
     "ex": "http://example.org/"
   },
