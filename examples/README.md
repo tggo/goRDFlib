@@ -8,6 +8,7 @@ Runnable examples demonstrating goRDFlib features. Each example has a `main.go` 
 |-----------|-------------|
 | `simple_example/` | Basic graph operations: creating terms, adding triples, pattern matching, serialization |
 | `sparql_query_example/` | SPARQL queries: SELECT, ASK, CONSTRUCT, FILTER, OPTIONAL, ORDER BY |
+| `sparql_update_example/` | SPARQL Update: INSERT DATA, DELETE/INSERT WHERE, DELETE WHERE, COPY |
 | `format_examples/` | Parsing and serializing in Turtle, N-Triples, N-Quads, RDF/XML, JSON-LD |
 | `property_paths_example/` | Property path queries: inverse, sequence, alternative, transitive closure |
 | `resource_example/` | Resource API for navigating RDF graphs with a fluent interface |

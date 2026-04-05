@@ -1,0 +1,10 @@
+Initial: 9 triples
+After INSERT DATA: 10 triples
+
+After bulk status update:
+  Alice -> published
+  Bob -> published
+  Charlie -> published
+
+After DELETE WHERE: 9 triples
+Archive graph: 9 triples

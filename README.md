@@ -304,6 +304,23 @@ func main() {
 }
 ```
 
+### SPARQL Update Example
+
+```go
+ds := &sparql.Dataset{Default: g}
+
+// DELETE/INSERT WHERE: bulk status change with pattern matching
+err := sparql.Update(ds, `
+    PREFIX ex: <http://example.org/>
+    DELETE { ?s ex:status "draft" }
+    INSERT { ?s ex:status "published" }
+    WHERE  { ?s ex:status "draft" }
+`)
+
+// Graph management: copy default graph to a named graph
+err = sparql.Update(ds, `COPY DEFAULT TO <http://example.org/archive>`)
+```
+
 ### SHACL Validation Example
 
 ```go
