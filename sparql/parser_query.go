@@ -105,8 +105,21 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			}
 			continue
 		}
-		s := p.readTermOrVar()
-		flushReifiers()
+		// Handle blank node property lists as subject
+		var s string
+		if p.pos < len(p.input) && p.input[p.pos] == '[' {
+			bnode, bnodeTriples, err := p.parseBnodePropertyListTriples()
+			if err != nil {
+				return err
+			}
+			s = bnode
+			for _, bt := range bnodeTriples {
+				q.Construct = append(q.Construct, TripleTemplate{Subject: bt.Subject, Predicate: bt.Predicate, Object: bt.Object})
+			}
+		} else {
+			s = p.readTermOrVar()
+			flushReifiers()
+		}
 		if s == "" {
 			return p.errorf("unexpected token in CONSTRUCT template")
 		}
@@ -115,8 +128,21 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 		p.skipWS()
 		// Object list (,) and predicate-object list (;)
 		for {
-			obj := p.readTermOrVar()
-			flushReifiers()
+			// Handle blank node property lists as object
+			var obj string
+			if p.pos < len(p.input) && p.input[p.pos] == '[' {
+				bnode, bnodeTriples, err := p.parseBnodePropertyListTriples()
+				if err != nil {
+					return err
+				}
+				obj = bnode
+				for _, bt := range bnodeTriples {
+					q.Construct = append(q.Construct, TripleTemplate{Subject: bt.Subject, Predicate: bt.Predicate, Object: bt.Object})
+				}
+			} else {
+				obj = p.readTermOrVar()
+				flushReifiers()
+			}
 			q.Construct = append(q.Construct, TripleTemplate{Subject: s, Predicate: pred, Object: obj})
 			p.skipWS()
 			// Check for annotation/reifier syntax after object in CONSTRUCT
@@ -139,8 +165,21 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			pred = p.readTermOrVar()
 			p.skipWS()
 			for {
-				obj := p.readTermOrVar()
-				flushReifiers()
+				// Handle blank node property lists as object in semicolon section
+				var obj string
+				if p.pos < len(p.input) && p.input[p.pos] == '[' {
+					bnode, bnodeTriples, err := p.parseBnodePropertyListTriples()
+					if err != nil {
+						return err
+					}
+					obj = bnode
+					for _, bt := range bnodeTriples {
+						q.Construct = append(q.Construct, TripleTemplate{Subject: bt.Subject, Predicate: bt.Predicate, Object: bt.Object})
+					}
+				} else {
+					obj = p.readTermOrVar()
+					flushReifiers()
+				}
 				q.Construct = append(q.Construct, TripleTemplate{Subject: s, Predicate: pred, Object: obj})
 				p.skipWS()
 				p.parseConstructAnnotations(q, s, pred, obj, rdfReifies)
