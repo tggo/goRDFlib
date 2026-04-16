@@ -74,6 +74,34 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 		p.reifierTriples = nil
 	}
 
+	// readConstructTerm reads a term that may be a blank node property list [ ... ],
+	// a collection ( ... ), or a plain term/variable. Auxiliary triples from bnodes
+	// and collections are appended to q.Construct.
+	readConstructTerm := func() (string, error) {
+		p.skipWS()
+		if p.pos < len(p.input) && p.input[p.pos] == '[' {
+			bnode, triples, err := p.parseBnodePropertyListTriples()
+			if err != nil {
+				return "", err
+			}
+			for _, bt := range triples {
+				q.Construct = append(q.Construct, TripleTemplate{Subject: bt.Subject, Predicate: bt.Predicate, Object: bt.Object})
+			}
+			return bnode, nil
+		}
+		if p.pos < len(p.input) && p.input[p.pos] == '(' {
+			head, triples, err := p.parseCollectionTriples()
+			if err != nil {
+				return "", err
+			}
+			for _, ct := range triples {
+				q.Construct = append(q.Construct, TripleTemplate{Subject: ct.Subject, Predicate: ct.Predicate, Object: ct.Object})
+			}
+			return head, nil
+		}
+		return p.readTermOrVar(), nil
+	}
+
 	for {
 		p.skipWS()
 		if p.pos >= len(p.input) {
@@ -83,29 +111,10 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			p.pos++
 			break
 		}
-		// Collection/list syntax in CONSTRUCT template
-		if p.input[p.pos] == '(' {
-			head, collTriples, err := p.parseCollectionTriples()
-			if err != nil {
-				return err
-			}
-			for _, ct := range collTriples {
-				q.Construct = append(q.Construct, TripleTemplate{Subject: ct.Subject, Predicate: ct.Predicate, Object: ct.Object})
-			}
-			// Now read predicate and object for the collection head
-			p.skipWS()
-			pred := p.readTermOrVar()
-			p.skipWS()
-			obj := p.readTermOrVar()
-			flushReifiers()
-			q.Construct = append(q.Construct, TripleTemplate{Subject: head, Predicate: pred, Object: obj})
-			p.skipWS()
-			if p.pos < len(p.input) && p.input[p.pos] == '.' {
-				p.pos++
-			}
-			continue
+		s, err := readConstructTerm()
+		if err != nil {
+			return err
 		}
-		s := p.readTermOrVar()
 		flushReifiers()
 		if s == "" {
 			return p.errorf("unexpected token in CONSTRUCT template")
@@ -115,7 +124,10 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 		p.skipWS()
 		// Object list (,) and predicate-object list (;)
 		for {
-			obj := p.readTermOrVar()
+			obj, err := readConstructTerm()
+			if err != nil {
+				return err
+			}
 			flushReifiers()
 			q.Construct = append(q.Construct, TripleTemplate{Subject: s, Predicate: pred, Object: obj})
 			p.skipWS()
@@ -139,7 +151,10 @@ func (p *sparqlParser) parseConstruct(q *ParsedQuery) error {
 			pred = p.readTermOrVar()
 			p.skipWS()
 			for {
-				obj := p.readTermOrVar()
+				obj, err := readConstructTerm()
+				if err != nil {
+					return err
+				}
 				flushReifiers()
 				q.Construct = append(q.Construct, TripleTemplate{Subject: s, Predicate: pred, Object: obj})
 				p.skipWS()

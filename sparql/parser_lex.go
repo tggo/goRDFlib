@@ -246,7 +246,25 @@ func (p *sparqlParser) parseBnodePropertyListTriples() (string, []Triple, error)
 		}
 		p.skipWS()
 		for {
-			obj := p.readTermOrVar()
+			p.skipWS()
+			var obj string
+			if p.pos < len(p.input) && p.input[p.pos] == '[' {
+				nestedBnode, extraTriples, err := p.parseBnodePropertyListTriples()
+				if err != nil {
+					return bnode, nil, err
+				}
+				obj = nestedBnode
+				triples = append(triples, extraTriples...)
+			} else if p.pos < len(p.input) && p.input[p.pos] == '(' {
+				head, extraTriples, err := p.parseCollectionTriples()
+				if err != nil {
+					return bnode, nil, err
+				}
+				obj = head
+				triples = append(triples, extraTriples...)
+			} else {
+				obj = p.readTermOrVar()
+			}
 			if obj == "" {
 				break
 			}
