@@ -247,7 +247,29 @@ func (p *sparqlParser) parseConstructAnnotationBlock(q *ParsedQuery, reifierID s
 		p.skipWS()
 
 		for {
-			obj := p.readTermOrVar()
+			p.skipWS()
+			var obj string
+			if p.pos < len(p.input) && p.input[p.pos] == '[' {
+				bnode, triples, err := p.parseBnodePropertyListTriples()
+				if err != nil {
+					return
+				}
+				obj = bnode
+				for _, bt := range triples {
+					q.Construct = append(q.Construct, TripleTemplate{Subject: bt.Subject, Predicate: bt.Predicate, Object: bt.Object})
+				}
+			} else if p.pos < len(p.input) && p.input[p.pos] == '(' {
+				head, triples, err := p.parseCollectionTriples()
+				if err != nil {
+					return
+				}
+				obj = head
+				for _, ct := range triples {
+					q.Construct = append(q.Construct, TripleTemplate{Subject: ct.Subject, Predicate: ct.Predicate, Object: ct.Object})
+				}
+			} else {
+				obj = p.readTermOrVar()
+			}
 			for _, rt := range p.reifierTriples {
 				q.Construct = append(q.Construct, TripleTemplate{Subject: rt.Subject, Predicate: rt.Predicate, Object: rt.Object})
 			}

@@ -173,6 +173,83 @@ func TestConstructCollectionInsideBnode(t *testing.T) {
 	}
 }
 
+func TestConstructAnnotationWithBnode(t *testing.T) {
+	g := makeSPARQLGraph(t)
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		CONSTRUCT {
+			?s ex:name ?name {| ex:meta [ ex:src "test" ] |}
+		}
+		WHERE {
+			?s ex:name ?name
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Graph == nil {
+		t.Fatal("expected graph")
+	}
+	// Per person (3 total):
+	//   ?s ex:name ?name .                       (1)
+	//   _:reifier rdf:reifies <<( s name n )>> . (1)
+	//   _:reifier ex:meta _:b .                  (1)
+	//   _:b ex:src "test" .                      (1)
+	// = 4 per person = 12
+	if r.Graph.Len() != 12 {
+		t.Errorf("expected 12 triples, got %d", r.Graph.Len())
+	}
+}
+
+func TestConstructAnnotationWithCollection(t *testing.T) {
+	g := makeSPARQLGraph(t)
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		CONSTRUCT {
+			?s ex:name ?name {| ex:tags ("a" "b") |}
+		}
+		WHERE {
+			?s ex:name ?name
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Graph == nil {
+		t.Fatal("expected graph")
+	}
+	// Per person (3 total):
+	//   ?s ex:name ?name .                       (1)
+	//   _:reifier rdf:reifies <<( s name n )>> . (1)
+	//   _:reifier ex:tags _:list1 .              (1)
+	//   _:list1 rdf:first "a" .                  (1)
+	//   _:list1 rdf:rest _:list2 .               (1)
+	//   _:list2 rdf:first "b" .                  (1)
+	//   _:list2 rdf:rest rdf:nil .               (1)
+	// = 7 per person = 21
+	if r.Graph.Len() != 21 {
+		t.Errorf("expected 21 triples, got %d", r.Graph.Len())
+	}
+}
+
+func TestWhereAnnotationWithBnodeAndCollection(t *testing.T) {
+	g := makeSPARQLGraph(t)
+	// Test that WHERE-clause annotation blocks also parse bnodes/collections as objects.
+	// We use ASK to just verify parsing succeeds.
+	r, err := Query(g, `
+		PREFIX ex: <http://example.org/>
+		SELECT ?s WHERE {
+			?s ex:name ?name {| ex:meta [ ex:src "test" ] ; ex:tags ("a" "b") |}
+		}
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should parse without error; results may be empty since annotation patterns
+	// won't match the test data, but parsing must succeed.
+	_ = r
+}
+
 func TestConstructCollectionAsObject(t *testing.T) {
 	g := makeSPARQLGraph(t)
 	r, err := Query(g, `

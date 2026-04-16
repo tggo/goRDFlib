@@ -448,6 +448,13 @@ func (p *sparqlParser) parseAnnotationBlock(reifierID string) ([]Triple, error) 
 				}
 				obj = bnode
 				triples = append(triples, extraTriples...)
+			} else if p.pos < len(p.input) && p.input[p.pos] == '(' {
+				head, extraTriples, err := p.parseCollectionTriples()
+				if err != nil {
+					return triples, err
+				}
+				obj = head
+				triples = append(triples, extraTriples...)
 			} else {
 				obj = p.readTermOrVar()
 				if len(p.reifierTriples) > 0 {
