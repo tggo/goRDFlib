@@ -1,6 +1,7 @@
 package nq_test
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -119,4 +120,24 @@ func Example_ntToNqDefaultGraph() {
 	fmt.Print(buf.String())
 	// Output:
 	// <http://example.org/s> <http://example.org/p> "value" .
+}
+
+// Example_lineTooLong shows the actionable error produced when a single N-Quads
+// line exceeds the default 64KB scanner cap. The error names the failing line
+// number, the byte limit, and the options that lift it — and it matches the
+// nq.ErrLineTooLong sentinel, so callers can detect the condition and retry with
+// WithUnboundedLines (or a larger WithMaxLineLength) instead of having to decode
+// an opaque "bufio.Scanner: token too long".
+func Example_lineTooLong() {
+	// A single line carrying a literal larger than the 64KB default cap.
+	big := strings.Repeat("x", 100*1024)
+	doc := `<http://example.org/s> <http://example.org/p> "` + big + `" .` + "\n"
+
+	err := nq.Parse(rdflibgo.NewGraph(), strings.NewReader(doc))
+	fmt.Println(err)
+	fmt.Println("is ErrLineTooLong:", errors.Is(err, nq.ErrLineTooLong))
+
+	// Output:
+	// line 1: line exceeds maximum length (65536 bytes); raise it with WithMaxLineLength or remove it with WithUnboundedLines
+	// is ErrLineTooLong: true
 }
