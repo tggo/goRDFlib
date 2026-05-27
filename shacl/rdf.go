@@ -238,7 +238,7 @@ func NewGraph() *Graph {
 }
 
 // LoadTurtleFile loads a Turtle file from disk.
-func LoadTurtleFile(path string) (*Graph, error) {
+func LoadTurtleFile(path string, opts ...turtle.Option) (*Graph, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -246,24 +246,28 @@ func LoadTurtleFile(path string) (*Graph, error) {
 	defer f.Close()
 	base := "file://" + path
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := turtle.Parse(g, f, turtle.WithBase(base)); err != nil {
+	parseOpts := append([]turtle.Option{}, opts...)
+	parseOpts = append(parseOpts, turtle.WithBase(base))
+	if err := turtle.Parse(g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return &Graph{g: g, baseURI: base}, nil
 }
 
 // LoadTurtle parses Turtle data from a reader.
-func LoadTurtle(r io.Reader, base string) (*Graph, error) {
+func LoadTurtle(r io.Reader, base string, opts ...turtle.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := turtle.Parse(g, r, turtle.WithBase(base)); err != nil {
+	parseOpts := append([]turtle.Option{}, opts...)
+	parseOpts = append(parseOpts, turtle.WithBase(base))
+	if err := turtle.Parse(g, r, parseOpts...); err != nil {
 		return nil, err
 	}
 	return &Graph{g: g, baseURI: base}, nil
 }
 
 // LoadTurtleString parses Turtle data from a string.
-func LoadTurtleString(data, base string) (*Graph, error) {
-	return LoadTurtle(strings.NewReader(data), base)
+func LoadTurtleString(data, base string, opts ...turtle.Option) (*Graph, error) {
+	return LoadTurtle(strings.NewReader(data), base, opts...)
 }
 
 // LoadJsonLDFile loads a JSON-LD file from disk.
@@ -300,7 +304,7 @@ func LoadJsonLDString(data, base string, opts ...jsonld.Option) (*Graph, error) 
 }
 
 // LoadNQuadsFile loads an N-Quads file from disk.
-func LoadNQuadsFile(path string) (*Graph, error) {
+func LoadNQuadsFile(path string, opts ...nq.Option) (*Graph, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -308,24 +312,28 @@ func LoadNQuadsFile(path string) (*Graph, error) {
 	defer f.Close()
 	base := "file://" + path
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := nq.Parse(g, f, nq.WithBase(base)); err != nil {
+	parseOpts := append([]nq.Option{}, opts...)
+	parseOpts = append(parseOpts, nq.WithBase(base))
+	if err := nq.Parse(g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return &Graph{g: g, baseURI: base}, nil
 }
 
 // LoadNQuads parses N-Quads data from a reader.
-func LoadNQuads(r io.Reader, base string) (*Graph, error) {
+func LoadNQuads(r io.Reader, base string, opts ...nq.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := nq.Parse(g, r, nq.WithBase(base)); err != nil {
+	parseOpts := append([]nq.Option{}, opts...)
+	parseOpts = append(parseOpts, nq.WithBase(base))
+	if err := nq.Parse(g, r, parseOpts...); err != nil {
 		return nil, err
 	}
 	return &Graph{g: g, baseURI: base}, nil
 }
 
 // LoadNQuadsString parses N-Quads data from a string.
-func LoadNQuadsString(data, base string) (*Graph, error) {
-	return LoadNQuads(strings.NewReader(data), base)
+func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
+	return LoadNQuads(strings.NewReader(data), base, opts...)
 }
 
 func (g *Graph) ensureIndexes() {

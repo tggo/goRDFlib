@@ -2,9 +2,18 @@ package ntsyntax
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 )
+
+// ErrLineTooLong is returned (wrapped) when a single line exceeds the scanner's
+// byte cap. It is a sentinel so callers can detect the condition with
+// errors.Is and react — e.g. retry with WithUnboundedLines. The wrapped message
+// names the limit and the two options that lift it, so the failure is
+// self-explanatory instead of surfacing the opaque bufio.ErrTooLong.
+var ErrLineTooLong = errors.New("line exceeds maximum length")
 
 // NextLine returns one logical line at a time from a line-based RDF stream
 // (N-Triples / N-Quads). It returns io.EOF (with an empty line) once the input
@@ -43,12 +52,19 @@ func NewLineReader(r io.Reader, maxLineLen int, unbounded bool) NextLine {
 	}
 
 	sc := bufio.NewScanner(r)
+	limit := bufio.MaxScanTokenSize
 	if maxLineLen > 0 {
 		sc.Buffer(make([]byte, 0, 64*1024), maxLineLen)
+		limit = maxLineLen
 	}
 	return func() (string, error) {
 		if !sc.Scan() {
 			if err := sc.Err(); err != nil {
+				if errors.Is(err, bufio.ErrTooLong) {
+					// Translate the opaque stdlib error into an actionable one:
+					// name the limit and the two options that lift it.
+					return "", fmt.Errorf("%w (%d bytes); raise it with WithMaxLineLength or remove it with WithUnboundedLines", ErrLineTooLong, limit)
+				}
 				return "", err
 			}
 			return "", io.EOF

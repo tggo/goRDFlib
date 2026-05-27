@@ -320,18 +320,28 @@ func TestNQParserErrorHandlerWithQuadHandler(t *testing.T) {
 }
 
 // TestNQParserLongLineDefaultErrors verifies that a line larger than bufio.Scanner's
-// default 64KB max token size produces a scanner error under default settings.
+// default 64KB max token size produces an actionable error under default settings:
+// it matches the ErrLineTooLong sentinel, names the failing line number, and points
+// at the options that lift the cap — instead of the opaque bufio "token too long".
 func TestNQParserLongLineDefaultErrors(t *testing.T) {
 	bigLiteral := strings.Repeat("x", 100*1024)
-	line := `<http://example.org/s> <http://example.org/p> "` + bigLiteral + `" <http://example.org/g> .` + "\n"
+	line := "# leading comment\n" +
+		`<http://example.org/s> <http://example.org/p> "` + bigLiteral + `" <http://example.org/g> .` + "\n"
 
 	g := rdflibgo.NewGraph()
 	err := Parse(g, strings.NewReader(line))
 	if err == nil {
 		t.Fatal("expected error parsing line > 64KB with default buffer, got nil")
 	}
-	if !strings.Contains(err.Error(), "token too long") {
-		t.Fatalf("expected bufio token too long error, got: %v", err)
+	if !errors.Is(err, ErrLineTooLong) {
+		t.Fatalf("expected errors.Is(err, ErrLineTooLong), got: %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "line 2") {
+		t.Errorf("expected error to name the failing line number (line 2), got: %v", err)
+	}
+	if !strings.Contains(msg, "WithUnboundedLines") || !strings.Contains(msg, "WithMaxLineLength") {
+		t.Errorf("expected error to suggest the size options, got: %v", err)
 	}
 }
 

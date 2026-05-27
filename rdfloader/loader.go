@@ -39,9 +39,26 @@ func WithTimeout(d time.Duration) Option {
 	return func(l *defaultLoader) { l.timeout = d }
 }
 
+// WithMaxLineLength raises the per-line byte cap of the line-based parsers
+// (N-Triples, N-Quads) for inputs that pack large literals onto one line.
+// It has no effect on Turtle, TriG, RDF/XML or JSON-LD, which are not line-based.
+func WithMaxLineLength(n int) Option {
+	return func(l *defaultLoader) { l.maxLineLen = n }
+}
+
+// WithUnboundedLines removes the per-line byte cap of the line-based parsers
+// (N-Triples, N-Quads). Use it when the longest line cannot be bounded ahead of
+// time; see nq.WithUnboundedLines for the memory trade-off. No effect on
+// Turtle, TriG, RDF/XML or JSON-LD.
+func WithUnboundedLines() Option {
+	return func(l *defaultLoader) { l.unbounded = true }
+}
+
 type defaultLoader struct {
-	client  *http.Client
-	timeout time.Duration
+	client     *http.Client
+	timeout    time.Duration
+	maxLineLen int
+	unbounded  bool
 }
 
 // DefaultLoader returns a Loader that handles file:// and http(s):// URIs.
@@ -101,7 +118,7 @@ func (l *defaultLoader) loadFile(g *graph.Graph, path string) error {
 		}
 	}
 
-	return parseFormat(g, f, format)
+	return l.parseFormat(g, f, format)
 }
 
 func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string) error {
@@ -124,13 +141,13 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 	// Try Content-Type header
 	ct := resp.Header.Get("Content-Type")
 	if format, ok := plugin.FormatFromMIME(ct); ok {
-		return parseFormat(g, resp.Body, format)
+		return l.parseFormat(g, resp.Body, format)
 	}
 
 	// Try URL path extension
 	u, _ := url.Parse(uri)
 	if format, ok := plugin.FormatFromFilename(u.Path); ok {
-		return parseFormat(g, resp.Body, format)
+		return l.parseFormat(g, resp.Body, format)
 	}
 
 	// Content sniffing: buffer prefix, detect, then replay with remaining body
@@ -145,18 +162,19 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 	}
 
 	combined := io.MultiReader(bytes.NewReader(buf[:n]), resp.Body)
-	return parseFormat(g, combined, format)
+	return l.parseFormat(g, combined, format)
 }
 
-// parseFormat dispatches to the appropriate parser by format name.
-func parseFormat(g *graph.Graph, r io.Reader, format string) error {
+// parseFormat dispatches to the appropriate parser by format name, forwarding
+// the line-length options to the line-based parsers (N-Triples, N-Quads).
+func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) error {
 	switch format {
 	case "turtle":
 		return turtle.Parse(g, r)
 	case "nt":
-		return nt.Parse(g, r)
+		return nt.Parse(g, r, l.ntOpts()...)
 	case "nquads":
-		return nq.Parse(g, r)
+		return nq.Parse(g, r, l.nqOpts()...)
 	case "trig":
 		return trig.Parse(g, r)
 	case "xml":
@@ -166,4 +184,27 @@ func parseFormat(g *graph.Graph, r io.Reader, format string) error {
 	default:
 		return fmt.Errorf("rdfloader: unsupported format %q", format)
 	}
+}
+
+// ntOpts and nqOpts translate the loader's line-length settings into parser
+// options. They return nil when nothing is configured, preserving the parser
+// defaults.
+func (l *defaultLoader) ntOpts() []nt.Option {
+	var opts []nt.Option
+	if l.unbounded {
+		opts = append(opts, nt.WithUnboundedLines())
+	} else if l.maxLineLen > 0 {
+		opts = append(opts, nt.WithMaxLineLength(l.maxLineLen))
+	}
+	return opts
+}
+
+func (l *defaultLoader) nqOpts() []nq.Option {
+	var opts []nq.Option
+	if l.unbounded {
+		opts = append(opts, nq.WithUnboundedLines())
+	} else if l.maxLineLen > 0 {
+		opts = append(opts, nq.WithMaxLineLength(l.maxLineLen))
+	}
+	return opts
 }

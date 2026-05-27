@@ -1,6 +1,7 @@
 package nt
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +9,12 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
 )
+
+// ErrLineTooLong is reported (wrapped, with the line number) when a line exceeds
+// the parser's byte cap. Detect it with errors.Is and retry with
+// WithUnboundedLines (or a larger WithMaxLineLength). Re-exported from the
+// internal line reader so callers outside the module can match against it.
+var ErrLineTooLong = ntsyntax.ErrLineTooLong
 
 // TripleHandler is the callback used by ParseStream. Returning a non-nil error
 // aborts the parse and is propagated to the caller of ParseStream.
@@ -46,6 +53,9 @@ func parseLines(r io.Reader, opts []Option, h TripleHandler) error {
 			break
 		}
 		if err != nil {
+			if errors.Is(err, ntsyntax.ErrLineTooLong) {
+				return fmt.Errorf("line %d: %w", lineNum+1, err)
+			}
 			return err
 		}
 		lineNum++
