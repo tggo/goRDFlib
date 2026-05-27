@@ -1,6 +1,7 @@
 package nq
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +9,12 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
 )
+
+// ErrLineTooLong is reported (wrapped, with the line number) when a line exceeds
+// the parser's byte cap. Detect it with errors.Is and retry with
+// WithUnboundedLines (or a larger WithMaxLineLength). Re-exported from the
+// internal line reader so callers outside the module can match against it.
+var ErrLineTooLong = ntsyntax.ErrLineTooLong
 
 // QuadHandler is called for each parsed quad. The graph term may be nil for triples
 // without an explicit graph context.
@@ -57,6 +64,9 @@ func parseLines(r io.Reader, opts []Option, h StreamHandler, dispatchQuadHandler
 			break
 		}
 		if err != nil {
+			if errors.Is(err, ntsyntax.ErrLineTooLong) {
+				return fmt.Errorf("line %d: %w", lineNum+1, err)
+			}
 			return err
 		}
 		lineNum++

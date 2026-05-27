@@ -20,6 +20,12 @@
 - Numeric casts (`int64(floatVal)`) must check for overflow/NaN/Inf before casting
 - Silent error suppression (returning a default instead of nil/error) must have a comment citing the spec section that justifies it
 
+### Debuggability (don't forget)
+- Errors must be **actionable**: never surface a raw stdlib/third-party error (e.g. `bufio.Scanner: token too long`) to callers. Wrap it in a package sentinel and state the remediation — name the option/limit that resolves it (e.g. `ErrLineTooLong` → "raise it with WithMaxLineLength or remove it with WithUnboundedLines").
+- Re-export internal sentinels from the public package (`var ErrX = internalpkg.ErrX`) so downstream callers can `errors.Is` against them — `internal/` packages are not importable outside the module.
+- When a parser/loader wraps a sub-parser, **forward its options** (`...Option`) end to end; a size/error knob that can't be reached is a debugging dead end (see jsonld→nq, shacl loaders, rdfloader).
+- Prefer a verbose/trace escape hatch on parsing, loading, and batch ops: an error/event handler callback (`WithErrorHandler(func(lineNum int, line string, err error) ...)`) or a `WithVerbose`-style option, so users can trace progress and pinpoint the failing input rather than getting one terminal error.
+
 ### API Design
 - Long-running or I/O functions must accept `context.Context` as the first parameter
 - Follow Go naming: `MustX` for panic-on-error constructors (not `XUnsafe`)
