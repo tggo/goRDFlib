@@ -1493,6 +1493,32 @@ func TestLoadJsonLDString_UnboundedLinesOptIn(t *testing.T) {
 	}
 }
 
+// --- Validate large JSON-LD data ensuring it can be both parsed and validated ---
+
+func TestValidateLargeJsonLD(t *testing.T) {
+	t.Parallel()
+	data := `{
+  "@context": {"ex": "http://example.org/"},
+  "@id": "ex:Alice",
+  "ex:description": "` + strings.Repeat("x", 5*1024*1024) + `"
+}`
+	g, err := LoadJsonLDString(data, "http://example.org/", jsonld.WithUnboundedLines())
+	if err != nil {
+		t.Fatalf("unexpected error loading JSON-LD with large literal: %v", err)
+	}
+	shapes := mustParseWithPrefixes(t, `
+ex:S a sh:NodeShape ;
+    sh:targetNode ex:Alice ;
+    sh:property [
+        sh:path ex:description ;
+        sh:minCount 1 ;
+    ] .
+`)
+	if report := Validate(g, shapes); !report.Conforms {
+		t.Fatalf("expected large JSON-LD data to conform, got %d violations", len(report.Results))
+	}
+}
+
 func TestLoadJsonLDFile_NotFound(t *testing.T) {
 	t.Parallel()
 	_, err := LoadJsonLDFile("/nonexistent/path/to/file.jsonld")
