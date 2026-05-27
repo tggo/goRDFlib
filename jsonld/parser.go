@@ -16,7 +16,7 @@ import (
 
 // Parse parses a JSON-LD document into the given graph.
 // It uses piprate/json-gold to expand the document to N-Quads, then parses those into the graph.
-// Options: WithBase, WithDocumentLoader.
+// Options: WithBase, WithDocumentLoader, WithSkipInvalidIRIs, WithUnboundedLines.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -62,16 +62,20 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 // When set, lines that fail because of an invalid IRI (ntsyntax.ErrInvalidIRI)
 // are skipped instead of aborting the parse.
 func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config) error {
-	if !cfg.skipInvalidIRI {
-		return nq.Parse(g, strings.NewReader(nqStr))
+	nqOpts := make([]nq.Option, 0, 2)
+	if cfg.unbounded {
+		nqOpts = append(nqOpts, nq.WithUnboundedLines())
 	}
-	skipInvalid := func(lineNum int, line string, err error) (string, bool) {
-		if errors.Is(err, ntsyntax.ErrInvalidIRI) {
-			return "", false // skip this triple, continue parsing
+	if cfg.skipInvalidIRI {
+		skipInvalid := func(lineNum int, line string, err error) (string, bool) {
+			if errors.Is(err, ntsyntax.ErrInvalidIRI) {
+				return "", false // skip this triple, continue parsing
+			}
+			// Re-surface anything that isn't an invalid IRI by re-parsing the
+			// unmodified line, which fails the same way and aborts.
+			return line, true
 		}
-		// Re-surface anything that isn't an invalid IRI by re-parsing the
-		// unmodified line, which fails the same way and aborts.
-		return line, true
+		nqOpts = append(nqOpts, nq.WithErrorHandler(skipInvalid))
 	}
-	return nq.Parse(g, strings.NewReader(nqStr), nq.WithErrorHandler(skipInvalid))
+	return nq.Parse(g, strings.NewReader(nqStr), nqOpts...)
 }

@@ -1,7 +1,10 @@
 package shacl
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/tggo/goRDFlib/jsonld"
 )
 
 // jsonldContext is a reusable JSON-LD context for tests.
@@ -1466,6 +1469,27 @@ func TestLoadJsonLDString_Invalid(t *testing.T) {
 	_, err := LoadJsonLDString("not valid json", "http://example.org/")
 	if err == nil {
 		t.Error("expected error for invalid JSON-LD")
+	}
+}
+
+func TestLoadJsonLDString_UnboundedLinesOptIn(t *testing.T) {
+	t.Parallel()
+	data := `{
+  "@context": {"ex": "http://example.org/"},
+  "@id": "ex:Alice",
+  "ex:description": "` + strings.Repeat("x", 5*1024*1024) + `"
+}`
+
+	if _, err := LoadJsonLDString(data, "http://example.org/"); err == nil {
+		t.Fatal("expected large JSON-LD literal to fail without WithUnboundedLines")
+	}
+
+	g, err := LoadJsonLDString(data, "http://example.org/", jsonld.WithUnboundedLines())
+	if err != nil {
+		t.Fatalf("unexpected error loading JSON-LD with large literal: %v", err)
+	}
+	if g.Len() != 1 {
+		t.Fatalf("expected 1 triple, got %d", g.Len())
 	}
 }
 

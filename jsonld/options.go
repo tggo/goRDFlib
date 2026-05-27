@@ -17,6 +17,7 @@ type config struct {
 	form           OutputForm
 	documentLoader ld.DocumentLoader
 	skipInvalidIRI bool
+	unbounded      bool
 }
 
 // Option configures JSON-LD parsing or serialization.
@@ -53,4 +54,11 @@ func WithDocumentLoader(loader ld.DocumentLoader) Option {
 // option is a safety net for IRIs that slip through to the N-Quads layer.
 func WithSkipInvalidIRIs() Option {
 	return func(c *config) { c.skipInvalidIRI = true }
+}
+
+// WithUnboundedLines parses intermediate N-Quads lines of arbitrary length,
+// growing the read buffer as needed. This is useful when JSON-LD expansion
+// produces very large literal values on a single N-Quads line.
+func WithUnboundedLines() Option {
+	return func(c *config) { c.unbounded = true }
 }

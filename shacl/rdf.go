@@ -267,7 +267,7 @@ func LoadTurtleString(data, base string) (*Graph, error) {
 }
 
 // LoadJsonLDFile loads a JSON-LD file from disk.
-func LoadJsonLDFile(path string) (*Graph, error) {
+func LoadJsonLDFile(path string, opts ...jsonld.Option) (*Graph, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -275,24 +275,28 @@ func LoadJsonLDFile(path string) (*Graph, error) {
 	defer f.Close()
 	base := "file://" + path
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := jsonld.Parse(g, f, jsonld.WithBase(base)); err != nil {
+	parseOpts := append([]jsonld.Option{}, opts...)
+	parseOpts = append(parseOpts, jsonld.WithBase(base))
+	if err := jsonld.Parse(g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return &Graph{g: g, baseURI: base}, nil
 }
 
 // LoadJsonLD parses JSON-LD data from a reader.
-func LoadJsonLD(r io.Reader, base string) (*Graph, error) {
+func LoadJsonLD(r io.Reader, base string, opts ...jsonld.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := jsonld.Parse(g, r, jsonld.WithBase(base)); err != nil {
+	parseOpts := append([]jsonld.Option{}, opts...)
+	parseOpts = append(parseOpts, jsonld.WithBase(base))
+	if err := jsonld.Parse(g, r, parseOpts...); err != nil {
 		return nil, err
 	}
 	return &Graph{g: g, baseURI: base}, nil
 }
 
 // LoadJsonLDString parses JSON-LD data from a string.
-func LoadJsonLDString(data, base string) (*Graph, error) {
-	return LoadJsonLD(strings.NewReader(data), base)
+func LoadJsonLDString(data, base string, opts ...jsonld.Option) (*Graph, error) {
+	return LoadJsonLD(strings.NewReader(data), base, opts...)
 }
 
 // LoadNQuadsFile loads an N-Quads file from disk.

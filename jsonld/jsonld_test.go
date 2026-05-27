@@ -293,6 +293,23 @@ func TestJSONLDSkipInvalidIRIs(t *testing.T) {
 	}
 }
 
+// TestJSONLDParseNQuadsWithUnboundedLines verifies the JSON-LD parser forwards
+// its unbounded-line option to the intermediate N-Quads parser.
+func TestJSONLDParseNQuadsWithUnboundedLines(t *testing.T) {
+	bigLiteral := strings.Repeat("x", 5*1024*1024)
+	nquads := `<http://example.org/s> <http://example.org/p> "` + bigLiteral + `" .` + "\n"
+
+	g := rdflibgo.NewGraph()
+	var cfg config
+	WithUnboundedLines()(&cfg)
+	if err := parseNQuadsInto(g, nquads, &cfg); err != nil {
+		t.Fatalf("unexpected error with WithUnboundedLines: %v", err)
+	}
+	if g.Len() != 1 {
+		t.Fatalf("expected 1 triple, got %d", g.Len())
+	}
+}
+
 // TestJSONLDSkipInvalidIRIsEndToEnd runs the author's exact example through the
 // public Parse with the option set: it must succeed (it already does on current
 // json-gold, which drops the malformed term itself).
