@@ -22,10 +22,11 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		return err
 	}
 	parser := &turtleParser{
-		g:        g,
-		input:    string(data),
-		base:     cfg.base,
-		prefixes: make(map[string]string),
+		g:          g,
+		input:      string(data),
+		base:       cfg.base,
+		prefixes:   make(map[string]string),
+		provenance: cfg.provenance,
 	}
 	// Copy graph namespace bindings as initial prefixes
 	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
@@ -36,13 +37,23 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 }
 
 type turtleParser struct {
-	g        *rdflibgo.Graph
-	input    string
-	pos      int
-	line     int
-	col      int
-	base     string
-	prefixes map[string]string // prefix -> namespace URI
+	g          *rdflibgo.Graph
+	input      string
+	pos        int
+	line       int
+	col        int
+	base       string
+	prefixes   map[string]string // prefix -> namespace URI
+	provenance ProvenanceHandler
+}
+
+// emit adds a triple to the graph and, when provenance tracking is enabled,
+// reports it with the current source line.
+func (p *turtleParser) emit(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) {
+	p.g.Add(s, pred, o)
+	if p.provenance != nil {
+		p.provenance(s, pred, o, p.line)
+	}
 }
 
 // parse is the main entry point.
@@ -248,7 +259,7 @@ func (p *turtleParser) objectList(subj rdflibgo.Subject, pred rdflibgo.URIRef) e
 	if err != nil {
 		return err
 	}
-	p.g.Add(subj, pred, obj)
+	p.emit(subj, pred, obj)
 	if err := p.readAnnotationsAndReifiers(subj, pred, obj); err != nil {
 		return err
 	}
@@ -264,7 +275,7 @@ func (p *turtleParser) objectList(subj rdflibgo.Subject, pred rdflibgo.URIRef) e
 		if err != nil {
 			return err
 		}
-		p.g.Add(subj, pred, obj)
+		p.emit(subj, pred, obj)
 		if err := p.readAnnotationsAndReifiers(subj, pred, obj); err != nil {
 			return err
 		}
@@ -567,13 +578,13 @@ func (p *turtleParser) readCollection() (rdflibgo.Term, error) {
 	head := rdflibgo.NewBNode()
 	current := head
 	for i, item := range items {
-		p.g.Add(current, rdflibgo.RDF.First, item)
+		p.emit(current, rdflibgo.RDF.First, item)
 		if i < len(items)-1 {
 			next := rdflibgo.NewBNode()
-			p.g.Add(current, rdflibgo.RDF.Rest, next)
+			p.emit(current, rdflibgo.RDF.Rest, next)
 			current = next
 		} else {
-			p.g.Add(current, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+			p.emit(current, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 		}
 	}
 	return head, nil

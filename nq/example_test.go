@@ -122,6 +122,36 @@ func Example_ntToNqDefaultGraph() {
 	// <http://example.org/s> <http://example.org/p> "value" .
 }
 
+// Example_provenance shows how WithProvenance maps each parsed triple back to
+// its source line. This is the building block for citing line numbers in
+// downstream validation: keep a triple-key -> line map while parsing, then look
+// up the offending triple when a SHACL report flags it.
+func Example_provenance() {
+	doc := `<http://example.org/alice> <http://xmlns.com/foaf/0.1/age> "thirty" .
+<http://example.org/bob> <http://xmlns.com/foaf/0.1/age> "40" .
+`
+	key := func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) string {
+		return s.String() + " " + p.String() + " " + o.String()
+	}
+	prov := map[string]int{}
+
+	g := rdflibgo.NewGraph()
+	err := nt.Parse(g, strings.NewReader(doc), nt.WithProvenance(
+		func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int) {
+			prov[key(s, p, o)] = lineNum
+		}))
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	// A validator later finds alice's age is not an integer; report its line.
+	badKey := "http://example.org/alice http://xmlns.com/foaf/0.1/age thirty"
+	fmt.Printf("constraint violation at line %d\n", prov[badKey])
+	// Output:
+	// constraint violation at line 1
+}
+
 // Example_lineTooLong shows the actionable error produced when a single N-Quads
 // line exceeds the default 64KB scanner cap. The error names the failing line
 // number, the byte limit, and the options that lift it — and it matches the

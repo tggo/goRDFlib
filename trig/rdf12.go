@@ -75,7 +75,7 @@ func (p *trigParser) readAnnotationsAndReifiers(subj rdflibgo.Subject, pred rdfl
 			} else {
 				reifier = rdflibgo.NewBNode()
 			}
-			p.currentGraph.Add(reifier, reifiesPred, getTripleTerm())
+			p.emit(reifier, reifiesPred, getTripleTerm())
 
 			p.skipWS()
 			if p.pos+1 < len(p.input) && p.input[p.pos] == '{' && p.input[p.pos+1] == '|' {
@@ -88,7 +88,7 @@ func (p *trigParser) readAnnotationsAndReifiers(subj rdflibgo.Subject, pred rdfl
 
 		if p.input[p.pos] == '{' && p.pos+1 < len(p.input) && p.input[p.pos+1] == '|' {
 			reifier := rdflibgo.NewBNode()
-			p.currentGraph.Add(reifier, reifiesPred, getTripleTerm())
+			p.emit(reifier, reifiesPred, getTripleTerm())
 			if err := p.readAnnotationBlock(reifier); err != nil {
 				return err
 			}
@@ -271,7 +271,7 @@ func (p *trigParser) readReifiedTripleInner() (rdflibgo.Subject, error) {
 	p.pos += 2
 
 	tt := rdflibgo.NewTripleTerm(subj, pred, obj)
-	p.currentGraph.Add(reifier, rdflibgo.RDFReifies, tt)
+	p.emit(reifier, rdflibgo.RDFReifies, tt)
 
 	return reifier, nil
 }

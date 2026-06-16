@@ -82,7 +82,7 @@ func (p *turtleParser) readAnnotationsAndReifiers(subj rdflibgo.Subject, pred rd
 				// Anonymous reifier
 				reifier = rdflibgo.NewBNode()
 			}
-			p.g.Add(reifier, reifiesPred, getTripleTerm())
+			p.emit(reifier, reifiesPred, getTripleTerm())
 
 			// Check for annotation block after reifier
 			p.skipWS()
@@ -97,7 +97,7 @@ func (p *turtleParser) readAnnotationsAndReifiers(subj rdflibgo.Subject, pred rd
 		// Annotation block: {| predObjectList |}
 		if p.input[p.pos] == '{' && p.pos+1 < len(p.input) && p.input[p.pos+1] == '|' {
 			reifier := rdflibgo.NewBNode()
-			p.g.Add(reifier, reifiesPred, getTripleTerm())
+			p.emit(reifier, reifiesPred, getTripleTerm())
 			if err := p.readAnnotationBlock(reifier, getTripleTerm()); err != nil {
 				return err
 			}
@@ -301,7 +301,7 @@ func (p *turtleParser) readReifiedTripleInner() (rdflibgo.Subject, error) {
 
 	// Emit the rdf:reifies triple
 	tt := rdflibgo.NewTripleTerm(subj, pred, obj)
-	p.g.Add(reifier, rdflibgo.RDFReifies, tt)
+	p.emit(reifier, rdflibgo.RDFReifies, tt)
 
 	return reifier, nil
 }

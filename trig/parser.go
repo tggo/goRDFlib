@@ -28,7 +28,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	p := newTrigParser(ds, string(data), cfg.base)
+	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
 	if err := p.parse(); err != nil {
 		return err
 	}
@@ -55,16 +55,17 @@ func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	p := newTrigParser(ds, string(data), cfg.base)
+	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
 	return p.parse()
 }
 
-func newTrigParser(ds *graph.Dataset, input, base string) *trigParser {
+func newTrigParser(ds *graph.Dataset, input, base string, provenance ProvenanceHandler) *trigParser {
 	p := &trigParser{
-		ds:       ds,
-		input:    input,
-		base:     base,
-		prefixes: make(map[string]string),
+		ds:         ds,
+		input:      input,
+		base:       base,
+		prefixes:   make(map[string]string),
+		provenance: provenance,
 	}
 	p.currentGraph = ds.DefaultContext()
 	ds.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
@@ -83,6 +84,16 @@ type trigParser struct {
 	col          int
 	base         string
 	prefixes     map[string]string // prefix -> namespace URI
+	provenance   ProvenanceHandler
+}
+
+// emit adds a triple to the active graph and, when provenance tracking is
+// enabled, reports it with the active graph identifier and the current line.
+func (p *trigParser) emit(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) {
+	p.currentGraph.Add(s, pred, o)
+	if p.provenance != nil {
+		p.provenance(s, pred, o, p.currentGraph.Identifier(), p.line)
+	}
 }
 
 // parse is the main entry point.
@@ -505,7 +516,7 @@ func (p *trigParser) objectList(subj rdflibgo.Subject, pred rdflibgo.URIRef) err
 	if err != nil {
 		return err
 	}
-	p.currentGraph.Add(subj, pred, obj)
+	p.emit(subj, pred, obj)
 	if err := p.readAnnotationsAndReifiers(subj, pred, obj); err != nil {
 		return err
 	}
@@ -521,7 +532,7 @@ func (p *trigParser) objectList(subj rdflibgo.Subject, pred rdflibgo.URIRef) err
 		if err != nil {
 			return err
 		}
-		p.currentGraph.Add(subj, pred, obj)
+		p.emit(subj, pred, obj)
 		if err := p.readAnnotationsAndReifiers(subj, pred, obj); err != nil {
 			return err
 		}
@@ -811,13 +822,13 @@ func (p *trigParser) readCollection() (rdflibgo.Term, error) {
 	head := rdflibgo.NewBNode()
 	current := head
 	for i, item := range items {
-		p.currentGraph.Add(current, rdflibgo.RDF.First, item)
+		p.emit(current, rdflibgo.RDF.First, item)
 		if i < len(items)-1 {
 			next := rdflibgo.NewBNode()
-			p.currentGraph.Add(current, rdflibgo.RDF.Rest, next)
+			p.emit(current, rdflibgo.RDF.Rest, next)
 			current = next
 		} else {
-			p.currentGraph.Add(current, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+			p.emit(current, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 		}
 	}
 	return head, nil

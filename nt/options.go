@@ -1,5 +1,7 @@
 package nt
 
+import rdflibgo "github.com/tggo/goRDFlib"
+
 // Option configures N-Triples parsing or serialization.
 type Option func(*config)
 
@@ -10,9 +12,22 @@ type Option func(*config)
 // To preserve the default fail-fast behavior, do not set an error handler.
 type ErrorHandler func(lineNum int, line string, err error) (fixedLine string, retry bool)
 
+// ProvenanceHandler is called for each successfully parsed triple with the
+// 1-based source line number it came from. Use it to map triples back to their
+// origin in the input (e.g. so a SHACL report can cite a line number). It is
+// invoked after the triple is added to the graph / dispatched to the stream
+// handler. The handler must not be nil when passed to WithProvenance.
+//
+// A single source line yields exactly one triple in N-Triples, so the mapping is
+// one-to-one. Note that the graph deduplicates triples, so if the same triple
+// appears on multiple lines the handler is still called once per occurrence —
+// the caller decides how to reconcile duplicates.
+type ProvenanceHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int)
+
 type config struct {
 	base         string
 	errorHandler ErrorHandler
+	provenance   ProvenanceHandler
 	maxLineLen   int
 	unbounded    bool
 }
@@ -26,6 +41,13 @@ func WithBase(base string) Option {
 // See ErrorHandler for semantics.
 func WithErrorHandler(h ErrorHandler) Option {
 	return func(c *config) { c.errorHandler = h }
+}
+
+// WithProvenance sets a callback invoked for each successfully parsed triple
+// with its 1-based source line number. See ProvenanceHandler for semantics.
+// When unset there is zero per-triple overhead.
+func WithProvenance(h ProvenanceHandler) Option {
+	return func(c *config) { c.provenance = h }
 }
 
 // WithMaxLineLength raises the maximum byte length of a single N-Triples line.

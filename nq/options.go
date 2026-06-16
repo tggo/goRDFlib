@@ -1,5 +1,7 @@
 package nq
 
+import rdflibgo "github.com/tggo/goRDFlib"
+
 // Option configures N-Quads parsing or serialization.
 type Option func(*config)
 
@@ -10,10 +12,21 @@ type Option func(*config)
 // To preserve the default fail-fast behavior, do not set an error handler.
 type ErrorHandler func(lineNum int, line string, err error) (fixedLine string, retry bool)
 
+// ProvenanceHandler is called for each successfully parsed quad with the 1-based
+// source line number it came from. The graph term is nil for triples without an
+// explicit graph context. Use it to map quads back to their origin in the input
+// (e.g. so a SHACL report can cite a line number). It is invoked after the quad
+// is dispatched. The handler must not be nil when passed to WithProvenance.
+//
+// A single source line yields exactly one quad in N-Quads, so the mapping is
+// one-to-one.
+type ProvenanceHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term, lineNum int)
+
 type config struct {
 	base         string
 	quadHandler  QuadHandler
 	errorHandler ErrorHandler
+	provenance   ProvenanceHandler
 	maxLineLen   int
 	unbounded    bool
 }
@@ -33,6 +46,13 @@ func WithQuadHandler(h QuadHandler) Option {
 // See ErrorHandler for semantics.
 func WithErrorHandler(h ErrorHandler) Option {
 	return func(c *config) { c.errorHandler = h }
+}
+
+// WithProvenance sets a callback invoked for each successfully parsed quad with
+// its 1-based source line number. See ProvenanceHandler for semantics. When
+// unset there is zero per-quad overhead.
+func WithProvenance(h ProvenanceHandler) Option {
+	return func(c *config) { c.provenance = h }
 }
 
 // WithMaxLineLength raises the maximum byte length of a single N-Quads line.

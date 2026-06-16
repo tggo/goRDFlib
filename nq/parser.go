@@ -74,13 +74,13 @@ func parseLines(r io.Reader, opts []Option, h StreamHandler, dispatchQuadHandler
 		if line == "" || line[0] == '#' {
 			continue
 		}
-		if err := parseNQLine(line, lineNum, h, cfg.quadHandler, dispatchQuadHandler); err != nil {
+		if err := parseNQLine(line, lineNum, h, cfg.quadHandler, dispatchQuadHandler, cfg.provenance); err != nil {
 			if cfg.errorHandler == nil {
 				return err
 			}
 			fixedLine, retry := cfg.errorHandler(lineNum, line, err)
 			if retry {
-				if err2 := parseNQLine(fixedLine, lineNum, h, cfg.quadHandler, dispatchQuadHandler); err2 != nil {
+				if err2 := parseNQLine(fixedLine, lineNum, h, cfg.quadHandler, dispatchQuadHandler, cfg.provenance); err2 != nil {
 					return fmt.Errorf("line %d: retry failed: %w", lineNum, err2)
 				}
 			}
@@ -89,7 +89,7 @@ func parseLines(r io.Reader, opts []Option, h StreamHandler, dispatchQuadHandler
 	return nil
 }
 
-func parseNQLine(line string, lineNum int, h StreamHandler, qh QuadHandler, dispatchQuadHandler bool) error {
+func parseNQLine(line string, lineNum int, h StreamHandler, qh QuadHandler, dispatchQuadHandler bool, prov ProvenanceHandler) error {
 	p := &ntsyntax.LineParser{Line: line, Pos: 0, LineNum: lineNum}
 
 	subj, err := p.ReadSubject()
@@ -124,5 +124,11 @@ func parseNQLine(line string, lineNum int, h StreamHandler, qh QuadHandler, disp
 	if dispatchQuadHandler && qh != nil {
 		qh(subj, pred, obj, graphCtx)
 	}
-	return h(subj, pred, obj, graphCtx)
+	if err := h(subj, pred, obj, graphCtx); err != nil {
+		return err
+	}
+	if prov != nil {
+		prov(subj, pred, obj, graphCtx, lineNum)
+	}
+	return nil
 }
