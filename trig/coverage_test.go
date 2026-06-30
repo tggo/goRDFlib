@@ -2517,3 +2517,37 @@ func TestCovSerializeWritePredicatesMultiWithLabelTrig(t *testing.T) {
 		t.Errorf("expected rdf:type 'a' and rdfs:label, got:\n%s", out)
 	}
 }
+
+// TestResolveIRIBaseEndingInHash documents TriG base resolution for a base IRI
+// ending in '#' (RFC 3986 §5.4), mirroring the Turtle golden test for issue #19.
+// A path-relative reference <alice> replaces the last path segment and drops the
+// base fragment (-> http://example.org/alice); only a fragment reference <#alice>
+// attaches to the '#' (-> http://example.org/my-repo#alice). Matches Go net/url,
+// Python rdflib, and the RFC §5.4 examples.
+func TestResolveIRIBaseEndingInHash(t *testing.T) {
+	const base = "http://example.org/my-repo#"
+	cases := []struct {
+		ref  string
+		want string
+	}{
+		{"<alice>", "http://example.org/alice"},
+		{"<#alice>", "http://example.org/my-repo#alice"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ref, func(t *testing.T) {
+			g := rdflibgo.NewGraph()
+			input := tc.ref + ` <http://example.org/p> "v" .`
+			if err := Parse(g, strings.NewReader(input), WithBase(base)); err != nil {
+				t.Fatalf("parse %q: %v", input, err)
+			}
+			var got string
+			g.Triples(nil, nil, nil)(func(triple rdflibgo.Triple) bool {
+				got = triple.Subject.(rdflibgo.URIRef).String()
+				return false
+			})
+			if got != tc.want {
+				t.Errorf("base %q ref %q: got %q, want %q", base, tc.ref, got, tc.want)
+			}
+		})
+	}
+}

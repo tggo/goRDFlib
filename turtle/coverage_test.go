@@ -61,6 +61,43 @@ func TestCovResolveIRIWithBase(t *testing.T) {
 	}
 }
 
+// resolveIRI — base ending in '#' (RFC 3986 §5.4 reference resolution).
+//
+// Golden behavior documenting issue #19: a base IRI that ends in '#' does
+// NOT cause a relative reference like <alice> to be appended after the '#'.
+// Per RFC 3986 §5.3/§5.4 a path-relative reference replaces the last path
+// segment and the base fragment is discarded, so <alice> resolves to
+// http://example.org/alice. Only a fragment reference <#alice> attaches to
+// the '#', yielding http://example.org/my-repo#alice. This matches the Go
+// net/url resolver, Python rdflib, and the RFC §5.4 examples ("g" vs "#s").
+func TestResolveIRIBaseEndingInHash(t *testing.T) {
+	const base = "http://example.org/my-repo#"
+	cases := []struct {
+		ref  string
+		want string
+	}{
+		{"<alice>", "http://example.org/alice"},
+		{"<#alice>", "http://example.org/my-repo#alice"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ref, func(t *testing.T) {
+			g := rdflibgo.NewGraph()
+			input := tc.ref + ` <http://example.org/p> "v" .`
+			if err := Parse(g, strings.NewReader(input), WithBase(base)); err != nil {
+				t.Fatalf("parse %q: %v", input, err)
+			}
+			var got string
+			g.Triples(nil, nil, nil)(func(triple rdflibgo.Triple) bool {
+				got = triple.Subject.(rdflibgo.URIRef).String()
+				return false
+			})
+			if got != tc.want {
+				t.Errorf("base %q ref %q: got %q, want %q", base, tc.ref, got, tc.want)
+			}
+		})
+	}
+}
+
 // resolveIRI — empty fragment <#> with base
 func TestCovResolveIRIEmptyFragment(t *testing.T) {
 	g := mustParse(t, `@base <http://example.org/> .
