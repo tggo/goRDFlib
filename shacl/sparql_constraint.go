@@ -1,6 +1,9 @@
 package shacl
 
-import "github.com/tggo/goRDFlib/graph"
+import (
+	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
+)
 
 // SPARQLConstraint implements sh:sparql on shapes. Each focus node is validated
 // by running a SELECT query with $this pre-bound. Each result row is a violation.
@@ -24,10 +27,16 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 	// Build the full query with prefixes, normalizing $var to ?var
 	fullQuery := normalizeDollarVars(c.Prefixes + c.Select)
 
-	// Pre-bind variables via textual substitution
-	bindings := map[string]string{
-		"this": termToSPARQL(focusNode),
-	}
+	// Pre-bind variables. IRI and literal values are spliced in via textual
+	// substitution, but blank-node values must use real pre-binding (initial
+	// bindings): a blank node label written into SPARQL query text denotes a
+	// fresh, query-scoped node, not a reference to the data-graph node
+	// (SPARQL 1.1 §4.1.4), so textual substitution of "_:b0" cannot scope the
+	// pattern to that focus node. SHACL pre-binding is defined as a solution
+	// binding, not text substitution (SHACL §5.2.1.3).
+	bindings := map[string]string{}
+	initBindings := map[string]term.Term{}
+	preBindTerm(bindings, initBindings, "this", focusNode)
 	if shape.Path != nil && shape.Path.Kind == PathPredicate {
 		bindings["PATH"] = termToSPARQL(shape.Path.Pred)
 	}
@@ -46,7 +55,7 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 		}
 	}
 
-	rows, err := executeSPARQL(ctx.dataGraph, query, nil, namedGraphs)
+	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, namedGraphs)
 	if err != nil {
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		r.SourceConstraint = c.Node

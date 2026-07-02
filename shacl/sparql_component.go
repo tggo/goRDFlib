@@ -1,5 +1,7 @@
 package shacl
 
+import "github.com/tggo/goRDFlib/term"
+
 // SPARQLComponentConstraint implements custom SPARQL-based constraint components
 // defined via sh:ConstraintComponent with sh:validator / sh:nodeValidator / sh:propertyValidator.
 type SPARQLComponentConstraint struct {
@@ -42,10 +44,10 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 	var results []ValidationResult
 
 	for _, value := range valueNodes {
-		bindings := c.buildBindings(shape, focusNode, value)
+		bindings, initBindings := c.buildBindings(shape, focusNode, value)
 		query := preBindQuery(queryTemplate, bindings)
 
-		askResult, err := executeSPARQLAsk(ctx.dataGraph, query, nil, nil)
+		askResult, err := executeSPARQLAsk(ctx.dataGraph, query, initBindings, nil)
 		if err != nil {
 			r := makeResult(shape, focusNode, value, c.ComponentIRI())
 			if len(c.Validator.Messages) > 0 {
@@ -68,10 +70,10 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 }
 
 func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term, queryTemplate string) []ValidationResult {
-	bindings := c.buildBindings(shape, focusNode, Term{})
+	bindings, initBindings := c.buildBindings(shape, focusNode, Term{})
 	query := preBindQuery(queryTemplate, bindings)
 
-	rows, err := executeSPARQL(ctx.dataGraph, query, nil, nil)
+	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil)
 	if err != nil {
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		if len(c.Validator.Messages) > 0 {
@@ -98,30 +100,34 @@ func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shap
 	return results
 }
 
-func (c *SPARQLComponentConstraint) buildBindings(shape *Shape, focusNode, value Term) map[string]string {
-	bindings := map[string]string{
-		"this": termToSPARQL(focusNode),
-	}
+// buildBindings returns the pre-bound variables split into textual bindings
+// (IRI/literal values spliced into query text) and initial bindings
+// (blank-node values, which cannot be referenced by label in SPARQL query
+// text — see preBindTerm).
+func (c *SPARQLComponentConstraint) buildBindings(shape *Shape, focusNode, value Term) (map[string]string, map[string]term.Term) {
+	bindings := map[string]string{}
+	initBindings := map[string]term.Term{}
+	preBindTerm(bindings, initBindings, "this", focusNode)
 
 	if !value.IsNone() {
-		bindings["value"] = termToSPARQL(value)
+		preBindTerm(bindings, initBindings, "value", value)
 	}
 
 	if shape.Path != nil && shape.Path.Kind == PathPredicate {
 		bindings["PATH"] = termToSPARQL(shape.Path.Pred)
 	}
 
-	bindings["currentShape"] = termToSPARQL(shape.ID)
+	preBindTerm(bindings, initBindings, "currentShape", shape.ID)
 
 	// Bind parameter values
 	for _, param := range c.Parameters {
 		paramName := localName(param.Path.Value())
 		if v, ok := c.ParamValues[param.Path.Value()]; ok {
-			bindings[paramName] = termToSPARQL(v)
+			preBindTerm(bindings, initBindings, paramName, v)
 		}
 	}
 
-	return bindings
+	return bindings, initBindings
 }
 
 // parseConstraintComponents finds all sh:ConstraintComponent definitions in

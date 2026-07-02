@@ -1,5 +1,7 @@
 package shacl
 
+import "github.com/tggo/goRDFlib/term"
+
 // Validate validates dataGraph against shapesGraph and returns a validation report.
 func Validate(dataGraph, shapesGraph *Graph) ValidationReport {
 	shapes := parseShapes(shapesGraph)
@@ -103,11 +105,19 @@ func evalSPARQLValues(ctx *evalContext, v *SPARQLValues, focusNode Term) []Term 
 	} else {
 		return nil
 	}
-	// Simple textual substitution — don't use preBindQuery which strips variables from SELECT
-	thisVal := termToSPARQL(focusNode)
-	query = replaceVar(query, "$this", thisVal)
-	query = replaceVar(query, "?this", thisVal)
-	rows, err := executeSPARQL(ctx.dataGraph, query, nil, nil)
+	// Pre-bind $this. IRI/literal focus nodes are substituted textually; a
+	// blank-node focus node must be bound via initial bindings, since its
+	// label cannot be referenced in SPARQL query text (see preBindTerm).
+	var initBindings map[string]term.Term
+	if focusNode.Kind() == TermBlankNode {
+		query = replaceVar(query, "$this", "?this")
+		initBindings = map[string]term.Term{"this": toTerm(focusNode)}
+	} else {
+		thisVal := termToSPARQL(focusNode)
+		query = replaceVar(query, "$this", thisVal)
+		query = replaceVar(query, "?this", thisVal)
+	}
+	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil)
 	if err != nil {
 		return nil
 	}

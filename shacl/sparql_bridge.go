@@ -227,6 +227,21 @@ func isVarChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
 
+// preBindTerm registers a pre-bound SHACL variable, choosing the correct
+// mechanism for its term kind. IRI and literal values go into textual
+// bindings (spliced into the query text). Blank-node values go into initial
+// bindings (real solution pre-binding) because a blank node label in SPARQL
+// query text is a fresh, query-scoped node rather than a reference to a
+// specific data-graph node (SPARQL 1.1 §4.1.4); textual substitution of a
+// blank node therefore cannot scope a triple pattern to that focus node.
+func preBindTerm(textual map[string]string, initial map[string]term.Term, name string, t Term) {
+	if t.Kind() == TermBlankNode {
+		initial[name] = toTerm(t)
+		return
+	}
+	textual[name] = termToSPARQL(t)
+}
+
 // termToSPARQL converts a shacl Term to a SPARQL term string suitable for
 // textual substitution into a query (e.g. <http://example.org/> or "hello"@en).
 func termToSPARQL(t Term) string {
