@@ -170,6 +170,32 @@ Custom namespaces with open and closed (restricted) modes.
 | Random/UUID | RAND, UUID, STRUUID |
 | XSD casts | xsd:boolean, xsd:integer, xsd:float, xsd:double, xsd:decimal, xsd:string |
 
+**Extension functions:** register your own IRI-named functions (SPARQL 1.1 §17.6), the
+counterpart of rdflib's `register_custom_function`:
+
+```go
+sparql.MustRegisterFunction("http://example.org/geo#distance",
+    func(args []rdf.Term) (rdf.Term, error) {
+        if len(args) != 2 {
+            return nil, fmt.Errorf("geo:distance: want 2 arguments, got %d", len(args))
+        }
+        // ... compute ...
+        return rdf.NewLiteral(d), nil
+    })
+```
+
+Once registered, a function is callable from any query — by full IRI,
+`<http://example.org/geo#distance>(?a, ?b)`, or through a prefixed name that
+resolves to it, `geo:distance(?a, ?b)` — anywhere an expression is allowed
+(FILTER, BIND, SELECT, HAVING, ORDER BY) including inside SHACL `sh:sparql`
+constraints. Returning an error produces a SPARQL expression error (the value is
+unbound), not a query failure. See `examples/custom_function_example`.
+
+The registry is global and safe for concurrent use:
+`RegisterFunction` (error on duplicate), `MustRegisterFunction` (panic on
+duplicate), `ReplaceFunction`, `UnregisterFunction`, `LookupFunction`,
+`RegisteredFunctions`.
+
 ### SPARQL 1.2 Extensions
 
 Full SPARQL 1.2 support -- **234/234 W3C tests pass (100%)**:
@@ -457,6 +483,7 @@ The [examples/](examples/) directory contains runnable programs:
 | `simple_example` | Basic graph operations and triple manipulation |
 | `format_examples` | Parsing and serializing all supported formats |
 | `sparql_query_example` | SPARQL SELECT, ASK, and CONSTRUCT queries |
+| `custom_function_example` | Registering and calling SPARQL extension functions |
 | `property_paths_example` | Property path traversal |
 | `resource_example` | Node-centric Resource API |
 | `shacl_example` | Basic SHACL validation |

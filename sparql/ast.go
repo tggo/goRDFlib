@@ -165,6 +165,7 @@ type FuncExpr struct {
 	Distinct  bool   // COUNT(DISTINCT ?x)
 	Separator string // GROUP_CONCAT(... ; SEPARATOR=",")
 	Star      bool   // COUNT(*)
+	IRI       string // full IRI, verbatim, when the call was written as <iri>(...) or prefix:local(...)
 }
 
 func (*FuncExpr) isExpr() {}

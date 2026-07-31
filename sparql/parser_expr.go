@@ -333,6 +333,19 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 			return nil, p.errorf("reified triple syntax << ... >> not allowed in expressions, use <<( ... )>> for triple terms")
 		}
 		iri := p.readIRIRef()
+		// iriOrFunction ::= iri ArgList? — a following argument list makes this
+		// an extension-function call (SPARQL 1.1 §17.6), dispatched at
+		// evaluation time through the registry in extfunc.go.
+		savedIRI := p.pos
+		p.skipWS()
+		if p.pos < len(p.input) && p.input[p.pos] == '(' {
+			args, err := p.parseFuncArgs()
+			if err != nil {
+				return nil, err
+			}
+			return &FuncExpr{Name: strings.ToUpper(iri), IRI: iri, Args: args}, nil
+		}
+		p.pos = savedIRI
 		return &IRIExpr{Value: iri}, nil
 	}
 
@@ -382,40 +395,23 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	if p.pos < len(p.input) && p.input[p.pos] == '(' {
 		upperName := strings.ToUpper(name)
 		// Resolve prefixed function names (e.g. xsd:integer -> full IRI)
+		var fullIRI string
 		if idx := strings.Index(name, ":"); idx >= 0 {
 			prefix := name[:idx]
 			local := name[idx+1:]
 			if ns, ok := p.prefixes[prefix]; ok {
-				upperName = strings.ToUpper(ns + local)
+				fullIRI = ns + local
+				upperName = strings.ToUpper(fullIRI)
 			}
 		}
 		if isAggregateName(upperName) {
 			return p.parseAggregateCall(upperName)
 		}
-		p.pos++
-		var args []Expr
-		for {
-			p.skipWS()
-			if p.pos < len(p.input) && p.input[p.pos] == ')' {
-				p.pos++
-				break
-			}
-			if len(args) > 0 {
-				if !p.expect(',') {
-					p.skipWS()
-				}
-			}
-			before := p.pos
-			arg, err := p.parseOrExpr()
-			if err != nil {
-				return nil, err
-			}
-			if p.pos == before {
-				return nil, p.errorf("unexpected token in function arguments")
-			}
-			args = append(args, arg)
+		args, err := p.parseFuncArgs()
+		if err != nil {
+			return nil, err
 		}
-		return &FuncExpr{Name: upperName, Args: args}, nil
+		return &FuncExpr{Name: upperName, IRI: fullIRI, Args: args}, nil
 	}
 
 	// It's a prefixed name used as a value
@@ -424,6 +420,35 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 		return &IRIExpr{Value: u.Value()}, nil
 	}
 	return &LiteralExpr{Value: resolved}, nil
+}
+
+// parseFuncArgs parses an ArgList — the parser must be positioned on the
+// opening '('. It consumes through the matching ')'.
+func (p *sparqlParser) parseFuncArgs() ([]Expr, error) {
+	p.pos++ // skip '('
+	var args []Expr
+	for {
+		p.skipWS()
+		if p.pos < len(p.input) && p.input[p.pos] == ')' {
+			p.pos++
+			break
+		}
+		if len(args) > 0 {
+			if !p.expect(',') {
+				p.skipWS()
+			}
+		}
+		before := p.pos
+		arg, err := p.parseOrExpr()
+		if err != nil {
+			return nil, err
+		}
+		if p.pos == before {
+			return nil, p.errorf("unexpected token in function arguments")
+		}
+		args = append(args, arg)
+	}
+	return args, nil
 }
 
 func isAggregateName(name string) bool {

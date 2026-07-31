@@ -374,6 +374,9 @@ func evalAggExpr(expr Expr, group []map[string]rdflibgo.Term, prefixes map[strin
 			return evalAggregate(e, group, prefixes)
 		}
 		if len(group) > 0 {
+			if res, handled := evalExtensionFunc(e, group[0], prefixes); handled {
+				return res
+			}
 			return evalFunc(e.Name, e.Args, group[0], prefixes)
 		}
 		return nil
@@ -1235,6 +1238,11 @@ func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]
 		arg := evalExpr(e.Arg, bindings, prefixes)
 		return evalUnaryOp(e.Op, arg)
 	case *FuncExpr:
+		// A registered extension function (SPARQL 1.1 §17.6) wins over the
+		// built-in table, so callers can override e.g. an xsd: cast.
+		if res, handled := evalExtensionFunc(e, bindings, prefixes); handled {
+			return res
+		}
 		return evalFunc(e.Name, e.Args, bindings, prefixes)
 	case *ExistsExpr:
 		return nil // needs graph; handled via evalExprWithGraph
@@ -1301,6 +1309,13 @@ func evalBinaryOp(op string, left, right rdflibgo.Term) rdflibgo.Term {
 		}
 		return rdflibgo.NewLiteral(!termValuesEqual(left, right))
 	case "<", ">", "<=", ">=":
+		if left == nil || right == nil {
+			// An unbound operand (or one produced by a failed expression) makes
+			// the relational operator a type error, which evaluates to unbound
+			// — SPARQL 1.1 §17.3. compareTermValues orders nil first, which is
+			// what ORDER BY needs but would silently make `?unbound < 5` true.
+			return nil
+		}
 		c := compareTermValues(left, right)
 		switch op {
 		case "<":

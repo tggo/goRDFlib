@@ -1,0 +1,9 @@
+Places within 100 units of the office:
+  http://example.org/cafe at distance 5
+  http://example.org/depot at distance 50
+
+Office to depot: 50
+
+Rows surviving a failing extension call: 0
+
+Registered extension functions: [http://example.org/geo#distance]

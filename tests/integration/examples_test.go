@@ -22,6 +22,7 @@ func TestExamples(t *testing.T) {
 		"shacl_example",
 		"shacl_constraints_example",
 		"sparql_update_example",
+		"custom_function_example",
 	}
 
 	for _, name := range examples {
