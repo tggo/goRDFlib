@@ -881,16 +881,26 @@ func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.T
 
 	sVal := resolvePatternTerm(tp.Subject, bindings, prefixes)
 	if sVal != nil {
-		if s, ok := sVal.(rdflibgo.Subject); ok {
-			subj = s
+		s, ok := sVal.(rdflibgo.Subject)
+		if !ok {
+			// The term is already bound (e.g. by an enclosing FILTER EXISTS or a
+			// preceding pattern) to something that cannot occupy the subject
+			// position, such as a literal. No triple can ever match, so the
+			// pattern has no solutions. Leaving subj nil here would turn the
+			// bound term into a wildcard and produce bogus matches.
+			return nil
 		}
+		subj = s
 	}
 
 	pVal := resolvePatternTerm(tp.Predicate, bindings, prefixes)
 	if pVal != nil {
-		if u, ok := pVal.(rdflibgo.URIRef); ok {
-			pred = &u
+		u, ok := pVal.(rdflibgo.URIRef)
+		if !ok {
+			// Bound to a non-IRI: unmatchable in the predicate position.
+			return nil
 		}
+		pred = &u
 	}
 
 	oVal := resolvePatternTerm(tp.Object, bindings, prefixes)
@@ -955,9 +965,12 @@ func evalPathTriple(g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[st
 	var subj term.Subject
 	sVal := resolvePatternTerm(tp.Subject, bindings, prefixes)
 	if sVal != nil {
-		if s, ok := sVal.(term.Subject); ok {
-			subj = s
+		s, ok := sVal.(term.Subject)
+		if !ok {
+			// Bound to a literal: unmatchable in the subject position (see evalBGP).
+			return nil
 		}
+		subj = s
 	}
 
 	var obj term.Term
