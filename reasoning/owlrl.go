@@ -68,13 +68,13 @@ type owlrlEngine struct {
 	ded *dedupSet
 
 	// Phase 1: Core property indexes
-	symmetricProps  map[string]struct{}      // owl:SymmetricProperty
-	transitiveProps map[string]struct{}      // owl:TransitiveProperty
-	functionalProps map[string]struct{}      // owl:FunctionalProperty
-	invFuncProps    map[string]struct{}      // owl:InverseFunctionalProperty
-	inverseOf       map[string][]term.URIRef // property key → inverse properties
-	equivProp       map[string][]term.URIRef // property key → equivalent properties
-	equivClass      map[string][]term.URIRef // class key → equivalent classes
+	symmetricProps  map[string]struct{}       // owl:SymmetricProperty
+	transitiveProps map[string]struct{}       // owl:TransitiveProperty
+	functionalProps map[string]struct{}       // owl:FunctionalProperty
+	invFuncProps    map[string]struct{}       // owl:InverseFunctionalProperty
+	inverseOf       map[string][]term.URIRef  // property key → inverse properties
+	equivProp       map[string][]term.URIRef  // property key → equivalent properties
+	equivClass      map[string][]term.Subject // class key → equivalent classes (may be anonymous)
 
 	// Phase 2: Extended property indexes
 	irreflexiveProps map[string]struct{}        // owl:IrreflexiveProperty
@@ -202,7 +202,7 @@ func (e *owlrlEngine) buildSchemaIndexes() {
 	e.invFuncProps = make(map[string]struct{})
 	e.inverseOf = make(map[string][]term.URIRef)
 	e.equivProp = make(map[string][]term.URIRef)
-	e.equivClass = make(map[string][]term.URIRef)
+	e.equivClass = make(map[string][]term.Subject)
 	e.uf = newUnionFind()
 
 	// Phase 2
@@ -344,16 +344,20 @@ func (e *owlrlEngine) scanPropertyTriples() {
 		return true
 	})
 
+	// owl:equivalentClass is symmetric, and either side may be an anonymous
+	// class expression. Each direction is indexed on its own so that a blank
+	// node on one side does not suppress the axiom entirely.
 	eqClass := namespace.OWL.EquivalentClass
 	e.g.Triples(nil, &eqClass, nil)(func(t term.Triple) bool {
-		if c2, ok := t.Object.(term.URIRef); ok {
-			if c1, ok := t.Subject.(term.URIRef); ok {
-				c1k := term.TermKey(c1)
-				c2k := term.TermKey(c2)
-				e.equivClass[c1k] = appendUnique(e.equivClass[c1k], c2)
-				e.equivClass[c2k] = appendUnique(e.equivClass[c2k], c1)
-			}
+		c2, ok := t.Object.(term.Subject)
+		if !ok {
+			return true
 		}
+		c1 := t.Subject
+		c1k := term.TermKey(c1)
+		c2k := term.TermKey(c2)
+		e.equivClass[c1k] = appendUnique(e.equivClass[c1k], c2)
+		e.equivClass[c2k] = appendUnique(e.equivClass[c2k], c1)
 		return true
 	})
 
@@ -593,7 +597,7 @@ func (e *owlrlEngine) applyRules() []term.Triple {
 }
 
 // appendUnique appends u to the slice if not already present.
-func appendUnique(s []term.URIRef, u term.URIRef) []term.URIRef {
+func appendUnique[T term.Term](s []T, u T) []T {
 	uk := term.TermKey(u)
 	for _, existing := range s {
 		if term.TermKey(existing) == uk {
