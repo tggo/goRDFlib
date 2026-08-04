@@ -36,16 +36,32 @@ func ExpandCheck(g *graph.Graph, r Regime) (int, []Inconsistency, error) {
 	if r == 0 || r&^known != 0 {
 		return 0, nil, ErrUnknownRegime
 	}
-	total := 0
 	// RDFS is always applied first (OWL RL builds on RDFS).
-	if r&RDFS != 0 || r&OWLRL != 0 {
-		total += RDFSClosure(g)
+	total := RDFSClosure(g)
+	if r&OWLRL == 0 {
+		return total, nil, nil
 	}
+
+	// RDFSClosure and OWLRLClosureCheck each reach their own fixed point, but
+	// neither sees what the other produces: an OWL rule can derive an rdf:type
+	// triple that rdfs9 must then act on, and rdfs9 can in turn feed the OWL
+	// rules. The two are alternated until neither adds a triple. Each loop exits
+	// as soon as one regime is unproductive, so a graph that needs no chaining
+	// pays only one extra RDFS pass over an already-closed graph. Neither regime
+	// introduces fresh terms, so the closure is finite.
 	var incon []Inconsistency
-	if r&OWLRL != 0 {
+	for {
 		n, ic := OWLRLClosureCheck(g)
-		total += n
 		incon = ic
+		total += n
+		if n == 0 {
+			break
+		}
+		m := RDFSClosure(g)
+		total += m
+		if m == 0 {
+			break
+		}
 	}
 	return total, incon, nil
 }

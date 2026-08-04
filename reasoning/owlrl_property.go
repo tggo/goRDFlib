@@ -39,13 +39,12 @@ func (e *owlrlEngine) applyPropertyRules(allTriples []ruleTriple, emit emitFunc)
 		}
 
 		// cax-eqc1/2: ?C1 owl:equivalentClass ?C2, ?x rdf:type ?C1 → ?x rdf:type ?C2
+		// C1 is keyed directly so that an anonymous class expression matches.
 		if pk == term.TermKey(rdfType) {
-			if c1, ok := t.o.(term.URIRef); ok {
-				c1k := term.TermKey(c1)
-				if equivs, ok := e.equivClass[c1k]; ok {
-					for _, c2 := range equivs {
-						emit(t.s, rdfType, c2)
-					}
+			c1k := term.TermKey(t.o)
+			if equivs, ok := e.equivClass[c1k]; ok {
+				for _, c2 := range equivs {
+					emit(t.s, rdfType, c2)
 				}
 			}
 		}

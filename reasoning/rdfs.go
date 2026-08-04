@@ -21,11 +21,18 @@ type rdfsEngine struct {
 	g   *graph.Graph
 	ded *dedupSet
 
-	// Schema indexes
-	domains    map[string][]term.URIRef // predicate key → domain classes
-	ranges     map[string][]term.URIRef // predicate key → range classes
-	subClassOf map[string][]term.URIRef // class key → transitive superclasses
-	subPropOf  map[string][]term.URIRef // property key → transitive superproperties
+	// Schema indexes.
+	//
+	// Class-valued indexes hold term.Subject, not term.URIRef: a class may be a
+	// blank node, because an anonymous class expression such as an
+	// owl:Restriction has no IRI. term.Subject admits URIRef and BNode and
+	// excludes Literal, which is exactly the set of terms that can denote a
+	// class. Property-valued indexes stay term.URIRef, as RDFS and OWL 2 RL
+	// both require a property to be named.
+	domains    map[string][]term.Subject // predicate key → domain classes
+	ranges     map[string][]term.Subject // predicate key → range classes
+	subClassOf map[string][]term.Subject // class key → transitive superclasses
+	subPropOf  map[string][]term.URIRef  // property key → transitive superproperties
 }
 
 func newRDFSEngine(g *graph.Graph) *rdfsEngine {
@@ -80,9 +87,9 @@ func (e *rdfsEngine) run() int {
 }
 
 func (e *rdfsEngine) buildSchemaIndexes() {
-	e.domains = make(map[string][]term.URIRef)
-	e.ranges = make(map[string][]term.URIRef)
-	e.subClassOf = make(map[string][]term.URIRef)
+	e.domains = make(map[string][]term.Subject)
+	e.ranges = make(map[string][]term.Subject)
+	e.subClassOf = make(map[string][]term.Subject)
 	e.subPropOf = make(map[string][]term.URIRef)
 
 	domainPred := namespace.RDFS.Domain
@@ -91,7 +98,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 	subPropPred := namespace.RDFS.SubPropertyOf
 
 	e.g.Triples(nil, &domainPred, nil)(func(t term.Triple) bool {
-		if c, ok := t.Object.(term.URIRef); ok {
+		if c, ok := t.Object.(term.Subject); ok {
 			pk := term.TermKey(t.Subject)
 			e.domains[pk] = append(e.domains[pk], c)
 		}
@@ -99,7 +106,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 	})
 
 	e.g.Triples(nil, &rangePred, nil)(func(t term.Triple) bool {
-		if c, ok := t.Object.(term.URIRef); ok {
+		if c, ok := t.Object.(term.Subject); ok {
 			pk := term.TermKey(t.Subject)
 			e.ranges[pk] = append(e.ranges[pk], c)
 		}
@@ -107,7 +114,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 	})
 
 	e.g.Triples(nil, &subClassPred, nil)(func(t term.Triple) bool {
-		if c, ok := t.Object.(term.URIRef); ok {
+		if c, ok := t.Object.(term.Subject); ok {
 			sk := term.TermKey(t.Subject)
 			e.subClassOf[sk] = append(e.subClassOf[sk], c)
 		}
@@ -129,13 +136,15 @@ func (e *rdfsEngine) closeTransitive() {
 	e.subPropOf = transitiveClose(e.subPropOf)
 }
 
-// transitiveClose computes the transitive closure of a relation map.
-func transitiveClose(m map[string][]term.URIRef) map[string][]term.URIRef {
-	result := make(map[string][]term.URIRef, len(m))
+// transitiveClose computes the transitive closure of a relation map. It is
+// generic over the term type so that it serves both the class indexes, whose
+// values may be blank nodes, and the property indexes, whose values are named.
+func transitiveClose[T term.Term](m map[string][]T) map[string][]T {
+	result := make(map[string][]T, len(m))
 	for k := range m {
 		visited := make(map[string]struct{})
-		var supers []term.URIRef
-		var queue []term.URIRef
+		var supers []T
+		var queue []T
 		queue = append(queue, m[k]...)
 		for len(queue) > 0 {
 			cur := queue[0]
@@ -193,14 +202,14 @@ func (e *rdfsEngine) applyRules() []term.Triple {
 		}
 
 		// rdfs9: ?s rdf:type ?C1, ?C1 rdfs:subClassOf ?C2 → ?s rdf:type ?C2
+		// C1 is keyed directly, so an anonymous class expression is looked up
+		// like a named one. A literal simply never matches an index entry.
 		if pk == term.TermKey(rdfType) {
-			if c1, ok := t.Object.(term.URIRef); ok {
-				c1k := term.TermKey(c1)
-				if superClasses, ok := e.subClassOf[c1k]; ok {
-					for _, c2 := range superClasses {
-						if e.ded.addNew(t.Subject, rdfType, c2) {
-							newTriples = append(newTriples, term.Triple{Subject: t.Subject, Predicate: rdfType, Object: c2})
-						}
+			c1k := term.TermKey(t.Object)
+			if superClasses, ok := e.subClassOf[c1k]; ok {
+				for _, c2 := range superClasses {
+					if e.ded.addNew(t.Subject, rdfType, c2) {
+						newTriples = append(newTriples, term.Triple{Subject: t.Subject, Predicate: rdfType, Object: c2})
 					}
 				}
 			}
