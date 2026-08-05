@@ -271,6 +271,11 @@ Full W3C SHACL Core validation engine -- **98/98 W3C tests pass (100%)**.
 
 ### SHACL Advanced Features (SHACL-AF)
 
+> Added in response to a user feature request,
+> [#24](https://github.com/tggo/goRDFlib/issues/24). Consider it experimental
+> until it has been run against real SHACL-AF workloads — bug reports and
+> real-world test cases are very welcome.
+
 [SHACL-AF](https://www.w3.org/TR/shacl-af/) is a W3C Note rather than a
 Recommendation, but it is what pySHACL and TopQuadrant's Java API implement, so
 shapes written against it are common. It is supported as an opt-in mode, kept
@@ -558,9 +563,51 @@ goRDFlib/
   benchmarks/   Performance benchmarks
 ```
 
+## Acknowledgements
+
+Much of what this library does well, it does because someone took the time to
+open an issue explaining what was broken or missing — often with a minimal
+reproduction attached. Several features exist only because they were asked for.
+
+- **[@utrack](https://github.com/utrack)** (Nikita Koptelov) — the SHACL-AF layer
+  is a direct response to [#24](https://github.com/tggo/goRDFlib/issues/24),
+  which asked whether the library was committing to SHACL 1.2 or SHACL-AF; the
+  answer became "both, kept apart". Also reported two precise SHACL-SPARQL bugs
+  ([#20](https://github.com/tggo/goRDFlib/issues/20),
+  [#21](https://github.com/tggo/goRDFlib/issues/21)) and contributed the
+  reasoning fix in [#23](https://github.com/tggo/goRDFlib/pull/23) — blank nodes
+  as classes, and closing RDFS/OWL RL to a joint fixed point.
+- **[@C-Loftus](https://github.com/C-Loftus)** (Colton Loftus) — sustained
+  real-world pressure on the parsers: streaming and buffer limits
+  ([#10](https://github.com/tggo/goRDFlib/issues/10),
+  [#11](https://github.com/tggo/goRDFlib/issues/11),
+  [#12](https://github.com/tggo/goRDFlib/issues/12)), provenance tracking
+  ([#18](https://github.com/tggo/goRDFlib/issues/18)), base IRI handling
+  ([#19](https://github.com/tggo/goRDFlib/issues/19)), SHACL error locations
+  ([#15](https://github.com/tggo/goRDFlib/issues/15)), plus the unbounded
+  JSON-LD parsing option in [#14](https://github.com/tggo/goRDFlib/pull/14).
+- **[@situx](https://github.com/situx)** — asked how to register SPARQL
+  extension functions ([#22](https://github.com/tggo/goRDFlib/issues/22)), which
+  produced `sparql.RegisterFunction` and, later, the query-scoped binding that
+  SHACL functions are built on.
+- **[@asdfsx](https://github.com/asdfsx)** — JSON-LD support for SHACL
+  ([#5](https://github.com/tggo/goRDFlib/issues/5),
+  [#6](https://github.com/tggo/goRDFlib/pull/6)).
+- **[@justin2004](https://github.com/justin2004)** — nested blank nodes in
+  CONSTRUCT templates ([#9](https://github.com/tggo/goRDFlib/pull/9)).
+
+Issues and pull requests are welcome — especially ones carrying a real workload
+this library has not seen yet.
+
 ## Based On
 
 This project is a Go port of [RDFLib](https://github.com/RDFLib/rdflib) (v7.x), a Python library for working with RDF. The original RDFLib is maintained by the RDFLib Team and licensed under the BSD 3-Clause License.
+
+Test suites are vendored from the W3C ([data-shapes](https://github.com/w3c/data-shapes),
+[rdf-tests](https://github.com/w3c/rdf-tests)) and, for SHACL Advanced Features,
+from [TopQuadrant/shacl](https://github.com/TopQuadrant/shacl) and
+[RDFLib/pySHACL](https://github.com/RDFLib/pySHACL) — see
+[testdata/dash-af/README.md](testdata/dash-af/README.md) for provenance.
 
 ## Known Limitations
 
