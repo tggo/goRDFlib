@@ -1,6 +1,19 @@
 package shacl
 
-import "github.com/tggo/goRDFlib/term"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/tggo/goRDFlib/term"
+)
+
+// ErrMalformedTarget is reported when a SPARQL-based target cannot be run: a
+// sh:targetNode carrying a broken sh:select (SHACL 1.2), or a sh:SPARQLTarget
+// carrying one (SHACL-AF). Such a target selects no focus nodes, which reads
+// exactly like a target that legitimately matches nothing — and for a sh:rule
+// it becomes an inference that silently does not happen. Target resolution has
+// no error return, so this reaches the caller through WithErrorHandler.
+var ErrMalformedTarget = errors.New("shacl: malformed target")
 
 // Validate validates dataGraph against shapesGraph and returns a validation report.
 //
@@ -28,6 +41,7 @@ func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 		shapesGraph:    shapesGraph,
 		shapesMap:      shapes,
 		classInstances: buildClassIndex(dataGraph),
+		cfg:            cfg,
 		af:             af,
 	}
 
@@ -245,13 +259,18 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 		case TargetSPARQL:
 			query := tgt.Select
 			results, err := executeSPARQL(ctx.dataGraph, query, nil, nil, ctx.sparqlFuncs())
-			if err == nil {
-				for _, row := range results {
-					// First bound variable is the target node
-					for _, v := range row {
-						addTarget(v)
-						break
-					}
+			if err != nil {
+				// A target that selects nothing is indistinguishable from one
+				// that is broken, and for a rule it turns into an inference
+				// that silently does not happen.
+				ctx.report(fmt.Errorf("%w: the SPARQL target of %s: %w", ErrMalformedTarget, s.ID, err))
+				continue
+			}
+			for _, row := range results {
+				// First bound variable is the target node
+				for _, v := range row {
+					addTarget(v)
+					break
 				}
 			}
 		case TargetWhere:

@@ -10,6 +10,11 @@ type afContext struct {
 	cfg         *config
 	funcs       map[string]*shaclFunction
 
+	// afTargets holds the sh:target definitions of the shapes graph, resolved
+	// once and keyed by shape. Shapes are re-parsed on every rule round, so
+	// resolving there would repeat the work and re-report the same error.
+	afTargets map[string][]Target
+
 	// loadErr is the first problem found while reading the shapes graph.
 	// Loading continues past it so that one malformed declaration does not
 	// disable everything else, but the error is still surfaced.
@@ -29,6 +34,12 @@ func newAFContext(dataGraph, shapesGraph *Graph, c *config) (*afContext, error) 
 	funcs, err := loadFunctions(shapesGraph)
 	ctx.funcs = funcs
 	ctx.loadErr = err
+
+	targets, terr := ctx.loadAFTargets()
+	ctx.afTargets = targets
+	if ctx.loadErr == nil {
+		ctx.loadErr = terr
+	}
 	return ctx, nil
 }
 
@@ -37,12 +48,18 @@ func newAFContext(dataGraph, shapesGraph *Graph, c *config) (*afContext, error) 
 // It is rebuilt rather than cached because rules add triples: a rule that
 // infers an rdf:type changes which nodes a later rule's sh:targetClass selects,
 // and a stale class index would hide that.
+//
+// The AF targets are attached here as well, so that a rule and a constraint on
+// the same shape resolve the same focus nodes.
 func (ctx *afContext) evalCtx() *evalContext {
+	shapes := parseShapes(ctx.shapesGraph)
+	addAFTargets(ctx, shapes)
 	return &evalContext{
 		dataGraph:      ctx.dataGraph,
 		shapesGraph:    ctx.shapesGraph,
-		shapesMap:      parseShapes(ctx.shapesGraph),
+		shapesMap:      shapes,
 		classInstances: buildClassIndex(ctx.dataGraph),
+		cfg:            ctx.cfg,
 		af:             ctx,
 	}
 }

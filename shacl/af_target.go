@@ -14,30 +14,34 @@ import "fmt"
 // sh:parameter and a sh:select whose parameter variables are bound from the
 // instance's property values, exactly like a SPARQL-based constraint component.
 
-// parseAFTargets reads the sh:target values of a shape.
+// loadAFTargets resolves every sh:target in the shapes graph, keyed by the
+// shape the target is attached to.
 //
-// It is called during shape parsing but only does anything when SHACL-AF is
-// enabled; without it a sh:target is simply an unrecognised property, which is
-// what a Core-only engine must treat it as.
-func parseAFTargets(ctx *afContext, shapeID Term) ([]Target, error) {
-	if ctx == nil {
-		return nil, nil
-	}
+// It runs once, when the AF context is built, and the result is reused by every
+// pass that needs targets — validation and each round of the rule pass. That is
+// what keeps the two passes selecting the same focus nodes; resolving per pass
+// once made rules see Core targets only. Only the AF layer calls it: without
+// SHACL-AF a sh:target is an unrecognised property, which is what a Core-only
+// engine must treat it as.
+func (ctx *afContext) loadAFTargets() (map[string][]Target, error) {
 	g := ctx.shapesGraph
-	var targets []Target
+	pred := IRI(SHTarget)
+	targets := make(map[string][]Target)
 	var firstErr error
 
-	for _, tn := range g.Objects(shapeID, IRI(SHTarget)) {
-		query, err := ctx.resolveTarget(tn)
+	for _, t := range g.All(nil, &pred, nil) {
+		query, err := ctx.resolveTarget(t.Object)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
-		if query != "" {
-			targets = append(targets, Target{Kind: TargetSPARQL, Select: query})
+		if query == "" {
+			continue
 		}
+		key := t.Subject.String()
+		targets[key] = append(targets[key], Target{Kind: TargetSPARQL, Select: query})
 	}
 	return targets, firstErr
 }

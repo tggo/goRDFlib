@@ -92,10 +92,29 @@ type evalContext struct {
 	shapesMap      map[string]*Shape
 	classInstances map[string][]Term // class TermKey → instances with that rdf:type
 
+	// cfg carries the caller's options, and with them the error handler. It is
+	// how evaluation paths that cannot return an error — target resolution —
+	// still make a failure visible. Nil in the internal contexts built to
+	// evaluate a shape on its own terms, where no target is resolved.
+	cfg *config
+
 	// af is set only when SHACL-AF is enabled. It carries the functions the
 	// shapes graph declares, which have to reach every SPARQL query run on
 	// its behalf. Nil means AF is off and no AF vocabulary is interpreted.
 	af *afContext
+}
+
+// report hands err to the caller's error handler, if one was installed.
+func (ctx *evalContext) report(err error) {
+	if err == nil || ctx == nil {
+		return
+	}
+	switch {
+	case ctx.cfg != nil:
+		ctx.cfg.report(err)
+	case ctx.af != nil:
+		ctx.af.cfg.report(err)
+	}
 }
 
 // sparqlFuncs returns the SHACL functions to bind to a query run for this

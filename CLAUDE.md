@@ -115,6 +115,15 @@ The `store.Store` interface (13 methods) has four implementations:
   them instead of `sh:declare`. An unresolved prefix does not error — it matches
   like a wildcard, which is why a missing declaration shows up as wildly too
   many results rather than as a failure.
+- `parseShapes` reads Core targets only. Every AF pass must follow it with
+  `addAFTargets` (`afContext.evalCtx` and `Validate` both do), or a shape whose
+  only target is `sh:target` gets an empty focus node set. It once did that for
+  rules only: the rule ran zero times, `applyRule` returned `(0, nil)`, and the
+  same shape validated correctly — so the shape looked right and derived
+  nothing. Guard: `shacl/af_target_test.go`.
+- A target that cannot be run reports `ErrMalformedTarget` through
+  `WithErrorHandler` rather than selecting nothing. Selecting nothing is a legal
+  outcome, so a discarded error here is invisible by construction.
 
 ### sparql/ initial bindings
 - `evalPatternPreBound` (used only for caller-supplied `initBindings`) pushes
