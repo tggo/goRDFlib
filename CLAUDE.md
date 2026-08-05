@@ -73,3 +73,21 @@ The `store.Store` interface (13 methods) has four implementations:
 - Files: `doc.go`, `store.go`, `http.go`, `server.go`, `register.go`
 - Server queries `ds.Default` only; named graphs not queryable on test server
 - Test coverage: 99.7% (71 tests)
+
+### reasoning/ (RDFS + OWL 2 RL)
+- Entry: `Expand(g, RDFS|OWLRL)` → `ExpandCheck` (also returns `[]Inconsistency`)
+- **A class may be a blank node.** An anonymous class expression (`owl:Restriction`)
+  has no IRI, so class-valued indexes (`domains`, `ranges`, `subClassOf`,
+  `equivClass`) are typed `[]term.Subject`, never `[]term.URIRef`. Never
+  type-assert a class to `term.URIRef` before an index lookup — key it with
+  `term.TermKey()` directly. `term.Subject` admits `URIRef`/`BNode` and excludes
+  `Literal`, which is what keeps a literal from being treated as a class.
+- **Property**-valued indexes (`subPropOf`, `inverseOf`, `equivProp`) stay
+  `term.URIRef` — RDFS and OWL 2 RL both require a property to be named.
+- `ExpandCheck` must alternate RDFS and OWL RL closures **to a joint fixpoint**:
+  each closure only reaches its own fixed point and does not see the other's
+  output (an OWL rule derives an `rdf:type` triple that rdfs9 must then act on,
+  and vice versa). Neither regime mints new terms, so the loop terminates.
+- Each closure's dedup set is seeded from the graph, so re-running `Expand` on a
+  closed graph adds 0 triples — that invariant is the fixpoint test.
+- Regression tests for both of the above: `reasoning/bnodeclass_test.go`
