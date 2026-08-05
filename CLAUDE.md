@@ -74,6 +74,57 @@ The `store.Store` interface (13 methods) has four implementations:
 - Server queries `ds.Default` only; named graphs not queryable on test server
 - Test coverage: 99.7% (71 tests)
 
+### shacl/ SHACL-AF layer (af_*.go)
+- SHACL-AF is a W3C **Note**, SHACL 1.2 is a **draft** respecifying the same
+  ground. Both are supported and must stay **separate**: AF is opt-in via
+  `WithAdvancedFeatures()`, keys off `sh:`-vocabulary; SHACL 1.2 node
+  expressions key off `shnex:`. Never make AF vocabulary active by default —
+  a 1.2 graph must not acquire AF semantics by accident.
+- `sh:expression` is the one genuinely ambiguous property. `parseExpressionFor`
+  decides: a blank node with any `shnex:` property is 1.2; otherwise AF is tried
+  first with 1.2 as fallback.
+- **Rules run in `sh:order`, once per focus node** — that is the spec's model,
+  not a fixed point. `WithRuleIteration()` is the opt-in fixpoint. Don't make
+  iteration the default: it changes results for rule sets that rely on ordering
+  and can diverge.
+- `Validate` must never mutate the caller's data graph. Rules infer into a copy
+  (`prepareAdvanced`); `ApplyRules` is the explicit mutating entry point.
+- `sh:condition` and `sh:filterShape` may be **anonymous** shapes, which are not
+  in `shapesMap`. Always resolve through `resolveShape`, never a bare map lookup.
+- SHACL functions are bound **per query** (`sparql.ParsedQuery.BindFunctions`),
+  never via the global `sparql.RegisterFunction`: definitions come from the
+  shapes graph, and two graphs may define the same IRI differently.
+- Function parameter order: by `sh:order` when **all** parameters have one,
+  otherwise alphabetically by the local name of `sh:path`. Argument values bind
+  to initial bindings keyed by that local name.
+- Recursion is bounded in three places (`maxFunctionDepth`, `afExprMaxDepth`,
+  `ruleIterationLimit`) — all three are reachable with legal input.
+- Reference suite: `testdata/dash-af/` (DASH), run by `shacl/af_dash_test.go`.
+  It is the only cross-implementation check we have; keep it at 13/13.
+
+### shacl/ invariants that bit us once
+- `Graph.All` must handle the **fully bound** (s,p,o) pattern explicitly. It
+  once fell through to the wildcard branch, so `Has(&s,&p,&o)` returned true for
+  every triple in any non-empty graph — which silently made existence checks and
+  two DASH tests pass for the wrong reason.
+- `Graph` is safe for concurrent **reads** only. Indexes are built lazily, so
+  construction is serialised and published atomically (`idx atomic.Pointer`).
+  Reading while another goroutine calls `Add`/`Merge` is not safe.
+- SPARQL queries from a shapes graph get that graph's own `@prefix` declarations
+  as a fallback (`writeGraphPrefixes`), because shapes files routinely rely on
+  them instead of `sh:declare`. An unresolved prefix does not error — it matches
+  like a wildcard, which is why a missing declaration shows up as wildly too
+  many results rather than as a failure.
+
+### sparql/ initial bindings
+- `evalPatternPreBound` (used only for caller-supplied `initBindings`) pushes
+  values down so `BIND`/`FILTER` expressions see them — they are constants
+  substituted into the query, in scope everywhere.
+- `evalPatternWithBindings` (used for join/optional inner sides) must **not**
+  expose its bindings to expressions: SPARQL 1.1 §18.2.1 puts a variable bound
+  in one group out of scope in a sibling group. The `bind10` W3C test is the
+  guard; conflating the two functions breaks it.
+
 ### reasoning/ (RDFS + OWL 2 RL)
 - Entry: `Expand(g, RDFS|OWLRL)` → `ExpandCheck` (also returns `[]Inconsistency`)
 - **A class may be a blank node.** An anonymous class expression (`owl:Restriction`)

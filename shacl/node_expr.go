@@ -21,6 +21,13 @@ type nodeExprContext struct {
 	shapesMap map[string]*Shape
 	focusNode Term
 	vars      map[string]Term // additional bound variables
+
+	// The remaining fields are only populated for SHACL-AF expressions, which
+	// can call functions and validate against a shape. SHACL 1.2's shnex:
+	// expressions leave them nil.
+	shapesGraph    *Graph
+	classInstances map[string][]Term
+	af             *afContext
 }
 
 // ---------- ConstantExpr ----------

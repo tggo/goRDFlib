@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/jsonld"
@@ -223,13 +225,20 @@ func toTerm(t Term) term.Term {
 }
 
 // Graph wraps an rdflibgo graph with lazy SPO/POS indexes.
+//
+// Concurrency: safe for concurrent reading. Several goroutines may validate
+// against the same shapes graph at once, and the indexes each read builds are
+// constructed once and published atomically. It is not safe to read a graph
+// while another goroutine is calling Add or Merge — those invalidate the
+// indexes, and the underlying graph is not itself synchronised.
 type Graph struct {
 	g       *graph.Graph
 	baseURI string
 
-	spoIdx map[string]map[string][]Term // subject → predicate → []object
-	posIdx map[string]map[string][]Term // predicate → object → []subject
-	pIdx   map[string][]Triple          // predicate → []Triple
+	// idx holds the lazily built lookup indexes. It is replaced wholesale
+	// rather than mutated in place, so a reader always sees a complete set.
+	idx   atomic.Pointer[graphIndexes]
+	idxMu sync.Mutex // serialises index construction
 }
 
 // NewGraph creates an empty graph with no base URI.
@@ -336,42 +345,64 @@ func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
 	return LoadNQuads(strings.NewReader(data), base, opts...)
 }
 
-func (g *Graph) ensureIndexes() {
-	if g.spoIdx != nil {
-		return
+// graphIndexes are the lookup tables All, Objects and Subjects read.
+type graphIndexes struct {
+	spo map[string]map[string][]Term // subject → predicate → []object
+	pos map[string]map[string][]Term // predicate → object → []subject
+	p   map[string][]Triple          // predicate → []Triple
+}
+
+// ensureIndexes returns the indexes, building them on first use.
+//
+// Validation reads a shapes graph from every goroutine that validates against
+// it, so building the indexes lazily has to be safe to race on. Construction is
+// serialised and the finished set published atomically; a second caller that
+// arrives mid-build waits rather than seeing a half-filled map.
+func (g *Graph) ensureIndexes() *graphIndexes {
+	if idx := g.idx.Load(); idx != nil {
+		return idx
 	}
-	g.spoIdx = make(map[string]map[string][]Term)
-	g.posIdx = make(map[string]map[string][]Term)
-	g.pIdx = make(map[string][]Triple)
+	g.idxMu.Lock()
+	defer g.idxMu.Unlock()
+	if idx := g.idx.Load(); idx != nil {
+		return idx
+	}
+
+	idx := &graphIndexes{
+		spo: make(map[string]map[string][]Term),
+		pos: make(map[string]map[string][]Term),
+		p:   make(map[string][]Triple),
+	}
 	g.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
 		sk, pk, ok := s.TermKey(), p.TermKey(), o.TermKey()
 
-		sp := g.spoIdx[sk]
+		sp := idx.spo[sk]
 		if sp == nil {
 			sp = make(map[string][]Term)
-			g.spoIdx[sk] = sp
+			idx.spo[sk] = sp
 		}
 		sp[pk] = append(sp[pk], o)
 
-		po := g.posIdx[pk]
+		po := idx.pos[pk]
 		if po == nil {
 			po = make(map[string][]Term)
-			g.posIdx[pk] = po
+			idx.pos[pk] = po
 		}
 		po[ok] = append(po[ok], s)
 
-		g.pIdx[pk] = append(g.pIdx[pk], Triple{Subject: s, Predicate: p, Object: o})
+		idx.p[pk] = append(idx.p[pk], Triple{Subject: s, Predicate: p, Object: o})
 		return true
 	})
+
+	g.idx.Store(idx)
+	return idx
 }
 
 func (g *Graph) invalidateIndexes() {
-	g.spoIdx = nil
-	g.posIdx = nil
-	g.pIdx = nil
+	g.idx.Store(nil)
 }
 
 // Triples returns all triples in the graph.
@@ -389,59 +420,73 @@ func (g *Graph) Triples() []Triple {
 }
 
 // All returns all triples matching the pattern. Nil arguments are wildcards.
+// All returns every triple matching the pattern. A nil argument is a wildcard.
+//
+// The indexes cover the patterns the validator asks for most; anything else
+// falls through to the underlying graph, which can match any combination.
 func (g *Graph) All(s, p, o *Term) []Triple {
-	g.ensureIndexes()
+	idx := g.ensureIndexes()
 
-	if s != nil && p != nil && o == nil {
-		objs := g.spoIdx[s.TermKey()][p.TermKey()]
+	switch {
+	case s != nil && p != nil && o != nil:
+		// A fully bound pattern is an existence check. It has to compare the
+		// object rather than fall through to a wildcard scan, or Has reports
+		// every triple as present in any non-empty graph.
+		ok := o.TermKey()
+		for _, obj := range idx.spo[s.TermKey()][p.TermKey()] {
+			if obj.TermKey() == ok {
+				return []Triple{{Subject: *s, Predicate: *p, Object: *o}}
+			}
+		}
+		return nil
+
+	case s != nil && p != nil && o == nil:
+		objs := idx.spo[s.TermKey()][p.TermKey()]
 		result := make([]Triple, len(objs))
 		for i, obj := range objs {
 			result[i] = Triple{Subject: *s, Predicate: *p, Object: obj}
 		}
 		return result
-	}
 
-	if s == nil && p != nil && o != nil {
-		subs := g.posIdx[p.TermKey()][o.TermKey()]
+	case s == nil && p != nil && o != nil:
+		subs := idx.pos[p.TermKey()][o.TermKey()]
 		result := make([]Triple, len(subs))
 		for i, sub := range subs {
 			result[i] = Triple{Subject: sub, Predicate: *p, Object: *o}
 		}
 		return result
-	}
 
-	if s == nil && p != nil && o == nil {
-		return g.pIdx[p.TermKey()]
-	}
+	case s == nil && p != nil && o == nil:
+		return idx.p[p.TermKey()]
 
-	// Fallback: subject-only or all wildcards
-	if s != nil && p == nil && o == nil {
-		sk := s.TermKey()
-		sp, ok := g.spoIdx[sk]
-		if !ok {
-			return nil
-		}
+	case s != nil && p == nil:
+		// Subject-bound, with the object possibly bound too.
 		var result []Triple
-		for _, objs := range sp {
-			for _, obj := range objs {
-				result = append(result, Triple{Subject: *s, Predicate: obj, Object: obj})
-			}
-		}
-		// Wrong — need to iterate properly. Use rdflibgo.
-		result = nil
 		sub := toSubject(*s)
 		g.g.Triples(sub, nil, nil)(func(t term.Triple) bool {
-			result = append(result, Triple{
+			triple := Triple{
 				Subject:   fromRDFLib(t.Subject),
 				Predicate: fromRDFLib(t.Predicate),
 				Object:    fromRDFLib(t.Object),
-			})
+			}
+			if o == nil || triple.Object.TermKey() == o.TermKey() {
+				result = append(result, triple)
+			}
 			return true
 		})
 		return result
+
+	case s == nil && p == nil && o != nil:
+		ok := o.TermKey()
+		var result []Triple
+		for _, t := range g.Triples() {
+			if t.Object.TermKey() == ok {
+				result = append(result, t)
+			}
+		}
+		return result
 	}
 
-	// All wildcards
 	return g.Triples()
 }
 
@@ -461,8 +506,7 @@ func (g *Graph) Has(s, p, o *Term) bool {
 
 // Objects returns all objects of triples matching (s, p, ?).
 func (g *Graph) Objects(s, p Term) []Term {
-	g.ensureIndexes()
-	sp := g.spoIdx[s.TermKey()]
+	sp := g.ensureIndexes().spo[s.TermKey()]
 	if sp == nil {
 		return nil
 	}
@@ -471,8 +515,7 @@ func (g *Graph) Objects(s, p Term) []Term {
 
 // Subjects returns all subjects of triples matching (?, p, o).
 func (g *Graph) Subjects(p, o Term) []Term {
-	g.ensureIndexes()
-	po := g.posIdx[p.TermKey()]
+	po := g.ensureIndexes().pos[p.TermKey()]
 	if po == nil {
 		return nil
 	}

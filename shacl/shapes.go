@@ -1,6 +1,9 @@
 package shacl
 
-import "github.com/tggo/goRDFlib/term"
+import (
+	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/term"
+)
 
 // Shape represents either a NodeShape or a PropertyShape.
 type Shape struct {
@@ -88,6 +91,20 @@ type evalContext struct {
 	shapesGraph    *Graph
 	shapesMap      map[string]*Shape
 	classInstances map[string][]Term // class TermKey → instances with that rdf:type
+
+	// af is set only when SHACL-AF is enabled. It carries the functions the
+	// shapes graph declares, which have to reach every SPARQL query run on
+	// its behalf. Nil means AF is off and no AF vocabulary is interpreted.
+	af *afContext
+}
+
+// sparqlFuncs returns the SHACL functions to bind to a query run for this
+// validation, or nil when SHACL-AF is not enabled.
+func (ctx *evalContext) sparqlFuncs() map[string]sparql.Function {
+	if ctx == nil || ctx.af == nil {
+		return nil
+	}
+	return ctx.af.functionsAtDepth(1)
 }
 
 // parseShapes extracts all NodeShapes and PropertyShapes from the shapes graph.
@@ -211,10 +228,7 @@ func parseShapeBasic(g *Graph, s *Shape, shapes map[string]*Shape) {
 	for _, tn := range g.Objects(id, IRI(SH+"targetNode")) {
 		// SHACL 1.2: SPARQL-based target (blank node with sh:select)
 		if sels := g.Objects(tn, selectPred); len(sels) > 0 {
-			prefixes := ""
-			if prefs := g.Objects(tn, IRI(SH+"prefixes")); len(prefs) > 0 {
-				prefixes = resolvePrefixes(g, prefs[0])
-			}
+			prefixes := resolvePrefixes(g, firstOrNone(g.Objects(tn, IRI(SH+"prefixes"))))
 			s.Targets = append(s.Targets, Target{Kind: TargetSPARQL, Select: prefixes + sels[0].Value()})
 		} else {
 			s.Targets = append(s.Targets, Target{Kind: TargetNode, Value: tn})
@@ -254,10 +268,7 @@ func parseShapeBasic(g *Graph, s *Shape, shapes map[string]*Shape) {
 	// SHACL 1.2: sh:values — SPARQL-computed value nodes
 	if valNodes := g.Objects(id, IRI(SH+"values")); len(valNodes) > 0 {
 		vn := valNodes[0]
-		prefixes := ""
-		if prefs := g.Objects(vn, IRI(SH+"prefixes")); len(prefs) > 0 {
-			prefixes = resolvePrefixes(g, prefs[0])
-		}
+		prefixes := resolvePrefixes(g, firstOrNone(g.Objects(vn, IRI(SH+"prefixes"))))
 		if sels := g.Objects(vn, selectPred); len(sels) > 0 {
 			s.Values = &SPARQLValues{Select: sels[0].Value(), Prefixes: prefixes}
 		} else if exprs := g.Objects(vn, IRI(SH+"sparqlExpr")); len(exprs) > 0 {

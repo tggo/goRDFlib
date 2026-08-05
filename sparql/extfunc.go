@@ -150,16 +150,24 @@ func validateFunctionIRI(iri string) error {
 	return nil
 }
 
-// evalExtensionFunc dispatches a call to a registered extension function. The
-// second return value reports whether the IRI was registered at all; when it is
-// false the caller falls through to the built-in function table.
+// evalExtensionFunc dispatches a call to an extension function. The second
+// return value reports whether a function was found at all; when it is false
+// the caller falls through to the built-in function table.
+//
+// A function bound to this call site by ParsedQuery.BindFunctions wins over one
+// registered globally for the same IRI, so a caller-supplied vocabulary never
+// silently picks up a process-wide definition.
 func evalExtensionFunc(e *FuncExpr, bindings map[string]rdflibgo.Term, prefixes map[string]string) (rdflibgo.Term, bool) {
-	if e.IRI == "" {
-		return nil, false
-	}
-	fn, ok := LookupFunction(e.IRI)
-	if !ok {
-		return nil, false
+	fn := e.Fn
+	if fn == nil {
+		if e.IRI == "" {
+			return nil, false
+		}
+		var ok bool
+		fn, ok = LookupFunction(e.IRI)
+		if !ok {
+			return nil, false
+		}
 	}
 	args := make([]rdflibgo.Term, len(e.Args))
 	for i, a := range e.Args {

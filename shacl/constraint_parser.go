@@ -228,9 +228,7 @@ func parseConstraints(g *Graph, s *Shape, shapes map[string]*Shape) []Constraint
 		} else {
 			continue
 		}
-		if prefs := g.Objects(v, IRI(SH+"prefixes")); len(prefs) > 0 {
-			sc.Prefixes = resolvePrefixes(g, prefs[0])
-		}
+		sc.Prefixes = resolvePrefixes(g, firstOrNone(g.Objects(v, IRI(SH+"prefixes"))))
 		sc.Messages = g.Objects(v, IRI(SH+"message"))
 		if deact := g.Objects(v, IRI(SH+"deactivated")); len(deact) > 0 {
 			sc.Deactivated = deact[0].Value() == "true"

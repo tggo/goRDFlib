@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/tggo/goRDFlib/graph"
@@ -44,7 +45,9 @@ func addWellKnownPrefixes(query string) string {
 
 // executeSPARQL runs a SPARQL SELECT query against the underlying graph.Graph,
 // returning result bindings converted to shacl Terms.
-func executeSPARQL(g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph) ([]map[string]Term, error) {
+// funcs binds SHACL functions declared by the shapes graph for the duration of
+// this query; it is nil unless SHACL-AF is enabled.
+func executeSPARQL(g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.Function) ([]map[string]Term, error) {
 	query = addWellKnownPrefixes(query)
 	query = fixSPARQLSyntax(query)
 	pq, err := sparql.Parse(query)
@@ -54,6 +57,7 @@ func executeSPARQL(g *Graph, query string, initBindings map[string]term.Term, na
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
+	pq.BindFunctions(funcs)
 	result, err := sparql.EvalQuery(g.g, pq, initBindings)
 	if err != nil {
 		return nil, err
@@ -102,7 +106,8 @@ func fixSPARQLSyntax(query string) string {
 }
 
 // executeSPARQLAsk runs a SPARQL ASK query against the underlying graph.Graph.
-func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph) (bool, error) {
+// funcs carries SHACL functions as in executeSPARQL.
+func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.Function) (bool, error) {
 	query = addWellKnownPrefixes(query)
 	query = fixSPARQLSyntax(query)
 	pq, err := sparql.Parse(query)
@@ -112,6 +117,7 @@ func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term,
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
+	pq.BindFunctions(funcs)
 	result, err := sparql.EvalQuery(g.g, pq, initBindings)
 	if err != nil {
 		return false, err
@@ -119,13 +125,91 @@ func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term,
 	return result.AskResult, nil
 }
 
+// executeSPARQLConstruct runs a SPARQL CONSTRUCT query and returns the triples
+// it builds. funcs carries SHACL functions as in executeSPARQL.
+//
+// It is used for SHACL-AF's sh:construct rules, where the constructed triples
+// are added to the data graph rather than returned to a caller.
+func executeSPARQLConstruct(g *Graph, query string, initBindings map[string]term.Term, funcs map[string]sparql.Function) ([]Triple, error) {
+	query = addWellKnownPrefixes(query)
+	query = fixSPARQLSyntax(query)
+	pq, err := sparql.Parse(query)
+	if err != nil {
+		return nil, err
+	}
+	pq.BindFunctions(funcs)
+	result, err := sparql.EvalQuery(g.g, pq, initBindings)
+	if err != nil {
+		return nil, err
+	}
+	if result.Graph == nil {
+		return nil, nil
+	}
+	var out []Triple
+	for t := range result.Graph.Triples(nil, nil, nil) {
+		out = append(out, Triple{
+			Subject:   fromRDFLib(t.Subject),
+			Predicate: fromRDFLib(t.Predicate),
+			Object:    fromRDFLib(t.Object),
+		})
+	}
+	return out, nil
+}
+
 // resolvePrefixes walks sh:prefixes → sh:declare → sh:prefix/sh:namespace
 // to build a SPARQL PREFIX preamble string.
+//
+// The prefixes the shapes file itself declares are emitted first, as a
+// fallback. A shapes graph commonly writes sh:prefixes pointing at its own
+// ontology node and relies on the file's @prefix directives for the rest — the
+// DASH suite does exactly that — and without the fallback those prefixed names
+// do not resolve. Explicit sh:declare values come last so they win, SPARQL
+// taking the last declaration of a repeated prefix label.
+// A shapes graph need not declare sh:prefixes at all, in which case the file's
+// own @prefix directives are all a query has; pass a none term for the node.
 func resolvePrefixes(g *Graph, prefixesNode Term) string {
 	var sb strings.Builder
-	seen := make(map[string]bool)
-	collectPrefixes(g, prefixesNode, &sb, seen, make(map[string]bool))
+	writeGraphPrefixes(g, &sb)
+	if !prefixesNode.IsNone() {
+		collectPrefixes(g, prefixesNode, &sb, make(map[string]bool), make(map[string]bool))
+	}
 	return sb.String()
+}
+
+// firstOrNone returns the first term of a slice, or a none term when empty. It
+// keeps the "this property may be absent" case out of the call sites.
+func firstOrNone(terms []Term) Term {
+	if len(terms) == 0 {
+		return Term{}
+	}
+	return terms[0]
+}
+
+// writeGraphPrefixes emits the prefix bindings the graph's source document
+// declared, in a stable order.
+func writeGraphPrefixes(g *Graph, sb *strings.Builder) {
+	if g == nil || g.g == nil {
+		return
+	}
+	type binding struct{ prefix, ns string }
+	var bindings []binding
+	for prefix, ns := range g.g.Namespaces() {
+		if prefix == "" {
+			// The empty prefix is legal in SPARQL, but a shapes file that
+			// declares one rarely uses it in a query; emitting it risks
+			// shadowing nothing useful, so it is skipped.
+			continue
+		}
+		bindings = append(bindings, binding{prefix, ns.Value()})
+	}
+	sort.Slice(bindings, func(i, j int) bool { return bindings[i].prefix < bindings[j].prefix })
+	for _, b := range bindings {
+		sb.WriteString("PREFIX ")
+		sb.WriteString(b.prefix)
+		sb.WriteString(": <")
+		sb.WriteString(b.ns)
+		sb.WriteString(">\n")
+	}
 }
 
 func collectPrefixes(g *Graph, node Term, sb *strings.Builder, seen, visited map[string]bool) {

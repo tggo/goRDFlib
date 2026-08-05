@@ -1,0 +1,62 @@
+package shacl
+
+import "fmt"
+
+// prepareAdvanced sets up the SHACL-AF layer for a validation run.
+//
+// It returns the AF context to attach to the evaluation, and the data graph to
+// validate — a copy carrying the inferred triples when rules ran, otherwise the
+// caller's graph untouched. Returning the graph rather than mutating in place
+// is what keeps Validate free of side effects on its input.
+func prepareAdvanced(dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *Graph) {
+	if !cfg.advanced {
+		// SHACL-AF §7.4: an engine that will not run the rules must not
+		// silently validate the un-inferred graph.
+		if hasRulesEntailment(shapesGraph) {
+			cfg.report(fmt.Errorf("%w: the shapes graph requests the sh:Rules entailment regime, but advanced features are off; pass WithAdvancedFeatures to run the rules", ErrAdvancedFeatures))
+		}
+		return nil, dataGraph
+	}
+
+	ctx, err := newAFContext(dataGraph, shapesGraph, cfg)
+	if err != nil {
+		cfg.report(err)
+		return nil, dataGraph
+	}
+	cfg.report(ctx.loadErr)
+
+	if !hasRules(shapesGraph) {
+		return ctx, dataGraph
+	}
+
+	// Rules infer into a copy so that validating a graph never changes it.
+	expanded := NewGraph()
+	expanded.Merge(dataGraph)
+	ctx.dataGraph = expanded
+	if _, err := ctx.applyRules(); err != nil {
+		cfg.report(err)
+	}
+	return ctx, expanded
+}
+
+// hasRules reports whether the shapes graph attaches any rule to any shape.
+// Checked before copying the data graph, which is otherwise wasted work.
+func hasRules(shapesGraph *Graph) bool {
+	pred := IRI(SHRule)
+	return shapesGraph.Has(nil, &pred, nil)
+}
+
+// addAFTargets attaches each shape's sh:target definitions to it.
+//
+// Core target properties are read during shape parsing; sh:target is read here
+// instead because resolving it needs the AF context, and because a shapes graph
+// that uses it must not behave differently when AF is off.
+func addAFTargets(ctx *afContext, shapes map[string]*Shape) {
+	for _, s := range shapes {
+		targets, err := parseAFTargets(ctx, s.ID)
+		if err != nil {
+			ctx.cfg.report(err)
+		}
+		s.Targets = append(s.Targets, targets...)
+	}
+}

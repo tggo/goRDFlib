@@ -1,0 +1,160 @@
+# baseURI: http://datashapes.org/shasf/tests/rules/triple/person2schema.test
+# imports: http://datashapes.org/dash
+# imports: http://datashapes.org/schema
+# imports: http://datashapes.org/shasf/tests/rules/triple/person
+# prefix: ex
+
+@prefix dash: <http://datashapes.org/dash#> .
+@prefix ex: <http://datashapes.org/shasf/tests/rules/triple/person2schema.test#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix person: <http://datashapes.org/shasf/tests/rules/triple/person#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <http://schema.org/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://datashapes.org/shasf/tests/rules/triple/person2schema.test>
+  rdf:type owl:Ontology ;
+  rdfs:label "Test of person2schema" ;
+  owl:imports <http://datashapes.org/dash> ;
+  owl:imports <http://datashapes.org/schema> ;
+  owl:imports <http://datashapes.org/shasf/tests/rules/triple/person> ;
+  owl:versionInfo "Created with TopBraid Composer" ;
+  sh:declare [
+      rdf:type sh:PrefixDeclaration ;
+      sh:namespace "http://datashapes.org/shasf/tests/rules/triple/person2schema.test#"^^xsd:anyURI ;
+      sh:prefix "ex" ;
+    ] ;
+  sh:declare [
+      rdf:type sh:PrefixDeclaration ;
+      sh:namespace "http://schema.org/"^^xsd:anyURI ;
+      sh:prefix "schema" ;
+    ] ;
+.
+ex:InferencingTestCase
+  rdf:type dash:InferencingTestCase ;
+  dash:expectedResult [
+      rdf:object person:JohnDoe-Address ;
+      rdf:predicate schema:address ;
+      rdf:subject person:JohnDoe ;
+    ] ;
+  dash:expectedResult [
+      rdf:object schema:Person ;
+      rdf:predicate rdf:type ;
+      rdf:subject person:JohnDoe ;
+    ] ;
+  dash:expectedResult [
+      rdf:object schema:PostalAddress ;
+      rdf:predicate rdf:type ;
+      rdf:subject person:JohnDoe-Address ;
+    ] ;
+  dash:expectedResult [
+      rdf:object 12345 ;
+      rdf:predicate schema:postalCode ;
+      rdf:subject person:JohnDoe-Address ;
+    ] ;
+  dash:expectedResult [
+      rdf:object "Doe" ;
+      rdf:predicate schema:familyName ;
+      rdf:subject person:JohnDoe ;
+    ] ;
+  dash:expectedResult [
+      rdf:object "John" ;
+      rdf:predicate schema:givenName ;
+      rdf:subject person:JohnDoe ;
+    ] ;
+.
+person:JohnDoe
+  rdf:type person:Person ;
+  person:lastName "Doe" ;
+  person:firstName "John" ;
+  person:zipCode 12345 ;
+  rdfs:label "John Doe" ;
+.
+ex:Person2SchemaMappingShape
+  rdf:type sh:NodeShape ;
+  rdfs:label "Person-to-Schema Mapping Shape" ;
+  sh:rule [
+      rdf:type sh:TripleRule ;
+      sh:object schema:Person ;
+      sh:predicate rdf:type ;
+      sh:subject sh:this ;
+    ] ;
+  sh:rule [
+      rdf:type sh:TripleRule ;
+      sh:object schema:PostalAddress ;
+      sh:predicate rdf:type ;
+      sh:subject [
+          ex:deriveURI (
+              sh:this
+              "-Address"
+            ) ;
+        ] ;
+    ] ;
+  sh:rule [
+      rdf:type sh:TripleRule ;
+      sh:object [
+          sh:path person:firstName ;
+        ] ;
+      sh:predicate schema:givenName ;
+      sh:subject sh:this ;
+    ] ;
+  sh:rule [
+      rdf:type sh:TripleRule ;
+      sh:object [
+          sh:path person:lastName ;
+        ] ;
+      sh:predicate schema:familyName ;
+      sh:subject sh:this ;
+    ] ;
+  sh:rule [
+      rdf:type sh:TripleRule ;
+      sh:object [
+          sh:path person:zipCode ;
+        ] ;
+      sh:predicate schema:postalCode ;
+      sh:subject [
+          ex:deriveURI (
+              sh:this
+              "-Address"
+            ) ;
+        ] ;
+    ] ;
+  sh:rule [
+      rdf:type sh:TripleRule ;
+      sh:object [
+          ex:deriveURI (
+              sh:this
+              "-Address"
+            ) ;
+        ] ;
+      sh:predicate schema:address ;
+      sh:subject sh:this ;
+    ] ;
+  sh:targetClass person:Person ;
+.
+ex:deriveURI
+  rdf:type sh:SPARQLFunction ;
+  rdfs:label "derive URI" ;
+  sh:parameter [
+      sh:path ex:base ;
+      sh:description "The base URI to derive from." ;
+      sh:name "base" ;
+      sh:nodeKind sh:IRI ;
+    ] ;
+  sh:parameter [
+      sh:path ex:concat ;
+      sh:datatype xsd:string ;
+      sh:description "The text to concatenate to the base to produce the result." ;
+      sh:name "concat" ;
+    ] ;
+  sh:prefixes <http://datashapes.org/shasf/tests/rules/triple/person2schema.test> ;
+  sh:returnType rdfs:Resource ;
+  sh:select """
+    SELECT ?result
+    WHERE {
+      BIND (IRI(CONCAT(str($base), $concat)) AS ?result)
+    }
+  """ ;
+.

@@ -269,6 +269,48 @@ Full W3C SHACL Core validation engine -- **98/98 W3C tests pass (100%)**.
 - Shape deactivation via `sh:deactivated`
 - Recursive shape validation
 
+### SHACL Advanced Features (SHACL-AF)
+
+[SHACL-AF](https://www.w3.org/TR/shacl-af/) is a W3C Note rather than a
+Recommendation, but it is what pySHACL and TopQuadrant's Java API implement, so
+shapes written against it are common. It is supported as an opt-in mode, kept
+separate from the SHACL 1.2 constructs that respecify the same ground:
+
+```go
+report := shacl.Validate(data, shapes, shacl.WithAdvancedFeatures())
+```
+
+| Feature | Vocabulary |
+|---|---|
+| Rules | `sh:rule` with `sh:TripleRule` / `sh:SPARQLRule`, `sh:condition`, `sh:order`, `sh:deactivated` |
+| Node expressions | `sh:this`, `sh:path` (with `sh:nodes`), `sh:union`, `sh:intersection`, `sh:filterShape`, function calls |
+| Functions | `sh:SPARQLFunction` with `sh:select` / `sh:ask`, `sh:parameter`, `sh:optional`, `sh:returnType` |
+| Custom targets | `sh:target` with `sh:SPARQLTarget` and `sh:SPARQLTargetType` |
+| Expression constraints | `sh:expression` |
+| Entailment | `sh:entailment sh:Rules` |
+
+Under `Validate` the rules run first and validation sees what they infer; the
+caller's data graph is never modified. To keep the inferred triples, apply the
+rules explicitly:
+
+```go
+n, err := shacl.ApplyRules(data, shapes)          // mutates data, returns triples added
+n, err := shacl.ApplyRules(data, shapes, shacl.WithRuleIteration())
+```
+
+Rules execute in `sh:order` and once per focus node, as the spec describes.
+`WithRuleIteration` repeats to a fixed point for chains that ordering cannot
+express. Problems that `Validate` cannot return — a malformed rule, a rule set
+that never settles — reach the caller through `shacl.WithErrorHandler`.
+
+SHACL functions are bound to the query being run rather than registered
+globally, so two shapes graphs may define the same function IRI differently and
+still be used concurrently. The same mechanism is available directly:
+`sparql.ParsedQuery.BindFunctions`.
+
+**Conformance:** 13/13 DASH advanced-features test cases (`testdata/dash-af/`),
+the suite both reference implementations are tested against.
+
 ### Plugin System
 
 - Format auto-detection by filename extension (`.ttl`, `.trig`, `.nt`, `.nq`, `.rdf`, `.owl`, `.jsonld`)

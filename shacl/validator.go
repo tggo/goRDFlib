@@ -3,14 +3,32 @@ package shacl
 import "github.com/tggo/goRDFlib/term"
 
 // Validate validates dataGraph against shapesGraph and returns a validation report.
-func Validate(dataGraph, shapesGraph *Graph) ValidationReport {
+//
+// With no options this is SHACL Core plus SHACL-SPARQL and SHACL 1.2, which is
+// what it has always been. Pass WithAdvancedFeatures to additionally interpret
+// SHACL-AF: rules run first and validation sees the triples they infer, custom
+// targets are resolved, and SHACL functions become callable. The caller's data
+// graph is never modified — rules are applied to a copy.
+//
+// Validate has no error return, so problems that are not validation results —
+// a malformed rule, a rule set that does not terminate — are only visible
+// through WithErrorHandler. Use ApplyRules when the inference itself is what
+// matters.
+func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
+	cfg := newConfig(opts)
+	af, dataGraph := prepareAdvanced(dataGraph, shapesGraph, cfg)
+
 	shapes := parseShapes(shapesGraph)
+	if af != nil {
+		addAFTargets(af, shapes)
+	}
 
 	ctx := &evalContext{
 		dataGraph:      dataGraph,
 		shapesGraph:    shapesGraph,
 		shapesMap:      shapes,
 		classInstances: buildClassIndex(dataGraph),
+		af:             af,
 	}
 
 	var allResults []ValidationResult
@@ -117,7 +135,7 @@ func evalSPARQLValues(ctx *evalContext, v *SPARQLValues, focusNode Term) []Term 
 		query = replaceVar(query, "$this", thisVal)
 		query = replaceVar(query, "?this", thisVal)
 	}
-	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil)
+	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
 		return nil
 	}
@@ -226,7 +244,7 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 			}
 		case TargetSPARQL:
 			query := tgt.Select
-			results, err := executeSPARQL(ctx.dataGraph, query, nil, nil)
+			results, err := executeSPARQL(ctx.dataGraph, query, nil, nil, ctx.sparqlFuncs())
 			if err == nil {
 				for _, row := range results {
 					// First bound variable is the target node

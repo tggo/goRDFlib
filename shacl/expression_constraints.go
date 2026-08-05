@@ -12,11 +12,14 @@ func (c *ExpressionConstraint) ComponentIRI() string {
 }
 
 func (c *ExpressionConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term) []ValidationResult {
-	expr := parseNodeExpr(ctx.shapesGraph, c.ExprNode)
+	expr := parseExpressionFor(ctx, c.ExprNode)
 	nCtx := &nodeExprContext{
-		dataGraph: ctx.dataGraph,
-		shapesMap: ctx.shapesMap,
-		focusNode: focusNode,
+		dataGraph:      ctx.dataGraph,
+		shapesGraph:    ctx.shapesGraph,
+		shapesMap:      ctx.shapesMap,
+		classInstances: ctx.classInstances,
+		focusNode:      focusNode,
+		af:             ctx.af,
 	}
 	result := expr.Eval(nCtx)
 	if isTruthy(result) {

@@ -5221,7 +5221,7 @@ func TestExecuteSPARQLAskCov(t *testing.T) {
 ex:a ex:p "hello" .
 `
 	g := loadTurtle(&testing.T{}, data)
-	result, err := executeSPARQLAsk(g, `ASK { <http://example.org/a> <http://example.org/p> "hello" }`, nil, nil)
+	result, err := executeSPARQLAsk(g, `ASK { <http://example.org/a> <http://example.org/p> "hello" }`, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

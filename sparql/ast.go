@@ -166,6 +166,11 @@ type FuncExpr struct {
 	Separator string // GROUP_CONCAT(... ; SEPARATOR=",")
 	Star      bool   // COUNT(*)
 	IRI       string // full IRI, verbatim, when the call was written as <iri>(...) or prefix:local(...)
+
+	// Fn is a query-scoped extension function bound by ParsedQuery.BindFunctions.
+	// When set it is called instead of consulting the global registry. It is
+	// written before evaluation starts and only read thereafter.
+	Fn Function
 }
 
 func (*FuncExpr) isExpr() {}

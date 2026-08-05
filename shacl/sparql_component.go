@@ -47,7 +47,7 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 		bindings, initBindings := c.buildBindings(shape, focusNode, value)
 		query := preBindQuery(queryTemplate, bindings)
 
-		askResult, err := executeSPARQLAsk(ctx.dataGraph, query, initBindings, nil)
+		askResult, err := executeSPARQLAsk(ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 		if err != nil {
 			r := makeResult(shape, focusNode, value, c.ComponentIRI())
 			if len(c.Validator.Messages) > 0 {
@@ -73,7 +73,7 @@ func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shap
 	bindings, initBindings := c.buildBindings(shape, focusNode, Term{})
 	query := preBindQuery(queryTemplate, bindings)
 
-	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil)
+	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		if len(c.Validator.Messages) > 0 {
@@ -291,8 +291,5 @@ func resolvePrefixesForValidator(g *Graph, cd componentDef, vd *validatorDef) st
 	}
 	vn := vals[0]
 
-	if prefs := g.Objects(vn, IRI(SH+"prefixes")); len(prefs) > 0 {
-		return resolvePrefixes(g, prefs[0])
-	}
-	return ""
+	return resolvePrefixes(g, firstOrNone(g.Objects(vn, IRI(SH+"prefixes"))))
 }

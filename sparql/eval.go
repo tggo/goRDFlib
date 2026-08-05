@@ -40,7 +40,7 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 	}
 	var solutions []map[string]rdflibgo.Term
 	if initBindings != nil && len(initBindings) > 0 {
-		solutions = evalPatternWithBindings(g, q.Where, initBindings, q.Prefixes, q.NamedGraphs)
+		solutions = evalPatternPreBound(g, q.Where, initBindings, q.Prefixes, q.NamedGraphs)
 		// Ensure initBindings are present in all solution rows
 		for i, s := range solutions {
 			ns := copyBindings(s)
@@ -844,6 +844,15 @@ func minusCompatible(a, b map[string]rdflibgo.Term) bool {
 	return shared
 }
 
+// evalPatternWithBindings evaluates a pattern with the variables of an
+// enclosing group already bound — the left side of a join, the main side of an
+// OPTIONAL.
+//
+// Those bindings restrict which solutions match, but they are deliberately not
+// visible to expressions inside the pattern: SPARQL 1.1 §18.2.1 puts a variable
+// bound in one group out of scope in a sibling group, which is what the bind10
+// test checks. Only pre-bound values, which behave as constants substituted
+// into the query, cross that boundary — see evalPatternPreBound.
 func evalPatternWithBindings(g *rdflibgo.Graph, pattern Pattern, bindings map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
 	switch p := pattern.(type) {
 	case *BGP:
@@ -857,6 +866,121 @@ func evalPatternWithBindings(g *rdflibgo.Graph, pattern Pattern, bindings map[st
 			}
 		}
 		return compatible
+	}
+}
+
+// evalPatternPreBound evaluates a pattern with caller-supplied initial
+// bindings, as the SPARQL Protocol's substitution of values into a query.
+//
+// Pre-bound values are constants, not variables bound by some enclosing group,
+// so they are in scope everywhere — including in a BIND or FILTER expression.
+// Filtering the results afterwards, which is enough for a BGP, does not achieve
+// that: BIND(CONCAT($arg1, $arg2) AS ?result) over pre-bound arguments has to
+// see them when the expression runs, or ?result is never bound at all. That is
+// exactly how a SHACL function body is written, and how a sh:sparql constraint
+// refers to a pre-bound $this.
+//
+// Variables bound by a join inside the pattern keep the ordinary scoping rules:
+// they reach nested patterns through evalPatternWithBindings, which does not
+// expose them to expressions.
+func evalPatternPreBound(g *rdflibgo.Graph, pattern Pattern, pre map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+	if pattern == nil {
+		return []map[string]rdflibgo.Term{{}}
+	}
+
+	// evalExpr is given the row plus the pre-bound constants, so an expression
+	// sees them without them becoming part of the solution.
+	evalWith := func(expr Expr, row map[string]rdflibgo.Term) rdflibgo.Term {
+		merged := mergeBindings(pre, row)
+		if containsExists(expr) {
+			return evalExprWithGraph(expr, merged, prefixes, g, namedGraphs)
+		}
+		return evalExpr(expr, merged, prefixes)
+	}
+
+	switch p := pattern.(type) {
+	case *BGP:
+		return evalBGP(g, p.Triples, pre, prefixes)
+
+	case *JoinPattern:
+		left := evalPatternPreBound(g, p.Left, pre, prefixes, namedGraphs)
+		var result []map[string]rdflibgo.Term
+		for _, lb := range left {
+			// The right side sees the pre-bound constants, and the left row
+			// only through the ordinary, expression-opaque path.
+			right := evalPatternPreBound(g, p.Right, pre, prefixes, namedGraphs)
+			for _, rb := range right {
+				if isCompatible(lb, rb) {
+					result = append(result, mergeBindings(lb, rb))
+				}
+			}
+		}
+		return result
+
+	case *OptionalPattern:
+		main := evalPatternPreBound(g, p.Main, pre, prefixes, namedGraphs)
+		var result []map[string]rdflibgo.Term
+		for _, mb := range main {
+			opt := evalPatternWithBindings(g, p.Optional, mergeBindings(pre, mb), prefixes, namedGraphs)
+			if len(opt) > 0 {
+				for _, ob := range opt {
+					result = append(result, mergeBindings(mb, ob))
+				}
+			} else {
+				result = append(result, mb)
+			}
+		}
+		return result
+
+	case *UnionPattern:
+		left := evalPatternPreBound(g, p.Left, pre, prefixes, namedGraphs)
+		right := evalPatternPreBound(g, p.Right, pre, prefixes, namedGraphs)
+		return append(left, right...)
+
+	case *FilterPattern:
+		inner := evalPatternPreBound(g, p.Pattern, pre, prefixes, namedGraphs)
+		var result []map[string]rdflibgo.Term
+		for _, b := range inner {
+			if effectiveBooleanValue(evalWith(p.Expr, b)) {
+				result = append(result, b)
+			}
+		}
+		return result
+
+	case *BindPattern:
+		inner := evalPatternPreBound(g, p.Pattern, pre, prefixes, namedGraphs)
+		result := make([]map[string]rdflibgo.Term, 0, len(inner))
+		for _, b := range inner {
+			nb := copyBindings(b)
+			if val := evalWith(p.Expr, b); val != nil {
+				nb[p.Var] = val
+			}
+			result = append(result, nb)
+		}
+		return result
+
+	case *MinusPattern:
+		left := evalPatternPreBound(g, p.Left, pre, prefixes, namedGraphs)
+		right := evalPattern(g, p.Right, prefixes, namedGraphs)
+		var result []map[string]rdflibgo.Term
+		for _, lb := range left {
+			excluded := false
+			for _, rb := range right {
+				if minusCompatible(lb, rb) {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				result = append(result, lb)
+			}
+		}
+		return result
+
+	default:
+		// VALUES, GRAPH and sub-SELECT carry no expression that could observe a
+		// pre-bound value, so restricting their results is equivalent.
+		return evalPatternWithBindings(g, pattern, pre, prefixes, namedGraphs)
 	}
 }
 
