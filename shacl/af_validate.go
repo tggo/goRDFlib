@@ -50,13 +50,14 @@ func hasRules(shapesGraph *Graph) bool {
 //
 // Core target properties are read during shape parsing; sh:target is read here
 // instead because resolving it needs the AF context, and because a shapes graph
-// that uses it must not behave differently when AF is off.
+// that uses it must not behave differently when AF is off. Every caller that
+// parses shapes for an AF run has to call this — a shape whose only target is a
+// sh:target otherwise has no focus nodes at all.
 func addAFTargets(ctx *afContext, shapes map[string]*Shape) {
+	if ctx == nil {
+		return
+	}
 	for _, s := range shapes {
-		targets, err := parseAFTargets(ctx, s.ID)
-		if err != nil {
-			ctx.cfg.report(err)
-		}
-		s.Targets = append(s.Targets, targets...)
+		s.Targets = append(s.Targets, ctx.afTargets[s.ID.String()]...)
 	}
 }
