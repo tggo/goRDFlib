@@ -345,6 +345,34 @@ func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
 	return LoadNQuads(strings.NewReader(data), base, opts...)
 }
 
+// NewGraphFromRDF wraps an existing *graph.Graph as a *Graph, without copying
+// its triples.
+//
+// This lets a caller pass a graph already loaded or backed by any
+// store.Store implementation (including store/badgerstore or
+// store/sqlitestore) into Validate without a separate parse/serialize round
+// trip. baseURI is used the same way it is for the Load* constructors.
+//
+// The returned Graph builds its own lazy SPO/POS index over g's triples on
+// first read (see ensureIndexes), and that index is a snapshot: it does not
+// track later changes made to g directly. Mutate the wrapped graph only
+// through this Graph's Add/Merge, which invalidate the index automatically,
+// or call InvalidateIndexes after mutating g outside of it. Building the
+// index also means every triple in g is materialized into memory at index
+// time — wrapping a graph backed by a large persistent store will hold its
+// full triple set in memory during validation.
+func NewGraphFromRDF(g *graph.Graph, baseURI string) *Graph {
+	return &Graph{g: g, baseURI: baseURI}
+}
+
+// InvalidateIndexes discards the lazily built SPO/POS indexes, forcing the
+// next read to rebuild them from the wrapped graph. Call this after mutating
+// the graph.Graph passed to NewGraphFromRDF directly, outside of this
+// Graph's Add/Merge methods.
+func (g *Graph) InvalidateIndexes() {
+	g.invalidateIndexes()
+}
+
 // graphIndexes are the lookup tables All, Objects and Subjects read.
 type graphIndexes struct {
 	spo map[string]map[string][]Term // subject → predicate → []object
