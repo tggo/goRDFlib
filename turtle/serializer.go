@@ -12,6 +12,13 @@ import (
 )
 
 // Serialize writes the graph in Turtle format.
+//
+// By default the output is compact. Pass WithPretty or WithIndent for an
+// indented layout, and WithMaxNestDepth to change how deeply blank nodes are
+// nested inline.
+//
+// Serialize is safe for concurrent use provided the graph is not mutated
+// concurrently; it holds all of its state locally.
 func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
@@ -19,6 +26,9 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	}
 	ts := newTurtleState(g)
 	ts.base = cfg.base
+	ts.pretty = cfg.pretty
+	ts.indentUnit = cfg.indentUnit()
+	ts.maxNestDepth = cfg.nestDepth()
 	ts.preprocess()
 	ts.orderSubjects()
 	return ts.write(w)
@@ -57,19 +67,65 @@ type turtleState struct {
 
 	// subjectMap maps N3 key -> Subject for O(1) lookup
 	subjectMap map[string]rdflibgo.Subject
+
+	// layout
+	pretty       bool
+	indentUnit   string
+	indentCache  []string
+	maxNestDepth int
+	depth        int // current inline nesting depth
+
+	// nodes whose inline form was suppressed by maxNestDepth; they are emitted
+	// as top-level statements so no triple is lost.
+	deferred    []string
+	deferredSet map[string]bool
+
+	// precomputed term keys (N3 of well-known terms)
+	typeKey, labelKey string
+	firstKey, restKey string
+	nilKey, classKey  string
+	qnameCache        map[string]string
+	predCache         map[string]string
+	nsSeen            map[string]bool
 }
 
 func newTurtleState(g *rdflibgo.Graph) *turtleState {
 	return &turtleState{
-		g:          g,
-		spoMap:     make(map[string]map[string][]rdflibgo.Term),
-		refs:       make(map[string]int),
-		usedNS:     make(map[string]rdflibgo.URIRef),
-		listHeads:  make(map[string]bool),
-		listNodes:  make(map[string]bool),
-		serialized: make(map[string]bool),
-		subjectMap: make(map[string]rdflibgo.Subject),
+		g:           g,
+		spoMap:      make(map[string]map[string][]rdflibgo.Term),
+		refs:        make(map[string]int),
+		usedNS:      make(map[string]rdflibgo.URIRef),
+		listHeads:   make(map[string]bool),
+		listNodes:   make(map[string]bool),
+		serialized:  make(map[string]bool),
+		subjectMap:  make(map[string]rdflibgo.Subject),
+		deferredSet: make(map[string]bool),
+		indentCache: []string{""},
+		qnameCache:  make(map[string]string),
+		predCache:   make(map[string]string),
+		nsSeen:      make(map[string]bool),
+
+		typeKey:  termKey(rdflibgo.RDF.Type),
+		labelKey: termKey(rdflibgo.RDFS.Label),
+		firstKey: termKey(rdflibgo.RDF.First),
+		restKey:  termKey(rdflibgo.RDF.Rest),
+		nilKey:   termKey(rdflibgo.RDF.Nil),
+		classKey: termKey(rdflibgo.RDFS.Class),
+
+		maxNestDepth: defaultMaxNestDepth,
+		indentUnit:   spaces(defaultIndentWidth),
 	}
+}
+
+// indent returns the indentation prefix for the given nesting level.
+func (ts *turtleState) indent(level int) string {
+	if level <= 0 {
+		return ""
+	}
+	for len(ts.indentCache) <= level {
+		ts.indentCache = append(ts.indentCache, ts.indentCache[len(ts.indentCache)-1]+ts.indentUnit)
+	}
+	return ts.indentCache[level]
 }
 
 // preprocess collects triples, counts references, detects lists, and tracks used prefixes.
@@ -112,6 +168,13 @@ func (ts *turtleState) trackNS(t rdflibgo.Term) {
 		return
 	}
 	uri := u.Value()
+	// Every triple passes three terms through here and the same IRIs recur
+	// constantly; scanning the namespace table once per distinct IRI keeps this
+	// off the hot path.
+	if ts.nsSeen[uri] {
+		return
+	}
+	ts.nsSeen[uri] = true
 	ts.g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		nsStr := ns.Value()
 		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(prefix) {
@@ -123,9 +186,7 @@ func (ts *turtleState) trackNS(t rdflibgo.Term) {
 
 // detectLists finds rdf:List patterns.
 func (ts *turtleState) detectLists() {
-	firstKey := termKey(rdflibgo.RDF.First)
-	restKey := termKey(rdflibgo.RDF.Rest)
-	nilKey := termKey(rdflibgo.RDF.Nil)
+	firstKey, restKey, nilKey := ts.firstKey, ts.restKey, ts.nilKey
 
 	for sk, preds := range ts.spoMap {
 		if _, hasFirst := preds[firstKey]; !hasFirst {
@@ -188,8 +249,7 @@ func (ts *turtleState) markListNodes(sk, restKey, nilKey string) {
 
 // orderSubjects sorts subjects for deterministic output.
 func (ts *turtleState) orderSubjects() {
-	typeKey := termKey(rdflibgo.RDF.Type)
-	classKey := termKey(rdflibgo.RDFS.Class)
+	typeKey, classKey := ts.typeKey, ts.classKey
 
 	var topSubjects []rdflibgo.Subject
 	var bnodeSubjects []rdflibgo.Subject
@@ -282,23 +342,47 @@ func (ts *turtleState) write(w io.Writer) error {
 		}
 	}
 
-	// Subjects
-	for i, subj := range ts.subjects {
-		sk := termKey(subj)
-		if ts.serialized[sk] {
-			continue
-		}
-		if err := ts.writeSubject(w, subj); err != nil {
-			return err
-		}
-		if i < len(ts.subjects)-1 {
-			if _, err := fmt.Fprintln(w); err != nil {
+	// Subjects. A blank line separates consecutive statements; subjects already
+	// emitted inline (as [ ... ] or as a collection) are skipped.
+	wrote := false
+	writeOne := func(subj rdflibgo.Subject) error {
+		if wrote {
+			if _, err := io.WriteString(w, "\n"); err != nil {
 				return err
 			}
 		}
+		wrote = true
+		return ts.writeSubject(w, subj)
 	}
 
-	return nil
+	for _, subj := range ts.subjects {
+		if ts.serialized[termKey(subj)] {
+			continue
+		}
+		if err := writeOne(subj); err != nil {
+			return err
+		}
+	}
+
+	// Nodes that hit the nesting limit are emitted here. The queue may grow
+	// while it is drained (a flattened node can itself defer another); it
+	// terminates because every entry is a distinct key of spoMap and each pass
+	// marks its node serialized.
+	for i := 0; i < len(ts.deferred); i++ {
+		sk := ts.deferred[i]
+		if ts.serialized[sk] {
+			continue
+		}
+		subj := ts.subjectMap[sk]
+		if subj == nil {
+			continue
+		}
+		if err := writeOne(subj); err != nil {
+			return err
+		}
+	}
+
+	return bw.Flush()
 }
 
 // writeSubject writes a single subject block.
@@ -306,42 +390,49 @@ func (ts *turtleState) writeSubject(w io.Writer, subj rdflibgo.Subject) error {
 	sk := termKey(subj)
 	ts.serialized[sk] = true
 
-	// Check if this BNode can be inlined (referenced 0 times)
+	head := ts.label(subj)
+	// A BNode nothing refers to needs no label of its own.
 	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 && !ts.listHeads[sk] {
-		if _, err := fmt.Fprintf(w, "[]"); err != nil {
-			return err
-		}
-		return ts.writePredicates(w, sk, " ")
+		head = "[]"
 	}
-
-	label := ts.label(subj)
-	if _, err := fmt.Fprintf(w, "%s", label); err != nil {
+	if _, err := io.WriteString(w, head); err != nil {
 		return err
 	}
-	return ts.writePredicates(w, sk, " ")
+	return ts.writePredicates(w, sk, 1, " .\n")
 }
 
-// writePredicates writes the predicate-object list for a subject.
-func (ts *turtleState) writePredicates(w io.Writer, sk string, indent string) error {
+// writePredicates writes the predicate-object list for sk, followed by
+// terminator. level is the nesting level the predicates are indented to (only
+// used in the pretty layout).
+func (ts *turtleState) writePredicates(w io.Writer, sk string, level int, terminator string) error {
 	preds := ts.spoMap[sk]
 	if len(preds) == 0 {
-		_, err := fmt.Fprintln(w, " .")
+		_, err := io.WriteString(w, terminator)
 		return err
 	}
 
-	// Sort predicates: rdf:type first, then alphabetically
+	// Sort predicates: rdf:type first, then rdfs:label, then alphabetically
 	sortedPreds := ts.sortPredicates(preds)
 
 	for i, pk := range sortedPreds {
 		objs := preds[pk]
-		predLabel := ts.predLabel(pk)
 
-		if i == 0 {
-			if _, err := fmt.Fprintf(w, " %s", predLabel); err != nil {
+		if i > 0 {
+			if _, err := io.WriteString(w, " ;"); err != nil {
 				return err
 			}
-		} else {
-			if _, err := fmt.Fprintf(w, " ;\n    %s", predLabel); err != nil {
+		}
+		switch {
+		case ts.pretty:
+			if _, err := io.WriteString(w, "\n"+ts.indent(level)+ts.predLabel(pk)); err != nil {
+				return err
+			}
+		case i == 0:
+			if _, err := io.WriteString(w, " "+ts.predLabel(pk)); err != nil {
+				return err
+			}
+		default:
+			if _, err := io.WriteString(w, "\n"+ts.indent(1)+ts.predLabel(pk)); err != nil {
 				return err
 			}
 		}
@@ -351,33 +442,39 @@ func (ts *turtleState) writePredicates(w io.Writer, sk string, indent string) er
 			return rdflibgo.CompareTerm(a, b)
 		})
 
+		// In the pretty layout objects go on their own lines when there is more
+		// than one, or when the single object expands into a block.
+		ownLines := ts.pretty && (len(objs) > 1 || ts.expandsToBlock(objs[0]))
+
 		for j, obj := range objs {
 			if j > 0 {
-				if _, err := fmt.Fprintf(w, ","); err != nil {
+				if _, err := io.WriteString(w, ","); err != nil {
 					return err
 				}
 			}
-			objStr, err := ts.objectStr(obj)
-			if err != nil {
+			sep := " "
+			if ownLines {
+				sep = "\n" + ts.indent(level+1)
+			}
+			if _, err := io.WriteString(w, sep); err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(w, " %s", objStr); err != nil {
+			if err := ts.writeObject(w, obj, level+1); err != nil {
 				return err
 			}
 		}
 	}
 
-	_, err := fmt.Fprintln(w, " .")
+	_, err := io.WriteString(w, terminator)
 	return err
 }
 
 // sortPredicates returns predicate keys with rdf:type first, then rdfs:label, then alphabetical.
 func (ts *turtleState) sortPredicates(preds map[string][]rdflibgo.Term) []string {
-	typeKey := termKey(rdflibgo.RDF.Type)
-	labelKey := termKey(rdflibgo.RDFS.Label)
+	typeKey, labelKey := ts.typeKey, ts.labelKey
 
-	var ordered []string
-	var rest []string
+	ordered := make([]string, 0, len(preds))
+	rest := make([]string, 0, len(preds))
 
 	for pk := range preds {
 		switch pk {
@@ -414,34 +511,100 @@ func (ts *turtleState) label(t rdflibgo.Term) string {
 
 // predLabel returns the Turtle representation of a predicate.
 func (ts *turtleState) predLabel(pk string) string {
-	if pk == termKey(rdflibgo.RDF.Type) {
+	if pk == ts.typeKey {
 		return "a"
 	}
-	// Try to resolve to a URIRef and get qname
-	// pk is N3 form like <http://...>
+	if s, ok := ts.predCache[pk]; ok {
+		return s
+	}
+	// Resolve to a URIRef and get its qname. pk is N3 form like <http://...>.
 	uri := strings.TrimPrefix(strings.TrimSuffix(pk, ">"), "<")
-	u := rdflibgo.NewURIRefUnsafe(uri)
-	return ts.qnameOrFull(u)
+	s := ts.qnameOrFull(rdflibgo.NewURIRefUnsafe(uri))
+	ts.predCache[pk] = s
+	return s
 }
 
-// objectStr returns the Turtle representation of an object term.
+// objectForm classifies how an object term is written in object position.
+type objectForm int
+
+const (
+	formScalar objectForm = iota // written as a single token
+	formBNode                    // expanded into [ ... ]
+	formList                     // expanded into ( ... )
+)
+
+// objectForm decides whether t is expanded inline. The decision depends on
+// mutable state (what has been serialized already, current nesting depth), so
+// it must be taken immediately before the term is written.
+func (ts *turtleState) objectForm(t rdflibgo.Term) objectForm {
+	b, ok := t.(rdflibgo.BNode)
+	if !ok {
+		return formScalar
+	}
+	bk := termKey(b)
+	if ts.serialized[bk] {
+		return formScalar
+	}
+	// Inline nesting is recursive; stop before an adversarially deep graph
+	// turns into deep recursion and a quadratic amount of indentation.
+	if ts.depth >= ts.maxNestDepth {
+		return formScalar
+	}
+	if ts.listHeads[bk] {
+		return formList
+	}
+	// Inline a blank node only when nothing else refers to it.
+	if ts.refs[bk] <= 1 && len(ts.spoMap[bk]) > 0 {
+		return formBNode
+	}
+	return formScalar
+}
+
+// expandsToBlock reports whether t is written across several lines in the
+// pretty layout. A blank node always is; a collection only when one of its
+// items is itself a block, so that flat collections stay on one line.
+func (ts *turtleState) expandsToBlock(t rdflibgo.Term) bool {
+	switch ts.objectForm(t) {
+	case formBNode:
+		return true
+	case formList:
+		ts.depth++
+		defer func() { ts.depth-- }()
+		for _, item := range ts.listItems(t.(rdflibgo.BNode), false) {
+			if ts.expandsToBlock(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// deferNode queues a blank node that was not inlined so that its own statement
+// is emitted at the top level. Without this, flattening a node at the nesting
+// limit would drop every triple it is the subject of.
+func (ts *turtleState) deferNode(bk string) {
+	if ts.serialized[bk] || ts.deferredSet[bk] || len(ts.spoMap[bk]) == 0 {
+		return
+	}
+	ts.deferredSet[bk] = true
+	ts.deferred = append(ts.deferred, bk)
+}
+
+// objectStr returns the Turtle representation of an object term on a single line.
 func (ts *turtleState) objectStr(t rdflibgo.Term) (string, error) {
 	switch v := t.(type) {
 	case rdflibgo.URIRef:
 		return ts.qnameOrFull(v), nil
 	case rdflibgo.BNode:
-		bk := termKey(v)
-		// Check if it's a list head
-		if ts.listHeads[bk] && !ts.serialized[bk] {
+		switch ts.objectForm(v) {
+		case formList:
 			return ts.listStr(v)
+		case formBNode:
+			return ts.inlineBNode(v)
+		default:
+			ts.deferNode(termKey(v))
+			return v.N3(), nil
 		}
-		// Inline blank node if referenced only once and not yet serialized
-		if ts.refs[bk] <= 1 && !ts.serialized[bk] {
-			if preds := ts.spoMap[bk]; len(preds) > 0 {
-				return ts.inlineBNode(v)
-			}
-		}
-		return v.N3(), nil
 	case rdflibgo.Literal:
 		return ts.literalStr(v), nil
 	case rdflibgo.TripleTerm:
@@ -449,6 +612,82 @@ func (ts *turtleState) objectStr(t rdflibgo.Term) (string, error) {
 	default:
 		return t.N3(), nil
 	}
+}
+
+// writeObject writes an object term at the given nesting level, expanding blank
+// nodes and collections across lines in the pretty layout.
+func (ts *turtleState) writeObject(w io.Writer, t rdflibgo.Term, level int) error {
+	if b, ok := t.(rdflibgo.BNode); ok && ts.pretty {
+		switch ts.objectForm(b) {
+		case formBNode:
+			return ts.writeBNodeBlock(w, b, level)
+		case formList:
+			return ts.writeListBlock(w, b, level)
+		}
+	}
+	s, err := ts.objectStr(t)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, s)
+	return err
+}
+
+// writeBNodeBlock writes a blank node as an indented [ ... ] block. The opening
+// bracket sits at the caller's cursor, the closing one at indent(level).
+func (ts *turtleState) writeBNodeBlock(w io.Writer, b rdflibgo.BNode, level int) error {
+	bk := termKey(b)
+	ts.serialized[bk] = true
+	ts.depth++
+	defer func() { ts.depth-- }()
+
+	if _, err := io.WriteString(w, "["); err != nil {
+		return err
+	}
+	return ts.writePredicates(w, bk, level+1, "\n"+ts.indent(level)+"]")
+}
+
+// writeListBlock writes a collection, keeping it on one line unless an item
+// expands into a block of its own.
+func (ts *turtleState) writeListBlock(w io.Writer, head rdflibgo.BNode, level int) error {
+	ts.depth++
+	defer func() { ts.depth-- }()
+
+	items := ts.listItems(head, true)
+	if len(items) == 0 {
+		_, err := io.WriteString(w, "()")
+		return err
+	}
+
+	multiline := false
+	for _, it := range items {
+		if ts.expandsToBlock(it) {
+			multiline = true
+			break
+		}
+	}
+
+	open, sep, closing := "( ", " ", " )"
+	if multiline {
+		open = "(\n" + ts.indent(level+1)
+		sep = "\n" + ts.indent(level+1)
+		closing = "\n" + ts.indent(level) + ")"
+	}
+	if _, err := io.WriteString(w, open); err != nil {
+		return err
+	}
+	for i, it := range items {
+		if i > 0 {
+			if _, err := io.WriteString(w, sep); err != nil {
+				return err
+			}
+		}
+		if err := ts.writeObject(w, it, level+1); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, closing)
+	return err
 }
 
 // literalStr formats a literal for Turtle output.
@@ -472,6 +711,16 @@ func (ts *turtleState) literalStr(l rdflibgo.Literal) string {
 
 // qnameOrFull returns a prefixed name if possible, otherwise the full N3 form.
 func (ts *turtleState) qnameOrFull(u rdflibgo.URIRef) string {
+	uri := u.Value()
+	if s, ok := ts.qnameCache[uri]; ok {
+		return s
+	}
+	s := ts.computeQName(u)
+	ts.qnameCache[uri] = s
+	return s
+}
+
+func (ts *turtleState) computeQName(u rdflibgo.URIRef) string {
 	uri := u.Value()
 	bestPrefix := ""
 	bestNS := ""
@@ -585,61 +834,84 @@ func isPNCharsBase(r rune) bool {
 		(r >= 0x10000 && r <= 0xEFFFF)
 }
 
-// listStr serializes an rdf:List as Turtle collection syntax: ( item1 item2 ... )
-func (ts *turtleState) listStr(head rdflibgo.BNode) (string, error) {
-	var items []string
-	restKey := termKey(rdflibgo.RDF.Rest)
-	firstKey := termKey(rdflibgo.RDF.First)
-	nilKey := termKey(rdflibgo.RDF.Nil)
+// listItems walks a well-formed rdf:List and returns its items. With mark set,
+// every node of the list is recorded as serialized — pass false to inspect a
+// list that is not being written yet. The list is known to be acyclic because
+// only heads accepted by isValidList reach here.
+func (ts *turtleState) listItems(head rdflibgo.BNode, mark bool) []rdflibgo.Term {
+	var items []rdflibgo.Term
 
 	node := termKey(head)
-	for node != nilKey {
-		ts.serialized[node] = true
-		firsts := ts.spoMap[node][firstKey]
-		if len(firsts) > 0 {
-			str, err := ts.objectStr(firsts[0])
-			if err != nil {
-				return "", err
-			}
-			items = append(items, str)
+	for node != ts.nilKey {
+		if mark {
+			ts.serialized[node] = true
 		}
-		rests := ts.spoMap[node][restKey]
+		if firsts := ts.spoMap[node][ts.firstKey]; len(firsts) > 0 {
+			items = append(items, firsts[0])
+		}
+		rests := ts.spoMap[node][ts.restKey]
 		if len(rests) == 0 {
 			break
 		}
 		node = termKey(rests[0])
 	}
+	return items
+}
 
-	return "( " + strings.Join(items, " ") + " )", nil
+// listStr serializes an rdf:List as Turtle collection syntax: ( item1 item2 ... )
+func (ts *turtleState) listStr(head rdflibgo.BNode) (string, error) {
+	ts.depth++
+	defer func() { ts.depth-- }()
+
+	items := ts.listItems(head, true)
+
+	var b strings.Builder
+	b.WriteString("( ")
+	for _, item := range items {
+		str, err := ts.objectStr(item)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(str)
+		b.WriteByte(' ')
+	}
+	b.WriteByte(')')
+	return b.String(), nil
 }
 
 // inlineBNode serializes a blank node inline: [ pred1 obj1 ; pred2 obj2 ]
 func (ts *turtleState) inlineBNode(b rdflibgo.BNode) (string, error) {
 	sk := termKey(b)
 	ts.serialized[sk] = true
+	ts.depth++
+	defer func() { ts.depth-- }()
+
 	preds := ts.spoMap[sk]
 
-	sortedPreds := ts.sortPredicates(preds)
-	var parts []string
+	var out strings.Builder
+	out.WriteString("[ ")
+	for i, pk := range ts.sortPredicates(preds) {
+		if i > 0 {
+			out.WriteString(" ; ")
+		}
+		out.WriteString(ts.predLabel(pk))
 
-	for _, pk := range sortedPreds {
 		objs := preds[pk]
-		predLabel := ts.predLabel(pk)
-
 		slices.SortFunc(objs, func(a, b rdflibgo.Term) int {
 			return rdflibgo.CompareTerm(a, b)
 		})
-
-		var objStrs []string
-		for _, obj := range objs {
+		for j, obj := range objs {
+			if j > 0 {
+				out.WriteByte(',')
+			}
 			str, err := ts.objectStr(obj)
 			if err != nil {
 				return "", err
 			}
-			objStrs = append(objStrs, str)
+			out.WriteByte(' ')
+			out.WriteString(str)
 		}
-		parts = append(parts, predLabel+" "+strings.Join(objStrs, ", "))
 	}
-
-	return "[ " + strings.Join(parts, " ; ") + " ]", nil
+	out.WriteString(" ]")
+	return out.String(), nil
 }

@@ -356,8 +356,9 @@ func main() {
     g.Add(alice, name, rdf.NewLiteral("Alice"))
     g.Add(alice, age, rdf.NewLiteral(30))
 
-    // Serialize to Turtle
+    // Serialize to Turtle (compact by default; turtle.WithPretty() indents)
     turtle.Serialize(g, os.Stdout)
+    turtle.Serialize(g, os.Stdout, turtle.WithPretty())
 
     // Parse Turtle
     g2 := rdf.NewGraph()
