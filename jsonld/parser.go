@@ -1,6 +1,7 @@
 package jsonld
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
 	"github.com/tggo/goRDFlib/nq"
+	"github.com/tggo/goRDFlib/term"
 
 	"github.com/piprate/json-gold/ld"
 )
@@ -23,6 +25,19 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		o(&cfg)
 	}
 	base := cfg.base
+
+	// Provenance needs the source twice: once to expand it into RDF, and once
+	// to find out where its identifiers were written. Without the option the
+	// reader is consumed exactly as before.
+	var src []byte
+	if cfg.provenance != nil {
+		var err error
+		src, err = io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		r = bytes.NewReader(src)
+	}
 
 	// Decode JSON
 	var doc any
@@ -55,14 +70,14 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	}
 
 	// Parse the N-Quads into the graph
-	return parseNQuadsInto(g, nqStr, &cfg)
+	return parseNQuadsInto(g, nqStr, &cfg, src)
 }
 
 // parseNQuadsInto parses the expanded N-Quads into g, honoring cfg.skipInvalidIRI.
 // When set, lines that fail because of an invalid IRI (ntsyntax.ErrInvalidIRI)
 // are skipped instead of aborting the parse.
-func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config) error {
-	nqOpts := make([]nq.Option, 0, 2)
+func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) error {
+	nqOpts := make([]nq.Option, 0, 3)
 	if cfg.unbounded {
 		nqOpts = append(nqOpts, nq.WithUnboundedLines())
 	}
@@ -76,6 +91,20 @@ func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config) error {
 			return line, true
 		}
 		nqOpts = append(nqOpts, nq.WithErrorHandler(skipInvalid))
+	}
+	if cfg.provenance != nil {
+		// The line numbers of the intermediate N-Quads are meaningless to the
+		// caller — they belong to a document nobody wrote. What is reported is
+		// the line of the source node object that declared the subject, which
+		// is why the N-Quads line is discarded here.
+		lines := buildSubjectLines(src, cfg.base, cfg.documentLoader)
+		handler := cfg.provenance
+		nqOpts = append(nqOpts, nq.WithProvenance(
+			func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, _ rdflibgo.Term, _ int) {
+				if line, ok := lines[term.TermKey(s)]; ok {
+					handler(s, p, o, line)
+				}
+			}))
 	}
 	return nq.Parse(g, strings.NewReader(nqStr), nqOpts...)
 }

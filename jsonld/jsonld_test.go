@@ -267,7 +267,7 @@ const badNQuads = `<http://example.org/s> <http://example.org/p> <http://example
 func TestJSONLDStrictRejectsInvalidIRI(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var cfg config
-	err := parseNQuadsInto(g, badNQuads, &cfg)
+	err := parseNQuadsInto(g, badNQuads, &cfg, nil)
 	if err == nil {
 		t.Fatal("expected error parsing invalid IRI in strict (default) mode, got nil")
 	}
@@ -279,7 +279,7 @@ func TestJSONLDSkipInvalidIRIs(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var cfg config
 	WithSkipInvalidIRIs()(&cfg)
-	if err := parseNQuadsInto(g, badNQuads, &cfg); err != nil {
+	if err := parseNQuadsInto(g, badNQuads, &cfg, nil); err != nil {
 		t.Fatalf("unexpected error with WithSkipInvalidIRIs: %v", err)
 	}
 	if g.Len() != 1 {
@@ -302,7 +302,7 @@ func TestJSONLDParseNQuadsWithUnboundedLines(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var cfg config
 	WithUnboundedLines()(&cfg)
-	if err := parseNQuadsInto(g, nquads, &cfg); err != nil {
+	if err := parseNQuadsInto(g, nquads, &cfg, nil); err != nil {
 		t.Fatalf("unexpected error with WithUnboundedLines: %v", err)
 	}
 	if g.Len() != 1 {

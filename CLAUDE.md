@@ -166,9 +166,25 @@ The `store.Store` interface (13 methods) has four implementations:
   form goes into `term.TermKey` verbatim, so a printable separator would let a
   crafted literal forge another triple's key. Guard:
   `TestKeySeparatorCannotCollide`.
-- RDF/XML and JSON-LD have **no** `WithProvenance` yet; json-gold is decoupled
-  (piprate/json-gold#96). Context for why this matters:
-  oxigraph/oxigraph#1526, RDFLib/pySHACL#321.
+- All six parsers report provenance. Precision differs by format and that is
+  not a bug: nt/nq/turtle/trig/rdfxml are **per triple**, JSON-LD is **per node
+  object**.
+- `rdfxml`: every triple goes through `p.add`, never `p.g.Add` — a new
+  production that calls `g.Add` directly would silently skip provenance. Guard:
+  `TestProvenanceEveryTripleIsReported` compares index size to graph size.
+- `jsonld`: json-gold discards positions (piprate/json-gold#96), so the source
+  is scanned separately for `@id` positions and those are expanded through the
+  document's **own** context via `ld.Context.ExpandIri` — not a hand-rolled
+  prefix table. That is what makes it exact: a failed expansion yields no line
+  rather than a wrong one. Only the **top-level** `@context` is used; scoped and
+  remote contexts are not seen. `@id` aliases are collected in a separate pass
+  because a context may be written after the nodes that use it.
+- The JSON-LD position scan reads `dec.InputOffset()` **after** `Token()`.
+  Before it, the decoder still sits where the previous token ended — on the far
+  side of the whitespace, so usually on the previous line. That was an
+  off-by-one in every case with indentation.
+- Context for why any of this exists: oxigraph/oxigraph#1526,
+  RDFLib/pySHACL#321 (closed as impossible on RDFLib).
 
 ### shacl/ SHACL-AF layer (af_*.go)
 - SHACL-AF is a W3C **Note**, SHACL 1.2 is a **draft** respecifying the same

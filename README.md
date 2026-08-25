@@ -504,8 +504,29 @@ Entirely opt-in: without `WithSourceLines` the report is byte-for-byte what it
 always was, and `SourceLine` stays 0. The line is a Go-level field and is not
 part of the RDF form of the report, which SHACL defines and does not extend.
 
-Provenance is available from the N-Triples, N-Quads, Turtle and TriG parsers.
-RDF/XML and JSON-LD do not report it yet.
+Every parser reports provenance, at the precision its format allows:
+
+| Format | Precision | How |
+|---|---|---|
+| N-Triples, N-Quads | triple | one triple per line |
+| Turtle, TriG | triple | the line the triple was completed on |
+| RDF/XML | triple | `xml.Decoder` input position at the end of the property element |
+| JSON-LD | **node object** | the line the subject's `@id` block opens on |
+
+JSON-LD is the one that cannot be per triple. Its triples come out of an
+expansion performed by [json-gold](https://github.com/piprate/json-gold), which
+resolves contexts and term definitions and returns a dataset with no memory of
+where any of it came from ([json-gold#96](https://github.com/piprate/json-gold/issues/96)
+asks for that and is still open). What is recoverable is where each `@id` was
+written, so a triple is reported against the line its subject's node object
+opens on.
+
+It never guesses. Identifiers are expanded through the document's own
+`@context` using the same processor that produced the triples, so a match is a
+match rather than a resemblance; anything that fails to expand contributes
+nothing. A node object with no `@id` — a blank node whose label the expander
+invents — gets no line at all, because a wrong line is worse than none.
+`@id` aliased through a context (`{"id": "@id"}`) is honoured.
 
 Runnable version: [`examples/shacl_source_lines_example/`](examples/shacl_source_lines_example).
 

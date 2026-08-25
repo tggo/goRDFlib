@@ -18,6 +18,7 @@ type config struct {
 	documentLoader ld.DocumentLoader
 	skipInvalidIRI bool
 	unbounded      bool
+	provenance     ProvenanceHandler
 }
 
 // Option configures JSON-LD parsing or serialization.
