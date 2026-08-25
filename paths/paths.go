@@ -193,24 +193,27 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 					}
 				}
 			}
+			// A backend that can compute reachability itself answers the
+			// transitive part in one round trip; otherwise traverse locally.
+			if p.evalViaStore(g, subj, obj, emit) {
+				return
+			}
 			seen := make(map[string]bool)
 			p.fwdFrom(g, subj, subj, obj, seen, emit)
 		} else if obj != nil {
-			// Backward evaluation to a known object
+			// Backward evaluation to a known object. The object may be a
+			// literal — nothing can be traversed *from* a literal, but plenty
+			// of paths end at one, so `?x <p>+ "lit"` is a legitimate query.
 			if p.Zero {
-				if s, ok := obj.(term.Subject); ok {
-					if !emit(obj, obj) {
-						return
-					}
-					seen := make(map[string]bool)
-					p.bwdTo(g, s, obj, seen, emit)
-				}
-			} else {
-				if s, ok := obj.(term.Subject); ok {
-					seen := make(map[string]bool)
-					p.bwdTo(g, s, obj, seen, emit)
+				if !emit(obj, obj) {
+					return
 				}
 			}
+			if p.evalViaStore(g, nil, obj, emit) {
+				return
+			}
+			seen := make(map[string]bool)
+			p.bwdTo(g, obj, obj, seen, emit)
 		} else {
 			// No constraints: evaluate from all nodes
 			if p.Zero {
@@ -265,7 +268,10 @@ func (p *MulPath) fwdFrom(g *graph.Graph, origin term.Term, node term.Subject, o
 }
 
 // bwdTo traverses backward from node, emitting (reachable, target) pairs.
-func (p *MulPath) bwdTo(g *graph.Graph, node term.Subject, target term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+// node is a term.Term rather than a term.Subject because a backward traversal
+// legitimately starts at a literal: literals cannot be subjects, but they can
+// be the endpoint of a path.
+func (p *MulPath) bwdTo(g *graph.Graph, node term.Term, target term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
 	k := term.TermKey(node)
 	if seen[k] {
 		return
@@ -277,9 +283,7 @@ func (p *MulPath) bwdTo(g *graph.Graph, node term.Subject, target term.Term, see
 			return false
 		}
 		if p.More {
-			if prev, ok := s.(term.Subject); ok {
-				p.bwdTo(g, prev, target, seen, emit)
-			}
+			p.bwdTo(g, s, target, seen, emit)
 		}
 		return true
 	})

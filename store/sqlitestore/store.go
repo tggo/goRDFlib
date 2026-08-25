@@ -53,19 +53,16 @@ func New(opts ...Option) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("sqlitestore: no database path or in-memory flag")
 	}
 
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", dsnWithPragmas(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("sqlitestore: open: %w", err)
 	}
 
-	// Configure for concurrent access.
-	if _, err := db.Exec(`
-		PRAGMA journal_mode = WAL;
-		PRAGMA busy_timeout = 5000;
-		PRAGMA synchronous = NORMAL;
-	`); err != nil {
+	// sql.Open is lazy, so nothing has touched the file yet; ping to surface an
+	// unusable path here rather than on the first silent write.
+	if err := db.Ping(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlitestore: pragmas: %w", err)
+		return nil, fmt.Errorf("sqlitestore: open %q: %w", dsn, err)
 	}
 
 	// Create schema.
@@ -428,6 +425,15 @@ func (s *SQLiteStore) Namespaces() store.NamespaceIterator {
 func (s *SQLiteStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) store.TripleIterator {
 	return func(yield func(term.Triple) bool) {
 		query, args := s.buildQuery(pattern, ctx)
+		// A non-positive limit means "no limit", matching MemoryStore. SQLite
+		// spells that as a negative LIMIT; passing 0 through would return
+		// nothing, which is the opposite of what every other backend does.
+		if limit <= 0 {
+			limit = -1
+		}
+		if offset < 0 {
+			offset = 0
+		}
 		query += " LIMIT ? OFFSET ?"
 		args = append(args, limit, offset)
 
@@ -522,6 +528,29 @@ func (s *SQLiteStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
 }
 
 // graphKey returns the TermKey for a context term, or "" for the default graph.
+// dsnWithPragmas returns dsn with the connection pragmas attached as DSN
+// parameters.
+//
+// They have to travel with the DSN rather than be executed once after opening:
+// database/sql hands out a pool of connections, and a PRAGMA applies only to
+// the connection that ran it. Every connection after the first therefore had no
+// busy_timeout, so the moment two goroutines wrote at the same time the second
+// failed immediately with SQLITE_BUSY — and because the Store interface has no
+// way to report a write error, the triple was simply lost with a line in the
+// log. Attaching the pragmas here makes them apply to every connection the pool
+// opens, which is what makes the documented "safe for concurrent use" true.
+func dsnWithPragmas(dsn string) string {
+	const pragmas = "_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+
+	if !strings.HasPrefix(dsn, "file:") {
+		dsn = "file:" + dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&" + pragmas
+	}
+	return dsn + "?" + pragmas
+}
+
 func graphKey(ctx term.Term) string {
 	if ctx == nil {
 		return ""

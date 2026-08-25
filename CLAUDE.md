@@ -68,6 +68,69 @@ The `store.Store` interface (13 methods) has four implementations:
 - BNode contexts treated as default graph in all persistent stores
 - Write ops silently ignore errors (store.Store interface constraint)
 
+### store/storetest (shared conformance suite)
+- `storetest.Run(t, Config{New: ...})` is the executable half of the
+  `store.Store` contract, run by all four in-repo backends. An out-of-tree
+  backend (the MongoDB store lives in its own repo) proves conformance with it.
+- Optional-interface sections are **detected, not declared**: implement
+  `QueryableStore` or `ReachabilityStore` and the section turns itself on.
+  Persistence is the exception — it cannot be detected, so it is `Config.Reopen`.
+- `Config.Known` maps a subtest path to a **reason** and skips it. Use it only
+  for what a backend genuinely cannot do (sparqlstore: named graphs on the test
+  server, bnode labels over the protocol, triple terms). An empty reason is a
+  hard error — an unexplained exemption is how a bug becomes a feature.
+- Adding a case here changes the bar for every backend including the external
+  ones, which is what the `satellite-stores` CI job exists to catch.
+
+### store.Store context conventions (were undocumented, now pinned)
+- **nil context means the default graph, not "all graphs".** The interface doc
+  used to say `nil = all` for `Len` and "removes from all contexts" for
+  `Remove`; all three persistent backends did the opposite. The doc was wrong,
+  not the code.
+- A **BNode context is the default graph** too — `Graph` passes its own
+  identifier through, and an unnamed graph's identifier is a BNode.
+- `Contexts` reports named graphs only.
+- Iteration order is unspecified and need not be stable between calls.
+  MemoryStore's genuinely is not (Go randomizes map iteration), so
+  `TriplesWithLimit` cannot be required to page consistently across calls — only
+  the window arithmetic is conformance-tested.
+- `TriplesWithLimit` with `limit <= 0` means **no limit**. SQLite spells that as
+  a negative LIMIT; passing 0 through returned nothing, which is the opposite.
+
+### store.ReachabilityStore + paths pushdown
+- `Reachable(q) ([]term.Term, error)` returns every node reachable in **>= 1**
+  steps. Start is in the result only if a cycle leads back to it. Literals count
+  as reachable nodes. Cycles must terminate.
+- The result is **fully materialized on purpose**: a backend that cannot finish
+  must return an error and no partial result, because `paths.MulPath` falls back
+  to a local traversal and a partially yielded stream cannot be un-yielded. Any
+  error means "compute this yourself"; `ErrReachabilityUnsupported` is the
+  expected way to decline.
+- `paths/reachability.go:flatten` decides what is pushable: `URIRefPath`,
+  `InvPath`, `NegatedPath`, and an `AlternativePath` whose arms agree on
+  direction and polarity. Sequences and nested repetitions stay local. `?` is
+  never pushed — it is not transitive.
+- Pushdown needs **one endpoint bound**. With both unbound it would be one round
+  trip per node, so it stays local.
+- MemoryStore implements `Reachable` even though it has no network to save. That
+  is deliberate: it makes every property path in the W3C suite exercise the
+  pushdown path, which is the only thing keeping it honest.
+
+### bugs the conformance suite found on its first run (do not regress)
+- `TermKey(TripleTerm)` emits `"T:"` + NUL-joined component keys, but
+  `TermFromKey` parsed the `"T:"` body as N3. Every triple term therefore failed
+  to decode, and stores skip rows they cannot decode — so RDF 1.2 triple terms
+  vanished silently on read from sqlite and badger. `tripleTermFromKey` splits
+  on NUL with `SplitN(…, 3)`: only the object may nest, and it is last.
+- `sparql/parser_term.go:parseLiteralString` found the closing quote with
+  `strings.Index`, ignoring escapes. `"he said \"hi\""` was truncated to
+  `he said \`. Guard: `sparql/literal_escape_test.go`. No W3C test covers it.
+- sqlitestore ran its pragmas with `db.Exec` after opening. `database/sql` pools
+  connections and a PRAGMA applies only to the connection that ran it, so every
+  connection after the first had no `busy_timeout` and concurrent writes died
+  with SQLITE_BUSY — silently, since `Store` cannot report a write error. The
+  pragmas now travel in the DSN (`dsnWithPragmas`).
+
 ### store/sparqlstore (details)
 - `Server` is an httptest-based SPARQL endpoint for integration testing
 - Files: `doc.go`, `store.go`, `http.go`, `server.go`, `register.go`

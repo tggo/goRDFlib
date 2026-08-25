@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25']
+        go-version: ['1.26']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,3 +45,45 @@ jobs:
 
       - name: Run vet
         run: go vet ./...
+
+  # An out-of-tree store implements store.Store and runs the shared conformance
+  # suite from store/storetest. Nothing in this repository compiles it, so a
+  # change to the Store interface or to the suite breaks it silently — this job
+  # is what turns that into a red build here instead of a bug report there.
+  satellite-stores:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - tggo/rdflibgo-mongostore
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rdflibgo
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Check out ${{ matrix.repo }}
+        id: clone
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          path: satellite
+
+      - name: Build and vet against this commit
+        if: steps.clone.outcome == 'success'
+        working-directory: satellite
+        run: |
+          go mod edit -replace github.com/tggo/goRDFlib=../rdflibgo
+          go mod tidy
+          go build ./...
+          go vet ./...
+
+      - name: Report a missing satellite
+        if: steps.clone.outcome != 'success'
+        run: echo "::notice::${{ matrix.repo }} is not reachable yet; skipping"

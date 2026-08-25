@@ -402,15 +402,29 @@ func TestTriplesWithLimitOffset(t *testing.T) {
 	}
 }
 
+// A non-positive limit means "no limit", the same as MemoryStore. This used to
+// return nothing, because SQLite spells "no limit" as a negative LIMIT and a
+// literal 0 was passed straight through.
 func TestTriplesWithLimitZero(t *testing.T) {
 	s := newTestStore(t)
 	s.Add(term.Triple{Subject: alice, Predicate: name, Object: term.NewLiteral("Alice")}, nil)
+	s.Add(term.Triple{Subject: bob, Predicate: name, Object: term.NewLiteral("Bob")}, nil)
+
+	for _, limit := range []int{0, -1} {
+		count := 0
+		for range s.TriplesWithLimit(term.TriplePattern{}, nil, limit, 0) {
+			count++
+		}
+		if count != 2 {
+			t.Errorf("TriplesWithLimit(%d, 0) = %d, want 2", limit, count)
+		}
+	}
 	count := 0
-	for range s.TriplesWithLimit(term.TriplePattern{}, nil, 0, 0) {
+	for range s.TriplesWithLimit(term.TriplePattern{}, nil, 0, 1) {
 		count++
 	}
-	if count != 0 {
-		t.Errorf("TriplesWithLimit(0,0) = %d, want 0", count)
+	if count != 1 {
+		t.Errorf("TriplesWithLimit(0, 1) = %d, want 1", count)
 	}
 }
 

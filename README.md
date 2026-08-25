@@ -103,6 +103,139 @@ g.Add(alice, name, rdf.NewLiteral("Alice"))
 - Built-in test server (`sparqlstore.Server`) for integration testing
 - Registered as `"sparql"` store type via the plugin system
 
+### Custom Storage Backends
+
+`store.Store` is a 13-method interface, and a backend implementing it works
+everywhere a store works: `Graph`, SPARQL, SHACL, reasoning, the parsers. A
+backend does **not** have to live in this repository — nothing in `store.Store`,
+`term`, or `plugin` is internal — so a store for MongoDB, Postgres, a cloud KV,
+or a proprietary engine can be its own module and its own release cycle.
+
+Three things support that:
+
+**A shared conformance suite.** `store/storetest` is the executable half of the
+`store.Store` contract — the rules that the interface documents but cannot
+enforce, such as "a nil context is the default graph", "a BNode context is the
+default graph too", "Contexts never reports the default graph", and that every
+term shape, RDF 1.2 triple terms included, survives a round trip. Every store
+shipped here runs it, so an external backend is measured against exactly the
+same bar:
+
+```go
+func TestConformance(t *testing.T) {
+    storetest.Run(t, storetest.Config{
+        New: func(t *testing.T) store.Store {
+            s, err := mongostore.New(mongostore.WithURI(uri))
+            if err != nil {
+                t.Fatalf("New: %v", err)
+            }
+            t.Cleanup(func() { s.Close() })
+            return s
+        },
+        // Optional: reopening the same storage enables the persistence section.
+        Reopen: func(t *testing.T, s store.Store) store.Store { ... },
+        // Optional: behaviour the backend genuinely cannot provide, with the
+        // reason. Listed subtests are skipped and the reason is printed; every
+        // other subtest has to pass.
+        Known: map[string]string{
+            "Persistence": "requires a replica set for transactions",
+        },
+    })
+}
+```
+
+Sections for the optional interfaces are enabled by detecting them, not by
+declaring them: implement `store.QueryableStore` or `store.ReachabilityStore`
+and the suite starts testing it.
+
+**Two optional pushdown interfaces.** Both are opt-in, and the engine works
+without them:
+
+- `store.QueryableStore` — `Count`, `Exists`, `TriplesWithLimit`, so `LIMIT`,
+  `COUNT` and `EXISTS` are answered by the backend instead of by materializing
+  every candidate triple.
+- `store.ReachabilityStore` — a single transitive-closure query. This is what
+  lets a backend with a native graph traversal answer SPARQL property paths of
+  the form `<p>*`, `<p>+`, `^<p>+`, `(<p1>|<p2>)*` and `!(<p1>|<p2>)+` in one
+  round trip. `paths.MulPath` reduces the path, asks the store, and falls back
+  to a client-side traversal whenever the interface is absent or the backend
+  returns an error — so declining is always safe, and a backend may decline per
+  query when a limit would be exceeded.
+
+**Registration.** `plugin.RegisterStore("mongo", factory)` in the backend's
+`init()` makes it available by name; the consumer blank-imports the package.
+
+An external backend is built against the same `store.Store` this repository
+uses, so the CI here builds the known satellite repositories against every
+commit to catch an interface change before it reaches them.
+
+#### MongoDB Store (external example)
+
+A MongoDB backend lives in its own module so that the driver is not a dependency
+of everyone who uses goRDFlib:
+
+```bash
+go get github.com/tggo/rdflibgo-mongostore
+```
+
+```go
+import (
+    "github.com/tggo/goRDFlib/graph"
+    "github.com/tggo/rdflibgo-mongostore"
+)
+
+s, err := mongostore.New(
+    mongostore.WithURI("mongodb://localhost:27017"),
+    mongostore.WithDatabase("rdf"),
+)
+if err != nil {
+    log.Fatal(err)
+}
+defer s.Close()
+
+g := graph.NewGraph(graph.WithStore(s))
+g.Add(alice, knows, bob)
+```
+
+The document shape is the same three-index design the other backends use, with
+every value written through `term.TermKey`:
+
+```js
+// collection: triples
+{ s: "U:http://example.org/Alice",
+  p: "U:http://example.org/knows",
+  o: "U:http://example.org/Bob",
+  g: "" }                                  // "" is the default graph
+
+db.triples.createIndex({s: 1, p: 1, o: 1, g: 1}, {unique: true})
+db.triples.createIndex({p: 1, o: 1, s: 1, g: 1})
+db.triples.createIndex({o: 1, s: 1, p: 1, g: 1})
+```
+
+What makes MongoDB worth a dedicated backend rather than a generic document
+store is `$graphLookup`, which implements `store.ReachabilityStore` directly —
+`<p>+` becomes one aggregation instead of a traversal that ships every edge of
+the predicate to the client:
+
+```js
+db.triples.aggregate([
+  { $match: { s: startKey, p: predKey, g: "" } },
+  { $graphLookup: {
+      from: "triples",
+      startWith: "$o",
+      connectFromField: "o",
+      connectToField: "s",
+      restrictSearchWithMatch: { p: predKey, g: "" },
+      as: "reached" } }
+])
+```
+
+`$graphLookup` never revisits a document, so cycles terminate on their own, and
+`maxDepth` covers bounded paths. It is capped at 100 MiB per stage and ignores
+`allowDiskUse`, which is exactly why `Reachable` is allowed to return an error:
+the backend declines, and property path evaluation falls back to the client-side
+traversal rather than returning a truncated answer.
+
 ### Serialization Formats
 
 All formats include both parser and serializer:
@@ -238,6 +371,9 @@ Full SPARQL 1.1 property path support:
 - **Repetition** -- `p*` (zero or more), `p+` (one or more), `p?` (zero or one)
 - **Negated** -- `!p` (negated property set)
 - Cycle detection for transitive closure operations
+- Backend pushdown: `p*`, `p+`, `^p+`, `(p1|p2)*` and `!(p1|p2)+` are answered by
+  the store in one call when it implements `store.ReachabilityStore`, with an
+  automatic fall back to client-side traversal otherwise
 
 ### SHACL Validator
 
@@ -556,6 +692,7 @@ goRDFlib/
   store/badgerstore/  Persistent Badger KV store (SPO/POS/OSP indexes)
   store/sqlitestore/  Persistent SQLite store (pure Go)
   store/sparqlstore/  Remote SPARQL Protocol store + test server
+  store/storetest/    Shared conformance suite for store.Store backends
   paths/        Property path evaluation
   shacl/        SHACL Core validator
   rdfloader/    HTTP/file URI loader for SPARQL LOAD

@@ -104,20 +104,13 @@ func parseLiteralString(s string) rdflibgo.Literal {
 	quote := s[0]
 	long := len(s) >= 6 && s[1] == quote && s[2] == quote
 
-	var lexEnd int
-	if long {
-		q3 := string([]byte{quote, quote, quote})
-		lexEnd = strings.Index(s[3:], q3)
-		if lexEnd < 0 {
-			return rdflibgo.NewLiteral(s)
-		}
-		lexEnd += 3
-	} else {
-		lexEnd = strings.Index(s[1:], string(quote))
-		if lexEnd < 0 {
-			return rdflibgo.NewLiteral(s)
-		}
-		lexEnd += 1
+	// The closing delimiter has to be found with the escapes taken into
+	// account. Searching for the first bare quote instead truncated every
+	// literal that contained one: `"he said \"hi\""` ended at the quote inside
+	// \" and came back as `he said \`.
+	lexEnd := closingQuoteIndex(s, quote, long)
+	if lexEnd < 0 {
+		return rdflibgo.NewLiteral(s)
 	}
 
 	var lexical string
@@ -150,6 +143,35 @@ func parseLiteralString(s string) rdflibgo.Literal {
 		}
 	}
 	return rdflibgo.NewLiteral(lexical, opts...)
+}
+
+// closingQuoteIndex returns the index in s of the delimiter that closes the
+// string literal starting at s[0], or -1 if the literal is unterminated.
+//
+// A backslash escapes the next byte, so `\"` and `\\` never close the literal.
+// For a long literal the delimiter is three quotes, and the same escape rule
+// applies to each of them.
+func closingQuoteIndex(s string, quote byte, long bool) int {
+	i := 1
+	if long {
+		i = 3
+	}
+	for i < len(s) {
+		if s[i] == '\\' {
+			i += 2
+			continue
+		}
+		if s[i] == quote {
+			if !long {
+				return i
+			}
+			if i+2 < len(s) && s[i+1] == quote && s[i+2] == quote {
+				return i
+			}
+		}
+		i++
+	}
+	return -1
 }
 
 // sparqlStringUnescaper is a package-level replacer for SPARQL string escape sequences.

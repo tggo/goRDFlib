@@ -7,6 +7,26 @@ import (
 )
 
 // Store is the abstract interface for RDF triple storage backends.
+//
+// Context conventions, which every method below follows and which the shipped
+// backends all implement:
+//
+//   - A nil context means the default graph. It does NOT mean "all graphs":
+//     Len(nil) counts the default graph, Triples(pat, nil) reads it, and
+//     Remove(pat, nil) deletes from it.
+//   - A BNode context means the default graph as well. Blank nodes cannot name
+//     a graph in a serialization or over a protocol, and Graph passes its own
+//     identifier — a BNode for an unnamed graph — straight through, so folding
+//     it into the default graph is what makes an ordinary Graph behave the same
+//     on every backend.
+//   - Contexts reports named graphs only; the default graph is not a context.
+//
+// Iteration order is unspecified and need not be stable between calls. Terms
+// are serialized with term.TermKey and restored with term.TermFromKey.
+//
+// Implementations outside this module are expected to pass the shared
+// conformance suite in store/storetest, which pins the behaviour described
+// here.
 type Store interface {
 	// Add inserts a triple into the store, associated with the given context.
 	Add(triple term.Triple, context term.Term)
@@ -15,7 +35,7 @@ type Store interface {
 	AddN(quads []term.Quad)
 
 	// Remove deletes triples matching the pattern from the given context.
-	// If context is nil, removes from all contexts.
+	// A nil or BNode context means the default graph.
 	Remove(pattern term.TriplePattern, context term.Term)
 
 	// Set atomically removes all triples matching (s, p, *) and adds (s, p, o)
@@ -27,7 +47,8 @@ type Store interface {
 	// Triples returns an iterator over triples matching the pattern in the given context.
 	Triples(pattern term.TriplePattern, context term.Term) TripleIterator
 
-	// Len returns the number of triples in the given context (nil = all).
+	// Len returns the number of triples in the given context.
+	// A nil or BNode context means the default graph.
 	Len(context term.Term) int
 
 	// Contexts returns an iterator over all contexts, optionally filtered by a triple.
@@ -70,6 +91,11 @@ type NamespaceIterator = iter.Seq2[string, term.URIRef]
 type QueryableStore interface {
 	// TriplesWithLimit returns triples matching the pattern with store-level
 	// LIMIT and OFFSET applied, avoiding full materialization.
+	//
+	// A limit of zero or less means "no limit"; a negative offset is treated
+	// as zero. Because Store promises no iteration order, paging through
+	// separate calls is only consistent on a backend whose order happens to be
+	// stable — MemoryStore's is not, since Go randomizes map iteration.
 	TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) TripleIterator
 
 	// Count returns the number of triples matching the pattern without

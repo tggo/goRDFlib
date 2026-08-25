@@ -21,7 +21,7 @@ func TermFromKey(key string) (Term, error) {
 	case "L:":
 		return literalFromN3(rest)
 	case "T:":
-		return tripleTermFromN3(rest)
+		return tripleTermFromKey(rest)
 	default:
 		return nil, fmt.Errorf("term: unknown key prefix: %q", prefix)
 	}
@@ -109,6 +109,57 @@ func findClosingQuote(s string) int {
 		}
 	}
 	return -1
+}
+
+// tripleTermFromKey parses a TripleTerm from the body of its TermKey — the
+// three component keys joined by NUL, as NewTripleTerm builds them.
+//
+// It is deliberately not the N3 parser below: TermKey("T:") emits component
+// keys, not N3, and reading the key back as N3 fails for every triple term.
+// That mattered, because a store decodes rows by TermKey and skips rows it
+// cannot decode, so triple terms used to vanish silently on read from any
+// backend that persists keys.
+//
+// Splitting into exactly three parts is what makes nesting work. Only the
+// object may itself be a triple term, and it is last, so any further NULs
+// belong to it.
+func tripleTermFromKey(key string) (TripleTerm, error) {
+	// Accept the N3 body as well. TermKey never produces it, but hand-built
+	// keys and older callers do, and rejecting them would break them for no
+	// gain — the two forms are unambiguous.
+	if strings.HasPrefix(key, "<<(") {
+		return tripleTermFromN3(key)
+	}
+
+	parts := strings.SplitN(key, "\x00", 3)
+	if len(parts) != 3 {
+		return TripleTerm{}, fmt.Errorf("term: invalid triple term key: %q", key)
+	}
+
+	subj, err := TermFromKey(parts[0])
+	if err != nil {
+		return TripleTerm{}, fmt.Errorf("term: triple term subject: %w", err)
+	}
+	subjTerm, ok := subj.(Subject)
+	if !ok {
+		return TripleTerm{}, fmt.Errorf("term: triple term subject must be URIRef or BNode, got %q", parts[0])
+	}
+
+	pred, err := TermFromKey(parts[1])
+	if err != nil {
+		return TripleTerm{}, fmt.Errorf("term: triple term predicate: %w", err)
+	}
+	predURI, ok := pred.(URIRef)
+	if !ok {
+		return TripleTerm{}, fmt.Errorf("term: triple term predicate must be URIRef, got %q", parts[1])
+	}
+
+	obj, err := TermFromKey(parts[2])
+	if err != nil {
+		return TripleTerm{}, fmt.Errorf("term: triple term object: %w", err)
+	}
+
+	return NewTripleTerm(subjTerm, predURI, obj), nil
 }
 
 // tripleTermFromN3 parses a TripleTerm from its N3 representation.
