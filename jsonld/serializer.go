@@ -36,8 +36,14 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		ldOpts.DocumentLoader = cfg.documentLoader
 	}
 
-	doc, err := proc.FromRDF(nqBuf.String(), ldOpts)
-	if err != nil {
+	// json-gold is not defensive about every input and can panic rather than
+	// return an error; see ErrProcessorPanic.
+	var doc any
+	if err := guard("conversion from N-Quads", func() error {
+		var err error
+		doc, err = proc.FromRDF(nqBuf.String(), ldOpts)
+		return err
+	}); err != nil {
 		return err
 	}
 
@@ -53,8 +59,12 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		})
 
 		if len(context) > 0 {
-			compacted, err := proc.Compact(doc, context, ldOpts)
-			if err != nil {
+			var compacted any
+			if err := guard("compaction", func() error {
+				var err error
+				compacted, err = proc.Compact(doc, context, ldOpts)
+				return err
+			}); err != nil {
 				return err
 			}
 			output = compacted

@@ -1,4 +1,4 @@
-.PHONY: test test-all test-race test-w3c test-bench test-verbose test-sparql lint build clean
+.PHONY: test test-all test-race test-w3c test-bench test-fuzz test-verbose test-sparql lint build clean
 
 TMPFILE := /tmp/goRDFlib-test.out
 
@@ -93,6 +93,44 @@ test-bench:
 	@echo "--- Full Application Benchmarks ---"
 	@go test ./benchmarks/ -bench=. -benchmem -run=^$$ -count=1 -timeout 300s 2>&1 | grep -E "^Benchmark|^ok" | sed 's/^/  /'
 	@echo ""
+
+# Run every fuzz target for a short burst.
+#
+# The seed corpora already run as ordinary tests on every `make test`; this is
+# for actually searching. Raise FUZZTIME when hunting something specific:
+#   make test-fuzz FUZZTIME=5m
+FUZZTIME ?= 30s
+test-fuzz:
+	@echo "================================================"
+	@echo "  rdflibgo — Fuzzing ($(FUZZTIME) per target)"
+	@echo "================================================"
+	@echo ""
+	@failed=0; \
+	for target in \
+		"sparql:FuzzParse" \
+		"sparql:FuzzParseUpdate" \
+		"provenance:FuzzIndexKeyCollisions" \
+		"provenance:FuzzTripleKeySplit" \
+		"provenance:FuzzSubjectLineIsTheMinimum" \
+		"jsonld:FuzzScanIDPositions" \
+		"jsonld:FuzzLineIndex" \
+		"jsonld:FuzzParseProvenance" \
+		"rdfxml:FuzzParseProvenance" \
+		"shacl:FuzzSourceLines" \
+		"shacl:FuzzSourceLinesNeverInvent" \
+	; do \
+		pkg=$$(echo "$$target" | cut -d: -f1); \
+		fn=$$(echo "$$target" | cut -d: -f2); \
+		printf "  %-40s " "$$pkg/$$fn"; \
+		if go test ./$$pkg/ -run '^$$' -fuzz "^$$fn$$$$" -fuzztime $(FUZZTIME) >/tmp/fuzz-$$fn.out 2>&1; then \
+			echo "ok"; \
+		else \
+			echo "FAILED (see /tmp/fuzz-$$fn.out)"; \
+			failed=1; \
+		fi; \
+	done; \
+	echo ""; \
+	if [ "$$failed" != "0" ]; then exit 1; fi
 
 # Run all tests with full verbose output
 test-verbose:

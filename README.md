@@ -738,7 +738,25 @@ make test-sparql   # W3C SPARQL 1.1 conformance
 
 ### Fuzz Testing
 
-The SPARQL parser is fuzz-tested with `go test -fuzz` to detect panics and infinite loops on malformed input. Seed corpus includes all W3C SPARQL 1.1 and 1.2 test files.
+```bash
+make test-fuzz                # 30s per target
+make test-fuzz FUZZTIME=5m    # when hunting something specific
+```
+
+| Target | Property checked |
+|---|---|
+| `sparql/FuzzParse`, `FuzzParseUpdate` | no panic, no infinite loop; seeded from every W3C SPARQL 1.1 and 1.2 test file |
+| `rdfxml/FuzzParseProvenance` | no panic on arbitrary XML; every reported line exists; every triple in the graph has one |
+| `jsonld/FuzzScanIDPositions` | every reported line exists; only identifiers actually written are reported |
+| `jsonld/FuzzLineIndex` | offset-to-line agrees with the naive implementation |
+| `jsonld/FuzzParseProvenance` | a failed parse reports nothing; a line is only given to a subject the graph holds |
+| `provenance/FuzzIndexKeyCollisions` | two distinct triples never share a key, whatever a literal contains |
+| `provenance/FuzzTripleKeySplit`, `FuzzSubjectLineIsTheMinimum` | key layout and earliest-line selection |
+| `shacl/FuzzSourceLines`, `FuzzSourceLinesNeverInvent` | no result names a line outside the file; a `SourceLineTriple` always has the triple to back it |
+
+Seed corpora run as ordinary tests on every `go test`, so a fixed crash stays fixed.
+
+Fuzzing the provenance work turned up a crash that predated it: `jsonld.Parse` panicked instead of erroring on some malformed input, because [json-gold](https://github.com/piprate/json-gold) resolves a reference against a URL that failed to parse. A parser is routinely aimed at untrusted bytes, so the processor is now guarded and a panic comes back as an error wrapping `jsonld.ErrProcessorPanic`, stack included.
 
 ## Performance
 

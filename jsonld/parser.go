@@ -53,8 +53,14 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		ldOpts.DocumentLoader = cfg.documentLoader
 	}
 
-	nquads, err := proc.ToRDF(doc, ldOpts)
-	if err != nil {
+	var nquads any
+	// json-gold is not defensive about every malformed document and can panic
+	// rather than return an error; see ErrProcessorPanic.
+	if err := guard("expansion to N-Quads", func() error {
+		var err error
+		nquads, err = proc.ToRDF(doc, ldOpts)
+		return err
+	}); err != nil {
 		return err
 	}
 

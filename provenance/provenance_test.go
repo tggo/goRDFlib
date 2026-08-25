@@ -213,3 +213,40 @@ func TestConcurrentUse(t *testing.T) {
 		t.Errorf("Len = %d, want 800", idx.Len())
 	}
 }
+
+// TestRecord covers the entry point for a caller feeding the index from
+// something other than one of the bundled parsers — a custom reader, or a
+// format this repository does not ship.
+func TestRecord(t *testing.T) {
+	idx := NewIndex()
+	idx.Record(uri("s"), uri("p"), term.NewLiteral("v"), 11)
+
+	if line, ok := idx.Line(uri("s"), uri("p"), term.NewLiteral("v")); !ok || line != 11 {
+		t.Errorf("Line = %d, %v; want 11, true", line, ok)
+	}
+	if line, ok := idx.SubjectLine(uri("s")); !ok || line != 11 {
+		t.Errorf("SubjectLine = %d, %v; want 11, true", line, ok)
+	}
+
+	// Record obeys the same rule as the handlers: a non-positive line means
+	// "no line" and is dropped rather than stored as if it were line zero.
+	idx.Record(uri("s2"), uri("p"), term.NewLiteral("v"), 0)
+	if _, ok := idx.SubjectLine(uri("s2")); ok {
+		t.Error("Record stored a non-positive line")
+	}
+}
+
+// TestSubjectKey checks that the exported key helper agrees with the lookup it
+// exists to feed; a caller holding a term uses it to avoid rebuilding one.
+func TestSubjectKey(t *testing.T) {
+	idx := NewIndex()
+	idx.Triple(uri("s"), uri("p"), uri("o"), 6)
+
+	line, ok := idx.SubjectLineOfKey(SubjectKey(uri("s")))
+	if !ok || line != 6 {
+		t.Errorf("SubjectLineOfKey(SubjectKey(...)) = %d, %v; want 6, true", line, ok)
+	}
+	if _, ok := idx.SubjectLineOfKey(SubjectKey(uri("nope"))); ok {
+		t.Error("a key for an unrecorded node resolved")
+	}
+}

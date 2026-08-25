@@ -1,6 +1,7 @@
 package jsonld_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -277,5 +278,153 @@ func TestProvenanceNoContext(t *testing.T) {
 
 	if got, ok := idx.SubjectLine(ex("judy")); !ok || got != 1 {
 		t.Errorf("reported line %d (%v), want 1", got, ok)
+	}
+}
+
+// TestParseDoesNotPanicOnMalformedInput pins the recovery around json-gold.
+//
+// These documents made the processor dereference a nil URL rather than reject
+// them, taking the process down with it — which for a parser routinely pointed
+// at untrusted bytes is not an acceptable failure mode. Found by fuzzing.
+func TestParseDoesNotPanicOnMalformedInput(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  string
+		base string
+	}{
+		{"percent as @id", `{"@id":"%"}`, "http://example.org/"},
+		{"percent as @id, no base", `{"@id":"%"}`, ""},
+		{"percent in a nested @id", `{"@graph":[{"@id":"%"}]}`, "http://example.org/"},
+		{"bare percent term", `{"@context":{"p":"%"},"p":"v"}`, "http://example.org/"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := graph.NewGraph()
+			opts := []jsonld.Option{}
+			if tc.base != "" {
+				opts = append(opts, jsonld.WithBase(tc.base))
+			}
+			// Must return, not panic. Whether it errors is json-gold's call.
+			err := jsonld.Parse(g, strings.NewReader(tc.doc), opts...)
+			if err != nil && !errors.Is(err, jsonld.ErrProcessorPanic) {
+				t.Logf("rejected with %v", err)
+			}
+		})
+	}
+}
+
+// TestProcessorPanicIsIdentifiable checks that a caller can tell a crash apart
+// from a rejection, which is the difference between "this document is wrong"
+// and "report this upstream".
+func TestProcessorPanicIsIdentifiable(t *testing.T) {
+	g := graph.NewGraph()
+	err := jsonld.Parse(g, strings.NewReader(`{"@id":"%"}`), jsonld.WithBase("http://example.org/"))
+	if err == nil {
+		t.Skip("json-gold no longer crashes on this input; the guard is still worth keeping")
+	}
+	if !errors.Is(err, jsonld.ErrProcessorPanic) {
+		t.Fatalf("got %v, want an error wrapping ErrProcessorPanic", err)
+	}
+	if !strings.Contains(err.Error(), "goroutine") {
+		t.Error("the error carries no stack; a bug report would have nothing to attach")
+	}
+}
+
+// TestProvenanceContextForms covers the shapes a context can take, since each
+// one is a separate branch of the alias scan and a missed branch means the
+// feature silently reports nothing for that document.
+func TestProvenanceContextForms(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  string
+		want int
+	}{
+		{
+			"context as an array",
+			`{
+  "@context": [
+    {"id": "@id"},
+    {"ex": "http://example.org/"}
+  ],
+  "id": "ex:arr",
+  "ex:name": "Array context"
+}
+`, 1},
+		{
+			"alias defined as an expanded term definition",
+			`{
+  "@context": {
+    "id": {"@id": "@id"},
+    "ex": "http://example.org/"
+  },
+  "id": "ex:expanded",
+  "ex:name": "Expanded definition"
+}
+`, 1},
+		{
+			"context nested inside a node object",
+			`{
+  "@context": {"ex": "http://example.org/"},
+  "@id": "ex:outer",
+  "ex:child": {
+    "@context": {"id": "@id"},
+    "id": "ex:inner",
+    "ex:name": "Inner"
+  }
+}
+`, 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, idx := parseWithProvenance(t, tc.doc)
+			if idx.Len() == 0 {
+				t.Fatal("nothing was recorded; an alias form was missed")
+			}
+		})
+	}
+}
+
+// TestProvenanceScopedContextIsSilent pins the documented limit: only the
+// top-level context is used to expand identifiers, so an identifier that only
+// makes sense under a scoped context gets no line rather than a wrong one.
+func TestProvenanceScopedContextIsSilent(t *testing.T) {
+	const doc = `{
+  "@context": {"ex": "http://example.org/"},
+  "@id": "ex:outer",
+  "ex:child": {
+    "@context": {"other": "http://elsewhere.example/"},
+    "@id": "other:scoped",
+    "ex:name": "Scoped"
+  }
+}
+`
+	g, idx := parseWithProvenance(t, doc)
+
+	// Whatever the scoped identifier expands to, it must not be given a line
+	// that belongs to some other node.
+	scoped := term.NewURIRefUnsafe("http://elsewhere.example/scoped")
+	if line, ok := idx.SubjectLine(scoped); ok && line != 4 {
+		t.Errorf("the scoped node got line %d, which is not where it is written", line)
+	}
+	if g.Len() == 0 {
+		t.Fatal("expected triples")
+	}
+}
+
+// TestProvenanceMalformedSourceIsSilent checks that a document the processor
+// rejects produces no lines at all, rather than lines from a partial scan.
+func TestProvenanceMalformedSourceIsSilent(t *testing.T) {
+	for _, doc := range []string{`{"@id": "http://example.org/a"`, `{`, ``, `[1,2`} {
+		g := graph.NewGraph()
+		idx := provenance.NewIndex()
+		err := jsonld.Parse(g, strings.NewReader(doc), jsonld.WithProvenance(idx.Triple))
+		if err == nil && g.Len() == 0 {
+			continue // parsed to nothing, which is fine
+		}
+		if err != nil && idx.Len() != 0 {
+			t.Errorf("%q failed to parse but reported %d lines", doc, idx.Len())
+		}
 	}
 }

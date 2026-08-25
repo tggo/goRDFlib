@@ -183,6 +183,25 @@ The `store.Store` interface (13 methods) has four implementations:
   Before it, the decoder still sits where the previous token ended — on the far
   side of the whitespace, so usually on the previous line. That was an
   off-by-one in every case with indentation.
+- `shacl/rdf.go:toTerm` must be the **exact inverse** of `fromRDFLib`. It was
+  not: `fromRDFLib` folds a base direction into the language as `lang--dir` and
+  `toTerm` left it folded, producing a literal whose `TermKey` differed from the
+  original — so every provenance lookup on a directional literal silently missed
+  and degraded to the focus-node line. Anything keyed by `TermKey` across that
+  boundary has the same exposure.
+- Fuzzing: `make test-fuzz` (`FUZZTIME=5m` to hunt). Targets live in
+  `provenance/fuzz_test.go`, `jsonld/fuzz_test.go`, `rdfxml/fuzz_test.go`,
+  `shacl/sourceline_fuzz_test.go`. Seed corpora run as ordinary tests on every
+  `go test`, which is where the regression value is.
+- The JSON-LD fuzz target found that **json-gold panics** rather than erroring
+  on some malformed input (`{"@id":"%"}` with a base: `url.Parse` fails,
+  json-gold dereferences the nil result). `jsonld.guard` catches it and returns
+  `ErrProcessorPanic` with the stack. A parser is routinely aimed at untrusted
+  bytes; taking the process down is not an acceptable failure mode. Wrap any new
+  json-gold entry point the same way.
+- Two `if err != nil` branches in `jsonld/provenance.go` are unreachable with
+  current json-gold and stay uncovered on purpose — they guard error returns
+  that exist in the API.
 - Context for why any of this exists: oxigraph/oxigraph#1526,
   RDFLib/pySHACL#321 (closed as impossible on RDFLib).
 

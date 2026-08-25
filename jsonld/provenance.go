@@ -97,9 +97,6 @@ func buildSubjectLines(src []byte, base string, loader ld.DocumentLoader) subjec
 			out[key] = line
 		}
 	}
-	if len(out) == 0 {
-		return nil
-	}
 	return out
 }
 
@@ -131,6 +128,9 @@ func iriExpander(src []byte, base string, loader ld.DocumentLoader) func(string)
 		// the @id position.
 		iri, err := active.ExpandIri(written, true, false, nil, nil)
 		if err != nil {
+			// Defensive: the processor reports an error for a handful of
+			// keyword situations an @id cannot be in. Declining here means the
+			// node gets no line, which is the safe direction.
 			return "", false
 		}
 		return iri, true

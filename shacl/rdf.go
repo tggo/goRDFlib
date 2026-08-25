@@ -206,12 +206,24 @@ func toURIRef(t Term) term.URIRef {
 }
 
 // toTerm converts a shacl Term to an rdflibgo term.Term.
+//
+// It is the exact inverse of fromRDFLib, which matters: a term converted out
+// and back must produce the same term.TermKey, or anything keyed by it — a
+// provenance lookup, an initial binding — silently misses.
 func toTerm(t Term) term.Term {
 	switch t.kind {
 	case TermIRI:
 		return term.NewURIRefUnsafe(t.value)
 	case TermLiteral:
 		if t.language != "" {
+			// fromRDFLib folds a base direction into the language as
+			// "lang--dir"; unfold it. A BCP 47 tag cannot contain an empty
+			// subtag, so "--" is unambiguous. Leaving it folded produced a
+			// literal whose N3 — and so whose TermKey — differed from the
+			// original by exactly this.
+			if lang, dir, found := strings.Cut(t.language, "--"); found {
+				return term.NewLiteral(t.value, term.WithLang(lang), term.WithDir(dir))
+			}
 			return term.NewLiteral(t.value, term.WithLang(t.language))
 		}
 		if t.datatype != "" && t.datatype != XSD+"string" {
