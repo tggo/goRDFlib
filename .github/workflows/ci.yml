@@ -75,7 +75,10 @@ jobs:
           repository: ${{ matrix.repo }}
           path: satellite
 
-      - name: Build and vet against this commit
+      # The replace points the satellite at THIS commit rather than at whatever
+      # version it depends on — the point of the job is to find an interface or
+      # conformance-suite change before the satellite's own CI does.
+      - name: Build and test against this commit
         if: steps.clone.outcome == 'success'
         working-directory: satellite
         run: |
@@ -83,6 +86,8 @@ jobs:
           go mod tidy
           go build ./...
           go vet ./...
+          go vet -tags=integration ./...
+          go test -tags=integration -count=1 -timeout 900s ./...
 
       - name: Report a missing satellite
         if: steps.clone.outcome != 'success'

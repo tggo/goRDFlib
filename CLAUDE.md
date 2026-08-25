@@ -80,7 +80,9 @@ The `store.Store` interface (13 methods) has four implementations:
   server, bnode labels over the protocol, triple terms). An empty reason is a
   hard error — an unexplained exemption is how a bug becomes a feature.
 - Adding a case here changes the bar for every backend including the external
-  ones, which is what the `satellite-stores` CI job exists to catch.
+  ones, which is what the `satellite-stores` CI job exists to catch. The one
+  satellite today is `github.com/tggo/rdflibgo-mongostore`; the job builds and
+  runs its integration suite against every commit here, via a `replace`.
 
 ### store.Store context conventions (were undocumented, now pinned)
 - **nil context means the default graph, not "all graphs".** The interface doc

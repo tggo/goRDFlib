@@ -171,9 +171,10 @@ commit to catch an interface change before it reaches them.
 
 #### MongoDB Store (external example)
 
-A MongoDB backend lives in its own module so that the driver is not a dependency
-of everyone who uses goRDFlib. It passes the `store/storetest` conformance suite
-with no declared exemptions:
+[**rdflibgo-mongostore**](https://github.com/tggo/rdflibgo-mongostore) is a
+MongoDB backend in its own module, so the driver is not a dependency of everyone
+who uses goRDFlib. It passes the `store/storetest` conformance suite with no
+declared exemptions:
 
 ```bash
 go get github.com/tggo/rdflibgo-mongostore
