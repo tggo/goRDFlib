@@ -143,38 +143,59 @@ func (p *sparqlParser) parsePathSequence() (paths.Path, error) {
 	return left, nil
 }
 
+// parsePathEltOrInverse parses PathEltOrInverse ::= PathElt | '^' PathElt,
+// where PathElt ::= PathPrimary PathMod?.
+//
+// The inverted form takes a modifier too: `^ex:knows+` is legal SPARQL and used
+// to fail to parse here, because the '^' branch returned before the modifier
+// was looked at. Only the parenthesized `(^ex:knows)+` worked.
 func (p *sparqlParser) parsePathEltOrInverse() (paths.Path, error) {
 	p.skipWS()
+
+	inverse := false
 	if p.pos < len(p.input) && p.input[p.pos] == '^' {
 		p.pos++
-		inner, err := p.parsePathPrimary()
-		if err != nil {
-			return nil, err
-		}
-		return paths.Inv(inner), nil
+		inverse = true
 	}
+
 	elt, err := p.parsePathPrimary()
 	if err != nil {
 		return nil, err
 	}
-	// Check for modifier: *, +, ?
-	// Note: ? is only a path modifier if NOT followed by a name char (otherwise it's a variable)
-	if p.pos < len(p.input) {
-		switch p.input[p.pos] {
-		case '*':
+
+	if inverse {
+		// The grammar binds the modifier inside the inverse — `^p+` is
+		// `^(p+)` — but inverting a closure and closing an inverse are the same
+		// relation, so applying the modifier outside gives identical results
+		// and leaves the path in the flat `(^p)+` shape that a store
+		// implementing store.ReachabilityStore can answer in one call.
+		elt = paths.Inv(elt)
+	}
+	return p.applyPathMod(elt), nil
+}
+
+// applyPathMod consumes a trailing PathMod — '*', '+' or '?' — if one is there.
+//
+// '?' is only a modifier when what follows cannot start a variable name;
+// otherwise it belongs to the next token.
+func (p *sparqlParser) applyPathMod(elt paths.Path) paths.Path {
+	if p.pos >= len(p.input) {
+		return elt
+	}
+	switch p.input[p.pos] {
+	case '*':
+		p.pos++
+		return paths.ZeroOrMore(elt)
+	case '+':
+		p.pos++
+		return paths.OneOrMore(elt)
+	case '?':
+		if p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1])) {
 			p.pos++
-			return paths.ZeroOrMore(elt), nil
-		case '+':
-			p.pos++
-			return paths.OneOrMore(elt), nil
-		case '?':
-			if p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1])) {
-				p.pos++
-				return paths.ZeroOrOne(elt), nil
-			}
+			return paths.ZeroOrOne(elt)
 		}
 	}
-	return elt, nil
+	return elt
 }
 
 func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {

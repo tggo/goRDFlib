@@ -125,6 +125,12 @@ The `store.Store` interface (13 methods) has four implementations:
 - `sparql/parser_term.go:parseLiteralString` found the closing quote with
   `strings.Index`, ignoring escapes. `"he said \"hi\""` was truncated to
   `he said \`. Guard: `sparql/literal_escape_test.go`. No W3C test covers it.
+- `sparql/parser_path.go:parsePathEltOrInverse` returned from the `^` branch
+  before looking for a modifier, so `^ex:p+` (legal SPARQL) failed to parse and
+  only `(^ex:p)+` worked. The fix normalises `^p+` to `(^p)+` — inverting a
+  closure and closing an inverse are the same relation — which also keeps the
+  path in the flat shape `flatten` can push down. Guard:
+  `sparql/inverse_path_test.go`. Found by the MongoDB backend's tests.
 - sqlitestore ran its pragmas with `db.Exec` after opening. `database/sql` pools
   connections and a PRAGMA applies only to the connection that ran it, so every
   connection after the first had no `busy_timeout` and concurrent writes died
