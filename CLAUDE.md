@@ -60,6 +60,7 @@ The `store.Store` interface (13 methods) has four implementations:
 | BadgerStore | `store/badgerstore/` | Badger v4 LSM-tree KV | `"badger"` | Yes |
 | SQLiteStore | `store/sqlitestore/` | modernc.org/sqlite (pure Go) | `"sqlite"` | Yes |
 | SPARQLStore | `store/sparqlstore/` | HTTP SPARQL Protocol | `"sparql"` | Remote |
+| MongoStore | **external**: `github.com/tggo/rdflibgo-mongostore` | MongoDB | `"mongo"` | Yes |
 
 - All stores use `term.TermKey()` for serialization; `term.TermFromKey()` for deserialization
 - BadgerStore: 3 KV indexes (SPO/POS/OSP) via prefix scans, MVCC concurrency

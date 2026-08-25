@@ -22,6 +22,7 @@
 ![SPARQL Protocol](https://img.shields.io/badge/SPARQL_Protocol-99.7%25_coverage-brightgreen)
 ![Badger Store](https://img.shields.io/badge/Badger_Store-persistent_KV-blue)
 ![SQLite Store](https://img.shields.io/badge/SQLite_Store-persistent_SQL-blue)
+![MongoDB Store](https://img.shields.io/badge/MongoDB_Store-external_module-blue)
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
@@ -54,6 +55,24 @@ goRDFlib is a Go implementation of the core RDFLib functionality, ported from th
 - **Collection** -- RDF List (rdf:List) support with cycle detection
 - **Set operations** -- Union, intersection, difference between graphs
 - **Pattern matching** -- `Triples()`, `Subjects()`, `Predicates()`, `Objects()`, and pair iterators
+
+### Storage Backends
+
+Everything below implements the same `store.Store` interface and is
+interchangeable: `Graph`, SPARQL, SHACL, reasoning and the parsers work on any
+of them. Each one is verified against the shared `store/storetest` conformance
+suite.
+
+| Store | Package | Backend | Plugin name | Persistence |
+|---|---|---|---|---|
+| MemoryStore | `store/` | in-memory maps | *(default)* | no |
+| BadgerStore | `store/badgerstore/` | Badger v4 LSM-tree KV | `"badger"` | yes |
+| SQLiteStore | `store/sqlitestore/` | modernc.org/sqlite (pure Go) | `"sqlite"` | yes |
+| SPARQLStore | `store/sparqlstore/` | HTTP SPARQL 1.1 Protocol | `"sparql"` | remote |
+| MongoStore | [`rdflibgo-mongostore`](https://github.com/tggo/rdflibgo-mongostore) *(external module)* | MongoDB | `"mongo"` | yes |
+
+Writing your own is supported and does not require a fork — see
+[Custom Storage Backends](#custom-storage-backends).
 
 ### In-Memory Store
 
@@ -102,6 +121,96 @@ g.Add(alice, name, rdf.NewLiteral("Alice"))
 - Options: `WithUpdate()`, `WithHTTPClient()`, `WithTimeout()`
 - Built-in test server (`sparqlstore.Server`) for integration testing
 - Registered as `"sparql"` store type via the plugin system
+
+### MongoDB Store (external module)
+
+- **MongoStore** -- `store.Store` implementation backed by MongoDB, maintained as its own module: [**rdflibgo-mongostore**](https://github.com/tggo/rdflibgo-mongostore)
+- Also implements `store.QueryableStore` and `store.ReachabilityStore`
+- SPARQL property paths answered by `$graphLookup` in a single round trip
+- One document per `(subject, predicate, graph)` with a multikey object array; `Set` is a single-document update and so atomic on a standalone `mongod`
+- Options: `WithURI()`, `WithDatabase()`, `WithClient()`, `WithContext()`, `WithTimeout()`, `WithErrorHandler()`
+- Registered as `"mongo"` store type via the plugin system
+- Passes `store/storetest` with no declared exemptions
+
+It lives outside this repository so that the MongoDB driver is not a dependency
+of everyone who uses goRDFlib. Requires goRDFlib v0.2.0 or later.
+
+```bash
+go get github.com/tggo/rdflibgo-mongostore
+```
+
+```go
+import (
+    "github.com/tggo/goRDFlib/graph"
+    mongostore "github.com/tggo/rdflibgo-mongostore"
+)
+
+s, err := mongostore.New(
+    mongostore.WithURI("mongodb://localhost:27017"),
+    mongostore.WithDatabase("rdf"),
+)
+if err != nil {
+    log.Fatal(err)
+}
+defer s.Close()
+
+g := graph.NewGraph(graph.WithStore(s))
+g.Add(alice, knows, bob)
+```
+
+One document per `(subject, predicate, graph)`, holding every object those three
+point at, with each value written through `term.TermKey`:
+
+```js
+// collection: triples
+{ s: "U:http://example.org/Alice",
+  p: "U:http://example.org/knows",
+  o: ["U:http://example.org/Bob", "U:http://example.org/Carol"],
+  g: "" }                                  // "" is the default graph
+
+db.triples.createIndex({s: 1, p: 1, g: 1}, {unique: true})
+db.triples.createIndex({p: 1, o: 1, g: 1})   // multikey over o
+db.triples.createIndex({o: 1, g: 1})         // multikey over o
+```
+
+Grouping rather than one document per triple is what makes `Set` atomic there.
+`Set` must replace `(s, p, *)` without a reader seeing the gap between the
+removal and the insert; across two documents that needs a transaction, and a
+standalone `mongod` cannot run one. Grouped this way it is a single
+`updateOne`, which MongoDB makes atomic on every deployment. It is a good
+illustration of what an external backend has to think about that the interface
+cannot state for it.
+
+What makes MongoDB worth a dedicated backend rather than a generic document
+store is `$graphLookup`, which implements `store.ReachabilityStore` directly —
+`<p>+` becomes one aggregation instead of a traversal that ships every edge of
+the predicate to the client:
+
+```js
+db.triples.aggregate([
+  { $match: { s: startKey, p: predKey, g: "" } },
+  { $unwind: "$o" },
+  { $group: { _id: null, seeds: { $addToSet: "$o" } } },
+  { $graphLookup: {
+      from: "triples",
+      startWith: "$seeds",
+      connectFromField: "o",
+      connectToField: "s",
+      restrictSearchWithMatch: { p: predKey, g: "" },
+      as: "reached" } },
+  { $project: { nodes: { $setUnion: ["$seeds",
+      { $reduce: { input: "$reached.o", initialValue: [],
+                   in: { $setUnion: ["$$value", "$$this"] } } }] } } },
+  { $unwind: "$nodes" },
+  { $group: { _id: "$nodes" } }
+])
+```
+
+`$graphLookup` never revisits a document, so cycles terminate on their own, and
+`maxDepth` covers bounded paths. It is capped at 100 MiB per stage and ignores
+`allowDiskUse`, which is exactly why `Reachable` is allowed to return an error:
+the backend declines, and property path evaluation falls back to the client-side
+traversal rather than returning a truncated answer.
 
 ### Custom Storage Backends
 
@@ -166,85 +275,13 @@ without them:
 `init()` makes it available by name; the consumer blank-imports the package.
 
 An external backend is built against the same `store.Store` this repository
-uses, so the CI here builds the known satellite repositories against every
-commit to catch an interface change before it reaches them.
+uses, so the CI here clones the known satellite repositories on every commit,
+points them at it with a `replace`, and runs their test suites — an interface or
+conformance change goes red here rather than downstream.
 
-#### MongoDB Store (external example)
-
-[**rdflibgo-mongostore**](https://github.com/tggo/rdflibgo-mongostore) is a
-MongoDB backend in its own module, so the driver is not a dependency of everyone
-who uses goRDFlib. It passes the `store/storetest` conformance suite with no
-declared exemptions:
-
-```bash
-go get github.com/tggo/rdflibgo-mongostore
-```
-
-```go
-import (
-    "github.com/tggo/goRDFlib/graph"
-    "github.com/tggo/rdflibgo-mongostore"
-)
-
-s, err := mongostore.New(
-    mongostore.WithURI("mongodb://localhost:27017"),
-    mongostore.WithDatabase("rdf"),
-)
-if err != nil {
-    log.Fatal(err)
-}
-defer s.Close()
-
-g := graph.NewGraph(graph.WithStore(s))
-g.Add(alice, knows, bob)
-```
-
-One document per `(subject, predicate, graph)`, holding every object those three
-point at, with each value written through `term.TermKey`:
-
-```js
-// collection: triples
-{ s: "U:http://example.org/Alice",
-  p: "U:http://example.org/knows",
-  o: ["U:http://example.org/Bob", "U:http://example.org/Carol"],
-  g: "" }                                  // "" is the default graph
-
-db.triples.createIndex({s: 1, p: 1, g: 1}, {unique: true})
-db.triples.createIndex({p: 1, o: 1, g: 1})   // multikey over o
-db.triples.createIndex({o: 1, g: 1})         // multikey over o
-```
-
-Grouping rather than one document per triple is what makes `Set` atomic there.
-`Set` must replace `(s, p, *)` without a reader seeing the gap between the
-removal and the insert; across two documents that needs a transaction, and a
-standalone `mongod` cannot run one. Grouped this way it is a single
-`updateOne`, which MongoDB makes atomic on every deployment. It is a good
-illustration of what an external backend has to think about that the interface
-cannot state for it.
-
-What makes MongoDB worth a dedicated backend rather than a generic document
-store is `$graphLookup`, which implements `store.ReachabilityStore` directly —
-`<p>+` becomes one aggregation instead of a traversal that ships every edge of
-the predicate to the client:
-
-```js
-db.triples.aggregate([
-  { $match: { s: startKey, p: predKey, g: "" } },
-  { $graphLookup: {
-      from: "triples",
-      startWith: "$o",
-      connectFromField: "o",
-      connectToField: "s",
-      restrictSearchWithMatch: { p: predKey, g: "" },
-      as: "reached" } }
-])
-```
-
-`$graphLookup` never revisits a document, so cycles terminate on their own, and
-`maxDepth` covers bounded paths. It is capped at 100 MiB per stage and ignores
-`allowDiskUse`, which is exactly why `Reachable` is allowed to return an error:
-the backend declines, and property path evaluation falls back to the client-side
-traversal rather than returning a truncated answer.
+[**rdflibgo-mongostore**](https://github.com/tggo/rdflibgo-mongostore) is the
+worked example of all of the above; see
+[MongoDB Store](#mongodb-store-external-module).
 
 ### Serialization Formats
 
