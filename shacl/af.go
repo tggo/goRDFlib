@@ -3,6 +3,8 @@ package shacl
 import (
 	"errors"
 	"fmt"
+
+	"github.com/tggo/goRDFlib/provenance"
 )
 
 // SHACL Advanced Features (SHACL-AF) support.
@@ -95,6 +97,7 @@ type config struct {
 	ruleIteration      bool
 	ruleIterationLimit int
 	errorHandler       func(error)
+	provenance         *provenance.Index
 }
 
 func newConfig(opts []Option) *config {

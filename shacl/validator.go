@@ -63,6 +63,11 @@ func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 		}
 	}
 
+	// Source lines are filled in once over the finished report rather than at
+	// each place a result is built, so a constraint never has to know that
+	// provenance exists. Costs nothing when WithSourceLines was not passed.
+	annotateSourceLines(allResults, cfg.provenance)
+
 	// SHACL 1.2: sh:Debug and sh:Trace severities don't affect sh:conforms
 	conforms := true
 	for _, r := range allResults {

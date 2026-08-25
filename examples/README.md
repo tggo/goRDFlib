@@ -13,6 +13,10 @@ Runnable examples demonstrating goRDFlib features. Each example has a `main.go` 
 | `property_paths_example/` | Property path queries: inverse, sequence, alternative, transitive closure |
 | `resource_example/` | Resource API for navigating RDF graphs with a fluent interface |
 | `transitive_example/` | Transitive closure queries over hierarchical data |
+| `shacl_example/` | SHACL validation with separate shapes and data graphs |
+| `shacl_constraints_example/` | The SHACL Core constraint components |
+| `shacl_source_lines_example/` | SHACL violations reported as `file:line:` diagnostics, via `provenance.Index` |
+| `custom_function_example/` | Registering a custom SPARQL function |
 
 ## Running examples
 

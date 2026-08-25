@@ -21,6 +21,7 @@ func TestExamples(t *testing.T) {
 		"transitive_example",
 		"shacl_example",
 		"shacl_constraints_example",
+		"shacl_source_lines_example",
 		"sparql_update_example",
 		"custom_function_example",
 	}

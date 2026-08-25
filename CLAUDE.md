@@ -146,6 +146,30 @@ The `store.Store` interface (13 methods) has four implementations:
 - Server queries `ds.Default` only; named graphs not queryable on test server
 - Test coverage: 99.7% (71 tests)
 
+### provenance/ + shacl source lines
+- `provenance.Index` collects the `WithProvenance` callback the nt/nq/turtle/trig
+  parsers already emit; `idx.Triple` and `idx.Quad` are written to match those
+  handler signatures exactly, so they are passed as method values.
+- `shacl.WithSourceLines(idx)` fills `ValidationResult.SourceLine`. Annotation
+  happens **once over the finished report** (`annotateSourceLines` at the end of
+  `Validate`), never at the eight places a result is constructed — a new
+  constraint gets line reporting for free and never learns provenance exists.
+- Two precisions, and they must stay distinguishable via `SourceLineKind`:
+  a **triple** line (focus + IRI path + value all bound → the exact triple) and
+  a **focus node** line (everything else). A `sh:minCount` violation has no
+  offending triple — the triple is what is missing — so reporting a triple line
+  there would be a lie.
+- `ResultPath` must be an **IRI** for the triple lookup. A sequence/alternative/
+  inverse path is a blank node in the shapes graph and the value is several hops
+  away, so no single triple is the offender.
+- The key separator in `provenance` is **NUL** on purpose: a literal's lexical
+  form goes into `term.TermKey` verbatim, so a printable separator would let a
+  crafted literal forge another triple's key. Guard:
+  `TestKeySeparatorCannotCollide`.
+- RDF/XML and JSON-LD have **no** `WithProvenance` yet; json-gold is decoupled
+  (piprate/json-gold#96). Context for why this matters:
+  oxigraph/oxigraph#1526, RDFLib/pySHACL#321.
+
 ### shacl/ SHACL-AF layer (af_*.go)
 - SHACL-AF is a W3C **Note**, SHACL 1.2 is a **draft** respecifying the same
   ground. Both are supported and must stay **separate**: AF is opt-in via

@@ -1,0 +1,19 @@
+conforms: false
+3 violations, 10 triples with a known source line
+
+people.ttl:11: not an email address
+     |     ex:email "bob-at-example-org" ;
+     = focus node: <http://example.org/bob>
+     = line points at: the triple
+
+people.ttl:12: age must be an integer
+     |     ex:age   "middle aged" .
+     = focus node: <http://example.org/bob>
+     = line points at: the triple
+
+people.ttl:14: a person needs a name
+     | ex:carol a ex:Person ;
+     = focus node: <http://example.org/carol>
+     = line points at: the focus node
+
+(a real linter would exit 1)

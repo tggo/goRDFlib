@@ -452,6 +452,63 @@ Full W3C SHACL Core validation engine -- **98/98 W3C tests pass (100%)**.
 - Shape deactivation via `sh:deactivated`
 - Recursive shape validation
 
+### Source Lines in Validation Results
+
+A SHACL report is about a graph, and a graph has no text, so a plain report can
+only name a node — which is why no SHACL implementation has historically been
+able to say *which line of the file* is wrong ([pySHACL#321](https://github.com/RDFLib/pySHACL/issues/321)
+was closed as not possible on RDFLib, whose parsers hand the validator nothing
+about the source).
+
+The parsers here already report a source line per triple through
+`WithProvenance`. `provenance.Index` collects that, and `shacl.WithSourceLines`
+puts it back on each result:
+
+```go
+data := graph.NewGraph()
+lines := provenance.NewIndex()
+turtle.Parse(data, r, turtle.WithProvenance(lines.Triple))
+
+report := shacl.Validate(
+    shacl.NewGraphFromRDF(data, ""),
+    shacl.NewGraphFromRDF(shapes, ""),
+    shacl.WithSourceLines(lines),
+)
+
+for _, res := range report.Results {
+    fmt.Printf("%s:%d: %s\n", file, res.SourceLine, res.ResultMessages[0].Value())
+}
+```
+
+```
+people.ttl:11: not an email address
+     |     ex:email "bob-at-example-org" ;
+people.ttl:12: age must be an integer
+     |     ex:age   "middle aged" .
+people.ttl:14: a person needs a name
+     | ex:carol a ex:Person ;
+```
+
+`ValidationResult.SourceLineKind` distinguishes the two answers, because they
+are not equally precise:
+
+- `SourceLineTriple` — the offending triple's own line. The value the constraint
+  rejected is written there.
+- `SourceLineFocusNode` — where the focus node was first mentioned. This is what
+  a constraint about an *absence* reports: a failed `sh:minCount` has no
+  offending triple, because the triple is the thing that is missing.
+- `SourceLineNone` — no line. The triple was inferred by a SHACL-AF rule or the
+  reasoner, or added programmatically, so it was never in any file.
+
+Entirely opt-in: without `WithSourceLines` the report is byte-for-byte what it
+always was, and `SourceLine` stays 0. The line is a Go-level field and is not
+part of the RDF form of the report, which SHACL defines and does not extend.
+
+Provenance is available from the N-Triples, N-Quads, Turtle and TriG parsers.
+RDF/XML and JSON-LD do not report it yet.
+
+Runnable version: [`examples/shacl_source_lines_example/`](examples/shacl_source_lines_example).
+
 ### SHACL Advanced Features (SHACL-AF)
 
 > Added in response to a user feature request,
@@ -741,6 +798,7 @@ goRDFlib/
   store/sparqlstore/  Remote SPARQL Protocol store + test server
   store/storetest/    Shared conformance suite for store.Store backends
   paths/        Property path evaluation
+  provenance/   Source-line index linking triples back to the text they came from
   shacl/        SHACL Core validator
   rdfloader/    HTTP/file URI loader for SPARQL LOAD
   plugin/       Format registry and auto-detection
