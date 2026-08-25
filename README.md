@@ -198,20 +198,28 @@ g := graph.NewGraph(graph.WithStore(s))
 g.Add(alice, knows, bob)
 ```
 
-The document shape is the same three-index design the other backends use, with
-every value written through `term.TermKey`:
+One document per `(subject, predicate, graph)`, holding every object those three
+point at, with each value written through `term.TermKey`:
 
 ```js
 // collection: triples
 { s: "U:http://example.org/Alice",
   p: "U:http://example.org/knows",
-  o: "U:http://example.org/Bob",
+  o: ["U:http://example.org/Bob", "U:http://example.org/Carol"],
   g: "" }                                  // "" is the default graph
 
-db.triples.createIndex({s: 1, p: 1, o: 1, g: 1}, {unique: true})
-db.triples.createIndex({p: 1, o: 1, s: 1, g: 1})
-db.triples.createIndex({o: 1, s: 1, p: 1, g: 1})
+db.triples.createIndex({s: 1, p: 1, g: 1}, {unique: true})
+db.triples.createIndex({p: 1, o: 1, g: 1})   // multikey over o
+db.triples.createIndex({o: 1, g: 1})         // multikey over o
 ```
+
+Grouping rather than one document per triple is what makes `Set` atomic there.
+`Set` must replace `(s, p, *)` without a reader seeing the gap between the
+removal and the insert; across two documents that needs a transaction, and a
+standalone `mongod` cannot run one. Grouped this way it is a single
+`updateOne`, which MongoDB makes atomic on every deployment. It is a good
+illustration of what an external backend has to think about that the interface
+cannot state for it.
 
 What makes MongoDB worth a dedicated backend rather than a generic document
 store is `$graphLookup`, which implements `store.ReachabilityStore` directly —
