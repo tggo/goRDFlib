@@ -54,15 +54,25 @@ func WithUnboundedLines() Option {
 	return func(l *defaultLoader) { l.unbounded = true }
 }
 
+// WithPreserveBlankNodeIDs disables the fresh blank-node scope for each load.
+// It forwards the compatibility option to all six parsers. Separate documents
+// can then share blank-node IDs; callers must manage that identity themselves.
+// For JSON-LD, this preserves json-gold expansion IDs, not source labels.
+func WithPreserveBlankNodeIDs() Option {
+	return func(l *defaultLoader) { l.preserveBlankNodeIDs = true }
+}
+
 type defaultLoader struct {
-	client     *http.Client
-	timeout    time.Duration
-	maxLineLen int
-	unbounded  bool
+	client               *http.Client
+	timeout              time.Duration
+	maxLineLen           int
+	unbounded            bool
+	preserveBlankNodeIDs bool
 }
 
 // DefaultLoader returns a Loader that handles file:// and http(s):// URIs.
 // Format is auto-detected from Content-Type header, file extension, or content sniffing.
+// Each load uses a fresh blank-node scope unless WithPreserveBlankNodeIDs is set.
 func DefaultLoader(opts ...Option) *defaultLoader {
 	l := &defaultLoader{timeout: 30 * time.Second}
 	for _, o := range opts {
@@ -167,30 +177,50 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 
 // parseFormat dispatches to the appropriate parser by format name, forwarding
 // the line-length options to the line-based parsers (N-Triples, N-Quads).
+// The blank-node identity option is forwarded to every format.
 func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) error {
 	switch format {
 	case "turtle":
-		return turtle.Parse(g, r)
+		var opts []turtle.Option
+		if l.preserveBlankNodeIDs {
+			opts = append(opts, turtle.WithPreserveBlankNodeIDs())
+		}
+		return turtle.Parse(g, r, opts...)
 	case "nt":
 		return nt.Parse(g, r, l.ntOpts()...)
 	case "nquads":
 		return nq.Parse(g, r, l.nqOpts()...)
 	case "trig":
-		return trig.Parse(g, r)
+		var opts []trig.Option
+		if l.preserveBlankNodeIDs {
+			opts = append(opts, trig.WithPreserveBlankNodeIDs())
+		}
+		return trig.Parse(g, r, opts...)
 	case "xml":
-		return rdfxml.Parse(g, r)
+		var opts []rdfxml.Option
+		if l.preserveBlankNodeIDs {
+			opts = append(opts, rdfxml.WithPreserveBlankNodeIDs())
+		}
+		return rdfxml.Parse(g, r, opts...)
 	case "json-ld":
-		return jsonld.Parse(g, r)
+		var opts []jsonld.Option
+		if l.preserveBlankNodeIDs {
+			opts = append(opts, jsonld.WithPreserveBlankNodeIDs())
+		}
+		return jsonld.Parse(g, r, opts...)
 	default:
 		return fmt.Errorf("rdfloader: unsupported format %q", format)
 	}
 }
 
-// ntOpts and nqOpts translate the loader's line-length settings into parser
-// options. They return nil when nothing is configured, preserving the parser
-// defaults.
+// ntOpts and nqOpts translate the loader's line-length and blank-node settings
+// into parser options. They return nil when nothing is configured, preserving
+// the parser defaults.
 func (l *defaultLoader) ntOpts() []nt.Option {
 	var opts []nt.Option
+	if l.preserveBlankNodeIDs {
+		opts = append(opts, nt.WithPreserveBlankNodeIDs())
+	}
 	if l.unbounded {
 		opts = append(opts, nt.WithUnboundedLines())
 	} else if l.maxLineLen > 0 {
@@ -201,6 +231,9 @@ func (l *defaultLoader) ntOpts() []nt.Option {
 
 func (l *defaultLoader) nqOpts() []nq.Option {
 	var opts []nq.Option
+	if l.preserveBlankNodeIDs {
+		opts = append(opts, nq.WithPreserveBlankNodeIDs())
+	}
 	if l.unbounded {
 		opts = append(opts, nq.WithUnboundedLines())
 	} else if l.maxLineLen > 0 {

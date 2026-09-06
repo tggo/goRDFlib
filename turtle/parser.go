@@ -9,9 +9,12 @@ import (
 	"unicode/utf8"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 )
 
 // Parse reads Turtle from r and adds triples to g.
+// Blank node labels have a fresh scope for each call, unless
+// WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
@@ -27,6 +30,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		base:       cfg.base,
 		prefixes:   make(map[string]string),
 		provenance: cfg.provenance,
+		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
 	}
 	// Copy graph namespace bindings as initial prefixes
 	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
@@ -45,6 +49,7 @@ type turtleParser struct {
 	base       string
 	prefixes   map[string]string // prefix -> namespace URI
 	provenance ProvenanceHandler
+	bnodes     bnodes.Scope
 }
 
 // emit adds a triple to the graph and, when provenance tracking is enabled,
@@ -516,7 +521,7 @@ func (p *turtleParser) readBlankNodeLabel() (rdflibgo.BNode, error) {
 	if label == "" {
 		return rdflibgo.BNode{}, p.errorf("empty blank node label after _:")
 	}
-	return rdflibgo.NewBNode(label), nil
+	return p.bnodes.Label(label), nil
 }
 
 // readBlankNodePropertyList reads [...].

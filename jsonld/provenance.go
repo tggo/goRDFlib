@@ -38,6 +38,9 @@ import (
 //
 //   - a node object with no `@id`, which becomes a blank node whose label the
 //     expander invents — nothing in the source names it;
+//   - an explicit blank-node identifier, since JSON-gold relabels it without
+//     exposing a source-to-output mapping; matching labels are not proof of
+//     identity, even with WithPreserveBlankNodeIDs;
 //   - an identifier introduced by a scoped or remote context, since only the
 //     document's top-level `@context` is used to expand;
 //   - a subject that never appears as the `@id` of its own node object.
@@ -82,10 +85,10 @@ func buildSubjectLines(src []byte, base string, loader ld.DocumentLoader) subjec
 	out := make(subjectLines, len(raw))
 	for written, line := range raw {
 		// A blank node identifier is not an IRI and is never expanded. The
-		// expander may relabel it, in which case nothing matches and the node
-		// simply gets no line.
+		// expander relabels it without exposing the mapping. A generated label
+		// can match a different source node's label, so no line is safe here,
+		// even when WithPreserveBlankNodeIDs preserves the intermediate labels.
 		if len(written) > 2 && written[0] == '_' && written[1] == ':' {
-			out[term.TermKey(term.NewBNode(written[2:]))] = line
 			continue
 		}
 		iri, ok := expand(written)

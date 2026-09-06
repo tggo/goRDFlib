@@ -18,7 +18,9 @@ import (
 
 // Parse parses a JSON-LD document into the given graph.
 // It uses piprate/json-gold to expand the document to N-Quads, then parses those into the graph.
-// Options: WithBase, WithDocumentLoader, WithSkipInvalidIRIs, WithUnboundedLines.
+// Options: WithBase, WithDocumentLoader, WithSkipInvalidIRIs, WithUnboundedLines,
+// WithPreserveBlankNodeIDs, WithProvenance. Blank nodes share one scope per Parse
+// call by default, including anonymous nodes generated during expansion.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -83,7 +85,10 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 // When set, lines that fail because of an invalid IRI (ntsyntax.ErrInvalidIRI)
 // are skipped instead of aborting the parse.
 func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) error {
-	nqOpts := make([]nq.Option, 0, 3)
+	nqOpts := make([]nq.Option, 0, 4)
+	if cfg.preserveBlankNodeIDs {
+		nqOpts = append(nqOpts, nq.WithPreserveBlankNodeIDs())
+	}
 	if cfg.unbounded {
 		nqOpts = append(nqOpts, nq.WithUnboundedLines())
 	}
@@ -110,7 +115,8 @@ func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) e
 				if line, ok := lines[term.TermKey(s)]; ok {
 					handler(s, p, o, line)
 				}
-			}))
+			},
+		))
 	}
 	return nq.Parse(g, strings.NewReader(nqStr), nqOpts...)
 }

@@ -119,8 +119,8 @@ func TestNQParserBNodeGraphContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, ok := graphCtx.(rdflibgo.BNode); !ok || b.Value() != "g1" {
-		t.Errorf("expected BNode g1, got %v", graphCtx)
+	if b, ok := graphCtx.(rdflibgo.BNode); !ok || b.Value() == "g1" {
+		t.Errorf("expected a scoped blank graph name, got %v", graphCtx)
 	}
 }
 
@@ -301,7 +301,8 @@ func TestNQParserErrorHandlerWithQuadHandler(t *testing.T) {
 `
 	g := rdflibgo.NewGraph()
 	var graphs []string
-	err := Parse(g, strings.NewReader(input),
+	err := Parse(
+		g, strings.NewReader(input),
 		WithQuadHandler(func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term) {
 			if graph != nil {
 				graphs = append(graphs, graph.(rdflibgo.URIRef).Value())
@@ -555,14 +556,11 @@ _:b2 <http://example.org/p> "c" .
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"_:b1", "_:b1", "_:b2"}
-	if len(subjects) != len(want) {
-		t.Fatalf("expected %d subjects, got %d", len(want), len(subjects))
+	if len(subjects) != 3 {
+		t.Fatalf("expected 3 subjects, got %d", len(subjects))
 	}
-	for i := range want {
-		if subjects[i] != want[i] {
-			t.Errorf("subject %d: want %q, got %q", i, want[i], subjects[i])
-		}
+	if subjects[0] != subjects[1] || subjects[0] == subjects[2] {
+		t.Errorf("source label identity was not preserved within the stream: %v", subjects)
 	}
 }
 

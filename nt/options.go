@@ -25,11 +25,19 @@ type ErrorHandler func(lineNum int, line string, err error) (fixedLine string, r
 type ProvenanceHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int)
 
 type config struct {
-	base         string
-	errorHandler ErrorHandler
-	provenance   ProvenanceHandler
-	maxLineLen   int
-	unbounded    bool
+	base                 string
+	errorHandler         ErrorHandler
+	provenance           ProvenanceHandler
+	maxLineLen           int
+	unbounded            bool
+	preserveBlankNodeIDs bool
+}
+
+// WithPreserveBlankNodeIDs retains source labels instead of assigning a fresh
+// scope per parse. Use it only when the caller manages blank-node identity
+// across documents; independent sources with equal labels will otherwise merge.
+func WithPreserveBlankNodeIDs() Option {
+	return func(c *config) { c.preserveBlankNodeIDs = true }
 }
 
 // WithBase sets the base IRI for resolving relative IRIs.

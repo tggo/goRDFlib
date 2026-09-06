@@ -5,11 +5,21 @@ import (
 )
 
 type config struct {
-	base       string
-	provenance ProvenanceHandler
+	base                 string
+	provenance           ProvenanceHandler
+	preserveBlankNodeIDs bool
 }
 
 type Option func(*config)
+
+// WithPreserveBlankNodeIDs keeps rdf:nodeID and rdf:annotationNodeID labels as
+// blank-node identifiers. By default, labels are scoped to each Parse call so
+// that separate documents cannot share a blank node by accident. This option
+// restores the previous behavior; use it only when shared labels are intended.
+// Anonymous nodes still receive fresh identifiers. It affects parsing only.
+func WithPreserveBlankNodeIDs() Option {
+	return func(c *config) { c.preserveBlankNodeIDs = true }
+}
 
 func WithBase(base string) Option {
 	return func(c *config) { c.base = base }

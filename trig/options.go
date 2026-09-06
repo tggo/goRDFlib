@@ -3,8 +3,9 @@ package trig
 import rdflibgo "github.com/tggo/goRDFlib"
 
 type config struct {
-	base       string
-	provenance ProvenanceHandler
+	base                 string
+	provenance           ProvenanceHandler
+	preserveBlankNodeIDs bool
 }
 
 // Option configures TriG parsing or serialization.
@@ -22,6 +23,15 @@ type Option func(*config)
 // line is the parser's position at the point the triple is emitted, which is the
 // best available approximation of its origin.
 type ProvenanceHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term, lineNum int)
+
+// WithPreserveBlankNodeIDs keeps labelled blank node IDs exactly as written in
+// the input, including graph names. By default, each Parse or ParseDataset call
+// gives labels a fresh document scope shared across all graphs. Use this option
+// only when IDs must be stable: separate documents with the same label can then
+// merge nodes and graph names. Anonymous blank nodes remain fresh.
+func WithPreserveBlankNodeIDs() Option {
+	return func(c *config) { c.preserveBlankNodeIDs = true }
+}
 
 // WithBase sets the base IRI for resolving relative IRIs.
 func WithBase(base string) Option {

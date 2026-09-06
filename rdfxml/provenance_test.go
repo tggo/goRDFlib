@@ -12,6 +12,127 @@ import (
 
 func ex(local string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + local) }
 
+// TestBlankNodeParseScope checks reference identity, document isolation, and
+// source positions against the actual terms inserted into a reused graph.
+func TestBlankNodeParseScope(t *testing.T) {
+	const doc = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://example.org/">
+  <rdf:Description rdf:nodeID="shared">
+    <ex:self rdf:nodeID="shared"/>
+    <ex:name>labelled</ex:name>
+  </rdf:Description>
+  <rdf:Description>
+    <ex:name>anonymous</ex:name>
+  </rdf:Description>
+</rdf:RDF>`
+	for _, preserve := range []bool{false, true} {
+		t.Run(map[bool]string{false: "scoped", true: "preserved"}[preserve], func(t *testing.T) {
+			g := graph.NewGraph()
+			idx := provenance.NewIndex()
+			calls := 0
+			opts := []rdfxml.Option{rdfxml.WithProvenance(func(s term.Subject, p term.URIRef, o term.Term, line int) {
+				calls++
+				if !g.Contains(s, p, o) {
+					t.Error("callback terms do not identify an inserted triple")
+				}
+				want := 4
+				if p == ex("self") {
+					want = 3
+					if !s.Equal(o) {
+						t.Error("repeated nodeID lost its identity")
+					}
+				} else if o.Equal(term.NewLiteral("anonymous")) {
+					want = 7
+				}
+				if line != want {
+					t.Errorf("source line = %d, want %d", line, want)
+				}
+				idx.Triple(s, p, o, line)
+			})}
+			if preserve {
+				opts = append(opts, rdfxml.WithPreserveBlankNodeIDs())
+			}
+			for i := 0; i < 2; i++ {
+				if err := rdfxml.Parse(g, strings.NewReader(doc), opts...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 6
+			if preserve {
+				want = 4 // The labelled triples merge, but anonymous nodes stay separate.
+			}
+			if g.Len() != want || idx.Len() != want || calls != 6 {
+				t.Fatalf("graph/index/callback counts = %d/%d/%d, want %d/%d/6", g.Len(), idx.Len(), calls, want, want)
+			}
+			if got := g.Contains(term.NewBNode("shared"), ex("self"), term.NewBNode("shared")); got != preserve {
+				t.Errorf("raw source label present = %v, preserve = %v", got, preserve)
+			}
+		})
+	}
+}
+
+// TestBlankNodeScopeInTripleTermsAndAnnotations checks the same nodeID in RDF
+// 1.2 productions and rejects provenance for unasserted, captured triples.
+func TestBlankNodeScopeInTripleTermsAndAnnotations(t *testing.T) {
+	const doc = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://example.org/" rdf:version="1.2">
+  <rdf:Description rdf:nodeID="shared">
+    <ex:claim rdf:parseType="Triple" rdf:annotationNodeID="shared">
+      <rdf:Description rdf:nodeID="shared">
+        <ex:self rdf:nodeID="shared"/>
+      </rdf:Description>
+    </ex:claim>
+    <ex:name>labelled</ex:name>
+  </rdf:Description>
+</rdf:RDF>`
+	for _, preserve := range []bool{false, true} {
+		t.Run(map[bool]string{false: "scoped", true: "preserved"}[preserve], func(t *testing.T) {
+			g := graph.NewGraph()
+			calls := 0
+			opts := []rdfxml.Option{rdfxml.WithProvenance(func(s term.Subject, p term.URIRef, o term.Term, line int) {
+				calls++
+				if !g.Contains(s, p, o) {
+					t.Errorf("callback for a triple absent from the output: %s %s %s", s.N3(), p.N3(), o.N3())
+				}
+				want := 7
+				if p == ex("name") {
+					want = 8
+				}
+				if line != want {
+					t.Errorf("source line = %d, want %d", line, want)
+				}
+			})}
+			if preserve {
+				opts = append(opts, rdfxml.WithPreserveBlankNodeIDs())
+			}
+			for i := 0; i < 2; i++ {
+				if err := rdfxml.Parse(g, strings.NewReader(doc), opts...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 6
+			if preserve {
+				want = 3
+			}
+			if g.Len() != want || calls != 6 {
+				t.Fatalf("graph/callback counts = %d/%d, want %d/6", g.Len(), calls, want)
+			}
+			g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+				if tr.Predicate == ex("claim") {
+					inner := term.NewTripleTerm(tr.Subject, ex("self"), tr.Subject)
+					if !tr.Object.Equal(inner) {
+						t.Error("triple term uses different blank-node identities")
+					}
+					reifies := term.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies")
+					annotation := term.NewTripleTerm(tr.Subject, tr.Predicate, tr.Object)
+					if !g.Contains(tr.Subject, reifies, annotation) {
+						t.Error("annotation reifier uses a different blank-node identity")
+					}
+				}
+				return true
+			})
+		})
+	}
+}
+
 func parseWithProvenance(t *testing.T, doc string) (*graph.Graph, *provenance.Index) {
 	t.Helper()
 	g := graph.NewGraph()

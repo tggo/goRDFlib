@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 )
 
 // ErrInvalidIRI marks a line that failed to parse because an IRI contained a
@@ -19,9 +20,10 @@ var ErrInvalidIRI = errors.New("invalid character in IRI")
 
 // LineParser holds state for parsing a single N-Triples/N-Quads line.
 type LineParser struct {
-	Line    string
-	Pos     int
-	LineNum int
+	Line       string
+	Pos        int
+	LineNum    int
+	BlankNodes bnodes.Scope
 }
 
 // SkipSpaces advances past spaces and tabs.
@@ -249,7 +251,7 @@ func (p *LineParser) ReadBNode() (rdflibgo.BNode, error) {
 	if label == "" {
 		return rdflibgo.BNode{}, fmt.Errorf("line %d: empty blank node label", p.LineNum)
 	}
-	return rdflibgo.NewBNode(label), nil
+	return p.BlankNodes.Label(label), nil
 }
 
 // ReadLiteral parses "lexical"@lang or "lexical"^^<datatype>.

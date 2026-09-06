@@ -14,8 +14,9 @@ const (
 )
 
 type config struct {
-	base       string
-	provenance ProvenanceHandler
+	base                 string
+	provenance           ProvenanceHandler
+	preserveBlankNodeIDs bool
 
 	pretty       bool
 	indentWidth  int // 0 means "unset"; resolved by indentUnit
@@ -63,6 +64,14 @@ type Option func(*config)
 // lists). The reported line is the parser's position at the point the triple is
 // emitted, which is the best available approximation of its origin.
 type ProvenanceHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int)
+
+// WithPreserveBlankNodeIDs keeps labelled blank node IDs exactly as written in
+// the input. By default, each Parse call gives labels a fresh document scope.
+// Use this option only when IDs must be stable: separate documents with the
+// same label can then merge nodes. Anonymous blank nodes remain fresh.
+func WithPreserveBlankNodeIDs() Option {
+	return func(c *config) { c.preserveBlankNodeIDs = true }
+}
 
 // WithBase sets the base IRI for resolving relative IRIs.
 func WithBase(base string) Option {
