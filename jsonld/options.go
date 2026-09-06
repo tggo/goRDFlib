@@ -19,6 +19,7 @@ type config struct {
 	skipInvalidIRI bool
 	unbounded      bool
 	provenance     ProvenanceHandler
+	expandContext  any
 }
 
 // Option configures JSON-LD parsing or serialization.
@@ -42,6 +43,29 @@ func WithExpanded() Option {
 // WithDocumentLoader sets a custom document loader for remote context resolution.
 func WithDocumentLoader(loader ld.DocumentLoader) Option {
 	return func(c *config) { c.documentLoader = loader }
+}
+
+// WithExpandContext supplies a context that is applied before the document's
+// own @context when parsing (the expandContext option of the JSON-LD API,
+// https://www.w3.org/TR/json-ld11-api/#dom-jsonldoptions-expandcontext).
+//
+// The value is what a JSON-LD context may be: a context definition
+// (map[string]any), an IRI string that the document loader resolves, an array of
+// those, or a whole document carrying a "@context" key, which is unwrapped. The
+// document's own @context is processed on top of it, so a term the document
+// defines wins over the same term defined here — this is the place for defaults
+// and for pre-declaring terms a document relies on but never declares, not for
+// overriding what the document says. Relative IRIs inside it resolve against
+// WithBase.
+//
+// Provenance (WithProvenance) expands written identifiers through this context
+// as well, so an @id that only makes sense given the expand context still gets
+// its source line. Aliases of @id declared in an inline expand context are seen;
+// those that arrive through an IRI-valued one are not, as with remote contexts.
+//
+// It affects parsing only; the serializer ignores it.
+func WithExpandContext(ctx any) Option {
+	return func(c *config) { c.expandContext = ctx }
 }
 
 // WithSkipInvalidIRIs makes parsing tolerant of syntactically invalid IRIs (e.g.

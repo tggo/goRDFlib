@@ -30,7 +30,7 @@ func TestBuildSubjectLinesEmptyInputs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := buildSubjectLines([]byte(tc.src), "http://example.org/", nil); got != nil {
+			if got := buildSubjectLines([]byte(tc.src), "http://example.org/", nil, nil); got != nil {
 				t.Errorf("got %v, want nothing to report", got)
 			}
 		})
@@ -45,7 +45,7 @@ func TestBuildSubjectLinesDropsUnexpandableIDs(t *testing.T) {
 	// against, so it cannot be turned into the IRI a triple would use.
 	const src = `{"@id": "bare-relative", "http://example.org/p": "v"}`
 
-	got := buildSubjectLines([]byte(src), "", nil)
+	got := buildSubjectLines([]byte(src), "", nil, nil)
 	for key, line := range got {
 		if strings.Contains(key, "bare-relative") {
 			continue // it did expand to itself; that is a match, not a guess
@@ -85,7 +85,7 @@ func TestTopLevelContext(t *testing.T) {
 func TestIRIExpanderWithDocumentLoader(t *testing.T) {
 	loader := ld.NewDefaultDocumentLoader(nil)
 	expand := iriExpander([]byte(`{"@context": {"ex": "http://example.org/"}}`),
-		"http://example.org/", loader)
+		"http://example.org/", loader, nil)
 
 	got, ok := expand("ex:thing")
 	if !ok || got != "http://example.org/thing" {
@@ -97,7 +97,7 @@ func TestIRIExpanderWithDocumentLoader(t *testing.T) {
 // context: absolute identifiers pass through and relative ones resolve against
 // the base, which is all that can be known.
 func TestIRIExpanderWithoutContext(t *testing.T) {
-	expand := iriExpander([]byte(`{"@id": "a"}`), "http://example.org/", nil)
+	expand := iriExpander([]byte(`{"@id": "a"}`), "http://example.org/", nil, nil)
 
 	if got, ok := expand("http://elsewhere.example/x"); !ok || got != "http://elsewhere.example/x" {
 		t.Errorf("absolute: got %q, %v", got, ok)

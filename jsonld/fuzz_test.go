@@ -41,7 +41,7 @@ func FuzzScanIDPositions(f *testing.F) {
 	fuzzSeeds(f)
 
 	f.Fuzz(func(t *testing.T, src string) {
-		positions := scanIDPositions([]byte(src))
+		positions := scanIDPositions([]byte(src), nil)
 
 		lineCount := 1 + bytes.Count([]byte(src), []byte("\n"))
 		for id, line := range positions {

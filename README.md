@@ -298,6 +298,30 @@ All formats include both parser and serializer:
 
 All parsers support RDF 1.2 features: triple terms (`<<( s p o )>>`), reified triples, annotations (`{| p o |}`), directional language tags, and `rdf:parseType="Triple"` (RDF/XML).
 
+#### JSON-LD: supplying a context the document does not declare
+
+`jsonld.WithExpandContext` passes a context to the processor that is applied
+**before** the document's own `@context` — the `expandContext` option of the
+[JSON-LD API](https://www.w3.org/TR/json-ld11-api/#dom-jsonldoptions-expandcontext).
+Use it to pre-declare terms and prefixes a document relies on but never
+declares, or to give a stock of defaults to documents that carry no context at
+all. The value may be a context definition, an IRI the document loader
+resolves, an array of those, or a whole document with a `@context` key.
+
+```go
+ctx := map[string]any{
+    "ex":   "http://example.org/",
+    "name": "http://example.org/name",
+}
+err := jsonld.Parse(g, r, jsonld.WithExpandContext(ctx))
+```
+
+Precedence is the one the API specifies: the document's `@context` is processed
+on top, so a term the document defines wins over the same term in the expand
+context. Provenance (`WithProvenance`) expands identifiers through the same
+combined context, so an `@id` that only resolves thanks to the expand context
+still gets its source line.
+
 ### Namespace System
 
 Built-in vocabularies with pre-defined terms:
@@ -522,8 +546,8 @@ written, so a triple is reported against the line its subject's node object
 opens on.
 
 It never guesses. Identifiers are expanded through the document's own
-`@context` using the same processor that produced the triples, so a match is a
-match rather than a resemblance; anything that fails to expand contributes
+`@context` (on top of any `WithExpandContext`) using the same processor that
+produced the triples, so a match is a match rather than a resemblance; anything that fails to expand contributes
 nothing. A node object with no `@id` — a blank node whose label the expander
 invents — gets no line at all, because a wrong line is worse than none.
 `@id` aliased through a context (`{"id": "@id"}`) is honoured.

@@ -179,6 +179,13 @@ The `store.Store` interface (13 methods) has four implementations:
   rather than a wrong one. Only the **top-level** `@context` is used; scoped and
   remote contexts are not seen. `@id` aliases are collected in a separate pass
   because a context may be written after the nodes that use it.
+- `jsonld.WithExpandContext` (issue #29) sets json-gold's `ExpandContext`. The
+  processor parses it into the active context **before** the document's own
+  `@context`, so the document wins term by term — it is for defaults and
+  pre-declared terms, not for overriding a document. `iriExpander` must apply
+  the two in the same order or provenance would expand an `@id` differently
+  from the triples. `scanIDAliases` also reads `@id` aliases from an inline
+  expand context; an IRI-valued one is not fetched for that.
 - The JSON-LD position scan reads `dec.InputOffset()` **after** `Token()`.
   Before it, the decoder still sits where the previous token ended — on the far
   side of the whitespace, so usually on the previous line. That was an

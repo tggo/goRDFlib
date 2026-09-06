@@ -18,7 +18,8 @@ import (
 
 // Parse parses a JSON-LD document into the given graph.
 // It uses piprate/json-gold to expand the document to N-Quads, then parses those into the graph.
-// Options: WithBase, WithDocumentLoader, WithSkipInvalidIRIs, WithUnboundedLines.
+// Options: WithBase, WithDocumentLoader, WithExpandContext, WithSkipInvalidIRIs,
+// WithUnboundedLines, WithProvenance.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -52,6 +53,8 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	if cfg.documentLoader != nil {
 		ldOpts.DocumentLoader = cfg.documentLoader
 	}
+	// Applied before the document's own @context; see WithExpandContext.
+	ldOpts.ExpandContext = cfg.expandContext
 
 	var nquads any
 	// json-gold is not defensive about every malformed document and can panic
@@ -103,7 +106,7 @@ func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) e
 		// caller — they belong to a document nobody wrote. What is reported is
 		// the line of the source node object that declared the subject, which
 		// is why the N-Quads line is discarded here.
-		lines := buildSubjectLines(src, cfg.base, cfg.documentLoader)
+		lines := buildSubjectLines(src, cfg.base, cfg.documentLoader, cfg.expandContext)
 		handler := cfg.provenance
 		nqOpts = append(nqOpts, nq.WithProvenance(
 			func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, _ rdflibgo.Term, _ int) {

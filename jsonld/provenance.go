@@ -72,13 +72,13 @@ type subjectLines map[string]int
 // strings exactly as written and where they were written, and the document's
 // context, which knows what those strings expand to. Neither alone can match a
 // triple.
-func buildSubjectLines(src []byte, base string, loader ld.DocumentLoader) subjectLines {
-	raw := scanIDPositions(src)
+func buildSubjectLines(src []byte, base string, loader ld.DocumentLoader, expandCtx any) subjectLines {
+	raw := scanIDPositions(src, expandCtx)
 	if len(raw) == 0 {
 		return nil
 	}
 
-	expand := iriExpander(src, base, loader)
+	expand := iriExpander(src, base, loader, expandCtx)
 	out := make(subjectLines, len(raw))
 	for written, line := range raw {
 		// A blank node identifier is not an IRI and is never expanded. The
@@ -101,7 +101,9 @@ func buildSubjectLines(src []byte, base string, loader ld.DocumentLoader) subjec
 }
 
 // iriExpander returns a function that expands an identifier the way the JSON-LD
-// processor does, using the document's own top-level context.
+// processor does, using the caller's expand context (WithExpandContext) and then
+// the document's own top-level context, in that order — the same order the
+// processor applies them, so the document's definitions take precedence.
 //
 // Using the processor's own context rather than a hand-rolled prefix table is
 // what makes this exact instead of approximate: a compact IRI, a relative IRI,
@@ -109,13 +111,20 @@ func buildSubjectLines(src []byte, base string, loader ld.DocumentLoader) subjec
 // that produced the triples. When no context can be built, expansion falls back
 // to resolving against the base, which still handles the plain absolute and
 // relative cases.
-func iriExpander(src []byte, base string, loader ld.DocumentLoader) func(string) (string, bool) {
+func iriExpander(src []byte, base string, loader ld.DocumentLoader, expandCtx any) func(string) (string, bool) {
 	opts := ld.NewJsonLdOptions(base)
 	if loader != nil {
 		opts.DocumentLoader = loader
 	}
 
 	active := ld.NewContext(nil, opts)
+	if expandCtx = unwrapContext(expandCtx); expandCtx != nil {
+		// A failed parse here also fails Parse itself, so what the fallback
+		// yields is never reported: Parse returns before the scan is used.
+		if parsed, err := active.Parse(expandCtx); err == nil {
+			active = parsed
+		}
+	}
 	if local := topLevelContext(src); local != nil {
 		if parsed, err := active.Parse(local); err == nil {
 			active = parsed
@@ -135,6 +144,17 @@ func iriExpander(src []byte, base string, loader ld.DocumentLoader) func(string)
 		}
 		return iri, true
 	}
+}
+
+// unwrapContext accepts an expand context given either as a context value or as
+// a whole document carrying a "@context" key, the way the processor does.
+func unwrapContext(ctx any) any {
+	if doc, ok := ctx.(map[string]any); ok {
+		if inner, ok := doc["@context"]; ok {
+			return inner
+		}
+	}
+	return ctx
 }
 
 // topLevelContext returns the document's outermost `@context` value, or nil.
@@ -169,9 +189,10 @@ func topLevelContext(src []byte) any {
 //
 // Two passes are needed: the first collects the terms that alias `@id`, because
 // a context may be declared after the node objects that use it — key order in a
-// JSON object carries no meaning.
-func scanIDPositions(src []byte) map[string]int {
-	aliases := scanIDAliases(src)
+// JSON object carries no meaning. An alias may also come from the caller's
+// expand context, which the document never mentions.
+func scanIDPositions(src []byte, expandCtx any) map[string]int {
+	aliases := scanIDAliases(src, expandCtx)
 	positions := make(map[string]int)
 
 	lines := newLineIndex(src)
@@ -238,18 +259,25 @@ func scanIDPositions(src []byte) map[string]int {
 	}
 }
 
-// scanIDAliases collects terms that a `@context` in this document defines as an
-// alias for `@id`.
+// scanIDAliases collects terms that a `@context` in this document, or the
+// caller's inline expand context, defines as an alias for `@id`. An expand
+// context given as an IRI is not fetched, so aliases it declares are not seen.
 //
 // It decodes into a generic tree rather than scanning tokens, because an alias
 // can be nested arbitrarily deep and here the structure matters, not the
 // position.
-func scanIDAliases(src []byte) map[string]bool {
+func scanIDAliases(src []byte, expandCtx any) map[string]bool {
+	aliases := map[string]bool{}
+	if ctx := unwrapContext(expandCtx); ctx != nil {
+		collectAliasesFromContext(ctx, aliases)
+	}
 	var doc any
 	if err := json.Unmarshal(src, &doc); err != nil {
-		return nil
+		if len(aliases) == 0 {
+			return nil
+		}
+		return aliases
 	}
-	aliases := map[string]bool{}
 	collectIDAliases(doc, aliases)
 	if len(aliases) == 0 {
 		return nil
