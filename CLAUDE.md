@@ -212,6 +212,27 @@ The `store.Store` interface (13 methods) has four implementations:
 - Context for why any of this exists: oxigraph/oxigraph#1526,
   RDFLib/pySHACL#321 (closed as impossible on RDFLib).
 
+### blank node scoping (internal/bnodes, PR #28)
+- Every parser gives blank node labels a **fresh scope per Parse call** (RDF 1.1
+  §3.4: a label identifies a node within one document). `_:b1` in two documents
+  parsed into one graph are two nodes. This is what rdflib, Jena and RDF4J do;
+  `WithPreserveBlankNodeIDs` (named after RDF4J's `PRESERVE_BNODE_IDS`) is the
+  opt-out for callers that manage identity themselves. Never make preserve the
+  default again — merging unrelated documents through `_:b1` is silent data
+  corruption.
+- The scope **replaces** a label with a fresh `NewBNode()` via a per-parse map.
+  It must not *prefix* it: the first version did (`N<uuid>_b1`), and every
+  parse → serialize → parse hop then grew the label by another 33 bytes without
+  bound. Guard: `nt/roundtrip_bnode_test.go`, `TestScopeLabelDoesNotGrow`.
+- A `Scope` owns a map and is **not** safe for concurrent use; a parse runs on
+  one goroutine. Anonymous nodes (`[]`, missing `@id`) never go through the
+  scope and are always fresh.
+- JSON-LD: json-gold relabels source blank nodes before the N-Quads stage, so
+  even preserve mode keeps json-gold's labels, not the source ones, and
+  provenance reports no line for an explicit `_:` `@id`.
+- Splitting one document into several Parse calls (the SPARQL 1.2 test runner's
+  TriG splitter does) needs preserve, or cross-fragment labels come apart.
+
 ### shacl/ SHACL-AF layer (af_*.go)
 - SHACL-AF is a W3C **Note**, SHACL 1.2 is a **draft** respecifying the same
   ground. Both are supported and must stay **separate**: AF is opt-in via

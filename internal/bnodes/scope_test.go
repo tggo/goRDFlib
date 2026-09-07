@@ -25,6 +25,20 @@ func TestScopeIdentity(t *testing.T) {
 	}
 }
 
+// TestScopeLabelDoesNotGrow: feeding a scoped identity back in as a label must
+// yield an identity of the same size, or labels grow with every parse →
+// serialize → parse hop.
+func TestScopeLabelDoesNotGrow(t *testing.T) {
+	label := "b1"
+	width := len(term.NewBNode().Value())
+	for hop := 0; hop < 3; hop++ {
+		label = New(false).Label(label).Value()
+		if len(label) != width {
+			t.Fatalf("hop %d: label %q has %d bytes, want the fixed width %d", hop, label, len(label), width)
+		}
+	}
+}
+
 func TestScopeConcurrentParses(t *testing.T) {
 	const count = 64
 	nodes := make(chan term.BNode, count)
