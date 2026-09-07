@@ -8,13 +8,18 @@ import (
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 )
 
-const rdfNS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-const xmlNS = "http://www.w3.org/XML/1998/namespace"
-const itsNS = "http://www.w3.org/2005/11/its"
+const (
+	rdfNS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	xmlNS = "http://www.w3.org/XML/1998/namespace"
+	itsNS = "http://www.w3.org/2005/11/its"
+)
 
-// Parse parses RDF/XML format into the given graph.
+// Parse parses RDF/XML format into the given graph. Labelled blank nodes share
+// one scope per call, unless WithPreserveBlankNodeIDs is set. Anonymous nodes
+// always receive fresh identifiers.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -24,7 +29,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		g:          g,
 		base:       cfg.base,
 		provenance: cfg.provenance,
-		bnodeMap:   make(map[string]rdflibgo.BNode),
+		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
 		usedIDs:    make(map[string]bool),
 		nsPrefixes: make(map[string]string),
 	}
@@ -36,7 +41,7 @@ type rdfxmlParser struct {
 	base          string
 	provenance    ProvenanceHandler
 	dec           *xml.Decoder // the decoder currently being read, for source positions
-	bnodeMap      map[string]rdflibgo.BNode
+	bnodes        bnodes.Scope
 	usedIDs       map[string]bool   // track rdf:ID values for uniqueness
 	nsPrefixes    map[string]string // prefix → namespace URI (in-scope)
 	nsPrefixOrder []string          // insertion order of prefixes
@@ -614,9 +619,14 @@ func (p *rdfxmlParser) parseTripleParseType(decoder *xml.Decoder, subj rdflibgo.
 
 	// Use a temporary graph to capture the inner triple.
 	tempG := rdflibgo.NewGraph()
-	savedG := p.g
+	savedG, savedProvenance := p.g, p.provenance
 	p.g = tempG
-	defer func() { p.g = savedG }()
+	// Captured triples are components of a triple term, not assertions in the
+	// caller's graph. Only the outer assertion has output provenance.
+	p.provenance = nil
+	defer func() {
+		p.g, p.provenance = savedG, savedProvenance
+	}()
 
 	var found bool
 	for {
@@ -650,6 +660,7 @@ func (p *rdfxmlParser) parseTripleParseType(decoder *xml.Decoder, subj rdflibgo.
 			innerT := triples[0]
 			tt := rdflibgo.NewTripleTerm(innerT.Subject, innerT.Predicate, innerT.Object)
 			p.g = savedG // restore before adding to real graph; defer is a safety net
+			p.provenance = savedProvenance
 			p.add(subj, pred, tt)
 			if reifyID != "" {
 				p.emitReification(reifyID, subj, pred, tt)
@@ -738,13 +749,10 @@ func (p *rdfxmlParser) resolve(uri string) string {
 	return resolved
 }
 
+// getBNode resolves every labelled node through the parse's shared scope so
+// node declarations, property references, and annotation reifiers agree.
 func (p *rdfxmlParser) getBNode(id string) rdflibgo.BNode {
-	if b, ok := p.bnodeMap[id]; ok {
-		return b
-	}
-	b := rdflibgo.NewBNode(id)
-	p.bnodeMap[id] = b
-	return b
+	return p.bnodes.Label(id)
 }
 
 func isAbsoluteIRI(s string) bool {

@@ -10,10 +10,13 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 )
 
 // Parse reads TriG from r and adds all triples (from all graphs) into g.
 // Named graph information is discarded. Use ParseDataset for named graph support.
+// Blank node labels share one fresh scope across the document's graphs, unless
+// WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
@@ -29,6 +32,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		return err
 	}
 	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
+	p.bnodes = bnodes.New(cfg.preserveBlankNodeIDs)
 	if err := p.parse(); err != nil {
 		return err
 	}
@@ -46,6 +50,8 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 }
 
 // ParseDataset reads TriG from r and populates ds with named graphs.
+// Blank node labels, including graph names, share one fresh scope per call,
+// unless WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
 func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
@@ -56,6 +62,7 @@ func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
 		return err
 	}
 	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
+	p.bnodes = bnodes.New(cfg.preserveBlankNodeIDs)
 	return p.parse()
 }
 
@@ -85,6 +92,7 @@ type trigParser struct {
 	base         string
 	prefixes     map[string]string // prefix -> namespace URI
 	provenance   ProvenanceHandler
+	bnodes       bnodes.Scope
 }
 
 // emit adds a triple to the active graph and, when provenance tracking is
@@ -763,7 +771,7 @@ func (p *trigParser) readBlankNodeLabel() (rdflibgo.BNode, error) {
 	if label == "" {
 		return rdflibgo.BNode{}, p.errorf("empty blank node label after _:")
 	}
-	return rdflibgo.NewBNode(label), nil
+	return p.bnodes.Label(label), nil
 }
 
 // readBlankNodePropertyList reads [...].

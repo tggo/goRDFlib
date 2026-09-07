@@ -267,6 +267,8 @@ func runSPARQL12NegativeSyntaxTest(t *testing.T, entry w3c.TestEntry) {
 
 // loadTrigFile parses a TriG file into default graph and named graphs.
 // TriG is Turtle + GRAPH blocks. This is a simplified parser.
+// The Turtle fragments belong to one source document, so their parser calls
+// preserve labels to retain blank-node identity across the extracted graphs.
 func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdflibgo.Graph) {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -350,7 +352,7 @@ func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdfli
 				rdfType := "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
 				turtleStr := prefixes + graphName + " " + rdfType + " " + rdfType + " ."
 				tempG := rdflibgo.NewGraph()
-				if err := turtle.Parse(tempG, strings.NewReader(turtleStr), turtle.WithBase(base)); err == nil {
+				if err := turtle.Parse(tempG, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err == nil {
 					for tr := range tempG.Triples(nil, nil, nil) {
 						resolvedName = tr.Subject.String()
 						break
@@ -370,7 +372,7 @@ func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdfli
 				block = trimBlock + " ."
 			}
 			turtleStr := prefixes + block
-			if err := turtle.Parse(ng, strings.NewReader(turtleStr), turtle.WithBase(base)); err != nil {
+			if err := turtle.Parse(ng, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err != nil {
 				t.Fatalf("failed to parse GRAPH block in trig: %v", err)
 			}
 		} else {
@@ -384,7 +386,7 @@ func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdfli
 
 			if strings.TrimSpace(block) != "" {
 				turtleStr := prefixes + block
-				if err := turtle.Parse(defaultG, strings.NewReader(turtleStr), turtle.WithBase(base)); err != nil {
+				if err := turtle.Parse(defaultG, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err != nil {
 					t.Fatalf("failed to parse default graph in trig: %v", err)
 				}
 			}

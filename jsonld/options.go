@@ -13,17 +13,30 @@ const (
 )
 
 type config struct {
-	base           string
-	form           OutputForm
-	documentLoader ld.DocumentLoader
-	skipInvalidIRI bool
-	unbounded      bool
-	provenance     ProvenanceHandler
-	expandContext  any
+	base                 string
+	form                 OutputForm
+	documentLoader       ld.DocumentLoader
+	skipInvalidIRI       bool
+	unbounded            bool
+	provenance           ProvenanceHandler
+	preserveBlankNodeIDs bool
+	expandContext        any
 }
 
 // Option configures JSON-LD parsing or serialization.
 type Option func(*config)
+
+// WithPreserveBlankNodeIDs keeps the blank-node labels in the intermediate
+// N-Quads instead of scoping them to each Parse call. This restores the previous
+// behavior, which can merge unrelated blank nodes when documents share a graph.
+// It affects parsing only.
+//
+// JSON-gold relabels source blank nodes before it produces N-Quads and has no
+// option to retain source labels. Thus this option preserves its generated
+// labels, including those for anonymous nodes, not the source @id values.
+func WithPreserveBlankNodeIDs() Option {
+	return func(c *config) { c.preserveBlankNodeIDs = true }
+}
 
 // WithBase sets the base IRI for JSON-LD processing.
 func WithBase(base string) Option {

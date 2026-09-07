@@ -13,6 +13,81 @@ import (
 
 func ex(local string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + local) }
 
+// TestBlankNodeParseScope checks that one expansion has one blank-node scope,
+// while another parse into the same graph cannot reuse those identities.
+func TestBlankNodeParseScope(t *testing.T) {
+	const doc = `[
+  {"@id":"http://example.org/root", "http://example.org/link":{"@id":"_:shared"}},
+  {"@id":"_:shared", "http://example.org/self":{"@id":"_:shared"}},
+  {"http://example.org/name":"anonymous"}
+]`
+	for _, preserve := range []bool{false, true} {
+		t.Run(map[bool]string{false: "scoped", true: "preserved"}[preserve], func(t *testing.T) {
+			g := graph.NewGraph()
+			idx := provenance.NewIndex()
+			calls := 0
+			opts := []jsonld.Option{jsonld.WithProvenance(func(s term.Subject, p term.URIRef, o term.Term, line int) {
+				calls++
+				if !g.Contains(s, p, o) {
+					t.Error("callback terms do not identify an inserted triple")
+				}
+				if !s.Equal(ex("root")) || line != 2 {
+					t.Errorf("unexpected provenance: %s at line %d", s.N3(), line)
+				}
+				idx.Triple(s, p, o, line)
+			})}
+			if preserve {
+				opts = append(opts, jsonld.WithPreserveBlankNodeIDs())
+			}
+			for i := 0; i < 2; i++ {
+				if err := jsonld.Parse(g, strings.NewReader(doc), opts...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 6
+			if preserve {
+				want = 3 // Compatibility preserves even the expander's anonymous labels.
+			}
+			if g.Len() != want || calls != 2 || idx.Len() != want/3 {
+				t.Fatalf("graph/callback/index counts = %d/%d/%d, want %d/2/%d", g.Len(), calls, idx.Len(), want, want/3)
+			}
+			g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+				if tr.Predicate == ex("link") {
+					bn, ok := tr.Object.(term.BNode)
+					if !ok || !g.Contains(bn, ex("self"), bn) {
+						t.Error("blank-node reference differs from its declaration")
+					}
+					if line, ok := idx.Line(tr.Subject, tr.Predicate, tr.Object); !ok || line != 2 {
+						t.Errorf("inserted blank-node object has no exact source line: %d (%v)", line, ok)
+					}
+				}
+				return true
+			})
+			if g.Contains(term.NewBNode("shared"), ex("self"), term.NewBNode("shared")) {
+				t.Error("JSON-gold should relabel the source ID even in compatibility mode")
+			}
+		})
+	}
+}
+
+// TestProvenanceRelabelledBlankNodeCollision rejects an accidental match between
+// a generated label and another node's source ID, including compatibility mode.
+func TestProvenanceRelabelledBlankNodeCollision(t *testing.T) {
+	const doc = `[
+  {"http://example.org/name":"anonymous"},
+  {"@id":"_:b0", "http://example.org/name":"labelled"}
+]`
+	for _, opts := range [][]jsonld.Option{nil, {jsonld.WithPreserveBlankNodeIDs()}} {
+		g, idx := parseWithProvenance(t, doc, opts...)
+		if g.Len() != 2 {
+			t.Fatalf("graph has %d triples, want 2 separate nodes", g.Len())
+		}
+		if idx.Len() != 0 {
+			t.Errorf("reported %d unverified blank-node source lines", idx.Len())
+		}
+	}
+}
+
 func parseWithProvenance(t *testing.T, doc string, opts ...jsonld.Option) (*graph.Graph, *provenance.Index) {
 	t.Helper()
 	g := graph.NewGraph()
@@ -172,8 +247,8 @@ func TestProvenanceSkipsBlankNodes(t *testing.T) {
 }
 
 // TestProvenanceExplicitBlankNodeLabel covers a blank node the author did name.
-// Whether the expander keeps the label is its business; if it does, the line is
-// recovered, and if it does not, nothing is reported. Either is correct — what
+// The expander relabels it without exposing its mapping, so nothing is reported.
+// Matching the spelling of a generated label does not prove identity — what
 // must not happen is a line attached to the wrong node.
 func TestProvenanceExplicitBlankNodeLabel(t *testing.T) {
 	const doc = `{
@@ -350,7 +425,8 @@ func TestProvenanceContextForms(t *testing.T) {
   "id": "ex:arr",
   "ex:name": "Array context"
 }
-`, 1},
+`, 1,
+		},
 		{
 			"alias defined as an expanded term definition",
 			`{
@@ -361,7 +437,8 @@ func TestProvenanceContextForms(t *testing.T) {
   "id": "ex:expanded",
   "ex:name": "Expanded definition"
 }
-`, 1},
+`, 1,
+		},
 		{
 			"context nested inside a node object",
 			`{
@@ -373,7 +450,8 @@ func TestProvenanceContextForms(t *testing.T) {
     "ex:name": "Inner"
   }
 }
-`, 1},
+`, 1,
+		},
 	}
 
 	for _, tc := range cases {

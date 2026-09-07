@@ -298,6 +298,25 @@ All formats include both parser and serializer:
 
 All parsers support RDF 1.2 features: triple terms (`<<( s p o )>>`), reified triples, annotations (`{| p o |}`), directional language tags, and `rdf:parseType="Triple"` (RDF/XML).
 
+#### Blank-node identity when parsing
+
+Blank-node labels identify nodes within a document, not across documents. All six
+parsers use a **fresh blank-node scope for each parse** by default. This prevents
+unrelated documents that both use `_:b1` from joining through that label.
+
+- Repeated labels in one document refer to the same blank node. In TriG and
+  N-Quads, this includes labels shared across graphs in that document.
+- A scope belongs to the parse call, **not to a source URL or named graph**.
+  Parsing the same source again produces new blank-node IDs, even with the same
+  base IRI, loader instance, or destination graph.
+
+Each parser package (`turtle`, `trig`, `nt`, `nq`, `rdfxml`, and `jsonld`) provides
+`WithPreserveBlankNodeIDs()` for compatibility with code that needs parser IDs.
+The preserve option can make separate documents share blank-node identities;
+use it only when the caller manages those identities. **JSON-LD exception:**
+json-gold renames source labels before the N-Quads stage. Its preserve option
+retains those expansion IDs for compatibility, not the original source labels.
+
 #### JSON-LD: supplying a context the document does not declare
 
 `jsonld.WithExpandContext` passes a context to the processor that is applied
