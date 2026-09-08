@@ -16,8 +16,11 @@ func (c *NodeConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term
 	}
 	var results []ValidationResult
 	for _, vn := range valueNodes {
-		if len(validateNodeAgainstShape(ctx, s, vn)) > 0 {
-			results = append(results, makeResult(shape, focusNode, vn, c.ComponentIRI()))
+		details := validateNodeAgainstShape(ctx, s, vn)
+		if len(details) > 0 {
+			result := makeResult(shape, focusNode, vn, c.ComponentIRI())
+			result.Details = details
+			results = append(results, result)
 		}
 	}
 	return results
