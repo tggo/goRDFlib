@@ -659,8 +659,12 @@ func TestNodeConstraint(t *testing.T) {
 	}
 
 	litNode := Literal("hello", "", "")
-	if r := c.Evaluate(ctx, s, litNode, []Term{litNode}); len(r) == 0 {
-		t.Error("literal should not conform to IRI shape")
+	r := c.Evaluate(ctx, s, litNode, []Term{litNode})
+	if len(r) != 1 {
+		t.Fatalf("literal violations = %d, want 1", len(r))
+	}
+	if len(r[0].Details) != 1 || r[0].Details[0].SourceConstraintComponent.Value() != SH+"NodeKindConstraintComponent" {
+		t.Fatalf("node constraint details = %+v, want nested node-kind violation", r[0].Details)
 	}
 }
 
