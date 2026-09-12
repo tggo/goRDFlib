@@ -118,6 +118,7 @@ test-fuzz:
 		"rdfxml:FuzzParseProvenance" \
 		"shacl:FuzzSourceLines" \
 		"shacl:FuzzSourceLinesNeverInvent" \
+		"shacl:FuzzExpandTemplate" \
 	; do \
 		pkg=$$(echo "$$target" | cut -d: -f1); \
 		fn=$$(echo "$$target" | cut -d: -f2); \

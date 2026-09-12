@@ -261,6 +261,19 @@ The `store.Store` interface (13 methods) has four implementations:
 - Reference suite: `testdata/dash-af/` (DASH), run by `shacl/af_dash_test.go`.
   It is the only cross-implementation check we have; keep it at 13/13.
 
+### shacl/ SPARQL result messages (issue #31, `sparql_message.go`)
+- Precedence per SHACL §5.3.2: `?message` binding → `sh:message` of the
+  constraint / validator → the **shape's** `sh:message` (set by `makeResult`,
+  copied verbatim, §2.1.5) → `sh:message` of the component. The component's
+  message is shared by every shape using it, so it must not overwrite a
+  shape's own; the first version did.
+- `{?var}`/`{$var}` are expanded in **one left-to-right pass**. Sequential
+  per-variable replacement (what pySHACL does) re-expands a data value that
+  itself contains `{?other}`. Guard: `FuzzExpandTemplate`.
+- The `?message` binding is used **verbatim**, never as a template — it comes
+  from the data. Unbound placeholders stay as written so a typo is visible.
+- `sh:detail`: `sh:node` keeps the nested results in `Details` (PR #30).
+
 ### shacl/ invariants that bit us once
 - `Graph.All` must handle the **fully bound** (s,p,o) pattern explicitly. It
   once fell through to the wildcard branch, so `Has(&s,&p,&o)` returned true for

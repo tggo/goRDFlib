@@ -10,6 +10,7 @@ type SPARQLComponentConstraint struct {
 	ParamValues   map[string]Term // parameter path IRI → value from the shape
 	Validator     *validatorDef   // selected validator (node/property/generic)
 	Prefixes      string          // PREFIX preamble for the validator query
+	Messages      []Term          // sh:message on the component itself, the fallback for the validator's
 }
 
 type paramDef struct {
@@ -49,21 +50,13 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 
 		askResult, err := executeSPARQLAsk(ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 		if err != nil {
-			r := makeResult(shape, focusNode, value, c.ComponentIRI())
-			if len(c.Validator.Messages) > 0 {
-				r.ResultMessages = c.Validator.Messages
-			}
-			results = append(results, r)
+			results = append(results, c.result(shape, focusNode, value, nil))
 			continue
 		}
 
 		// ASK returns true if the value conforms; false = violation
 		if !askResult {
-			r := makeResult(shape, focusNode, value, c.ComponentIRI())
-			if len(c.Validator.Messages) > 0 {
-				r.ResultMessages = c.Validator.Messages
-			}
-			results = append(results, r)
+			results = append(results, c.result(shape, focusNode, value, nil))
 		}
 	}
 	return results
@@ -75,11 +68,7 @@ func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shap
 
 	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
-		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
-		if len(c.Validator.Messages) > 0 {
-			r.ResultMessages = c.Validator.Messages
-		}
-		return []ValidationResult{r}
+		return []ValidationResult{c.result(shape, focusNode, focusNode, nil)}
 	}
 
 	var results []ValidationResult
@@ -88,16 +77,40 @@ func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shap
 		if v, ok := row["value"]; ok && !v.IsNone() {
 			value = v
 		}
-		r := makeResult(shape, focusNode, value, c.ComponentIRI())
-		if p, ok := row["path"]; ok && !p.IsNone() {
-			r.ResultPath = p
-		}
-		if len(c.Validator.Messages) > 0 {
-			r.ResultMessages = c.Validator.Messages
-		}
-		results = append(results, r)
+		results = append(results, c.result(shape, focusNode, value, row))
 	}
 	return results
+}
+
+// result builds one validation result. row is the SELECT solution, or nil for
+// an ASK validator and for a query that failed to run.
+func (c *SPARQLComponentConstraint) result(shape *Shape, focusNode, value Term, row map[string]Term) ValidationResult {
+	r := makeResult(shape, focusNode, value, c.ComponentIRI())
+	if p, ok := row["path"]; ok && !p.IsNone() {
+		r.ResultPath = p
+	}
+	vars := func() map[string]Term {
+		params := make(map[string]Term, len(c.ParamValues))
+		for _, param := range c.Parameters {
+			if v, ok := c.ParamValues[param.Path.Value()]; ok {
+				params[localName(param.Path.Value())] = v
+			}
+		}
+		return messageVars(focusNode, value, r.ResultPath, shape.ID, params, row)
+	}
+	// The component's own sh:message is the last resort: a shape's sh:message
+	// (already set by makeResult) applies to every result of that shape
+	// (SHACL §2.1.5), so it outranks a message shared by all users of the
+	// component. The validator's message is specific to this query and keeps
+	// overriding it, as it always has.
+	componentMessages := c.Messages
+	if len(shape.Messages) > 0 {
+		componentMessages = nil
+	}
+	if msgs := resultMessages(row, vars, c.Validator.Messages, componentMessages); msgs != nil {
+		r.ResultMessages = msgs
+	}
+	return r
 }
 
 // buildBindings returns the pre-bound variables split into textual bindings
@@ -165,6 +178,7 @@ type componentDef struct {
 	Validator  *validatorDef // sh:validator (generic)
 	NodeVal    *validatorDef // sh:nodeValidator
 	PropVal    *validatorDef // sh:propertyValidator
+	Messages   []Term        // sh:message on the component
 }
 
 func parseOneComponent(g *Graph, node Term) *componentDef {
@@ -191,6 +205,7 @@ func parseOneComponent(g *Graph, node Term) *componentDef {
 	cd.Validator = parseValidator(g, node, SH+"validator")
 	cd.NodeVal = parseValidator(g, node, SH+"nodeValidator")
 	cd.PropVal = parseValidator(g, node, SH+"propertyValidator")
+	cd.Messages = g.Objects(node, IRI(SH+"message"))
 
 	if cd.Validator == nil && cd.NodeVal == nil && cd.PropVal == nil {
 		return nil
@@ -269,6 +284,7 @@ func buildComponentConstraints(g *Graph, s *Shape, components []componentDef) []
 			ParamValues:   paramValues,
 			Validator:     validator,
 			Prefixes:      prefixes,
+			Messages:      cd.Messages,
 		})
 	}
 

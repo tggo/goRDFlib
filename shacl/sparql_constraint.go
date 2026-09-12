@@ -59,8 +59,10 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 	if err != nil {
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		r.SourceConstraint = c.Node
-		if len(c.Messages) > 0 {
-			r.ResultMessages = c.Messages
+		if msgs := resultMessages(nil, func() map[string]Term {
+			return messageVars(focusNode, focusNode, r.ResultPath, shape.ID, nil, nil)
+		}, c.Messages); msgs != nil {
+			r.ResultMessages = msgs
 		}
 		return []ValidationResult{r}
 	}
@@ -79,8 +81,10 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 			r.ResultPath = p
 		}
 
-		if len(c.Messages) > 0 {
-			r.ResultMessages = c.Messages
+		if msgs := resultMessages(row, func() map[string]Term {
+			return messageVars(focusNode, value, r.ResultPath, shape.ID, nil, row)
+		}, c.Messages); msgs != nil {
+			r.ResultMessages = msgs
 		}
 
 		results = append(results, r)
