@@ -306,6 +306,29 @@ The `store.Store` interface (13 methods) has four implementations:
   in one group out of scope in a sibling group. The `bind10` W3C test is the
   guard; conflating the two functions breaks it.
 
+### sparql/ BGP join ordering (`bgp_order.go`)
+- `evalBGP` plans, `evalBGPInOrder` runs the nested loops. Recursion must stay
+  in `evalBGPInOrder`, or every partial solution re-plans the rest of the BGP.
+- Probing IS the planner's cost: a counted match costs about what an evaluated
+  one does. The probe limit starts at 64, shrinks to the smallest exact count,
+  and only goes to 1000 when everything was capped.
+  `TestOrderBGP_ProbesStopAtSmallestCount` guards the shrink.
+- Capped counts are lower bounds: exact counts rank first, and capped counts
+  are evened out to one limit, so probe order never decides the plan.
+- Result order without ORDER BY now follows the plan, not the written order.
+- Every rule has a test that fails when the rule is removed (checked by
+  mutation). `TestOrderBGP_SameSolutionsForEveryPermutation` is the
+  correctness guard.
+- `benchmarks/bench_bgp_order_test.go` has written-well vs badly-written
+  queries. A 4-pattern chain from a constant costs ~1µs more for planning; the
+  badly-written queries went from seconds to µs.
+
+### MemoryStore lookups
+- `triplesLocked` must index straight on every bound key pair (`spo[s][p]`,
+  `pos[p][o]`, `osp[o][s]`). It used to iterate the outer map and filter the
+  second key, so `(?, p, o)` scanned every object of `p`. That cost 10µs on
+  `StoreLookup_FilmsByDirector_100k`, down to 77ns after the fix.
+
 ### reasoning/ (RDFS + OWL 2 RL)
 - Entry: `Expand(g, RDFS|OWLRL)` → `ExpandCheck` (also returns `[]Inconsistency`)
 - **A class may be a blank node.** An anonymous class expression (`owl:Restriction`)

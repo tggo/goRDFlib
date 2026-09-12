@@ -986,7 +986,16 @@ func evalPatternPreBound(g *rdflibgo.Graph, pattern Pattern, pre map[string]rdfl
 
 // --- BGP evaluation ---
 
+// evalBGP evaluates a basic graph pattern, choosing the join order first (see
+// orderBGP).
 func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
+	return evalBGPInOrder(g, orderBGP(g, triples, bindings, prefixes), bindings, prefixes)
+}
+
+// evalBGPInOrder evaluates the triple patterns as nested loops in the order
+// given. The recursion stays in here so a BGP is planned once, not once per
+// partial solution.
+func evalBGPInOrder(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
 	if len(triples) == 0 {
 		return []map[string]rdflibgo.Term{bindings}
 	}
@@ -1078,7 +1087,7 @@ func evalBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.T
 			}
 		}
 
-		subResults := evalBGP(g, rest, nb, prefixes)
+		subResults := evalBGPInOrder(g, rest, nb, prefixes)
 		results = append(results, subResults...)
 		return true
 	})
@@ -1121,7 +1130,7 @@ func evalPathTriple(g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[st
 			}
 		}
 
-		subResults := evalBGP(g, rest, nb, prefixes)
+		subResults := evalBGPInOrder(g, rest, nb, prefixes)
 		results = append(results, subResults...)
 		return true
 	})
