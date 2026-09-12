@@ -199,63 +199,59 @@ func (m *MemoryStore) triplesLocked(pattern term.TriplePattern) TripleIterator {
 		pk := term.OptPredKey(pattern.Predicate)
 		ok := term.OptTermKey(pattern.Object)
 
+		// Every case with two or three keys bound goes straight to the index
+		// keyed by them. Iterating the outer map and filtering on the second
+		// key instead turned (?, p, o) into a scan over every object of p.
 		switch {
 		case sk != "" && pk != "" && ok != "":
-			if po, exists := m.spo[sk]; exists {
-				if o, exists := po[pk]; exists {
-					if t, exists := o[ok]; exists {
-						yield(t)
-					}
+			if t, exists := m.spo[sk][pk][ok]; exists {
+				yield(t)
+			}
+
+		case sk != "" && pk != "":
+			for _, t := range m.spo[sk][pk] {
+				if !yield(t) {
+					return
+				}
+			}
+
+		case pk != "" && ok != "":
+			for _, t := range m.pos[pk][ok] {
+				if !yield(t) {
+					return
+				}
+			}
+
+		case sk != "" && ok != "":
+			for _, t := range m.osp[ok][sk] {
+				if !yield(t) {
+					return
 				}
 			}
 
 		case sk != "":
-			if po, exists := m.spo[sk]; exists {
-				for pk2, o := range po {
-					if pk != "" && pk2 != pk {
-						continue
-					}
-					for ok2, t := range o {
-						if ok != "" && ok2 != ok {
-							continue
-						}
-						if !yield(t) {
-							return
-						}
+			for _, o := range m.spo[sk] {
+				for _, t := range o {
+					if !yield(t) {
+						return
 					}
 				}
 			}
 
 		case pk != "":
-			if os, exists := m.pos[pk]; exists {
-				for ok2, s := range os {
-					if ok != "" && ok2 != ok {
-						continue
-					}
-					for sk2, t := range s {
-						if sk != "" && sk2 != sk {
-							continue
-						}
-						if !yield(t) {
-							return
-						}
+			for _, s := range m.pos[pk] {
+				for _, t := range s {
+					if !yield(t) {
+						return
 					}
 				}
 			}
 
 		case ok != "":
-			if sp, exists := m.osp[ok]; exists {
-				for sk2, p := range sp {
-					if sk != "" && sk2 != sk {
-						continue
-					}
-					for pk2, t := range p {
-						if pk != "" && pk2 != pk {
-							continue
-						}
-						if !yield(t) {
-							return
-						}
+			for _, p := range m.osp[ok] {
+				for _, t := range p {
+					if !yield(t) {
+						return
 					}
 				}
 			}
