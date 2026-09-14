@@ -76,26 +76,89 @@ func (cg *ConjunctiveGraph) AddQuad(q term.Quad) {
 	cg.store.Add(q.Triple, ctx)
 }
 
-// Remove removes matching triples. If ctx is nil, removes from all contexts.
+// Remove removes matching triples from ctx, or from the default graph and
+// every named graph when ctx is nil.
 // Ported from: rdflib.graph.ConjunctiveGraph.remove
 func (cg *ConjunctiveGraph) Remove(s term.Subject, p *term.URIRef, o term.Term, ctx term.Term) {
-	cg.store.Remove(term.TriplePattern{Subject: s, Predicate: p, Object: o}, ctx)
+	pat := term.TriplePattern{Subject: s, Predicate: p, Object: o}
+	if ctx != nil {
+		cg.store.Remove(pat, ctx)
+		return
+	}
+	for _, c := range cg.allContexts() {
+		cg.store.Remove(pat, c)
+	}
 }
 
-// Triples iterates over matching triples across all contexts (union view).
+// allContexts lists the default graph (as nil) followed by every named graph.
+// The list is materialized first so that no store read lock is held while the
+// caller goes on to read or write each graph.
+func (cg *ConjunctiveGraph) allContexts() []term.Term {
+	ctxs := []term.Term{nil}
+	cg.store.Contexts(nil)(func(c term.Term) bool {
+		ctxs = append(ctxs, c)
+		return true
+	})
+	return ctxs
+}
+
+// Triples iterates over matching triples across all contexts (union view). A
+// triple present in several graphs is yielded once.
 // Ported from: rdflib.graph.ConjunctiveGraph.triples
 func (cg *ConjunctiveGraph) Triples(s term.Subject, p *term.URIRef, o term.Term) store.TripleIterator {
-	return cg.store.Triples(term.TriplePattern{Subject: s, Predicate: p, Object: o}, nil)
+	pat := term.TriplePattern{Subject: s, Predicate: p, Object: o}
+	return func(yield func(term.Triple) bool) {
+		ctxs := cg.allContexts()
+		if len(ctxs) == 1 {
+			cg.store.Triples(pat, nil)(yield)
+			return
+		}
+		seen := make(map[string]struct{})
+		for _, c := range ctxs {
+			stopped := false
+			cg.store.Triples(pat, c)(func(t term.Triple) bool {
+				k := term.TermKey(t.Subject) + "\x00" + term.TermKey(t.Predicate) + "\x00" + term.TermKey(t.Object)
+				if _, dup := seen[k]; dup {
+					return true
+				}
+				seen[k] = struct{}{}
+				if !yield(t) {
+					stopped = true
+					return false
+				}
+				return true
+			})
+			if stopped {
+				return
+			}
+		}
+	}
 }
 
-// Quads iterates over matching quads across all contexts.
+// Quads iterates over matching quads across all contexts. A triple in the
+// default graph carries the default context's identifier.
 // Ported from: rdflib.graph.ConjunctiveGraph.quads
 func (cg *ConjunctiveGraph) Quads(s term.Subject, p *term.URIRef, o term.Term) func(yield func(term.Quad) bool) {
+	pat := term.TriplePattern{Subject: s, Predicate: p, Object: o}
 	return func(yield func(term.Quad) bool) {
-		graphID, _ := cg.defaultContext.identifier.(term.Subject)
-		cg.store.Triples(term.TriplePattern{Subject: s, Predicate: p, Object: o}, nil)(func(t term.Triple) bool {
-			return yield(term.Quad{Triple: t, Graph: graphID})
-		})
+		defaultID, _ := cg.defaultContext.identifier.(term.Subject)
+		for _, c := range cg.allContexts() {
+			graphID := defaultID
+			if c != nil {
+				graphID, _ = c.(term.Subject)
+			}
+			stopped := false
+			cg.store.Triples(pat, c)(func(t term.Triple) bool {
+				if !yield(term.Quad{Triple: t, Graph: graphID}) {
+					stopped = true
+					return false
+				}
+				return true
+			})
+			if stopped {
+				return
+			}
+		}
 	}
 }
 
@@ -105,9 +168,18 @@ func (cg *ConjunctiveGraph) Contexts(triple *term.Triple) store.TermIterator {
 	return cg.store.Contexts(triple)
 }
 
-// Len returns total number of triples across all contexts.
+// Len returns the number of distinct triples across all contexts.
 func (cg *ConjunctiveGraph) Len() int {
-	return cg.store.Len(nil)
+	ctxs := cg.allContexts()
+	if len(ctxs) == 1 {
+		return cg.store.Len(nil)
+	}
+	n := 0
+	cg.Triples(nil, nil, nil)(func(term.Triple) bool {
+		n++
+		return true
+	})
+	return n
 }
 
 // Bind associates a prefix with a namespace.

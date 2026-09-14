@@ -111,6 +111,10 @@ func (m *MemoryStore) Reachable(q ReachabilityQuery) ([]term.Term, error) {
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	idx := m.index(q.Context)
+	if idx == nil {
+		return nil, nil
+	}
 
 	// expanded guards against re-visiting a node (and so against cycles);
 	// emitted deduplicates the result set. They are separate because Start is
@@ -130,7 +134,7 @@ func (m *MemoryStore) Reachable(q ReachabilityQuery) ([]term.Term, error) {
 			nk := term.TermKey(node)
 			if q.Inverse {
 				// osp: object → subject → predicate → triple
-				for sk, byPred := range m.osp[nk] {
+				for sk, byPred := range idx.osp[nk] {
 					for pk, t := range byPred {
 						if !matches(pk) {
 							continue
@@ -149,7 +153,7 @@ func (m *MemoryStore) Reachable(q ReachabilityQuery) ([]term.Term, error) {
 				continue
 			}
 			// spo: subject → predicate → object → triple
-			for pk, byObj := range m.spo[nk] {
+			for pk, byObj := range idx.spo[nk] {
 				if !matches(pk) {
 					continue
 				}

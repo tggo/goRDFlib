@@ -79,11 +79,15 @@ func TestW3CTrig(t *testing.T) {
 // parseNQuadsIntoDataset parses N-Quads into a dataset, routing quads to named graphs.
 func parseNQuadsIntoDataset(t *testing.T, ds *graph.Dataset, f *os.File) {
 	t.Helper()
-	defaultGraph := ds.DefaultContext()
-	nq.Parse(defaultGraph, f, nq.WithQuadHandler(func(s term.Subject, p term.URIRef, o term.Term, graphCtx term.Term) {
-		target := ds.Graph(graphCtx) // nil → default graph
-		target.Add(s, p, o)
-	}))
+	// ParseStream, not Parse: Parse also adds every quad to the graph it is
+	// given, which would copy each named-graph triple into the default graph.
+	err := nq.ParseStream(f, func(s term.Subject, p term.URIRef, o term.Term, graphCtx term.Term) error {
+		ds.Graph(graphCtx).Add(s, p, o) // nil → default graph
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("parse expected N-Quads: %v", err)
+	}
 }
 
 // assertDatasetEqual checks that two datasets have isomorphic graphs.

@@ -234,6 +234,69 @@ func testCardinality(t *testing.T, cfg Config) {
 		s.Remove(pattern(nil, nil, nil), nil)
 		check(t, s)
 	})
+
+	// The planner passes the graph it is evaluating as the context, so a count
+	// that leaks triples from another graph — a per-predicate counter shared by
+	// every graph, say — silently reorders joins on a wrong estimate.
+	cfg.run(t, "is scoped to its graph", func(t *testing.T) {
+		s := cfg.New(t)
+		if !s.ContextAware() {
+			t.Skip("backend is not context aware")
+		}
+		c := s.(store.CardinalityStore)
+		// The default graph and graph1 share one triple and differ in every
+		// other count, so no pattern shape can pass by reading the wrong graph.
+		s.Add(triple(Alice, Knows, Bob), nil)
+		s.Add(triple(Alice, Knows, Carol), nil)
+		s.Add(triple(Bob, Knows, Carol), nil)
+		s.Add(triple(Alice, Knows, Bob), Graph1)
+		s.Add(triple(Carol, Knows, Bob), Graph1)
+		s.Add(triple(Carol, Name, Bob), Graph1)
+		s.Add(triple(Dave, Knows, Bob), Graph1)
+		s.Add(triple(Dave, Knows, Alice), Graph2)
+
+		checkIn := func(t *testing.T, what string) {
+			t.Helper()
+			for _, ctx := range []term.Term{nil, Graph1, Graph2, Graph3} {
+				for _, sh := range shapes() {
+					want := count(s.Triples(sh.pat, ctx))
+					if got := c.Cardinality(sh.pat, ctx); got != want {
+						t.Errorf("%s, context %v, %s: Cardinality = %d, Triples yielded %d",
+							what, ctx, sh.name, got, want)
+					}
+				}
+			}
+		}
+		checkIn(t, "seeded")
+
+		for _, tc := range []struct {
+			ctx  term.Term
+			pat  term.TriplePattern
+			want int
+		}{
+			{nil, pattern(nil, pred(Knows), nil), 3},
+			{Graph1, pattern(nil, pred(Knows), nil), 3},
+			{Graph1, pattern(nil, pred(Name), nil), 1},
+			{nil, pattern(nil, pred(Name), nil), 0},
+			{Graph1, pattern(nil, nil, Bob), 4},
+			{Graph2, pattern(nil, nil, nil), 1},
+			{Graph3, pattern(nil, nil, nil), 0},
+		} {
+			if got := c.Cardinality(tc.pat, tc.ctx); got != tc.want {
+				t.Errorf("context %v: Cardinality = %d, want %d", tc.ctx, got, tc.want)
+			}
+		}
+
+		s.Remove(pattern(nil, pred(Knows), nil), Graph1)
+		checkIn(t, "after Remove in graph1")
+		if got := c.Cardinality(pattern(nil, pred(Knows), nil), nil); got != 3 {
+			t.Errorf("Remove in graph1 changed the default graph's count to %d, want 3", got)
+		}
+		s.Set(triple(Alice, Knows, Dave), Graph2)
+		checkIn(t, "after Set in graph2")
+		s.Remove(pattern(nil, nil, nil), Graph1)
+		checkIn(t, "after emptying graph1")
+	})
 }
 
 // --- ReachabilityStore -----------------------------------------------------

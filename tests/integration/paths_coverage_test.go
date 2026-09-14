@@ -90,8 +90,8 @@ func TestNamespaceBase(t *testing.T) {
 
 func TestMemoryStoreContextAware(t *testing.T) {
 	s := NewMemoryStore()
-	if s.ContextAware() {
-		t.Error("should not be context aware")
+	if !s.ContextAware() {
+		t.Error("should be context aware: MemoryStore keeps named graphs apart")
 	}
 	if s.TransactionAware() {
 		t.Error("should not be transaction aware")

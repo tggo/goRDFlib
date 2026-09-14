@@ -9,8 +9,8 @@ import (
 // TestContextAware covers ContextAware() (was 0%).
 func TestContextAware(t *testing.T) {
 	s := NewMemoryStore()
-	if s.ContextAware() {
-		t.Error("MemoryStore should not be context-aware")
+	if !s.ContextAware() {
+		t.Error("MemoryStore keeps named graphs apart and must report itself context-aware")
 	}
 }
 

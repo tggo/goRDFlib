@@ -18,7 +18,7 @@ func populateStore(n, m int) *MemoryStore {
 		for pi := range m {
 			pred := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/q/p%d", pi))
 			obj := term.NewLiteral(fmt.Sprintf("v_%d_%d", si, pi))
-			s.addLocked(term.Triple{Subject: subj, Predicate: pred, Object: obj})
+			s.def.add(term.Triple{Subject: subj, Predicate: pred, Object: obj})
 		}
 	}
 	return s
@@ -452,14 +452,15 @@ func TestExists_ShortCircuits(t *testing.T) {
 	}
 }
 
-// --- Verify Count with context (should work same as nil for MemoryStore) ---
+// --- Count is scoped to the graph named by the context ---
 
 func TestCount_WithContext(t *testing.T) {
-	s := populateStore(5, 2) // 10 triples
+	s := populateStore(5, 2) // 10 triples, all in the default graph
 	ctx, _ := term.NewURIRef("http://example.org/graph")
-	// MemoryStore ignores context, so count should still be 10
-	got := s.Count(term.TriplePattern{}, ctx)
-	if got != 10 {
-		t.Errorf("Count with context = %d, want 10", got)
+	if got := s.Count(term.TriplePattern{}, ctx); got != 0 {
+		t.Errorf("Count in an unused named graph = %d, want 0", got)
+	}
+	if got := s.Count(term.TriplePattern{}, nil); got != 10 {
+		t.Errorf("Count in the default graph = %d, want 10", got)
 	}
 }
