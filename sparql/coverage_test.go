@@ -434,8 +434,9 @@ func TestFormatDecimalTrailingZeros(t *testing.T) {
 // --- termValuesEqual edge cases ---
 
 func TestTermValuesEqualBothNil(t *testing.T) {
-	if !termValuesEqual(nil, nil) {
-		t.Error("expected nil == nil")
+	// An unbound operand makes = an error (§17.4.1.3), read as false here.
+	if termValuesEqual(nil, nil) {
+		t.Error("expected nil = nil to be an error")
 	}
 }
 
@@ -642,9 +643,9 @@ func TestEffectiveBooleanValueNil(t *testing.T) {
 }
 
 func TestEffectiveBooleanValueNonLiteral(t *testing.T) {
-	// URIRef has EBV true
-	if !effectiveBooleanValue(rdflibgo.NewURIRefUnsafe("http://example.org/x")) {
-		t.Error("expected true for URI")
+	// §17.2.2: EBV of an IRI is a type error, which a FILTER reads as false.
+	if effectiveBooleanValue(rdflibgo.NewURIRefUnsafe("http://example.org/x")) {
+		t.Error("expected false (error) for URI")
 	}
 }
 

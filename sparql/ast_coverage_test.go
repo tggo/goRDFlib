@@ -517,8 +517,10 @@ func TestEBVDefaultLiteral(t *testing.T) {
 	g.Add(s, p, rdflibgo.NewLiteral("somevalue", rdflibgo.WithDatatype(custom)))
 	g.Add(s, p, rdflibgo.NewLiteral("", rdflibgo.WithDatatype(custom)))
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:v ?v . FILTER(?v) }`)
-	if len(r.Bindings) != 1 {
-		t.Errorf("expected 1 truthy custom-typed literal, got %d", len(r.Bindings))
+	// SPARQL 1.1 §17.2.2: EBV of a literal of an unsupported datatype is a
+	// type error, so FILTER drops both rows.
+	if len(r.Bindings) != 0 {
+		t.Errorf("expected 0 rows for custom-typed literals, got %d", len(r.Bindings))
 	}
 }
 

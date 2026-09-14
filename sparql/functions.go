@@ -673,38 +673,12 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 
 // --- Helpers ---
 
-func effectiveBooleanValue(t rdflibgo.Term) bool {
-	if t == nil {
-		return false
-	}
-	if l, ok := t.(rdflibgo.Literal); ok {
-		switch l.Datatype() {
-		case rdflibgo.XSDBoolean:
-			return l.Lexical() == "true" || l.Lexical() == "1"
-		case rdflibgo.XSDInteger, rdflibgo.XSDInt, rdflibgo.XSDLong:
-			v, _ := strconv.ParseInt(l.Lexical(), 10, 64)
-			return v != 0
-		case rdflibgo.XSDFloat, rdflibgo.XSDDouble, rdflibgo.XSDDecimal:
-			v, _ := strconv.ParseFloat(l.Lexical(), 64)
-			return v != 0
-		case rdflibgo.XSDString:
-			return l.Lexical() != ""
-		default:
-			return l.Lexical() != ""
-		}
-	}
-	return true
-}
-
+// toFloat64 returns the value of a numeric literal, or 0 when t is not a
+// well-formed numeric literal. Only for callers that have already checked t
+// with numericOf, or that need a sort key rather than a value.
 func toFloat64(t rdflibgo.Term) float64 {
-	if t == nil {
-		return 0
-	}
-	if l, ok := t.(rdflibgo.Literal); ok {
-		f, _ := strconv.ParseFloat(l.Lexical(), 64)
-		return f
-	}
-	return 0
+	n, _ := numericOf(t)
+	return n.f
 }
 
 func isIntegral(t rdflibgo.Term) bool {

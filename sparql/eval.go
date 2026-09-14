@@ -1429,115 +1429,6 @@ func containsExists(expr Expr) bool {
 	return false
 }
 
-func evalBinaryOp(op string, left, right rdflibgo.Term) rdflibgo.Term {
-	switch op {
-	case "=":
-		if left == nil || right == nil {
-			return rdflibgo.NewLiteral(false)
-		}
-		return rdflibgo.NewLiteral(termValuesEqual(left, right))
-	case "!=":
-		if left == nil || right == nil {
-			return rdflibgo.NewLiteral(true)
-		}
-		return rdflibgo.NewLiteral(!termValuesEqual(left, right))
-	case "<", ">", "<=", ">=":
-		if left == nil || right == nil {
-			// An unbound operand (or one produced by a failed expression) makes
-			// the relational operator a type error, which evaluates to unbound
-			// — SPARQL 1.1 §17.3. compareTermValues orders nil first, which is
-			// what ORDER BY needs but would silently make `?unbound < 5` true.
-			return nil
-		}
-		c := compareTermValues(left, right)
-		switch op {
-		case "<":
-			return rdflibgo.NewLiteral(c < 0)
-		case ">":
-			return rdflibgo.NewLiteral(c > 0)
-		case "<=":
-			return rdflibgo.NewLiteral(c <= 0)
-		case ">=":
-			return rdflibgo.NewLiteral(c >= 0)
-		}
-	case "&&":
-		return rdflibgo.NewLiteral(effectiveBooleanValue(left) && effectiveBooleanValue(right))
-	case "||":
-		return rdflibgo.NewLiteral(effectiveBooleanValue(left) || effectiveBooleanValue(right))
-	case "+", "-", "*", "/":
-		if left == nil || right == nil {
-			return nil
-		}
-		// Both must be numeric
-		if !isNumericTerm(left) || !isNumericTerm(right) {
-			return nil
-		}
-		lf := toFloat64(left)
-		rf := toFloat64(right)
-		var result float64
-		switch op {
-		case "+":
-			result = lf + rf
-		case "-":
-			result = lf - rf
-		case "*":
-			result = lf * rf
-		case "/":
-			if rf == 0 {
-				return nil
-			}
-			result = lf / rf
-		}
-		if isIntegral(left) && isIntegral(right) && op != "/" {
-			return rdflibgo.NewLiteral(int64(result))
-		}
-		if isDecimal(left) || isDecimal(right) {
-			return rdflibgo.NewLiteral(formatDecimal(result), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-		}
-		return rdflibgo.NewLiteral(result)
-	}
-	return nil
-}
-
-func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
-	switch op {
-	case "!":
-		if arg == nil {
-			return nil // error propagation
-		}
-		// Per SPARQL spec, ! requires EBV which is only defined for certain types
-		if l, ok := arg.(rdflibgo.Literal); ok {
-			dt := l.Datatype()
-			switch {
-			case dt == rdflibgo.XSDBoolean:
-				if l.Lexical() != "true" && l.Lexical() != "false" && l.Lexical() != "0" && l.Lexical() != "1" {
-					return nil // invalid boolean lexical form
-				}
-			case dt == rdflibgo.XSDString || dt == (rdflibgo.URIRef{}) || dt.Value() == "":
-				// plain or xsd:string — EBV defined
-			case isNumericDatatype(dt):
-				// numeric — EBV defined
-			case l.Language() != "":
-				return nil // lang-tagged strings have no EBV
-			default:
-				return nil // unknown datatype, no EBV
-			}
-		} else if _, ok := arg.(rdflibgo.URIRef); ok {
-			return nil // URI has no EBV
-		} else if _, ok := arg.(rdflibgo.BNode); ok {
-			return nil // BNode has no EBV
-		}
-		return rdflibgo.NewLiteral(!effectiveBooleanValue(arg))
-	case "-":
-		f := toFloat64(arg)
-		if isIntegral(arg) {
-			return rdflibgo.NewLiteral(int64(-f))
-		}
-		return rdflibgo.NewLiteral(-f)
-	}
-	return nil
-}
-
 // --- Binding helpers ---
 
 func mergeBindings(a, b map[string]rdflibgo.Term) map[string]rdflibgo.Term {
@@ -1587,55 +1478,10 @@ func solutionKey(s map[string]rdflibgo.Term, vars []string) string {
 	return strings.Join(parts, "|")
 }
 
-func termValuesEqual(a, b rdflibgo.Term) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	la, aIsLit := a.(rdflibgo.Literal)
-	lb, bIsLit := b.(rdflibgo.Literal)
-
-	if aIsLit && bIsLit {
-		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
-		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
-		if errA == nil && errB == nil && isNumericDatatype(la.Datatype()) && isNumericDatatype(lb.Datatype()) {
-			// NaN != NaN per SPARQL/XSD spec
-			if math.IsNaN(fa) || math.IsNaN(fb) {
-				return false
-			}
-			return fa == fb
-		}
-		// Date/dateTime/time value equality
-		if isDateDatatype(la.Datatype()) && isDateDatatype(lb.Datatype()) {
-			if ta, tb, ok := parseDatePair(la, lb); ok {
-				return ta.Equal(tb)
-			}
-		}
-		if la.Language() != "" || lb.Language() != "" {
-			return la.Lexical() == lb.Lexical() && la.Language() == lb.Language()
-		}
-		return la.Lexical() == lb.Lexical()
-	}
-
-	// Triple term value equality: compare components recursively
-	ttA, aIsTT := a.(rdflibgo.TripleTerm)
-	ttB, bIsTT := b.(rdflibgo.TripleTerm)
-	if aIsTT && bIsTT {
-		return termValuesEqual(ttA.Subject(), ttB.Subject()) &&
-			termValuesEqual(ttA.Predicate(), ttB.Predicate()) &&
-			termValuesEqual(ttA.Object(), ttB.Object())
-	}
-	if aIsTT || bIsTT {
-		return false // one is triple term, other isn't
-	}
-
-	return a.N3() == b.N3()
-}
-
+// isNumericTerm reports whether t is a well-formed numeric literal.
 func isNumericTerm(t rdflibgo.Term) bool {
-	if l, ok := t.(rdflibgo.Literal); ok {
-		return isNumericDatatype(l.Datatype())
-	}
-	return false
+	_, ok := numericOf(t)
+	return ok
 }
 
 func isDecimal(t rdflibgo.Term) bool {
@@ -1658,11 +1504,6 @@ func formatDecimal(f float64) string {
 		s += ".0"
 	}
 	return s
-}
-
-func isNumericDatatype(dt rdflibgo.URIRef) bool {
-	return dt == rdflibgo.XSDInteger || dt == rdflibgo.XSDInt || dt == rdflibgo.XSDLong ||
-		dt == rdflibgo.XSDFloat || dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDDecimal
 }
 
 // --- QueryableStore pushdown helpers ---
