@@ -362,7 +362,7 @@ func validateTripleTermString(s, position string) error {
 	}
 	// Check for collection syntax inside
 	for _, p := range parts {
-		if strings.HasPrefix(p, "?_coll") {
+		if strings.HasPrefix(p, "?.coll") {
 			return fmt.Errorf("sparql parse error: collection syntax not allowed inside triple term")
 		}
 	}

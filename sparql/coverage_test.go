@@ -980,7 +980,7 @@ func TestEvalGraphPatternSpecificGraph(t *testing.T) {
 func TestResolveTemplateValueAutoBnode(t *testing.T) {
 	bindings := make(map[string]rdflibgo.Term)
 	scope := bnodes.New(false)
-	result := resolveTemplateValue("?_reifier1", bindings, nil, scope)
+	result := resolveTemplateValue("?.reifier1", bindings, nil, scope)
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -988,17 +988,17 @@ func TestResolveTemplateValueAutoBnode(t *testing.T) {
 		t.Errorf("expected BNode, got %T", result)
 	}
 	// Second call should return same bnode
-	result2 := resolveTemplateValue("?_reifier1", bindings, nil, scope)
+	result2 := resolveTemplateValue("?.reifier1", bindings, nil, scope)
 	if result.N3() != result2.N3() {
 		t.Error("expected same bnode on second call")
 	}
 
 	// Also test _bnode and _coll prefixes
-	result3 := resolveTemplateValue("?_bnode1", bindings, nil, scope)
+	result3 := resolveTemplateValue("?.bnode1", bindings, nil, scope)
 	if _, ok := result3.(rdflibgo.BNode); !ok {
 		t.Errorf("expected BNode for _bnode prefix, got %T", result3)
 	}
-	result4 := resolveTemplateValue("?_coll1", bindings, nil, scope)
+	result4 := resolveTemplateValue("?.coll1", bindings, nil, scope)
 	if _, ok := result4.(rdflibgo.BNode); !ok {
 		t.Errorf("expected BNode for _coll prefix, got %T", result4)
 	}
@@ -3436,7 +3436,7 @@ func TestResolveTemplateValueReifierVar(t *testing.T) {
 	prefixes := map[string]string{}
 	bindings := map[string]rdflibgo.Term{}
 	// _reifier variable should auto-create bnode
-	result := resolveTemplateValue("?_reifier0", bindings, prefixes, bnodes.New(false))
+	result := resolveTemplateValue("?.reifier0", bindings, prefixes, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -3444,7 +3444,7 @@ func TestResolveTemplateValueReifierVar(t *testing.T) {
 
 func TestResolveTemplateValueBnodeVar(t *testing.T) {
 	bindings := map[string]rdflibgo.Term{}
-	result := resolveTemplateValue("?_bnode0", bindings, nil, bnodes.New(false))
+	result := resolveTemplateValue("?.bnode0", bindings, nil, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -3452,7 +3452,7 @@ func TestResolveTemplateValueBnodeVar(t *testing.T) {
 
 func TestResolveTemplateValueCollVar(t *testing.T) {
 	bindings := map[string]rdflibgo.Term{}
-	result := resolveTemplateValue("?_coll0", bindings, nil, bnodes.New(false))
+	result := resolveTemplateValue("?.coll0", bindings, nil, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}

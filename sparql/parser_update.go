@@ -6,16 +6,16 @@ import (
 	"github.com/tggo/goRDFlib/term"
 )
 
-// convertInternalVarsToBnodes replaces internal parser-generated variables (?_reifier*, ?_bnode*, ?_coll*)
+// convertInternalVarsToBnodes replaces internal parser-generated variables (?.reifier*, ?.bnode*, ?.coll*)
 // with blank node labels (_:reifier*, etc.) for use in DATA operations where variables aren't allowed.
 func convertInternalVarsToBnodes(triples []Triple) {
 	mapping := make(map[string]string)
 	convert := func(s string) string {
-		if !strings.HasPrefix(s, "?_") {
+		if !strings.HasPrefix(s, "?"+internalVarMark) {
 			return s
 		}
 		name := s[1:] // strip ?
-		if strings.HasPrefix(name, "_reifier") || strings.HasPrefix(name, "_bnode") || strings.HasPrefix(name, "_coll") {
+		if strings.HasPrefix(name, ".reifier") || strings.HasPrefix(name, ".bnode") || strings.HasPrefix(name, ".coll") {
 			if bn, ok := mapping[s]; ok {
 				return bn
 			}
@@ -479,7 +479,7 @@ func (p *sparqlParser) parseModifyOp(with string, hasDelete, hasInsert bool) (*M
 		for _, qp := range quads {
 			for _, t := range qp.Triples {
 				if strings.HasPrefix(t.Subject, "_:") || strings.HasPrefix(t.Object, "_:") ||
-					strings.HasPrefix(t.Subject, "?_bnode") || strings.HasPrefix(t.Object, "?_bnode") {
+					strings.HasPrefix(t.Subject, "?.bnode") || strings.HasPrefix(t.Object, "?.bnode") {
 					return nil, p.errorf("blank node not allowed in DELETE template")
 				}
 			}

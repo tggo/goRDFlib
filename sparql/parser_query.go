@@ -214,7 +214,7 @@ func (p *sparqlParser) parseConstructAnnotations(q *ParsedQuery, s, pred, obj, r
 		if p.pos+1 < len(p.input) && p.input[p.pos] == '{' && p.input[p.pos+1] == '|' {
 			p.pos += 2
 			p.bnodeCount++
-			reifierID := fmt.Sprintf("?_reifier%d", p.bnodeCount)
+			reifierID := fmt.Sprintf("?.reifier%d", p.bnodeCount)
 			q.Construct = append(q.Construct, TripleTemplate{
 				Subject:   reifierID,
 				Predicate: rdfReifies,

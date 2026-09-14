@@ -395,7 +395,7 @@ func (p *sparqlParser) parseAnnotationsAndReifiers(subj, pred, obj string, predP
 			}
 			p.pos += 2
 			p.bnodeCount++
-			reifierID := fmt.Sprintf("?_reifier%d", p.bnodeCount)
+			reifierID := fmt.Sprintf("?.reifier%d", p.bnodeCount)
 			extra = append(extra, Triple{
 				Subject:   reifierID,
 				Predicate: rdfReifies,
