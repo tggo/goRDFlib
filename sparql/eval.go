@@ -10,6 +10,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -509,10 +510,13 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 func evalConstruct(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) (*Result, error) {
 	result := rdflibgo.NewGraph()
 	for _, sol := range solutions {
+		// SPARQL 1.1 §16.2.1: the blank nodes of the template are fresh for
+		// each solution, and shared by all template triples of that solution.
+		scope := bnodes.New(false)
 		for _, tmpl := range q.Construct {
-			s := resolveTemplateValue(tmpl.Subject, sol, q.Prefixes)
-			p := resolveTemplateValue(tmpl.Predicate, sol, q.Prefixes)
-			o := resolveTemplateValue(tmpl.Object, sol, q.Prefixes)
+			s := resolveTemplateValue(tmpl.Subject, sol, q.Prefixes, scope)
+			p := resolveTemplateValue(tmpl.Predicate, sol, q.Prefixes, scope)
+			o := resolveTemplateValue(tmpl.Object, sol, q.Prefixes, scope)
 			if s == nil || p == nil || o == nil {
 				continue
 			}
@@ -541,19 +545,26 @@ func extractTemplateFromPattern(p Pattern) []TripleTemplate {
 	return nil
 }
 
-func resolveTemplateValue(s string, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
+// resolveTemplateValue instantiates one position of a CONSTRUCT or update
+// template. Blank node labels, and the variables the parser generates for [],
+// collections and reifiers, map to fresh blank nodes through scope, which the
+// caller creates once per instantiation (per solution, or per INSERT DATA
+// operation).
+func resolveTemplateValue(s string, bindings map[string]rdflibgo.Term, prefixes map[string]string, scope bnodes.Scope) rdflibgo.Term {
 	if strings.HasPrefix(s, "?") {
 		v := s[1:]
 		if val, ok := bindings[v]; ok {
 			return val
 		}
-		// Auto-create fresh bnodes for internal reifier/bnode/collection variables
 		if strings.HasPrefix(v, "_reifier") || strings.HasPrefix(v, "_bnode") || strings.HasPrefix(v, "_coll") {
-			bn := rdflibgo.NewBNode("")
-			bindings[v] = bn
-			return bn
+			// "?" cannot start a blank node label, so these keys never
+			// collide with a written _:label.
+			return scope.Label(s)
 		}
 		return nil
+	}
+	if strings.HasPrefix(s, "_:") {
+		return scope.Label(s[2:])
 	}
 	// Triple term in CONSTRUCT template
 	if strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>") {
@@ -577,13 +588,6 @@ func resolveTermRef(s string, prefixes map[string]string) rdflibgo.Term {
 			iri = resolveRelativeIRI(base, iri)
 		}
 		return rdflibgo.NewURIRefUnsafe(iri)
-	}
-	if strings.HasPrefix(s, "_:") {
-		label := s[2:]
-		if scope, ok := prefixes["__bnode_scope__"]; ok {
-			label = scope + label
-		}
-		return rdflibgo.NewBNode(label)
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
 		return parseLiteralString(s)

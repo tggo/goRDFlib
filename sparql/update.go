@@ -7,6 +7,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -33,14 +34,8 @@ func EvalUpdate(ds *Dataset, u *ParsedUpdate) error {
 		prefixes[baseURIKey] = u.BaseURI
 	}
 
-	for i, op := range u.Operations {
-		// Scope bnode labels per operation by adding operation index prefix
-		scopedPrefixes := make(map[string]string, len(prefixes)+1)
-		for k, v := range prefixes {
-			scopedPrefixes[k] = v
-		}
-		scopedPrefixes["__bnode_scope__"] = fmt.Sprintf("_op%d_", i)
-		if err := evalUpdateOp(ds, op, scopedPrefixes); err != nil {
+	for _, op := range u.Operations {
+		if err := evalUpdateOp(ds, op, prefixes); err != nil {
 			return err
 		}
 	}
@@ -65,12 +60,16 @@ func evalUpdateOp(ds *Dataset, op UpdateOperation, prefixes map[string]string) e
 }
 
 func evalInsertData(ds *Dataset, op *InsertDataOp, prefixes map[string]string) error {
+	// SPARQL 1.1 Update §3.1.1: blank nodes in INSERT DATA are new nodes. A
+	// label names the same node throughout the operation, and a different one
+	// in every other operation and request.
+	scope := bnodes.New(false)
 	for _, qp := range op.Quads {
 		g := graphForQuad(ds, qp.Graph)
 		for _, t := range qp.Triples {
-			s := resolveTemplateValue(t.Subject, nil, prefixes)
-			p := resolveTemplateValue(t.Predicate, nil, prefixes)
-			o := resolveTemplateValue(t.Object, nil, prefixes)
+			s := resolveTemplateValue(t.Subject, nil, prefixes, scope)
+			p := resolveTemplateValue(t.Predicate, nil, prefixes, scope)
+			o := resolveTemplateValue(t.Object, nil, prefixes, scope)
 			if s == nil || p == nil || o == nil {
 				continue
 			}
@@ -89,12 +88,13 @@ func evalInsertData(ds *Dataset, op *InsertDataOp, prefixes map[string]string) e
 }
 
 func evalDeleteData(ds *Dataset, op *DeleteDataOp, prefixes map[string]string) error {
+	scope := bnodes.New(false) // DELETE DATA may not contain blank nodes (§3.1.2)
 	for _, qp := range op.Quads {
 		g := graphForQuad(ds, qp.Graph)
 		for _, t := range qp.Triples {
-			s := resolveTemplateValue(t.Subject, nil, prefixes)
-			p := resolveTemplateValue(t.Predicate, nil, prefixes)
-			o := resolveTemplateValue(t.Object, nil, prefixes)
+			s := resolveTemplateValue(t.Subject, nil, prefixes, scope)
+			p := resolveTemplateValue(t.Predicate, nil, prefixes, scope)
+			o := resolveTemplateValue(t.Object, nil, prefixes, scope)
 			if s == nil || p == nil || o == nil {
 				continue
 			}
@@ -120,15 +120,16 @@ func evalDeleteWhere(ds *Dataset, op *DeleteWhereOp, prefixes map[string]string)
 	solutions := evalPattern(ds.Default, pattern, prefixes, namedGraphs)
 
 	for _, sol := range solutions {
+		scope := bnodes.New(false)
 		for _, qp := range op.Quads {
 			g := graphForQuadSolution(ds, qp.Graph, sol)
 			if g == nil {
 				continue
 			}
 			for _, t := range qp.Triples {
-				s := resolveTemplateValue(t.Subject, sol, prefixes)
-				p := resolveTemplateValue(t.Predicate, sol, prefixes)
-				o := resolveTemplateValue(t.Object, sol, prefixes)
+				s := resolveTemplateValue(t.Subject, sol, prefixes, scope)
+				p := resolveTemplateValue(t.Predicate, sol, prefixes, scope)
+				o := resolveTemplateValue(t.Object, sol, prefixes, scope)
 				if s == nil || p == nil || o == nil {
 					continue
 				}
@@ -196,15 +197,17 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	var deletes, inserts []tripleAction
 
 	for _, sol := range solutions {
+		// Update §3.1.3: template blank nodes are fresh for each solution.
+		scope := bnodes.New(false)
 		for _, qp := range op.Delete {
 			g := resolveModifyGraph(ds, qp.Graph, op.With, sol)
 			if g == nil {
 				continue
 			}
 			for _, t := range qp.Triples {
-				s := resolveTemplateValue(t.Subject, sol, prefixes)
-				p := resolveTemplateValue(t.Predicate, sol, prefixes)
-				o := resolveTemplateValue(t.Object, sol, prefixes)
+				s := resolveTemplateValue(t.Subject, sol, prefixes, scope)
+				p := resolveTemplateValue(t.Predicate, sol, prefixes, scope)
+				o := resolveTemplateValue(t.Object, sol, prefixes, scope)
 				if s == nil || p == nil || o == nil {
 					continue
 				}
@@ -225,9 +228,9 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 				continue
 			}
 			for _, t := range qp.Triples {
-				s := resolveTemplateValue(t.Subject, sol, prefixes)
-				p := resolveTemplateValue(t.Predicate, sol, prefixes)
-				o := resolveTemplateValue(t.Object, sol, prefixes)
+				s := resolveTemplateValue(t.Subject, sol, prefixes, scope)
+				p := resolveTemplateValue(t.Predicate, sol, prefixes, scope)
+				o := resolveTemplateValue(t.Object, sol, prefixes, scope)
 				if s == nil || p == nil || o == nil {
 					continue
 				}

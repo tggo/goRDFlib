@@ -6,6 +6,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/paths"
 )
 
@@ -216,17 +217,19 @@ func TestResolveTermRefEmpty(t *testing.T) {
 	}
 }
 
-func TestResolveTermRefBNode(t *testing.T) {
-	result := resolveTermRef("_:b0", nil)
-	if result == nil {
-		t.Fatal("expected non-nil BNode")
-	}
+func TestResolveTemplateValueBNodeLabel(t *testing.T) {
+	scope := bnodes.New(false)
+	result := resolveTemplateValue("_:b0", nil, nil, scope)
 	bn, ok := result.(rdflibgo.BNode)
 	if !ok {
 		t.Fatalf("expected BNode, got %T", result)
 	}
-	if bn.Value() != "b0" {
-		t.Errorf("expected b0, got %s", bn.Value())
+	// A template label names a fresh node, not the node labelled b0.
+	if bn.Value() == "b0" {
+		t.Error("template blank node kept its label")
+	}
+	if again := resolveTemplateValue("_:b0", nil, nil, scope); again != result {
+		t.Error("the same label in one scope must be the same node")
 	}
 }
 
@@ -976,7 +979,8 @@ func TestEvalGraphPatternSpecificGraph(t *testing.T) {
 
 func TestResolveTemplateValueAutoBnode(t *testing.T) {
 	bindings := make(map[string]rdflibgo.Term)
-	result := resolveTemplateValue("?_reifier1", bindings, nil)
+	scope := bnodes.New(false)
+	result := resolveTemplateValue("?_reifier1", bindings, nil, scope)
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -984,24 +988,24 @@ func TestResolveTemplateValueAutoBnode(t *testing.T) {
 		t.Errorf("expected BNode, got %T", result)
 	}
 	// Second call should return same bnode
-	result2 := resolveTemplateValue("?_reifier1", bindings, nil)
+	result2 := resolveTemplateValue("?_reifier1", bindings, nil, scope)
 	if result.N3() != result2.N3() {
 		t.Error("expected same bnode on second call")
 	}
 
 	// Also test _bnode and _coll prefixes
-	result3 := resolveTemplateValue("?_bnode1", bindings, nil)
+	result3 := resolveTemplateValue("?_bnode1", bindings, nil, scope)
 	if _, ok := result3.(rdflibgo.BNode); !ok {
 		t.Errorf("expected BNode for _bnode prefix, got %T", result3)
 	}
-	result4 := resolveTemplateValue("?_coll1", bindings, nil)
+	result4 := resolveTemplateValue("?_coll1", bindings, nil, scope)
 	if _, ok := result4.(rdflibgo.BNode); !ok {
 		t.Errorf("expected BNode for _coll prefix, got %T", result4)
 	}
 }
 
 func TestResolveTemplateValueUnbound(t *testing.T) {
-	result := resolveTemplateValue("?unknown", nil, nil)
+	result := resolveTemplateValue("?unknown", nil, nil, bnodes.New(false))
 	if result != nil {
 		t.Error("expected nil for unbound variable")
 	}
@@ -1352,15 +1356,11 @@ func TestEvalAggExprFuncNonAggEmptyGroup(t *testing.T) {
 
 // --- resolveTermRef edge cases ---
 
-func TestResolveTermRefBNodeWithScope(t *testing.T) {
-	prefixes := map[string]string{"__bnode_scope__": "scope_"}
-	result := resolveTermRef("_:b0", prefixes)
-	if result == nil {
-		t.Fatal("expected non-nil")
-	}
-	bn := result.(rdflibgo.BNode)
-	if bn.Value() != "scope_b0" {
-		t.Errorf("expected scope_b0, got %s", bn.Value())
+func TestResolveTemplateValueBNodeNewScopeIsFresh(t *testing.T) {
+	a := resolveTemplateValue("_:b0", nil, nil, bnodes.New(false))
+	b := resolveTemplateValue("_:b0", nil, nil, bnodes.New(false))
+	if a == b {
+		t.Error("the same label in two scopes must be two nodes")
 	}
 }
 
@@ -3426,7 +3426,7 @@ func TestResolveTemplateValueTripleTerm(t *testing.T) {
 	bindings := map[string]rdflibgo.Term{
 		"s": rdflibgo.NewURIRefUnsafe("http://example.org/s"),
 	}
-	result := resolveTemplateValue(`<<( ?s <http://p> <http://o> )>>`, bindings, prefixes)
+	result := resolveTemplateValue(`<<( ?s <http://p> <http://o> )>>`, bindings, prefixes, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected non-nil")
 	}
@@ -3436,7 +3436,7 @@ func TestResolveTemplateValueReifierVar(t *testing.T) {
 	prefixes := map[string]string{}
 	bindings := map[string]rdflibgo.Term{}
 	// _reifier variable should auto-create bnode
-	result := resolveTemplateValue("?_reifier0", bindings, prefixes)
+	result := resolveTemplateValue("?_reifier0", bindings, prefixes, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -3444,7 +3444,7 @@ func TestResolveTemplateValueReifierVar(t *testing.T) {
 
 func TestResolveTemplateValueBnodeVar(t *testing.T) {
 	bindings := map[string]rdflibgo.Term{}
-	result := resolveTemplateValue("?_bnode0", bindings, nil)
+	result := resolveTemplateValue("?_bnode0", bindings, nil, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -3452,7 +3452,7 @@ func TestResolveTemplateValueBnodeVar(t *testing.T) {
 
 func TestResolveTemplateValueCollVar(t *testing.T) {
 	bindings := map[string]rdflibgo.Term{}
-	result := resolveTemplateValue("?_coll0", bindings, nil)
+	result := resolveTemplateValue("?_coll0", bindings, nil, bnodes.New(false))
 	if result == nil {
 		t.Fatal("expected auto-created bnode")
 	}
@@ -3460,7 +3460,7 @@ func TestResolveTemplateValueCollVar(t *testing.T) {
 
 func TestResolveTemplateValueUnboundCov(t *testing.T) {
 	bindings := map[string]rdflibgo.Term{}
-	result := resolveTemplateValue("?unbound", bindings, nil)
+	result := resolveTemplateValue("?unbound", bindings, nil, bnodes.New(false))
 	if result != nil {
 		t.Error("expected nil for unbound variable")
 	}
@@ -5686,14 +5686,6 @@ func TestResolveTermRefPrefixedName(t *testing.T) {
 	term := resolveTermRef("ex:thing", prefixes)
 	if term == nil {
 		t.Fatal("expected resolved prefixed name")
-	}
-}
-
-func TestResolveTermRefBnode(t *testing.T) {
-	prefixes := map[string]string{"__bnode_scope__": "scope1_"}
-	term := resolveTermRef("_:b1", prefixes)
-	if term == nil {
-		t.Fatal("expected bnode")
 	}
 }
 
