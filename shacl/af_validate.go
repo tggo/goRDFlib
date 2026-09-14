@@ -1,7 +1,5 @@
 package shacl
 
-import "fmt"
-
 // prepareAdvanced sets up the SHACL-AF layer for a validation run.
 //
 // It returns the AF context to attach to the evaluation, and the data graph to
@@ -9,12 +7,8 @@ import "fmt"
 // caller's graph untouched. Returning the graph rather than mutating in place
 // is what keeps Validate free of side effects on its input.
 func prepareAdvanced(dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *Graph) {
+	checkEntailment(shapesGraph, cfg)
 	if !cfg.advanced {
-		// SHACL-AF §7.4: an engine that will not run the rules must not
-		// silently validate the un-inferred graph.
-		if hasRulesEntailment(shapesGraph) {
-			cfg.report(fmt.Errorf("%w: the shapes graph requests the sh:Rules entailment regime, but advanced features are off; pass WithAdvancedFeatures to run the rules", ErrAdvancedFeatures))
-		}
 		return nil, dataGraph
 	}
 

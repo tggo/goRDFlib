@@ -110,15 +110,3 @@ func (ctx *afContext) bindTargetParameters(g *Graph, typeNode, instance Term, qu
 	}
 	return preBindQuery(query, bindings), nil
 }
-
-// hasRulesEntailment reports whether the shapes graph asks for the sh:Rules
-// entailment regime.
-//
-// SHACL-AF §7.4 requires an engine that does not support the regime to signal a
-// failure when this triple is present, rather than quietly validating an
-// un-inferred graph.
-func hasRulesEntailment(shapesGraph *Graph) bool {
-	pred := IRI(SH + "entailment")
-	rules := IRI(SH + "Rules")
-	return shapesGraph.Has(nil, &pred, &rules)
-}
