@@ -25,7 +25,9 @@ func termKey(t rdflibgo.Term) string { return t.N3() }
 // prefix rdf always names the RDF namespace, so a user binding of rdf to another
 // namespace is renamed. A predicate with no QName makes Serialize fail with
 // ErrNoQName, and an RDF/XML syntax name used as a predicate with
-// ErrReservedPropertyName. Nothing is written to w when Serialize fails.
+// ErrReservedPropertyName. A character XML 1.0 cannot carry (U+0001, invalid
+// UTF-8, ...) in an IRI or literal fails with ErrUnrepresentableChar rather than
+// being replaced. Nothing is written to w when Serialize fails.
 //
 // Options: WithBase sets xml:base on the root element.
 func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
@@ -75,9 +77,15 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		}
 	}
 
+	if err := checkXMLChars("xml:base", cfg.base); err != nil {
+		return err
+	}
 	var out bytes.Buffer
 	out.WriteString("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<rdf:RDF")
 	for _, ns := range sw.ns.declarations() {
+		if err := checkXMLChars("namespace of prefix "+sw.ns.prefixOf[ns], ns); err != nil {
+			return err
+		}
 		fmt.Fprintf(&out, "\n   xmlns:%s=%s", sw.ns.prefixOf[ns], xmlAttr(ns))
 	}
 	if cfg.base != "" {
@@ -154,6 +162,9 @@ func (sw *xmlWriter) writeSubject(triples []rdflibgo.Triple) error {
 func (sw *xmlWriter) nodeAttr(n rdflibgo.Term) (string, error) {
 	switch v := n.(type) {
 	case rdflibgo.URIRef:
+		if err := checkXMLChars("subject IRI", v.Value()); err != nil {
+			return "", err
+		}
 		return "rdf:about=" + xmlAttr(v.Value()), nil
 	case rdflibgo.BNode:
 		return "rdf:nodeID=" + xmlAttr(sw.nodeID(v)), nil
@@ -170,6 +181,10 @@ func (sw *xmlWriter) writeProperty(indent string, pred rdflibgo.URIRef, obj rdfl
 	predQN := sw.ns.qname(pred.Value())
 	if predQN == "" {
 		return noQNameError(pred.Value())
+	}
+
+	if err := checkObjectChars(pred, obj); err != nil {
+		return err
 	}
 
 	b := &sw.body
