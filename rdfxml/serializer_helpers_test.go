@@ -84,4 +84,4 @@ func assertRoundTrip(t *testing.T, g *rdflibgo.Graph) string {
 	return out
 }
 
-func iri(s string) rdflibgo.URIRef { return rdflibgo.NewURIRefUnsafe(s) }
+func testIRI(s string) rdflibgo.URIRef { return rdflibgo.NewURIRefUnsafe(s) }

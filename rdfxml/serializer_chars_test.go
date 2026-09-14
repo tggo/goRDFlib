@@ -13,22 +13,22 @@ import (
 func TestSerializeUnrepresentableCharFails(t *testing.T) {
 	cases := map[string]func(g *rdflibgo.Graph){
 		"control char in literal": func(g *rdflibgo.Graph) {
-			g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("a\x01b"))
+			g.Add(testIRI("http://e/s"), testIRI("http://e/p"), rdflibgo.NewLiteral("a\x01b"))
 		},
 		"U+FFFE in literal": func(g *rdflibgo.Graph) {
-			g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("a\uFFFEb"))
+			g.Add(testIRI("http://e/s"), testIRI("http://e/p"), rdflibgo.NewLiteral("a\uFFFEb"))
 		},
 		"invalid UTF-8 in literal": func(g *rdflibgo.Graph) {
-			g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("a\xffb"))
+			g.Add(testIRI("http://e/s"), testIRI("http://e/p"), rdflibgo.NewLiteral("a\xffb"))
 		},
 		"control char in subject IRI": func(g *rdflibgo.Graph) {
-			g.Add(iri("http://e/s\x02"), iri("http://e/p"), rdflibgo.NewLiteral("v"))
+			g.Add(testIRI("http://e/s\x02"), testIRI("http://e/p"), rdflibgo.NewLiteral("v"))
 		},
 		"control char in object IRI": func(g *rdflibgo.Graph) {
-			g.Add(iri("http://e/s"), iri("http://e/p"), iri("http://e/o\x1f"))
+			g.Add(testIRI("http://e/s"), testIRI("http://e/p"), testIRI("http://e/o\x1f"))
 		},
 		"control char inside triple term": func(g *rdflibgo.Graph) {
-			g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewTripleTerm(iri("http://e/a"), iri("http://e/b"), rdflibgo.NewLiteral("\x00")))
+			g.Add(testIRI("http://e/s"), testIRI("http://e/p"), rdflibgo.NewTripleTerm(testIRI("http://e/a"), testIRI("http://e/b"), rdflibgo.NewLiteral("\x00")))
 		},
 	}
 	for name, build := range cases {
@@ -54,6 +54,6 @@ func TestSerializeUnrepresentableCharFails(t *testing.T) {
 // survive a round trip.
 func TestSerializeRepresentableCharsRoundTrip(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("tab\there\r\nnew & <x> \"q\" \U0001F600 \uFFFD"))
+	g.Add(testIRI("http://e/s"), testIRI("http://e/p"), rdflibgo.NewLiteral("tab\there\r\nnew & <x> \"q\" \U0001F600 \uFFFD"))
 	assertRoundTrip(t, g)
 }
