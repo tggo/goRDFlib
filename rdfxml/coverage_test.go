@@ -918,11 +918,12 @@ func TestSerializeRDFTypeNoQName(t *testing.T) {
 	}
 }
 
-// TestResolveInvalidBaseURL covers url.Parse error in resolve.
+// TestResolveInvalidBaseURL pins that a base without a scheme resolves nothing
+// (RFC 3986 §5.1 requires an absolute base).
 func TestResolveInvalidBaseURL(t *testing.T) {
 	p := &rdfxmlParser{base: "://bad-url"}
 	got := p.resolve("relative")
-	// Should return the original URI since base is unparseable
+	// Should return the original URI since the base is not absolute
 	if got != "relative" {
 		t.Errorf("expected unchanged URI, got %q", got)
 	}

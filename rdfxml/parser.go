@@ -4,11 +4,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	"github.com/tggo/goRDFlib/internal/iri"
 )
 
 const (
@@ -718,35 +718,16 @@ func (p *rdfxmlParser) checkID(id string) error {
 	return nil
 }
 
+// resolve resolves uri against the in-scope base per RFC 3986 §5.2, on the IRI
+// string itself (RFC 3987 §6.5). Nothing is percent-encoded or decoded: RDF
+// compares IRIs as strings (RDF 1.1 Concepts §3.2), so "foo%2Fbar" and
+// "foo/bar" are different resources. An empty reference yields the base
+// without its fragment, as §5.2.2 specifies.
 func (p *rdfxmlParser) resolve(uri string) string {
 	if p.base == "" || isAbsoluteIRI(uri) {
 		return uri
 	}
-	if uri == "" {
-		// Empty URI resolves to the base without fragment.
-		if idx := strings.Index(p.base, "#"); idx >= 0 {
-			return p.base[:idx]
-		}
-		return p.base
-	}
-	baseURL, err := url.Parse(p.base)
-	if err != nil {
-		return uri
-	}
-	ref, err := url.Parse(uri)
-	if err != nil {
-		return uri
-	}
-	resolved := baseURL.ResolveReference(ref).String()
-	if strings.Contains(uri, "#") && !strings.Contains(resolved, "#") {
-		resolved += "#"
-	}
-	// Go's url package percent-encodes non-ASCII characters, but RDF uses IRIs
-	// which allow Unicode directly. Unescape percent-encoded Unicode.
-	if unescaped, err := url.PathUnescape(resolved); err == nil {
-		resolved = unescaped
-	}
-	return resolved
+	return iri.Resolve(p.base, uri)
 }
 
 // getBNode resolves every labelled node through the parse's shared scope so
