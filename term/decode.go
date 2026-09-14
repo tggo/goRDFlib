@@ -57,7 +57,7 @@ func literalFromN3(n3 string) (Literal, error) {
 	var afterQuote string
 	if strings.HasPrefix(n3, `"""`) {
 		// Triple-quoted
-		end := strings.Index(n3[3:], `"""`)
+		end := findClosingTripleQuote(n3[3:])
 		if end < 0 {
 			return Literal{}, fmt.Errorf("term: unterminated triple-quoted literal: %q", n3)
 		}
@@ -104,6 +104,22 @@ func findClosingQuote(s string) int {
 			continue
 		}
 		if s[i] == '"' {
+			return i
+		}
+	}
+	return -1
+}
+
+// findClosingTripleQuote finds the index of the closing """ in s, skipping
+// escaped characters. A plain strings.Index stopped at an escaped quote that
+// sits next to the delimiter (`\""""`), truncating the lexical form.
+func findClosingTripleQuote(s string) int {
+	for i := 0; i+2 < len(s); i++ {
+		if s[i] == '\\' {
+			i++ // skip escaped char
+			continue
+		}
+		if s[i] == '"' && s[i+1] == '"' && s[i+2] == '"' {
 			return i
 		}
 	}
@@ -316,7 +332,7 @@ func consumeLiteralN3(s string) int {
 	}
 	i := 0
 	if strings.HasPrefix(s, `"""`) {
-		end := strings.Index(s[3:], `"""`)
+		end := findClosingTripleQuote(s[3:])
 		if end < 0 {
 			return len(s)
 		}

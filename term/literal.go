@@ -243,26 +243,34 @@ var tripleQuotedEscaper = strings.NewReplacer(
 )
 
 // escapeTripleQuotedLiteral escapes a string for use inside triple-quoted N3
-// delimiters (""" ... """). Individual double-quotes are left alone; runs of
-// 3 or more consecutive quotes are broken by inserting backslash escapes.
+// delimiters (""" ... """). Turtle 1.1 [24] STRING_LITERAL_LONG_QUOTE allows at
+// most two raw quotes in a row, and only when a non-quote follows them, so two
+// kinds of quote are escaped: the third of a run, and every quote of a run that
+// reaches the end of the string. Without the second rule `say "hi"` was written
+// as """say "hi"""" and the closing delimiter was read one quote too early.
 func escapeTripleQuotedLiteral(s string) string {
 	s = tripleQuotedEscaper.Replace(s)
-	// Break any run of 3+ consecutive double-quotes.
+	// Quotes from trailing onwards touch the closing delimiter.
+	trailing := len(strings.TrimRight(s, `"`))
 	var b strings.Builder
+	b.Grow(len(s) + 4)
 	consecutiveQuotes := 0
-	for _, r := range s {
-		if r == '"' {
-			consecutiveQuotes++
-			if consecutiveQuotes == 3 {
-				// Insert escape before this quote to break the run.
-				b.WriteString(`\"`)
-				consecutiveQuotes = 1 // the escaped quote starts a new run
-				continue
-			}
-		} else {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '"' {
 			consecutiveQuotes = 0
+			b.WriteByte(c)
+			continue
 		}
-		b.WriteRune(r)
+		consecutiveQuotes++
+		if consecutiveQuotes == 3 || i >= trailing {
+			// An escaped quote is an ECHAR, not a raw quote, so the run
+			// starts over after it.
+			b.WriteString(`\"`)
+			consecutiveQuotes = 0
+			continue
+		}
+		b.WriteByte(c)
 	}
 	return b.String()
 }
