@@ -24,13 +24,32 @@ type LiteralOption func(*Literal)
 // langTagRegex validates BCP 47 / RFC 5646 language tags (simplified).
 var langTagRegex = regexp.MustCompile(`^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$`)
 
+// ValidLanguageTag reports whether tag is a well-formed language tag in the
+// simplified BCP 47 form this package accepts: a primary subtag of 1-8 letters
+// followed by any number of "-" subtags of 1-8 letters or digits ("en",
+// "en-GB", "zh-Hant-TW"). The comparison is case-insensitive. A base direction
+// ("--ltr") is not part of the tag.
+//
+// Parsers should call it before WithLang and reject the input on false, since
+// WithLang cannot report an error. The Turtle grammar's LANGTAG production is
+// looser than BCP 47 (it has no length limit), which is how an input such as
+// "x"@abcdefghi reaches a parser at all.
+func ValidLanguageTag(tag string) bool {
+	return langTagRegex.MatchString(tag)
+}
+
 // WithLang sets the language tag. The tag is normalized to lowercase.
-// Invalid tags (per RFC 5646 simplified pattern) are silently ignored
-// to match Python rdflib behavior; RDF 1.1 Concepts §3.3 says tags SHOULD be valid BCP 47.
+//
+// An invalid tag (see ValidLanguageTag) is ignored rather than stored, and the
+// literal keeps the datatype it would have without the option — for a string
+// value that is a plain xsd:string, so the tag silently disappears. This
+// matches Python rdflib, and an option cannot return an error. Code that reads
+// tags from untrusted input must check ValidLanguageTag first and report
+// ErrInvalidLanguageTag itself.
 func WithLang(lang string) LiteralOption {
 	return func(l *Literal) {
-		if lang != "" && !langTagRegex.MatchString(lang) {
-			return // invalid tag, skip
+		if lang != "" && !ValidLanguageTag(lang) {
+			return // invalid tag, see doc comment
 		}
 		l.lang = strings.ToLower(lang)
 	}

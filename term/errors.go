@@ -7,6 +7,10 @@ var (
 	// ErrInvalidIRI indicates an IRI contains forbidden characters.
 	ErrInvalidIRI = errors.New("rdflibgo: invalid IRI")
 
+	// ErrInvalidLanguageTag indicates a language tag is not well-formed.
+	// See ValidLanguageTag.
+	ErrInvalidLanguageTag = errors.New("rdflibgo: invalid language tag")
+
 	// ErrUnknownFormat indicates a parser/serializer format is not registered.
 	ErrUnknownFormat = errors.New("rdflibgo: unknown format")
 
