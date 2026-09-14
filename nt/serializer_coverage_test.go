@@ -2,6 +2,7 @@ package nt
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -312,38 +313,29 @@ func TestSerializeIRIWithSpecialChars(t *testing.T) {
 	}
 }
 
-// TestSerializeIRIWithControlChar exercises EscapeIRI with control character.
+// TestSerializeIRIWithControlChar: a control character is not allowed in an
+// IRI; writing it as \u0001 produced a document that is not an IRI either.
 func TestSerializeIRIWithControlChar(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/a\x01b")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	g.Add(s, p, rdflibgo.NewLiteral("v"))
 
-	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, `\u0001`) {
-		t.Errorf("expected \\u0001 in IRI, got:\n%s", out)
+	if err := Serialize(g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
+		t.Errorf("want ErrInvalidIRI, got %v", err)
 	}
 }
 
-// TestSerializeIRIWithAngleBrackets exercises EscapeIRI with < and > chars.
+// TestSerializeIRIWithAngleBrackets: \u003C decodes back to '<', which the
+// parser rejects, so the serializer refuses it up front.
 func TestSerializeIRIWithAngleBrackets(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/a<b>c")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	g.Add(s, p, rdflibgo.NewLiteral("v"))
 
-	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
-		t.Fatal(err)
-	}
-	// Should escape < and > in IRI
-	out := buf.String()
-	if !strings.Contains(out, `\u003C`) && !strings.Contains(out, `\u003c`) {
-		t.Errorf("expected escaped angle brackets in IRI, got:\n%s", out)
+	if err := Serialize(g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
+		t.Errorf("want ErrInvalidIRI, got %v", err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package ntsyntax
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -93,5 +94,24 @@ func TestEscapeIRI_NoEscapeNeeded(t *testing.T) {
 	got := EscapeIRI(input)
 	if got != input {
 		t.Errorf("expected fast path, got %q", got)
+	}
+}
+
+func TestIRIRejectsWhatIRIREFCannotCarry(t *testing.T) {
+	cases := map[string]error{
+		"http://example.org/ok":       nil,
+		"urn:isbn:0451450523":         nil,
+		"relative":                    ErrRelativeIRI,
+		"//host/path":                 ErrRelativeIRI,
+		"1http://x/":                  ErrRelativeIRI,
+		"http://example.org/a b":      ErrInvalidIRI,
+		"http://example.org/\x7f\x00": ErrInvalidIRI,
+		"http://example.org/\xc3":     ErrInvalidUTF8,
+	}
+	for in, want := range cases {
+		_, err := IRI(in)
+		if want == nil && err != nil || want != nil && !errors.Is(err, want) {
+			t.Errorf("IRI(%q) error = %v, want %v", in, err, want)
+		}
 	}
 }

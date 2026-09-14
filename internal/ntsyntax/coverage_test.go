@@ -422,7 +422,10 @@ func TestTermTripleTerm(t *testing.T) {
 
 func TestLiteralWithLang(t *testing.T) {
 	l := rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en"))
-	s := Literal(l)
+	s, err := Literal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s != `"hello"@en` {
 		t.Errorf("got %s", s)
 	}
@@ -430,7 +433,10 @@ func TestLiteralWithLang(t *testing.T) {
 
 func TestLiteralWithDirLang(t *testing.T) {
 	l := rdflibgo.NewLiteral("hello", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl"))
-	s := Literal(l)
+	s, err := Literal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s != `"hello"@ar--rtl` {
 		t.Errorf("got %s", s)
 	}
@@ -438,7 +444,10 @@ func TestLiteralWithDirLang(t *testing.T) {
 
 func TestLiteralWithDatatype(t *testing.T) {
 	l := rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-	s := Literal(l)
+	s, err := Literal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
 	expected := `"42"^^<http://www.w3.org/2001/XMLSchema#integer>`
 	if s != expected {
 		t.Errorf("got %s", s)

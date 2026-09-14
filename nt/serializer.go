@@ -9,7 +9,21 @@ import (
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
 )
 
-// Serialize writes the graph in N-Triples format.
+// Errors Serialize returns for terms N-Triples cannot express. They are the
+// same values nq.Serialize returns, so errors.Is works with either package.
+var (
+	// ErrRelativeIRI: N-Triples 1.1 §2.2 allows only absolute IRIs.
+	ErrRelativeIRI = ntsyntax.ErrRelativeIRI
+	// ErrInvalidUTF8: an IRI or literal is not valid UTF-8.
+	ErrInvalidUTF8 = ntsyntax.ErrInvalidUTF8
+	// ErrInvalidIRI: an IRI contains a character no IRI may contain (space,
+	// control characters, <>"{}|^`\).
+	ErrInvalidIRI = ntsyntax.ErrInvalidIRI
+)
+
+// Serialize writes the graph in N-Triples format. It fails, writing nothing,
+// when a term cannot be expressed in N-Triples: see ErrRelativeIRI,
+// ErrInvalidUTF8 and ErrInvalidIRI.
 func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {

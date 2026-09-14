@@ -1,23 +1,39 @@
 package ntsyntax
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 )
 
+// ErrRelativeIRI is returned when a term to be serialized holds a relative
+// IRI. N-Triples 1.1 §2.2 and N-Quads 1.1 §2.2 allow only absolute IRIs, and
+// the parsers in this module reject anything else.
+var ErrRelativeIRI = errors.New("relative IRI cannot be written in N-Triples or N-Quads")
+
+// ErrInvalidUTF8 is returned when an IRI or literal to be serialized is not
+// valid UTF-8. N-Triples and N-Quads documents are UTF-8 (§4 media type
+// registration), and neither UCHAR nor ECHAR can spell a byte that is not part
+// of a code point.
+var ErrInvalidUTF8 = errors.New("invalid UTF-8 cannot be written in N-Triples or N-Quads")
+
 // Term serializes an RDF term to N-Triples syntax.
-// Returns an error for unsupported term types instead of falling back to N3.
+// Returns an error for unsupported term types instead of falling back to N3,
+// and for terms the N-Triples grammar cannot express: relative IRIs
+// (ErrRelativeIRI), IRIs containing characters IRIREF excludes (ErrInvalidIRI)
+// and invalid UTF-8 (ErrInvalidUTF8).
 func Term(t rdflibgo.Term) (string, error) {
 	switch v := t.(type) {
 	case rdflibgo.URIRef:
-		return "<" + EscapeIRI(v.Value()) + ">", nil
+		return IRI(v.Value())
 	case rdflibgo.BNode:
 		return "_:" + v.Value(), nil
 	case rdflibgo.Literal:
-		return Literal(v), nil
+		return Literal(v)
 	case rdflibgo.TripleTerm:
 		return TripleTermStr(v)
 	default:
@@ -42,20 +58,59 @@ func TripleTermStr(tt rdflibgo.TripleTerm) (string, error) {
 	return "<<( " + s + " " + p + " " + o + " )>>", nil
 }
 
-// Literal serializes a Literal to N-Triples syntax.
-func Literal(l rdflibgo.Literal) string {
-	escaped := EscapeString(l.Lexical())
-	quoted := `"` + escaped + `"`
+// IRI serializes an IRI as an N-Triples IRIREF, <...>.
+//
+// IRIREF ([^#x00-#x20<>"{}|^`\] | UCHAR)* excludes those characters raw, and
+// writing them as UCHAR would not help: the result is still not an IRI
+// (RFC 3987 excludes them too) and this module's parsers reject it. They
+// are reported as ErrInvalidIRI instead.
+func IRI(iri string) (string, error) {
+	if !utf8.ValidString(iri) {
+		return "", fmt.Errorf("%w: IRI %q; fix the data at its source", ErrInvalidUTF8, iri)
+	}
+	for i, r := range iri {
+		if r <= 0x20 || isIRIREFExcluded(r) {
+			return "", fmt.Errorf("%w: IRI %q has %q at byte %d, which no IRI may contain; percent-encode it (%%%02X) before serializing",
+				ErrInvalidIRI, iri, r, i, r)
+		}
+	}
+	if !isAbsoluteIRI(iri) {
+		return "", fmt.Errorf("%w: <%s> has no scheme; resolve it against a base IRI before serializing, "+
+			"or use Turtle, which can write relative IRIs with @base", ErrRelativeIRI, iri)
+	}
+	return "<" + EscapeIRI(iri) + ">", nil
+}
+
+func isIRIREFExcluded(r rune) bool {
+	switch r {
+	case '<', '>', '"', '{', '}', '|', '^', '`', '\\':
+		return true
+	}
+	return false
+}
+
+// Literal serializes a Literal to N-Triples syntax. It fails with
+// ErrInvalidUTF8 when the lexical form is not UTF-8, and with the IRI errors
+// when the datatype cannot be written.
+func Literal(l rdflibgo.Literal) (string, error) {
+	if !utf8.ValidString(l.Lexical()) {
+		return "", fmt.Errorf("%w: literal %q; fix the data at its source, or store the bytes as a base64 or hex literal", ErrInvalidUTF8, l.Lexical())
+	}
+	quoted := `"` + EscapeString(l.Lexical()) + `"`
 	if l.Language() != "" {
 		if l.Dir() != "" {
-			return quoted + "@" + l.Language() + "--" + l.Dir()
+			return quoted + "@" + l.Language() + "--" + l.Dir(), nil
 		}
-		return quoted + "@" + l.Language()
+		return quoted + "@" + l.Language(), nil
 	}
 	if l.Datatype() != (rdflibgo.URIRef{}) && l.Datatype() != rdflibgo.XSDString {
-		return quoted + "^^<" + EscapeIRI(l.Datatype().Value()) + ">"
+		dt, err := IRI(l.Datatype().Value())
+		if err != nil {
+			return "", fmt.Errorf("datatype of %q: %w", l.Lexical(), err)
+		}
+		return quoted + "^^" + dt, nil
 	}
-	return quoted
+	return quoted, nil
 }
 
 // EscapeString escapes a string per N-Triples spec.
