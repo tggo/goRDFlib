@@ -83,31 +83,7 @@ func arithmetic(op string, left, right rdflibgo.Term) rdflibgo.Term {
 	if !ok {
 		return nil
 	}
-	lf, rf := a.f, b.f
-	var result float64
-	switch op {
-	case "+":
-		result = lf + rf
-	case "-":
-		result = lf - rf
-	case "*":
-		result = lf * rf
-	case "/":
-		if rf == 0 {
-			return nil
-		}
-		result = lf / rf
-	}
-	if a.kind == numInteger && b.kind == numInteger && op != "/" {
-		if math.IsNaN(result) || math.IsInf(result, 0) || result > math.MaxInt64 || result < math.MinInt64 {
-			return nil
-		}
-		return rdflibgo.NewLiteral(int64(result))
-	}
-	if left.(rdflibgo.Literal).Datatype() == rdflibgo.XSDDecimal || right.(rdflibgo.Literal).Datatype() == rdflibgo.XSDDecimal {
-		return rdflibgo.NewLiteral(formatDecimal(result), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-	}
-	return rdflibgo.NewLiteral(result)
+	return numericArithmetic(op, a, b)
 }
 
 func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
@@ -124,9 +100,10 @@ func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
 			return nil
 		}
 		if n.kind == numInteger {
-			return rdflibgo.NewLiteral(new(big.Int).Neg(n.i).String(), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+			n.i = new(big.Int).Neg(n.i)
 		}
-		return rdflibgo.NewLiteral(-n.f)
+		n.f = -n.f
+		return numericLiteral(n)
 	}
 	return nil
 }

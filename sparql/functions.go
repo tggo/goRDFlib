@@ -80,10 +80,9 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 	case "ISNUMERIC":
 		vals := evalArgs()
 		if len(vals) == 1 {
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				dt := l.Datatype()
-				return rdflibgo.NewLiteral(dt == rdflibgo.XSDInteger || dt == rdflibgo.XSDFloat || dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDDecimal)
-			}
+			// §17.4.2.5: true for a numeric value, false for an ill-typed
+			// numeric literal such as "1200"^^xsd:byte.
+			return rdflibgo.NewLiteral(isNumericTerm(vals[0]))
 		}
 		return rdflibgo.NewLiteral(false)
 
@@ -681,9 +680,12 @@ func toFloat64(t rdflibgo.Term) float64 {
 	return n.f
 }
 
+// isIntegral reports whether t is a literal of xsd:integer or a type derived
+// from it.
 func isIntegral(t rdflibgo.Term) bool {
 	if l, ok := t.(rdflibgo.Literal); ok {
-		return l.Datatype() == rdflibgo.XSDInteger || l.Datatype() == rdflibgo.XSDInt || l.Datatype() == rdflibgo.XSDLong
+		k, ok := numericKind(l.Datatype())
+		return ok && k == numInteger
 	}
 	return false
 }
@@ -973,7 +975,7 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 			} else {
 				s = "false"
 			}
-		} else if dt == rdflibgo.XSDInteger || dt == rdflibgo.XSDInt || dt == rdflibgo.XSDLong {
+		} else if isIntegral(val) {
 			if v, err := strconv.ParseInt(s, 10, 64); err == nil {
 				s = strconv.FormatInt(v, 10)
 			}

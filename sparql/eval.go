@@ -2,7 +2,6 @@ package sparql
 
 import (
 	"fmt"
-	"math"
 	"net/url"
 	"slices"
 	"strconv"
@@ -451,53 +450,23 @@ func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[
 	switch fe.Name {
 	case "COUNT":
 		return rdflibgo.NewLiteral(len(vals), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-	case "SUM":
+	case "SUM", "AVG":
+		// §18.5.1: Sum folds op:numeric-add over the values, starting from
+		// integer 0, so the result has the promoted type of its inputs; Avg is
+		// Sum / Count, and 0 for an empty group.
 		if hasError {
 			return nil
 		}
-		sum := 0.0
-		allInt := true
-		hasDecimal := false
+		var sum rdflibgo.Term = rdflibgo.NewLiteral("0", rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 		for _, v := range vals {
-			sum += toFloat64(v)
-			if !isIntegral(v) {
-				allInt = false
-			}
-			if l, ok := v.(rdflibgo.Literal); ok && l.Datatype() == rdflibgo.XSDDecimal {
-				hasDecimal = true
+			if sum = arithmetic("+", sum, v); sum == nil {
+				return nil
 			}
 		}
-		if allInt {
-			// Check for int64 overflow before casting
-			if sum > float64(math.MaxInt64) || sum < float64(math.MinInt64) || math.IsNaN(sum) || math.IsInf(sum, 0) {
-				return rdflibgo.NewLiteral(sum)
-			}
-			return rdflibgo.NewLiteral(int64(sum), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
+		if fe.Name == "SUM" || len(vals) == 0 {
+			return sum
 		}
-		if hasDecimal {
-			return rdflibgo.NewLiteral(formatDecimal(sum), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-		}
-		return rdflibgo.NewLiteral(sum)
-	case "AVG":
-		if hasError {
-			return nil
-		}
-		if len(vals) == 0 {
-			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-		}
-		sum := 0.0
-		hasDecimal := false
-		for _, v := range vals {
-			sum += toFloat64(v)
-			if l, ok := v.(rdflibgo.Literal); ok && l.Datatype() == rdflibgo.XSDDecimal {
-				hasDecimal = true
-			}
-		}
-		avg := sum / float64(len(vals))
-		if hasDecimal {
-			return rdflibgo.NewLiteral(formatDecimal(avg), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-		}
-		return rdflibgo.NewLiteral(avg)
+		return arithmetic("/", sum, rdflibgo.NewLiteral(strconv.Itoa(len(vals)), rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	case "MIN":
 		if len(vals) == 0 {
 			return nil
