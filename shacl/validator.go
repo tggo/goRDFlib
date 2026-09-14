@@ -3,6 +3,7 @@ package shacl
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/tggo/goRDFlib/term"
 )
@@ -27,6 +28,10 @@ var ErrMalformedTarget = errors.New("shacl: malformed target")
 // a malformed rule, a rule set that does not terminate — are only visible
 // through WithErrorHandler. Use ApplyRules when the inference itself is what
 // matters.
+//
+// Results are sorted by focus node, then path, constraint component and value,
+// so the same input gives the same report order on every run; see
+// orderResults for how blank nodes are handled.
 func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 	cfg := newConfig(opts)
 	af, dataGraph := prepareAdvanced(dataGraph, shapesGraph, cfg)
@@ -47,7 +52,10 @@ func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 
 	var allResults []ValidationResult
 
-	for _, s := range shapes {
+	// Shapes are visited in the order of their keys rather than map order, so
+	// that anything reported to the error handler along the way arrives in the
+	// same sequence on every run.
+	for _, s := range shapesInOrder(shapes) {
 		if s.Deactivated {
 			continue
 		}
@@ -62,6 +70,8 @@ func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 			allResults = append(allResults, results...)
 		}
 	}
+
+	orderResults(allResults)
 
 	// Source lines are filled in once over the finished report rather than at
 	// each place a result is built, so a constraint never has to know that
@@ -82,6 +92,20 @@ func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 		Conforms: conforms,
 		Results:  allResults,
 	}
+}
+
+// shapesInOrder returns the parsed shapes sorted by their map key.
+func shapesInOrder(shapes map[string]*Shape) []*Shape {
+	keys := make([]string, 0, len(shapes))
+	for k := range shapes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]*Shape, len(keys))
+	for i, k := range keys {
+		out[i] = shapes[k]
+	}
+	return out
 }
 
 func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []ValidationResult {
