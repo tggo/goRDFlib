@@ -59,6 +59,11 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	}
 	// Applied before the document's own @context; see WithExpandContext.
 	ldOpts.ExpandContext = cfg.expandContext
+	// Work around json-gold dropping the "#" of a relative @vocab; see
+	// resolveEmptyFragmentVocab.
+	var docBase string
+	ldOpts.ExpandContext, docBase = fixExpandContextVocab(cfg.expandContext, base)
+	resolveEmptyFragmentVocab(doc, docBase)
 
 	var nquads any
 	// json-gold is not defensive about every malformed document and can panic
