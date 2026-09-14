@@ -152,22 +152,21 @@ func TestSerializeWriterErrorWithNamespace(t *testing.T) {
 	}
 }
 
-// TestSerializeCompactError covers the proc.Compact error path in Serialize.
-// When the namespace map contains "@context" as a key, json-gold interprets its
-// value as a remote context URL and tries to load it. Using a failing document
-// loader causes Compact to return an error.
-func TestSerializeCompactError(t *testing.T) {
+// TestSerializeKeywordPrefixIgnored: a prefix bound as "@context" used to go
+// into the compaction context, where json-gold took its value for a remote
+// context URL and tried to load it. A keyword is not a term, so the binding is
+// left out and nothing is loaded. (This test used to cover the Compact error
+// branch through that bug; with the context filtered, no graph reaches it.)
+func TestSerializeKeywordPrefixIgnored(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	s, _ := rdflibgo.NewURIRef("http://example.org/s")
+	s, _ := rdflibgo.NewURIRef("http://example.org/remote-ctx.jsonld#s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	// Bind "@context" as a prefix — json-gold treats its IRI value as a remote context URL.
 	g.Bind("@context", rdflibgo.NewURIRefUnsafe("http://example.org/remote-ctx.jsonld"))
 	g.Add(s, p, rdflibgo.NewLiteral("v"))
 
 	var buf strings.Builder
-	err := Serialize(g, &buf, WithDocumentLoader(failingDocumentLoader{}))
-	if err == nil {
-		t.Error("expected Compact error when remote context loading fails")
+	if err := Serialize(g, &buf, WithDocumentLoader(failingDocumentLoader{})); err != nil {
+		t.Fatalf("keyword binding must not reach the processor: %v", err)
 	}
 }
 
