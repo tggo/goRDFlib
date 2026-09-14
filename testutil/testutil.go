@@ -81,11 +81,27 @@ func tripleSet(ts []triple) map[string]bool {
 }
 
 func tripleKey(t triple) string {
-	return fmt.Sprintf("%s %s %s", t.s.(term.Subject).N3(), t.p.(term.URIRef).N3(), termN3(t.o))
+	return fmt.Sprintf("%s %s %s", termIdentity(t.s), termIdentity(t.p), termIdentity(t.o))
 }
 
-func termN3(t term.Term) string {
-	return t.N3()
+// termIdentity renders a term so that two terms get the same string exactly
+// when they are the same RDF term. N3() cannot be used: its numeric shorthand
+// is only as strict as the serializer, and it once rendered
+// "1.5e3"^^xsd:decimal and "1.5e3"^^xsd:double identically, so graphs that
+// differed in a datatype compared equal.
+func termIdentity(t term.Term) string {
+	switch v := t.(type) {
+	case term.Literal:
+		return "L\x00" + v.Lexical() + "\x00" + v.Datatype().Value() + "\x00" + v.Language() + "\x00" + v.Dir()
+	case term.URIRef:
+		return "<" + v.Value() + ">"
+	case term.BNode:
+		return "_:" + v.Value()
+	case term.TripleTerm:
+		return "<<( " + termIdentity(v.Subject()) + " " + termIdentity(v.Predicate()) + " " + termIdentity(v.Object()) + " )>>"
+	default:
+		return t.N3()
+	}
 }
 
 // isomorphic checks whether two sets of triples are isomorphic under blank-node
@@ -190,9 +206,9 @@ func termSigString(t term.Term) string {
 	case term.BNode:
 		return "_"
 	case term.TripleTerm:
-		return "<<( " + termSigString(v.Subject()) + " " + v.Predicate().N3() + " " + termSigString(v.Object()) + " )>>"
+		return "<<( " + termSigString(v.Subject()) + " " + termIdentity(v.Predicate()) + " " + termSigString(v.Object()) + " )>>"
 	default:
-		return t.N3()
+		return termIdentity(t)
 	}
 }
 
@@ -274,7 +290,7 @@ func verifyMapping(exp []triple, actSet map[string]bool, mapping map[string]stri
 
 func applyMapping(tr triple, mapping map[string]string) string {
 	s := mapTerm(tr.s, mapping)
-	p := tr.p.(term.URIRef).N3()
+	p := termIdentity(tr.p)
 	o := mapTerm(tr.o, mapping)
 	return fmt.Sprintf("%s %s %s", s, p, o)
 }
@@ -285,14 +301,14 @@ func mapTerm(t term.Term, mapping map[string]string) string {
 		if mapped, exists := mapping[v.Value()]; exists {
 			return "_:" + mapped
 		}
-		return v.N3()
+		return termIdentity(v)
 	case term.TripleTerm:
 		s := mapTerm(v.Subject(), mapping)
-		p := v.Predicate().N3()
+		p := termIdentity(v.Predicate())
 		o := mapTerm(v.Object(), mapping)
 		return "<<( " + s + " " + p + " " + o + " )>>"
 	default:
-		return termN3(t)
+		return termIdentity(t)
 	}
 }
 

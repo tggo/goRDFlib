@@ -141,16 +141,12 @@ func (l Literal) N3(ns ...NamespaceManager) string {
 			return l.lexical
 		}
 	case XSDDouble:
-		if strings.ContainsAny(l.lexical, "eE") {
-			if _, err := strconv.ParseFloat(l.lexical, 64); err == nil {
-				return l.lexical
-			}
+		if isTurtleDouble(l.lexical) {
+			return l.lexical
 		}
 	case XSDDecimal:
-		if strings.Contains(l.lexical, ".") {
-			if _, err := strconv.ParseFloat(l.lexical, 64); err == nil {
-				return l.lexical
-			}
+		if isTurtleDecimal(l.lexical) {
+			return l.lexical
 		}
 	case XSDBoolean:
 		if l.lexical == "true" || l.lexical == "false" {

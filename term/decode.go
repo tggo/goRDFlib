@@ -31,16 +31,15 @@ func TermFromKey(key string) (Term, error) {
 // Handles: "lex", "lex"@lang, "lex"@lang--dir, "lex"^^<datatype>,
 // and shorthand forms (integers, decimals, booleans).
 func literalFromN3(n3 string) (Literal, error) {
-	// Shorthand: bare integer (e.g. "42")
-	if len(n3) > 0 && (n3[0] == '-' || n3[0] == '+' || (n3[0] >= '0' && n3[0] <= '9')) {
-		if strings.Contains(n3, ".") {
-			// Decimal
-			return NewLiteral(n3, WithDatatype(XSDDecimal)), nil
-		}
-		if strings.ContainsAny(n3, "eE") {
-			// Double
-			return NewLiteral(n3, WithDatatype(XSDDouble)), nil
-		}
+	// Numeric shorthand, recognised by the same Turtle productions N3 writes
+	// it with. Testing for "." before the exponent read every double with a
+	// fraction ("1.5e3") back as an xsd:decimal.
+	switch {
+	case isTurtleDouble(n3):
+		return NewLiteral(n3, WithDatatype(XSDDouble)), nil
+	case isTurtleDecimal(n3):
+		return NewLiteral(n3, WithDatatype(XSDDecimal)), nil
+	case isTurtleInteger(n3):
 		return NewLiteral(n3, WithDatatype(XSDInteger)), nil
 	}
 	// Shorthand: boolean

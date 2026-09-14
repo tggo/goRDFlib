@@ -1026,13 +1026,13 @@ func TestTermFromKey_TripleTermInvalid(t *testing.T) {
 // =============================================================================
 
 func TestLiteralFromN3_DoubleShorthand(t *testing.T) {
-	// "1.5e10" contains both "." and "eE", but literalFromN3 checks "." first → decimal
+	// "1.5e10" has a fraction and an exponent: Turtle DOUBLE [21], not DECIMAL.
 	lit, err := literalFromN3("1.5e10")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if lit.Datatype() != XSDDecimal {
-		t.Errorf("expected xsd:decimal, got %v", lit.Datatype())
+	if lit.Datatype() != XSDDouble {
+		t.Errorf("expected xsd:double, got %v", lit.Datatype())
 	}
 	// Pure exponent form without dot → double
 	lit2, err := literalFromN3("15e10")
