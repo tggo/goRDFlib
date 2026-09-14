@@ -45,7 +45,10 @@ func (p *sparqlParser) readTermOrVar() string {
 	if ch == '"' || ch == '\'' {
 		s := p.readStringLiteral()
 		if err := validateStringEscapes(s); err != nil {
-			return "" // will cause a parse error downstream
+			// Returning "" alone is not enough: an expression reads "" as an
+			// empty literal. The deferred error is reported by the caller.
+			p.tripleTermError = p.errorf("%s", err)
+			return ""
 		}
 		if err := validateLangDir(s); err != nil {
 			p.tripleTermError = err

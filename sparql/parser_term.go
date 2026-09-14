@@ -185,7 +185,8 @@ func closingQuoteIndex(s string, quote byte, long bool) int {
 }
 
 // sparqlStringUnescaper is a package-level replacer for SPARQL string escape sequences.
-var sparqlStringUnescaper = strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\n`, "\n", `\r`, "\r", `\t`, "\t")
+// It covers every ECHAR of SPARQL 1.1 grammar [160]: \t \b \n \r \f \" \' \\.
+var sparqlStringUnescaper = strings.NewReplacer(`\"`, `"`, `\'`, `'`, `\\`, `\`, `\n`, "\n", `\r`, "\r", `\t`, "\t", `\b`, "\b", `\f`, "\f")
 
 func unescapeSPARQLString(s string) string {
 	return sparqlStringUnescaper.Replace(s)
@@ -231,61 +232,51 @@ func validateLangDir(s string) error {
 	return nil
 }
 
-// validateStringEscapes checks for invalid escape sequences in string literals.
+// validateStringEscapes checks the escape sequences of a string literal token.
+// Every escape must be an ECHAR (grammar [160]) or a complete codepoint escape
+// (\uHHHH, \UHHHHHHHH) that is not a surrogate. The parser has already
+// replaced valid codepoint escapes (preprocessCodepointEscapes, SPARQL 1.1
+// §19.2), so in a query a \u or \U that reaches here is malformed.
 func validateStringEscapes(s string) error {
 	if s == "" {
 		return nil
 	}
-	// Find the string content (between quotes)
 	quote := s[0]
 	long := len(s) >= 6 && s[1] == quote && s[2] == quote
-	var content string
-	if long {
-		q3 := string([]byte{quote, quote, quote})
-		end := strings.Index(s[3:], q3)
-		if end >= 0 {
-			content = s[3 : 3+end]
-		}
-	} else {
-		end := strings.Index(s[1:], string(quote))
-		if end >= 0 {
-			content = s[1 : 1+end]
-		}
+	end := closingQuoteIndex(s, quote, long)
+	if end < 0 {
+		return nil // unterminated: reported by the caller
 	}
-
+	content := s[1:end]
+	if long {
+		content = s[3:end]
+	}
 	for i := 0; i < len(content); i++ {
-		if content[i] == '\\' && i+1 < len(content) {
-			next := content[i+1]
-			switch next {
-			case 't', 'n', 'r', '\\', '"', '\'':
-				i++ // valid escape
-			case 'u':
-				if i+5 < len(content) {
-					hex := content[i+2 : i+6]
-					if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
-						if cp >= 0xD800 && cp <= 0xDFFF {
-							return fmt.Errorf("invalid unicode surrogate U+%04X in string literal", cp)
-						}
-					}
-					i += 5
-				} else {
-					return fmt.Errorf("invalid \\u escape in string literal")
-				}
-			case 'U':
-				if i+9 < len(content) {
-					hex := content[i+2 : i+10]
-					if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
-						if cp >= 0xD800 && cp <= 0xDFFF {
-							return fmt.Errorf("invalid unicode surrogate U+%08X in string literal", cp)
-						}
-					}
-					i += 9
-				} else {
-					return fmt.Errorf("invalid \\U escape in string literal")
-				}
-			default:
-				return fmt.Errorf("invalid escape sequence \\%c in string literal", next)
+		if content[i] != '\\' {
+			continue
+		}
+		if i+1 >= len(content) {
+			return fmt.Errorf("incomplete escape sequence at end of string literal")
+		}
+		switch next := content[i+1]; next {
+		case 't', 'b', 'n', 'r', 'f', '\\', '"', '\'':
+			i++
+		case 'u', 'U':
+			n := 4
+			if next == 'U' {
+				n = 8
 			}
+			hex := content[i+2 : min(i+2+n, len(content))]
+			cp, err := strconv.ParseUint(hex, 16, 32)
+			if len(hex) != n || err != nil {
+				return fmt.Errorf("invalid \\%c escape %q in string literal", next, content[i:i+2+len(hex)])
+			}
+			if cp >= 0xD800 && cp <= 0xDFFF {
+				return fmt.Errorf("invalid unicode surrogate U+%04X in string literal", cp)
+			}
+			i += 1 + n
+		default:
+			return fmt.Errorf("invalid escape sequence \\%c in string literal", next)
 		}
 	}
 	return nil
