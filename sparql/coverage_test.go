@@ -1964,9 +1964,10 @@ func TestGraphForQuadSolutionVariableNotBound(t *testing.T) {
 	g := graph.NewGraph()
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	sol := map[string]rdflibgo.Term{}
+	// Update §3.1.3: the quad is skipped, never redirected to the default graph.
 	result := graphForQuadSolution(ds, "?g", sol)
-	if result != g {
-		t.Error("expected default graph when variable not bound")
+	if result != nil {
+		t.Error("expected nil (skip quad) when variable not bound")
 	}
 }
 
@@ -1977,8 +1978,8 @@ func TestGraphForQuadSolutionLiteral(t *testing.T) {
 		"g": rdflibgo.NewLiteral("not-a-uri"),
 	}
 	result := graphForQuadSolution(ds, "?g", sol)
-	if result != g {
-		t.Error("expected default graph when variable bound to literal")
+	if result != nil {
+		t.Error("expected nil (skip quad) when variable bound to literal")
 	}
 }
 
@@ -2007,8 +2008,8 @@ func TestResolveModifyGraphWithAndVariable(t *testing.T) {
 		"g": rdflibgo.NewLiteral("not-a-uri"),
 	}
 	result = resolveModifyGraph(ds, "?g", "", sol2)
-	if result != g {
-		t.Error("expected default graph for non-URI variable")
+	if result != nil {
+		t.Error("expected nil (skip quad) for non-URI variable")
 	}
 }
 

@@ -122,6 +122,9 @@ func evalDeleteWhere(ds *Dataset, op *DeleteWhereOp, prefixes map[string]string)
 	for _, sol := range solutions {
 		for _, qp := range op.Quads {
 			g := graphForQuadSolution(ds, qp.Graph, sol)
+			if g == nil {
+				continue
+			}
 			for _, t := range qp.Triples {
 				s := resolveTemplateValue(t.Subject, sol, prefixes)
 				p := resolveTemplateValue(t.Predicate, sol, prefixes)
@@ -195,6 +198,9 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	for _, sol := range solutions {
 		for _, qp := range op.Delete {
 			g := resolveModifyGraph(ds, qp.Graph, op.With, sol)
+			if g == nil {
+				continue
+			}
 			for _, t := range qp.Triples {
 				s := resolveTemplateValue(t.Subject, sol, prefixes)
 				p := resolveTemplateValue(t.Predicate, sol, prefixes)
@@ -215,6 +221,9 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 		}
 		for _, qp := range op.Insert {
 			g := resolveModifyGraph(ds, qp.Graph, op.With, sol)
+			if g == nil {
+				continue
+			}
 			for _, t := range qp.Triples {
 				s := resolveTemplateValue(t.Subject, sol, prefixes)
 				p := resolveTemplateValue(t.Predicate, sol, prefixes)
@@ -396,21 +405,33 @@ func graphForQuad(ds *Dataset, graphName string) *rdflibgo.Graph {
 	return getOrCreateGraph(ds, graphName)
 }
 
+// graphForVar returns the graph named by a GRAPH variable in an update
+// template, or nil when the variable is unbound or bound to something that is
+// not an IRI. SPARQL 1.1 Update §3.1.3: a template triple that contains an
+// unbound variable or an illegal RDF construct is not included, so the caller
+// must skip the quad rather than fall back to the default graph.
+func graphForVar(ds *Dataset, name string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
+	u, ok := sol[name].(term.URIRef)
+	if !ok {
+		return nil
+	}
+	return getOrCreateGraph(ds, u.Value())
+}
+
+// graphForQuadSolution returns the graph a DELETE WHERE quad applies to, or nil
+// when the quad must be skipped (see graphForVar).
 func graphForQuadSolution(ds *Dataset, graphName string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
 	if graphName == "" {
 		return ds.Default
 	}
 	if strings.HasPrefix(graphName, "?") {
-		if v, ok := sol[graphName[1:]]; ok {
-			if u, ok := v.(term.URIRef); ok {
-				return getOrCreateGraph(ds, u.Value())
-			}
-		}
-		return ds.Default
+		return graphForVar(ds, graphName[1:], sol)
 	}
 	return getOrCreateGraph(ds, graphName)
 }
 
+// resolveModifyGraph returns the graph a DELETE/INSERT template quad applies
+// to, or nil when the quad must be skipped (see graphForVar).
 func resolveModifyGraph(ds *Dataset, graphName, with string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
 	if graphName == "" {
 		if with != "" {
@@ -419,12 +440,7 @@ func resolveModifyGraph(ds *Dataset, graphName, with string, sol map[string]rdfl
 		return ds.Default
 	}
 	if strings.HasPrefix(graphName, "?") {
-		if v, ok := sol[graphName[1:]]; ok {
-			if u, ok := v.(term.URIRef); ok {
-				return getOrCreateGraph(ds, u.Value())
-			}
-		}
-		return ds.Default
+		return graphForVar(ds, graphName[1:], sol)
 	}
 	return getOrCreateGraph(ds, graphName)
 }
