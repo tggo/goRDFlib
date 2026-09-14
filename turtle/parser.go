@@ -680,8 +680,14 @@ done:
 			if dir != "ltr" && dir != "rtl" {
 				return rdflibgo.Literal{}, p.errorf("invalid base direction %q (must be ltr or rtl)", dir)
 			}
+			if !isValidLangTag(lang) {
+				return rdflibgo.Literal{}, p.errorf("invalid language tag %q", lang)
+			}
 			lopts = append(lopts, rdflibgo.WithLang(lang), rdflibgo.WithDir(dir))
 		} else {
+			if !isValidLangTag(lang) {
+				return rdflibgo.Literal{}, p.errorf("invalid language tag %q", lang)
+			}
 			lopts = append(lopts, rdflibgo.WithLang(lang))
 		}
 	} else if p.pos+1 < len(p.input) && p.input[p.pos] == '^' && p.input[p.pos+1] == '^' {
