@@ -10,6 +10,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
 )
 
 // Serialize writes the graph in TriG format (single graph, no wrapping block).
@@ -46,14 +47,33 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 	var allGraphs []*graph.Graph
 	defaultCtx := ds.DefaultContext()
 
+	var badIRI error
+	checkIRIs := func(t rdflibgo.Term) {
+		if badIRI == nil {
+			badIRI = checkTermIRIs(t)
+		}
+	}
+	if cfg.base != "" && !term.ValidIRI(cfg.base) {
+		return invalidIRIError(cfg.base)
+	}
 	for g := range ds.Graphs() {
 		allGraphs = append(allGraphs, g)
+		checkIRIs(g.Identifier())
 		g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
 			trackNSForTerm(t.Subject, ds, usedNS)
 			trackNSForTerm(t.Predicate, ds, usedNS)
 			trackNSForTerm(t.Object, ds, usedNS)
+			checkIRIs(t.Subject)
+			checkIRIs(t.Predicate)
+			checkIRIs(t.Object)
 			return true
 		})
+	}
+	for _, ns := range usedNS {
+		checkIRIs(ns)
+	}
+	if badIRI != nil {
+		return badIRI
 	}
 
 	// @base
@@ -121,6 +141,34 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 	}
 
 	return nil
+}
+
+// checkTermIRIs returns an error for the first IRI in t (including a literal's
+// datatype and the parts of a triple term) that no TriG IRIREF can hold. The
+// grammar excludes #x00-#x20 and <>"{}|^`\ and a \u escape of one of them is
+// rejected too, so writing it would produce a document that does not parse.
+func checkTermIRIs(t rdflibgo.Term) error {
+	switch v := t.(type) {
+	case rdflibgo.URIRef:
+		if !term.ValidIRI(v.Value()) {
+			return invalidIRIError(v.Value())
+		}
+	case rdflibgo.Literal:
+		if dt := v.Datatype().Value(); !term.ValidIRI(dt) {
+			return invalidIRIError(dt)
+		}
+	case rdflibgo.TripleTerm:
+		for _, part := range []rdflibgo.Term{v.Subject(), v.Predicate(), v.Object()} {
+			if err := checkTermIRIs(part); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func invalidIRIError(uri string) error {
+	return fmt.Errorf("trig: cannot serialize IRI %q: %w: TriG IRIs cannot contain spaces, control characters or <>\"{}|^`\\, not even escaped; percent-encode them", uri, rdflibgo.ErrInvalidIRI)
 }
 
 func trigLabel(t rdflibgo.Term, usedNS map[string]rdflibgo.URIRef) string {

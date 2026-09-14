@@ -555,11 +555,11 @@ func TestCovIsValidLocalName(t *testing.T) {
 func TestCovSerializeInvalidLocalName(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	s := rdflibgo.NewURIRefUnsafe("http://example.org/has space")
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/has,comma")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	g.Add(s, p, rdflibgo.NewLiteral("val"))
 	out := covSerialize(t, g)
-	if !strings.Contains(out, "<http://example.org/has space>") {
+	if !strings.Contains(out, "<http://example.org/has,comma>") {
 		t.Errorf("expected full IRI, got:\n%s", out)
 	}
 }
@@ -2389,12 +2389,12 @@ func TestCovReadBlankNodeLabelInvalidStartTrig(t *testing.T) {
 func TestCovSerializeLocalNameSpecialCharsTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	s := rdflibgo.NewURIRefUnsafe("http://example.org/has space")
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/has,comma")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	g.Add(s, p, rdflibgo.NewLiteral("v"))
 	out := covSerialize(t, g)
 	// Should fall back to full IRI since "has space" is not a valid local name
-	if !strings.Contains(out, "<http://example.org/has space>") {
+	if !strings.Contains(out, "<http://example.org/has,comma>") {
 		t.Errorf("expected full IRI for invalid local name, got:\n%s", out)
 	}
 }

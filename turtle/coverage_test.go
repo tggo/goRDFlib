@@ -464,11 +464,11 @@ func TestCovSerializeListCyclic(t *testing.T) {
 func TestCovSerializeLocalNameInvalid(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	s := rdflibgo.NewURIRefUnsafe("http://example.org/has space")
+	s := rdflibgo.NewURIRefUnsafe("http://example.org/has,comma")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	g.Add(s, p, rdflibgo.NewLiteral("val"))
 	out := covSerialize(t, g)
-	if !strings.Contains(out, "<http://example.org/has space>") {
+	if !strings.Contains(out, "<http://example.org/has,comma>") {
 		t.Errorf("expected full IRI for invalid local name, got:\n%s", out)
 	}
 }

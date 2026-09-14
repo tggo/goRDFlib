@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/term"
 )
 
 // Serialize writes the graph in Turtle format.
@@ -29,7 +30,13 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	ts.pretty = cfg.pretty
 	ts.indentUnit = cfg.indentUnit()
 	ts.maxNestDepth = cfg.nestDepth()
+	if cfg.base != "" {
+		ts.checkIRI(cfg.base)
+	}
 	ts.preprocess()
+	if ts.err != nil {
+		return ts.err
+	}
 	ts.orderSubjects()
 	return ts.write(w)
 }
@@ -87,6 +94,9 @@ type turtleState struct {
 	qnameCache        map[string]string
 	predCache         map[string]string
 	nsSeen            map[string]bool
+
+	// err is the first IRI found that Turtle cannot represent.
+	err error
 }
 
 func newTurtleState(g *rdflibgo.Graph) *turtleState {
@@ -147,6 +157,9 @@ func (ts *turtleState) preprocess() {
 		ts.trackNS(t.Subject)
 		ts.trackNS(t.Predicate)
 		ts.trackNS(t.Object)
+		if l, ok := t.Object.(rdflibgo.Literal); ok {
+			ts.checkIRI(l.Datatype().Value())
+		}
 
 		return true
 	})
@@ -175,13 +188,25 @@ func (ts *turtleState) trackNS(t rdflibgo.Term) {
 		return
 	}
 	ts.nsSeen[uri] = true
+	ts.checkIRI(uri)
 	ts.g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		nsStr := ns.Value()
 		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(prefix) {
+			ts.checkIRI(nsStr)
 			ts.usedNS[prefix] = ns
 		}
 		return true
 	})
+}
+
+// checkIRI records an error for an IRI that no Turtle IRIREF can hold.
+// Turtle 1.1 [18] excludes #x00-#x20 and <>"{}|^`\ from IRIREF, and a \u
+// escape of one of them is rejected too, so there is no way to write it;
+// emitting it anyway produced a document that does not parse.
+func (ts *turtleState) checkIRI(uri string) {
+	if ts.err == nil && !term.ValidIRI(uri) {
+		ts.err = fmt.Errorf("turtle: cannot serialize IRI %q: %w: Turtle IRIs cannot contain spaces, control characters or <>\"{}|^`\\, not even escaped; percent-encode them", uri, rdflibgo.ErrInvalidIRI)
+	}
 }
 
 // detectLists finds rdf:List patterns.

@@ -96,17 +96,31 @@ func (u URIRef) Fragment() string {
 	return ""
 }
 
-// isValidIRI checks that an IRI does not contain forbidden characters per RFC 3987.
-// Forbidden: < > " space { } | \ ^ `
+// isValidIRI checks that an IRI does not contain forbidden characters.
+// Forbidden: the control characters and space (#x00-#x20) and < > " { } | \ ^ `,
+// which is the set Turtle 1.1 [18] IRIREF and N-Triples exclude, and which
+// RFC 3987 does not allow unescaped either. rdflib #625: a TAB used to pass.
 // Ported from: rdflib.term._is_valid_uri
 func isValidIRI(s string) bool {
 	for _, c := range s {
+		if c <= 0x20 {
+			return false
+		}
 		switch c {
-		case '<', '>', '"', ' ', '{', '}', '|', '\\', '^', '`':
+		case '<', '>', '"', '{', '}', '|', '\\', '^', '`':
 			return false
 		}
 	}
 	return true
+}
+
+// ValidIRI reports whether s contains none of the characters an IRI in
+// Turtle, TriG, N-Triples or N-Quads can never hold: #x00-#x20 and
+// < > " { } | \ ^ `. These cannot be written even as \u escapes. It does
+// not check that s is absolute or otherwise well-formed. NewURIRef applies the
+// same check; NewURIRefUnsafe does not.
+func ValidIRI(s string) bool {
+	return isValidIRI(s)
 }
 
 // NewURIRefUnsafe creates a URIRef without validation.
@@ -120,7 +134,8 @@ func MustURIRef(value string) URIRef {
 	return URIRef{value: value, key: "U:" + value}
 }
 
-// NewURIRef creates a new URIRef, validating that it contains no forbidden characters.
+// NewURIRef creates a new URIRef, validating that it contains no forbidden
+// characters (see ValidIRI).
 // Ported from: rdflib.term.URIRef.__new__
 func NewURIRef(value string) (URIRef, error) {
 	if !isValidIRI(value) {
