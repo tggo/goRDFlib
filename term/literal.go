@@ -175,7 +175,10 @@ func (l Literal) N3(ns ...NamespaceManager) string {
 }
 
 // ValueEqual performs value-space comparison: two literals are ValueEqual if
-// they have the same datatype and their parsed Go values are equal.
+// they have the same datatype and denote the same XSD value. Integers and
+// decimals are compared exactly, xsd:dateTime on the timeline (so "Z" equals
+// "+00:00"), and an ill-typed literal is never equal to a well-typed one.
+// See literal_value.go for the full rules.
 // This differs from Equal (struct equality) which compares lexical forms exactly.
 // Ported from: rdflib.term.Literal.eq
 func (l Literal) ValueEqual(other Literal) bool {
@@ -187,37 +190,6 @@ func (l Literal) ValueEqual(other Literal) bool {
 // Deprecated: use ValueEqual for clarity.
 func (l Literal) Eq(other Literal) bool {
 	return l.valueEqual(other)
-}
-
-func (l Literal) valueEqual(other Literal) bool {
-	if l.datatype != other.datatype {
-		return false
-	}
-	v1 := l.Value()
-	v2 := other.Value()
-	switch a := v1.(type) {
-	case int64:
-		if b, ok := v2.(int64); ok {
-			return a == b
-		}
-	case float32:
-		if b, ok := v2.(float32); ok {
-			return a == b
-		}
-	case float64:
-		if b, ok := v2.(float64); ok {
-			return a == b
-		}
-	case bool:
-		if b, ok := v2.(bool); ok {
-			return a == b
-		}
-	case string:
-		if b, ok := v2.(string); ok {
-			return a == b
-		}
-	}
-	return false
 }
 
 // literalEscaper is a package-level replacer for escaping literal strings.
