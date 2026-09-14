@@ -63,11 +63,9 @@ type turtleState struct {
 	// namespace tracking: only emit used prefixes
 	usedNS map[string]rdflibgo.URIRef // prefix -> namespace
 
-	// set of BNode keys that are list heads
-	listHeads map[string]bool
-
-	// set of BNodes that are part of a list (internal nodes)
-	listNodes map[string]bool
+	// blank nodes that can be written as (part of) a collection; see
+	// serializer_lists.go
+	listCells map[string]bool
 
 	// serialized BNodes (avoid duplicates)
 	serialized map[string]bool
@@ -105,8 +103,7 @@ func newTurtleState(g *rdflibgo.Graph) *turtleState {
 		spoMap:      make(map[string]map[string][]rdflibgo.Term),
 		refs:        make(map[string]int),
 		usedNS:      make(map[string]rdflibgo.URIRef),
-		listHeads:   make(map[string]bool),
-		listNodes:   make(map[string]bool),
+		listCells:   make(map[string]bool),
 		serialized:  make(map[string]bool),
 		subjectMap:  make(map[string]rdflibgo.Subject),
 		deferredSet: make(map[string]bool),
@@ -209,69 +206,6 @@ func (ts *turtleState) checkIRI(uri string) {
 	}
 }
 
-// detectLists finds rdf:List patterns.
-func (ts *turtleState) detectLists() {
-	firstKey, restKey, nilKey := ts.firstKey, ts.restKey, ts.nilKey
-
-	for sk, preds := range ts.spoMap {
-		if _, hasFirst := preds[firstKey]; !hasFirst {
-			continue
-		}
-		// Validate: each list node must have exactly rdf:first and rdf:rest
-		if ts.isValidList(sk, firstKey, restKey, nilKey) {
-			ts.listHeads[sk] = true
-			// Mark internal nodes
-			ts.markListNodes(sk, restKey, nilKey)
-		}
-	}
-}
-
-func (ts *turtleState) isValidList(sk, firstKey, restKey, nilKey string) bool {
-	node := sk
-	visited := make(map[string]bool)
-	for node != nilKey {
-		if visited[node] {
-			return false
-		}
-		visited[node] = true
-		preds := ts.spoMap[node]
-		if preds == nil {
-			return false
-		}
-		firsts := preds[firstKey]
-		rests := preds[restKey]
-		if len(firsts) != 1 || len(rests) != 1 {
-			return false
-		}
-		// List node should only have rdf:first and rdf:rest
-		allowedPreds := 0
-		for pk := range preds {
-			if pk == firstKey || pk == restKey {
-				allowedPreds++
-			} else {
-				return false
-			}
-		}
-		if allowedPreds != 2 {
-			return false
-		}
-		node = termKey(rests[0])
-	}
-	return true
-}
-
-func (ts *turtleState) markListNodes(sk, restKey, nilKey string) {
-	node := sk
-	for node != nilKey {
-		ts.listNodes[node] = true
-		rests := ts.spoMap[node][restKey]
-		if len(rests) == 0 {
-			break
-		}
-		node = termKey(rests[0])
-	}
-}
-
 // orderSubjects sorts subjects for deterministic output.
 func (ts *turtleState) orderSubjects() {
 	typeKey, classKey := ts.typeKey, ts.classKey
@@ -281,8 +215,8 @@ func (ts *turtleState) orderSubjects() {
 	var otherSubjects []rdflibgo.Subject
 
 	for sk := range ts.spoMap {
-		// Skip list internal nodes
-		if ts.listNodes[sk] {
+		// List cells are written by their single reference.
+		if ts.listCells[sk] {
 			continue
 		}
 
@@ -393,16 +327,46 @@ func (ts *turtleState) write(w io.Writer) error {
 	// while it is drained (a flattened node can itself defer another); it
 	// terminates because every entry is a distinct key of spoMap and each pass
 	// marks its node serialized.
-	for i := 0; i < len(ts.deferred); i++ {
-		sk := ts.deferred[i]
+	next := 0
+	drainDeferred := func() error {
+		for ; next < len(ts.deferred); next++ {
+			sk := ts.deferred[next]
+			if ts.serialized[sk] {
+				continue
+			}
+			subj := ts.subjectMap[sk]
+			if subj == nil {
+				continue
+			}
+			if err := writeOne(subj); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := drainDeferred(); err != nil {
+		return err
+	}
+
+	// Whatever is still unwritten is only reachable from inside itself: a
+	// list cell whose single reference comes from within its own collection
+	// (a cycle through rdf:first). Emit it as a labelled statement so no
+	// triple is lost; that may defer further nodes, which are drained again.
+	var rest []string
+	for sk := range ts.spoMap {
+		if !ts.serialized[sk] {
+			rest = append(rest, sk)
+		}
+	}
+	slices.Sort(rest)
+	for _, sk := range rest {
 		if ts.serialized[sk] {
 			continue
 		}
-		subj := ts.subjectMap[sk]
-		if subj == nil {
-			continue
+		if err := writeOne(ts.subjectMap[sk]); err != nil {
+			return err
 		}
-		if err := writeOne(subj); err != nil {
+		if err := drainDeferred(); err != nil {
 			return err
 		}
 	}
@@ -417,7 +381,7 @@ func (ts *turtleState) writeSubject(w io.Writer, subj rdflibgo.Subject) error {
 
 	head := ts.label(subj)
 	// A BNode nothing refers to needs no label of its own.
-	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 && !ts.listHeads[sk] {
+	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 {
 		head = "[]"
 	}
 	if _, err := io.WriteString(w, head); err != nil {
@@ -575,7 +539,7 @@ func (ts *turtleState) objectForm(t rdflibgo.Term) objectForm {
 	if ts.depth >= ts.maxNestDepth {
 		return formScalar
 	}
-	if ts.listHeads[bk] {
+	if ts.listCells[bk] && ts.canWriteList(bk) {
 		return formList
 	}
 	// Inline a blank node only when nothing else refers to it.
@@ -862,7 +826,7 @@ func isPNCharsBase(r rune) bool {
 // listItems walks a well-formed rdf:List and returns its items. With mark set,
 // every node of the list is recorded as serialized — pass false to inspect a
 // list that is not being written yet. The list is known to be acyclic because
-// only heads accepted by isValidList reach here.
+// only cells accepted by detectLists reach here.
 func (ts *turtleState) listItems(head rdflibgo.BNode, mark bool) []rdflibgo.Term {
 	var items []rdflibgo.Term
 

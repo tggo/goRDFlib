@@ -186,10 +186,11 @@ type trigState struct {
 	spoMap     map[string]map[string][]rdflibgo.Term
 	subjects   []rdflibgo.Subject
 	refs       map[string]int
-	listHeads  map[string]bool
-	listNodes  map[string]bool
+	listCells  map[string]bool // see serializer_lists.go
 	serialized map[string]bool
 	subjectMap map[string]rdflibgo.Subject
+
+	firstKey, restKey, nilKey string
 }
 
 func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef) *trigState {
@@ -198,10 +199,12 @@ func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef) *trigState 
 		usedNS:     usedNS,
 		spoMap:     make(map[string]map[string][]rdflibgo.Term),
 		refs:       make(map[string]int),
-		listHeads:  make(map[string]bool),
-		listNodes:  make(map[string]bool),
+		listCells:  make(map[string]bool),
 		serialized: make(map[string]bool),
 		subjectMap: make(map[string]rdflibgo.Subject),
+		firstKey:   rdflibgo.RDF.First.N3(),
+		restKey:    rdflibgo.RDF.Rest.N3(),
+		nilKey:     rdflibgo.RDF.Nil.N3(),
 	}
 }
 
@@ -221,67 +224,6 @@ func (ts *trigState) preprocess() {
 	ts.detectLists()
 }
 
-func (ts *trigState) detectLists() {
-	firstKey := rdflibgo.RDF.First.N3()
-	restKey := rdflibgo.RDF.Rest.N3()
-	nilKey := rdflibgo.RDF.Nil.N3()
-
-	for sk, preds := range ts.spoMap {
-		if _, hasFirst := preds[firstKey]; !hasFirst {
-			continue
-		}
-		if ts.isValidList(sk, firstKey, restKey, nilKey) {
-			ts.listHeads[sk] = true
-			ts.markListNodes(sk, restKey, nilKey)
-		}
-	}
-}
-
-func (ts *trigState) isValidList(sk, firstKey, restKey, nilKey string) bool {
-	node := sk
-	visited := make(map[string]bool)
-	for node != nilKey {
-		if visited[node] {
-			return false
-		}
-		visited[node] = true
-		preds := ts.spoMap[node]
-		if preds == nil {
-			return false
-		}
-		firsts := preds[firstKey]
-		rests := preds[restKey]
-		if len(firsts) != 1 || len(rests) != 1 {
-			return false
-		}
-		allowedPreds := 0
-		for pk := range preds {
-			if pk == firstKey || pk == restKey {
-				allowedPreds++
-			} else {
-				return false
-			}
-		}
-		if allowedPreds != 2 {
-			return false
-		}
-		node = rests[0].N3()
-	}
-	return true
-}
-
-func (ts *trigState) markListNodes(sk, restKey, nilKey string) {
-	node := sk
-	for node != nilKey {
-		ts.listNodes[node] = true
-		rests := ts.spoMap[node][restKey]
-		if len(rests) == 0 {
-			break
-		}
-		node = rests[0].N3()
-	}
-}
-
 func (ts *trigState) orderSubjects() {
 	typeKey := rdflibgo.RDF.Type.N3()
 	classKey := rdflibgo.RDFS.Class.N3()
@@ -291,7 +233,8 @@ func (ts *trigState) orderSubjects() {
 	var otherSubjects []rdflibgo.Subject
 
 	for sk := range ts.spoMap {
-		if ts.listNodes[sk] {
+		// List cells are written by their single reference.
+		if ts.listCells[sk] {
 			continue
 		}
 		subj := ts.subjectMap[sk]
@@ -349,6 +292,27 @@ func (ts *trigState) writeIndented(w io.Writer, indent string) error {
 			fmt.Fprintln(w)
 		}
 	}
+
+	// Whatever is still unwritten is only reachable from inside itself: a
+	// list cell whose single reference comes from within its own collection
+	// (a cycle through rdf:first). Emit it as a labelled statement so no
+	// triple is lost.
+	var rest []string
+	for sk := range ts.spoMap {
+		if !ts.serialized[sk] {
+			rest = append(rest, sk)
+		}
+	}
+	slices.Sort(rest)
+	for _, sk := range rest {
+		if ts.serialized[sk] {
+			continue
+		}
+		fmt.Fprintln(w)
+		if err := ts.writeSubject(w, ts.subjectMap[sk], indent); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -356,7 +320,7 @@ func (ts *trigState) writeSubject(w io.Writer, subj rdflibgo.Subject, indent str
 	sk := subj.N3()
 	ts.serialized[sk] = true
 
-	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 && !ts.listHeads[sk] {
+	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 {
 		fmt.Fprintf(w, "%s[]", indent)
 		return ts.writePredicates(w, sk, indent)
 	}
@@ -452,7 +416,7 @@ func (ts *trigState) objectStr(t rdflibgo.Term) (string, error) {
 		return qnameOrFull(v, ts.usedNS), nil
 	case rdflibgo.BNode:
 		bk := v.N3()
-		if ts.listHeads[bk] && !ts.serialized[bk] {
+		if ts.listCells[bk] && ts.canWriteList(bk) {
 			return ts.listStr(v)
 		}
 		if ts.refs[bk] <= 1 && !ts.serialized[bk] {
