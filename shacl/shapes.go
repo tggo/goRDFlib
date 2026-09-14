@@ -128,18 +128,21 @@ type evalContext struct {
 //
 // Not safe for concurrent use; a validation run is single-goroutine.
 type recursionGuard struct {
-	active map[string]struct{}
+	active map[guardKey]struct{}
 }
 
-func guardKey(s *Shape, node Term) string {
-	return s.ID.TermKey() + "\x00" + node.TermKey()
+// guardKey identifies a (shape, focus node) pair. Term is comparable, so the
+// pair is a map key as it is; building a string key from TermKey allocated on
+// every shape entered and doubled the allocations of a validation run.
+type guardKey struct {
+	shape, node Term
 }
 
 // sharedGuard returns ctx's guard, creating it on first use, so that a context
 // derived from ctx can be given the same one.
 func (ctx *evalContext) sharedGuard() *recursionGuard {
 	if ctx.guard == nil {
-		ctx.guard = &recursionGuard{active: make(map[string]struct{})}
+		ctx.guard = &recursionGuard{active: make(map[guardKey]struct{})}
 	}
 	return ctx.guard
 }
@@ -149,7 +152,7 @@ func (ctx *evalContext) sharedGuard() *recursionGuard {
 // leave.
 func (ctx *evalContext) enter(s *Shape, node Term) bool {
 	g := ctx.sharedGuard()
-	k := guardKey(s, node)
+	k := guardKey{s.ID, node}
 	if _, busy := g.active[k]; busy {
 		return false
 	}
@@ -158,7 +161,7 @@ func (ctx *evalContext) enter(s *Shape, node Term) bool {
 }
 
 func (ctx *evalContext) leave(s *Shape, node Term) {
-	delete(ctx.guard.active, guardKey(s, node))
+	delete(ctx.guard.active, guardKey{s.ID, node})
 }
 
 // report hands err to the caller's error handler, if one was installed.
