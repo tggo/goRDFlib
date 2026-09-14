@@ -315,10 +315,19 @@ ex:AreaShape a sh:NodeShape ;
 		t.Errorf("the violation is on %s, want ex:bad", report.Results[0].FocusNode)
 	}
 
-	// Without the option the function is not declared to the query, so the
-	// constraint cannot be evaluated as intended.
-	if plain := Validate(g, g); plain.Conforms {
-		t.Error("without advanced features the function is unavailable; the constraint should not silently pass")
+	// Without the option the function is not bound into the query. The call
+	// is an expression error, the FILTER drops every row and the shape
+	// conforms, so the validator must say that the check could not run.
+	var errs []error
+	Validate(g, g, WithErrorHandler(func(err error) { errs = append(errs, err) }))
+	found := false
+	for _, err := range errs {
+		if errors.Is(err, ErrAdvancedFeatures) && strings.Contains(err.Error(), "sh:SPARQLFunction") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("without advanced features the declared function is unavailable, and that must be reported; got errors %v", errs)
 	}
 }
 
