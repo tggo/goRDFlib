@@ -3,13 +3,13 @@ package turtle
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	iriref "github.com/tggo/goRDFlib/internal/iri"
 )
 
 // Parse reads Turtle from r and adds triples to g.
@@ -969,25 +969,13 @@ func (p *turtleParser) matchKeywordCI(kw string) bool {
 	return true
 }
 
+// resolveIRI resolves iri against the current base per RFC 3986 §5.2, on the
+// IRI string itself (RFC 3987 §6.5): nothing is percent-encoded or decoded.
 func (p *turtleParser) resolveIRI(iri string) string {
 	if p.base == "" || isAbsoluteIRI(iri) {
 		return iri
 	}
-	b, err := url.Parse(p.base)
-	if err != nil {
-		return iri
-	}
-	ref, err := url.Parse(iri)
-	if err != nil {
-		return iri
-	}
-	resolved := b.ResolveReference(ref).String()
-	// Go's url.ResolveReference drops an empty fragment. In RDF, <#> resolved
-	// against a base must preserve the '#' separator.
-	if strings.Contains(iri, "#") && !strings.Contains(resolved, "#") {
-		resolved += "#"
-	}
-	return resolved
+	return iriref.Resolve(p.base, iri)
 }
 
 func (p *turtleParser) unescapeIRI(s string) (string, error) {

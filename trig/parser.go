@@ -3,7 +3,6 @@ package trig
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -11,6 +10,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	iriref "github.com/tggo/goRDFlib/internal/iri"
 )
 
 // Parse reads TriG from r and adds all triples (from all graphs) into g.
@@ -1273,23 +1273,13 @@ func (p *trigParser) matchKeywordCI(kw string) bool {
 	return isWhitespace(ch) || ch == '<' || ch == ':'
 }
 
+// resolveIRI resolves iri against the current base per RFC 3986 §5.2, on the
+// IRI string itself (RFC 3987 §6.5): nothing is percent-encoded or decoded.
 func (p *trigParser) resolveIRI(iri string) string {
 	if p.base == "" || isAbsoluteIRI(iri) {
 		return iri
 	}
-	b, err := url.Parse(p.base)
-	if err != nil {
-		return iri
-	}
-	ref, err := url.Parse(iri)
-	if err != nil {
-		return iri
-	}
-	resolved := b.ResolveReference(ref).String()
-	if strings.Contains(iri, "#") && !strings.Contains(resolved, "#") {
-		resolved += "#"
-	}
-	return resolved
+	return iriref.Resolve(p.base, iri)
 }
 
 func (p *trigParser) unescapeIRI(s string) (string, error) {
