@@ -23,17 +23,21 @@ type MemoryStore struct {
 	nsURI    map[string]string      // namespace → prefix
 
 	count int
+	// predCount holds the number of triples per predicate key, so Cardinality
+	// can answer (?, p, ?) without walking every object of p.
+	predCount map[string]int
 }
 
 // NewMemoryStore creates a new empty in-memory store.
 // Ported from: rdflib.plugins.stores.memory.SimpleMemory.__init__
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		spo:      make(map[string]map[string]map[string]term.Triple),
-		pos:      make(map[string]map[string]map[string]term.Triple),
-		osp:      make(map[string]map[string]map[string]term.Triple),
-		nsPrefix: make(map[string]term.URIRef),
-		nsURI:    make(map[string]string),
+		spo:       make(map[string]map[string]map[string]term.Triple),
+		pos:       make(map[string]map[string]map[string]term.Triple),
+		osp:       make(map[string]map[string]map[string]term.Triple),
+		nsPrefix:  make(map[string]term.URIRef),
+		nsURI:     make(map[string]string),
+		predCount: make(map[string]int),
 	}
 }
 
@@ -68,6 +72,7 @@ func (m *MemoryStore) addLocked(t term.Triple) {
 	ensureInsert(m.pos, pk, ok, sk, t)
 	ensureInsert(m.osp, ok, sk, pk, t)
 	m.count++
+	m.predCount[pk]++
 }
 
 // ensureInsert inserts t into a 3-level nested map, creating intermediate maps as needed.
@@ -180,6 +185,9 @@ func (m *MemoryStore) removeLocked(t term.Triple) {
 	}
 
 	m.count--
+	if m.predCount[pk]--; m.predCount[pk] == 0 {
+		delete(m.predCount, pk)
+	}
 }
 
 // Triples returns matching triples.
@@ -347,17 +355,52 @@ func (m *MemoryStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term
 	}
 }
 
-// Count returns the number of triples matching the pattern.
+// Count returns the number of triples matching the pattern, from index sizes.
 // Safe for concurrent use.
 func (m *MemoryStore) Count(pattern term.TriplePattern, ctx term.Term) int {
+	return m.Cardinality(pattern, ctx)
+}
+
+// Cardinality returns the number of triples matching the pattern without
+// visiting them. A pattern bound in two or three positions, only in the
+// predicate, or not at all is answered in constant time; subject-only walks the
+// subject's predicates and object-only the object's subjects, never the
+// triples. Safe for concurrent use.
+func (m *MemoryStore) Cardinality(pattern term.TriplePattern, ctx term.Term) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	n := 0
-	m.triplesLocked(pattern)(func(term.Triple) bool {
-		n++
-		return true
-	})
-	return n
+	sk := term.OptTermKey(pattern.Subject)
+	pk := term.OptPredKey(pattern.Predicate)
+	ok := term.OptTermKey(pattern.Object)
+	switch {
+	case sk != "" && pk != "" && ok != "":
+		if _, exists := m.spo[sk][pk][ok]; exists {
+			return 1
+		}
+		return 0
+	case sk != "" && pk != "":
+		return len(m.spo[sk][pk])
+	case pk != "" && ok != "":
+		return len(m.pos[pk][ok])
+	case sk != "" && ok != "":
+		return len(m.osp[ok][sk])
+	case pk != "":
+		return m.predCount[pk]
+	case sk != "":
+		n := 0
+		for _, o := range m.spo[sk] {
+			n += len(o)
+		}
+		return n
+	case ok != "":
+		n := 0
+		for _, p := range m.osp[ok] {
+			n += len(p)
+		}
+		return n
+	default:
+		return m.count
+	}
 }
 
 // Exists reports whether at least one triple matching the pattern exists.
@@ -373,5 +416,8 @@ func (m *MemoryStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
 	return found
 }
 
-// Compile-time check: MemoryStore must implement QueryableStore.
-var _ QueryableStore = (*MemoryStore)(nil)
+// Compile-time checks: MemoryStore implements the optional interfaces.
+var (
+	_ QueryableStore   = (*MemoryStore)(nil)
+	_ CardinalityStore = (*MemoryStore)(nil)
+)

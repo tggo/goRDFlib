@@ -309,8 +309,13 @@ The `store.Store` interface (13 methods) has four implementations:
 ### sparql/ BGP join ordering (`bgp_order.go`)
 - `evalBGP` plans, `evalBGPInOrder` runs the nested loops. Recursion must stay
   in `evalBGPInOrder`, or every partial solution re-plans the rest of the BGP.
-- Probing IS the planner's cost: a counted match costs about what an evaluated
-  one does. The probe limit starts at 64, shrinks to the smallest exact count,
+- A `store.CardinalityStore` (MemoryStore) gives exact counts from index sizes
+  and is never probed (`TestOrderBGP_CardinalityStoreIsNotProbed`). Its
+  conformance section checks Cardinality against Triples after
+  Remove/Set/duplicates; MemoryStore keeps a per-predicate counter for `(?, p, ?)`.
+  Planner tests run on both paths via `forEachPlannerStore`.
+- Other stores are probed, and probing IS the planner's cost: a counted match
+  costs about what an evaluated one does. The probe limit starts at 64, shrinks to the smallest exact count,
   and only goes to 1000 when everything was capped.
   `TestOrderBGP_ProbesStopAtSmallestCount` guards the shrink.
 - Capped counts are lower bounds: exact counts rank first, and capped counts

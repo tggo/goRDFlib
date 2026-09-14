@@ -19,9 +19,10 @@ import (
 // rows. orderBGP picks the order instead of trusting the order the author
 // typed.
 //
-// The planner is greedy and statistics-free. Each pattern is probed against
-// the store with its constants and pre-bound variables filled in, and the
-// probe stops early. Probing is the planner's whole cost, and on MemoryStore a
+// The planner is greedy and statistics-free. A store that implements
+// store.CardinalityStore gives exact match counts from its indexes and is not
+// probed. Any other store has each pattern probed with its constants and
+// pre-bound variables filled in, and the probe stops early. Probing is the planner's whole cost, and on MemoryStore a
 // counted match costs about as much as an evaluated one, so the probes have to
 // stay far smaller than a selective query:
 //
@@ -188,9 +189,20 @@ func newBGPCandidate(tp Triple, bindings map[string]rdflibgo.Term, prefixes map[
 	return c
 }
 
-// probeCandidates fills in count and capped for every candidate that needs a
-// probe, in the rounds described at the top of the file.
+// probeCandidates fills in count and capped for every candidate that needs
+// one: exactly from a CardinalityStore, otherwise by probing in the rounds
+// described at the top of the file.
 func probeCandidates(g *rdflibgo.Graph, cands []bgpCandidate) {
+	if cs, ok := g.Store().(store.CardinalityStore); ok {
+		for i := range cands {
+			if c := &cands[i]; !c.probed {
+				c.count = cs.Cardinality(rdflibgo.TriplePattern{Subject: c.s, Predicate: c.p, Object: c.o}, g.Identifier())
+				c.probed = true
+			}
+		}
+		return
+	}
+
 	order := make([]int, 0, len(cands))
 	for i := range cands {
 		if !cands[i].probed {

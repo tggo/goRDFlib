@@ -105,3 +105,16 @@ type QueryableStore interface {
 	// Exists checks whether at least one triple matches the pattern.
 	Exists(pattern term.TriplePattern, ctx term.Term) bool
 }
+
+// CardinalityStore is an optional interface for stores that can report how
+// many triples match a pattern without visiting the matches, typically from
+// index sizes. The SPARQL engine uses it to plan join order; a store without
+// it is probed through Triples instead, which costs about as much per match as
+// evaluating the pattern.
+//
+// Cardinality must equal the number of triples Triples yields for the same
+// pattern and context. Implement it only if its cost does not grow with the
+// number of matches; otherwise QueryableStore.Count already covers counting.
+type CardinalityStore interface {
+	Cardinality(pattern term.TriplePattern, ctx term.Term) int
+}

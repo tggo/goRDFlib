@@ -105,6 +105,11 @@ func Run(t *testing.T, cfg Config) {
 	} else {
 		t.Log("backend does not implement store.QueryableStore; section skipped")
 	}
+	if _, ok := probe.(store.CardinalityStore); ok {
+		cfg.run(t, "Cardinality", func(t *testing.T) { testCardinality(t, cfg) })
+	} else {
+		t.Log("backend does not implement store.CardinalityStore; section skipped")
+	}
 	if _, ok := probe.(store.ReachabilityStore); ok {
 		cfg.run(t, "Reachability", func(t *testing.T) { testReachability(t, cfg) })
 	} else {

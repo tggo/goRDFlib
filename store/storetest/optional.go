@@ -173,6 +173,69 @@ func testQueryable(t *testing.T, cfg Config) {
 	})
 }
 
+// --- CardinalityStore ------------------------------------------------------
+
+// testCardinality pins Cardinality to what Triples yields for every pattern
+// shape, including after removals: an index-size answer that drifts from the
+// data is worse than no answer, because the planner trusts it silently.
+func testCardinality(t *testing.T, cfg Config) {
+	shapes := func() []struct {
+		name string
+		pat  term.TriplePattern
+	} {
+		return []struct {
+			name string
+			pat  term.TriplePattern
+		}{
+			{"wildcard", pattern(nil, nil, nil)},
+			{"subject", pattern(Alice, nil, nil)},
+			{"predicate", pattern(nil, pred(Knows), nil)},
+			{"object", pattern(nil, nil, Bob)},
+			{"subject+predicate", pattern(Alice, pred(Knows), nil)},
+			{"predicate+object", pattern(nil, pred(Knows), Bob)},
+			{"subject+object", pattern(Alice, nil, Bob)},
+			{"fully bound, present", pattern(Alice, pred(Knows), Bob)},
+			{"fully bound, absent", pattern(Alice, pred(Knows), Dave)},
+			{"no match", pattern(Dave, nil, nil)},
+		}
+	}
+	check := func(t *testing.T, s store.Store) {
+		t.Helper()
+		c := s.(store.CardinalityStore)
+		for _, sh := range shapes() {
+			want := count(s.Triples(sh.pat, nil))
+			if got := c.Cardinality(sh.pat, nil); got != want {
+				t.Errorf("%s: Cardinality = %d, Triples yielded %d", sh.name, got, want)
+			}
+		}
+	}
+	seed := func(t *testing.T) store.Store {
+		s := cfg.New(t)
+		s.Add(triple(Alice, Knows, Bob), nil)
+		s.Add(triple(Alice, Knows, Carol), nil)
+		s.Add(triple(Alice, Name, lit("Alice")), nil)
+		s.Add(triple(Bob, Knows, Carol), nil)
+		s.Add(triple(Carol, Knows, Bob), nil)
+		s.Add(triple(Carol, Name, Bob), nil)
+		return s
+	}
+
+	cfg.run(t, "agrees with Triples for every pattern shape", func(t *testing.T) {
+		check(t, seed(t))
+	})
+	cfg.run(t, "stays in step with duplicates, Remove and Set", func(t *testing.T) {
+		s := seed(t)
+		s.Add(triple(Alice, Knows, Bob), nil) // duplicate: must not count twice
+		check(t, s)
+		s.Remove(pattern(nil, pred(Knows), Carol), nil)
+		check(t, s)
+		s.Set(triple(Alice, Knows, Dave), nil)
+		check(t, s)
+		s.Remove(pattern(nil, nil, nil), nil)
+		check(t, s)
+	})
+}
+
 // --- ReachabilityStore -----------------------------------------------------
 
 // testReachability checks the contract in store.ReachabilityStore against a
