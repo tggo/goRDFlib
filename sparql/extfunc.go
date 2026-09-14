@@ -157,7 +157,7 @@ func validateFunctionIRI(iri string) error {
 // A function bound to this call site by ParsedQuery.BindFunctions wins over one
 // registered globally for the same IRI, so a caller-supplied vocabulary never
 // silently picks up a process-wide definition.
-func evalExtensionFunc(e *FuncExpr, bindings map[string]rdflibgo.Term, prefixes map[string]string) (rdflibgo.Term, bool) {
+func evalExtensionFunc(e *FuncExpr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) (rdflibgo.Term, bool) {
 	fn := e.Fn
 	if fn == nil {
 		if e.IRI == "" {
@@ -171,7 +171,7 @@ func evalExtensionFunc(e *FuncExpr, bindings map[string]rdflibgo.Term, prefixes 
 	}
 	args := make([]rdflibgo.Term, len(e.Args))
 	for i, a := range e.Args {
-		args[i] = evalExpr(a, bindings, prefixes)
+		args[i] = evalExprWithGraph(a, bindings, prefixes, g, namedGraphs)
 	}
 	result, err := fn(args)
 	if err != nil {

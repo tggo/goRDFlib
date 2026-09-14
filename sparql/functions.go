@@ -36,6 +36,12 @@ func cachedRegexpCompile(pattern string) (*regexp.Regexp, error) {
 // unbound or failed to evaluate, or an argument of the wrong type.
 // Ported from: rdflib.plugins.sparql.operators
 func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
+	return evalFuncWithGraph(name, args, bindings, prefixes, nil, nil)
+}
+
+// evalFuncWithGraph is evalFunc with a graph for EXISTS inside the arguments.
+func evalFuncWithGraph(name string, args []Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
+	evalArg := func(a Expr) rdflibgo.Term { return evalExprWithGraph(a, bindings, prefixes, g, namedGraphs) }
 	// Functional forms (§17.4.1) evaluate their arguments themselves.
 	switch name {
 	case "BOUND":
@@ -50,17 +56,17 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 		if len(args) != 3 {
 			return nil
 		}
-		cond, ok := ebv(evalExpr(args[0], bindings, prefixes))
+		cond, ok := ebv(evalArg(args[0]))
 		if !ok {
 			return nil // an error in the condition propagates (§17.4.1.2)
 		}
 		if cond {
-			return evalExpr(args[1], bindings, prefixes)
+			return evalArg(args[1])
 		}
-		return evalExpr(args[2], bindings, prefixes)
+		return evalArg(args[2])
 	case "COALESCE":
 		for _, a := range args {
-			if v := evalExpr(a, bindings, prefixes); v != nil {
+			if v := evalArg(a); v != nil {
 				return v
 			}
 		}
@@ -78,7 +84,7 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 
 	vals := make([]rdflibgo.Term, len(args))
 	for i, a := range args {
-		v := evalExpr(a, bindings, prefixes)
+		v := evalArg(a)
 		if v == nil {
 			// §17.4.1.3 / §17.3: evaluating an unbound variable, or an
 			// expression that raised an error, makes the call an error. No

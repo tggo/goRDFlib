@@ -76,8 +76,8 @@ func EvalQuery(g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflib
 		if len(q.OrderBy) > 0 {
 			slices.SortFunc(solutions, func(a, b map[string]rdflibgo.Term) int {
 				for _, ob := range q.OrderBy {
-					va := evalExpr(ob.Expr, a, q.Prefixes)
-					vb := evalExpr(ob.Expr, b, q.Prefixes)
+					va := evalExprWithGraph(ob.Expr, a, q.Prefixes, g, q.NamedGraphs)
+					vb := evalExprWithGraph(ob.Expr, b, q.Prefixes, g, q.NamedGraphs)
 					c := compareTermValues(va, vb)
 					if ob.Desc {
 						c = -c
@@ -116,7 +116,7 @@ func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflib
 		for i, s := range solutions {
 			ns := copyBindings(s)
 			for _, pe := range q.ProjectExprs {
-				val := evalExpr(pe.Expr, ns, q.Prefixes)
+				val := evalExprWithGraph(pe.Expr, ns, q.Prefixes, g, q.NamedGraphs)
 				if val != nil {
 					ns[pe.Var] = val
 				}
@@ -129,8 +129,8 @@ func evalSelect(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflib
 	if len(q.OrderBy) > 0 {
 		slices.SortFunc(solutions, func(a, b map[string]rdflibgo.Term) int {
 			for _, ob := range q.OrderBy {
-				va := evalExpr(ob.Expr, a, q.Prefixes)
-				vb := evalExpr(ob.Expr, b, q.Prefixes)
+				va := evalExprWithGraph(ob.Expr, a, q.Prefixes, g, q.NamedGraphs)
+				vb := evalExprWithGraph(ob.Expr, b, q.Prefixes, g, q.NamedGraphs)
 				c := compareTermValues(va, vb)
 				if ob.Desc {
 					c = -c
@@ -312,7 +312,7 @@ func evalAggregation(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]r
 		var keyParts []string
 		keyBinds := make(map[string]rdflibgo.Term)
 		for i, gExpr := range q.GroupBy {
-			val := evalExpr(gExpr, s, q.Prefixes)
+			val := evalExprWithGraph(gExpr, s, q.Prefixes, g, q.NamedGraphs)
 			if val != nil {
 				keyParts = append(keyParts, val.N3())
 			} else {
@@ -346,14 +346,14 @@ func evalAggregation(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]r
 		row := copyBindings(grp.keyBinds)
 
 		for _, pe := range q.ProjectExprs {
-			val := evalAggExpr(pe.Expr, grp.members, q.Prefixes)
+			val := evalAggExprWithGraph(pe.Expr, grp.members, q.Prefixes, g, q.NamedGraphs)
 			if val != nil {
 				row[pe.Var] = val
 			}
 		}
 
 		if q.Having != nil {
-			hval := evalAggExpr(q.Having, grp.members, q.Prefixes)
+			hval := evalAggExprWithGraph(q.Having, grp.members, q.Prefixes, g, q.NamedGraphs)
 			if !effectiveBooleanValue(hval) {
 				continue
 			}
@@ -365,27 +365,38 @@ func evalAggregation(g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]r
 }
 
 func evalAggExpr(expr Expr, group []map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
+	return evalAggExprWithGraph(expr, group, prefixes, nil, nil)
+}
+
+// evalAggExprWithGraph evaluates a projection or HAVING expression over one
+// group. Non-aggregate parts see the group's first solution, and EXISTS is
+// evaluated against g (SPARQL 1.1 §17.4.1.4: EXISTS is a built-in usable in
+// any expression, not only in FILTER).
+func evalAggExprWithGraph(expr Expr, group []map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
 	if expr == nil {
 		return nil
 	}
 	switch e := expr.(type) {
 	case *FuncExpr:
 		if isAggregateFuncName(e.Name) {
-			return evalAggregate(e, group, prefixes)
+			return evalAggregateWithGraph(e, group, prefixes, g, namedGraphs)
 		}
 		if len(group) > 0 {
-			if res, handled := evalExtensionFunc(e, group[0], prefixes); handled {
-				return res
-			}
-			return evalFunc(e.Name, e.Args, group[0], prefixes)
+			return evalExprWithGraph(e, group[0], prefixes, g, namedGraphs)
 		}
 		return nil
+	case *ExistsExpr:
+		row := map[string]rdflibgo.Term{}
+		if len(group) > 0 {
+			row = group[0]
+		}
+		return evalExprWithGraph(e, row, prefixes, g, namedGraphs)
 	case *BinaryExpr:
-		left := evalAggExpr(e.Left, group, prefixes)
-		right := evalAggExpr(e.Right, group, prefixes)
+		left := evalAggExprWithGraph(e.Left, group, prefixes, g, namedGraphs)
+		right := evalAggExprWithGraph(e.Right, group, prefixes, g, namedGraphs)
 		return evalBinaryOp(e.Op, left, right)
 	case *UnaryExpr:
-		arg := evalAggExpr(e.Arg, group, prefixes)
+		arg := evalAggExprWithGraph(e.Arg, group, prefixes, g, namedGraphs)
 		return evalUnaryOp(e.Op, arg)
 	case *VarExpr:
 		if len(group) > 0 {
@@ -401,13 +412,17 @@ func evalAggExpr(expr Expr, group []map[string]rdflibgo.Term, prefixes map[strin
 }
 
 func evalAggregate(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
+	return evalAggregateWithGraph(fe, group, prefixes, nil, nil)
+}
+
+func evalAggregateWithGraph(fe *FuncExpr, group []map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
 	var vals []rdflibgo.Term
 	hasError := false
 	for _, s := range group {
 		if fe.Star {
 			vals = append(vals, rdflibgo.NewLiteral(1))
 		} else if len(fe.Args) > 0 {
-			v := evalExpr(fe.Args[0], s, prefixes)
+			v := evalExprWithGraph(fe.Args[0], s, prefixes, g, namedGraphs)
 			if v != nil {
 				vals = append(vals, v)
 				// For numeric aggregates, non-numeric values are errors
@@ -665,12 +680,7 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string,
 		inner := evalPattern(g, p.Pattern, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, b := range inner {
-			var val rdflibgo.Term
-			if containsExists(p.Expr) {
-				val = evalExprWithGraph(p.Expr, b, prefixes, g, namedGraphs)
-			} else {
-				val = evalExpr(p.Expr, b, prefixes)
-			}
+			val := evalExprWithGraph(p.Expr, b, prefixes, g, namedGraphs)
 			if effectiveBooleanValue(val) {
 				result = append(result, b)
 			}
@@ -680,14 +690,8 @@ func evalPattern(g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string,
 	case *BindPattern:
 		inner := evalPattern(g, p.Pattern, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
-		useGraphEval := containsExists(p.Expr)
 		for _, b := range inner {
-			var val rdflibgo.Term
-			if useGraphEval {
-				val = evalExprWithGraph(p.Expr, b, prefixes, g, namedGraphs)
-			} else {
-				val = evalExpr(p.Expr, b, prefixes)
-			}
+			val := evalExprWithGraph(p.Expr, b, prefixes, g, namedGraphs)
 			nb := copyBindings(b)
 			if val != nil {
 				nb[p.Var] = val
@@ -864,11 +868,7 @@ func evalPatternPreBound(g *rdflibgo.Graph, pattern Pattern, pre map[string]rdfl
 	// evalExpr is given the row plus the pre-bound constants, so an expression
 	// sees them without them becoming part of the solution.
 	evalWith := func(expr Expr, row map[string]rdflibgo.Term) rdflibgo.Term {
-		merged := mergeBindings(pre, row)
-		if containsExists(expr) {
-			return evalExprWithGraph(expr, merged, prefixes, g, namedGraphs)
-		}
-		return evalExpr(expr, merged, prefixes)
+		return evalExprWithGraph(expr, mergeBindings(pre, row), prefixes, g, namedGraphs)
 	}
 
 	switch p := pattern.(type) {
@@ -1316,92 +1316,6 @@ func matchTripleTermPattern(tt rdflibgo.TripleTerm, pattern string, bindings map
 		}
 	}
 	return nb
-}
-
-// --- Expression evaluation ---
-
-func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
-	if expr == nil {
-		return nil
-	}
-
-	switch e := expr.(type) {
-	case *VarExpr:
-		return bindings[e.Name]
-	case *LiteralExpr:
-		return e.Value
-	case *IRIExpr:
-		iri := e.Value
-		if !strings.Contains(iri, ":") {
-			if base, ok := prefixes[baseURIKey]; ok {
-				iri = resolveRelativeIRI(base, iri)
-			}
-		}
-		return rdflibgo.NewURIRefUnsafe(iri)
-	case *BinaryExpr:
-		left := evalExpr(e.Left, bindings, prefixes)
-		right := evalExpr(e.Right, bindings, prefixes)
-		return evalBinaryOp(e.Op, left, right)
-	case *UnaryExpr:
-		arg := evalExpr(e.Arg, bindings, prefixes)
-		return evalUnaryOp(e.Op, arg)
-	case *FuncExpr:
-		// A registered extension function (SPARQL 1.1 §17.6) wins over the
-		// built-in table, so callers can override e.g. an xsd: cast.
-		if res, handled := evalExtensionFunc(e, bindings, prefixes); handled {
-			return res
-		}
-		return evalFunc(e.Name, e.Args, bindings, prefixes)
-	case *ExistsExpr:
-		return nil // needs graph; handled via evalExprWithGraph
-	}
-
-	return nil
-}
-
-func evalExprWithGraph(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
-	if expr == nil {
-		return nil
-	}
-	switch e := expr.(type) {
-	case *ExistsExpr:
-		results := evalPatternWithBindings(g, e.Pattern, bindings, prefixes, namedGraphs)
-		exists := len(results) > 0
-		if e.Not {
-			exists = !exists
-		}
-		return rdflibgo.NewLiteral(exists)
-	case *BinaryExpr:
-		left := evalExprWithGraph(e.Left, bindings, prefixes, g, namedGraphs)
-		right := evalExprWithGraph(e.Right, bindings, prefixes, g, namedGraphs)
-		return evalBinaryOp(e.Op, left, right)
-	case *UnaryExpr:
-		arg := evalExprWithGraph(e.Arg, bindings, prefixes, g, namedGraphs)
-		return evalUnaryOp(e.Op, arg)
-	default:
-		return evalExpr(expr, bindings, prefixes)
-	}
-}
-
-func containsExists(expr Expr) bool {
-	if expr == nil {
-		return false
-	}
-	switch e := expr.(type) {
-	case *ExistsExpr:
-		return true
-	case *BinaryExpr:
-		return containsExists(e.Left) || containsExists(e.Right)
-	case *UnaryExpr:
-		return containsExists(e.Arg)
-	case *FuncExpr:
-		for _, a := range e.Args {
-			if containsExists(a) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // --- Binding helpers ---
