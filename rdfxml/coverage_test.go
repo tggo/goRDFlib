@@ -763,7 +763,8 @@ func TestSerializeMultipleRDFType(t *testing.T) {
 	}
 }
 
-// TestSerializeNoQNamePredicate covers predicate without valid QName.
+// TestSerializeNoQNamePredicate covers a predicate whose namespace is not
+// bound: it gets a generated prefix instead of being written as a raw IRI.
 func TestSerializeNoQNamePredicate(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
@@ -774,32 +775,25 @@ func TestSerializeNoQNamePredicate(t *testing.T) {
 	if err := Serialize(g, &buf); err != nil {
 		t.Fatal(err)
 	}
-	// The predicate has no matching namespace, so the full URI is used as element name
 	out := buf.String()
-	if !strings.Contains(out, "http://example.org/no-namespace-match/p") {
-		t.Errorf("expected full URI for predicate, got:\n%s", out)
+	if !strings.Contains(out, `xmlns:ns1="http://example.org/no-namespace-match/"`) || !strings.Contains(out, "<ns1:p>") {
+		t.Errorf("expected generated prefix for predicate, got:\n%s", out)
 	}
 }
 
-// TestXmlQNameNoMatch covers xmlQName returning empty string.
-func TestXmlQNameNoMatch(t *testing.T) {
-	nsMap := map[string]string{
-		"http://example.org/": "ex",
-	}
-	got := xmlQName("http://other.org/thing", nsMap)
-	if got != "" {
+// TestLookupBoundNoMatch covers lookupBound returning empty string.
+func TestLookupBoundNoMatch(t *testing.T) {
+	tbl := newNSTable(map[string]string{"ex": "http://example.org/"}, nil)
+	if got := tbl.lookupBound("http://other.org/thing"); got != "" {
 		t.Errorf("expected empty qname for no-match, got %q", got)
 	}
 }
 
-// TestXmlQNameWithHash covers xmlQName with # in local name.
-func TestXmlQNameWithHash(t *testing.T) {
-	nsMap := map[string]string{
-		"http://example.org/": "ex",
-	}
-	got := xmlQName("http://example.org/a#b", nsMap)
+// TestLookupBoundWithHash covers lookupBound with # in local name.
+func TestLookupBoundWithHash(t *testing.T) {
+	tbl := newNSTable(map[string]string{"ex": "http://example.org/"}, nil)
 	// "#" in local part makes it invalid
-	if got != "" {
+	if got := tbl.lookupBound("http://example.org/a#b"); got != "" {
 		t.Errorf("expected empty qname for hash in local, got %q", got)
 	}
 }
@@ -910,8 +904,8 @@ func TestParseCollectionWithReifyID(t *testing.T) {
 func TestSerializeRDFTypeNoQName(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	// Type with no matching namespace prefix => should fall back to rdf:Description
-	noNSType := rdflibgo.NewURIRefUnsafe("http://no-ns-registered.org/MyType")
+	// A type IRI that ends in digits has no QName => falls back to rdf:Description
+	noNSType := rdflibgo.NewURIRefUnsafe("http://no-ns-registered.org/types/123")
 	g.Add(s, rdflibgo.RDF.Type, noNSType)
 
 	var buf bytes.Buffer
