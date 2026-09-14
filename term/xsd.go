@@ -2,6 +2,7 @@ package term
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -48,9 +49,9 @@ func goToLexical(value any) (string, URIRef) {
 	case int64:
 		return strconv.FormatInt(v, 10), XSDInteger
 	case float32:
-		return strconv.FormatFloat(float64(v), 'g', -1, 32), XSDFloat
+		return formatXSDFloat(float64(v), 32), XSDFloat
 	case float64:
-		return strconv.FormatFloat(v, 'g', -1, 64), XSDDouble
+		return formatXSDFloat(v, 64), XSDDouble
 	case bool:
 		if v {
 			return "true", XSDBoolean
@@ -59,6 +60,21 @@ func goToLexical(value any) (string, URIRef) {
 	default:
 		return fmt.Sprintf("%v", value), XSDString
 	}
+}
+
+// formatXSDFloat writes a float in the xsd:float / xsd:double lexical space.
+// strconv spells the special values "+Inf", "-Inf" and "NaN"; XSD 1.1 §3.3.4
+// and §3.3.5 spell them "INF", "-INF" and "NaN", and "+Inf" is ill-typed.
+func formatXSDFloat(v float64, bitSize int) string {
+	switch {
+	case math.IsInf(v, 1):
+		return "INF"
+	case math.IsInf(v, -1):
+		return "-INF"
+	case math.IsNaN(v):
+		return "NaN"
+	}
+	return strconv.FormatFloat(v, 'g', -1, bitSize)
 }
 
 // GoToLexical converts a Go value to its lexical form and XSD datatype.
