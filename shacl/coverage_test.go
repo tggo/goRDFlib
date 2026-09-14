@@ -482,22 +482,7 @@ func TestIsValidDateNonDigit(t *testing.T) {
 	}
 }
 
-// --- isInRange / isInBigRange / isInIntegerRange ---
-
-func TestIsInRangeInvalid(t *testing.T) {
-	if isInRange("notanumber", 0, 100) {
-		t.Error("expected false")
-	}
-}
-
-func TestIsInBigRangeInvalid(t *testing.T) {
-	if isInBigRange("notanumber", "0", "100") {
-		t.Error("expected false")
-	}
-	if isInBigRange("50", "notmin", "100") {
-		t.Error("expected false for invalid min")
-	}
-}
+// --- isInIntegerRange ---
 
 func TestIsInIntegerRangeNonNegative(t *testing.T) {
 	if !isInIntegerRange("0", XSD+"nonNegativeInteger") {

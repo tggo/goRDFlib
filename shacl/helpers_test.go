@@ -113,7 +113,7 @@ func TestIsValidDateTime(t *testing.T) {
 		{"2024-01-15T10:30:00", true},
 		{"2024-01-15T10:30:00Z", true},
 		{"2024-01-15", false},
-		{"noThere", true}, // contains 'T'
+		{"noThere", false}, // containing a 'T' is not enough
 		{"", false},
 	}
 	for _, tc := range tests {
