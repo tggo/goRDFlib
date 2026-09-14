@@ -5822,10 +5822,10 @@ func TestSampleAggregateEmpty(t *testing.T) {
 }
 
 func TestBoundFunctionNoArgs(t *testing.T) {
-	// BOUND with no var expr arg falls through to return false
+	// BOUND without a variable argument is an error (wrong arity).
 	r := evalFunc("BOUND", nil, nil, nil)
-	if r == nil {
-		t.Fatal("expected non-nil")
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 
@@ -5849,9 +5849,9 @@ func TestRegexInvalidPattern(t *testing.T) {
 		&LiteralExpr{Value: rdflibgo.NewLiteral("hello")},
 		&LiteralExpr{Value: rdflibgo.NewLiteral("[invalid")},
 	}, nil, nil)
-	// Invalid regex should return false
-	if r == nil {
-		t.Fatal("expected non-nil result")
+	// An invalid pattern is an error (XPath FORX0002), not a non-match.
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 
@@ -5889,23 +5889,26 @@ func TestConcatWithNilArg(t *testing.T) {
 }
 
 func TestLangMatchesFallbackFalse(t *testing.T) {
+	// Wrong number of arguments is an error.
 	r := evalFunc("LANGMATCHES", nil, nil, nil)
-	if r == nil {
-		t.Fatal("expected non-nil")
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 
 func TestSameTermFallbackFalse(t *testing.T) {
+	// Wrong number of arguments is an error.
 	r := evalFunc("SAMETERM", nil, nil, nil)
-	if r == nil {
-		t.Fatal("expected non-nil")
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 
 func TestIsTripleFalse(t *testing.T) {
+	// Wrong number of arguments is an error.
 	r := evalFunc("ISTRIPLE", nil, nil, nil)
-	if r == nil {
-		t.Fatal("expected non-nil")
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 
@@ -5933,10 +5936,10 @@ func TestTripleFuncNonPredicate(t *testing.T) {
 }
 
 func TestLangdirFunction(t *testing.T) {
-	// LANGDIR with no args
+	// LANGDIR with no args is an error.
 	r := evalFunc("LANGDIR", nil, nil, nil)
-	if r == nil {
-		t.Fatal("expected non-nil fallback")
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 
@@ -6804,9 +6807,10 @@ func TestSubstrLengthExceedsString(t *testing.T) {
 }
 
 func TestLangNoArgs(t *testing.T) {
+	// LANG with no args is an error.
 	r := evalFunc("LANG", nil, nil, nil)
-	if r == nil {
-		t.Fatal("expected non-nil (empty string)")
+	if r != nil {
+		t.Fatal("expected nil (error)")
 	}
 }
 

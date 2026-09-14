@@ -1,19 +1,13 @@
 package sparql
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -37,19 +31,13 @@ func cachedRegexpCompile(pattern string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// evalFunc evaluates a SPARQL built-in function.
+// evalFunc evaluates a SPARQL built-in function call. It returns nil for an
+// error: an unknown function, a wrong number of arguments, an argument that is
+// unbound or failed to evaluate, or an argument of the wrong type.
 // Ported from: rdflib.plugins.sparql.operators
 func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
-	evalArgs := func() []rdflibgo.Term {
-		var vals []rdflibgo.Term
-		for _, a := range args {
-			vals = append(vals, evalExpr(a, bindings, prefixes))
-		}
-		return vals
-	}
-
+	// Functional forms (§17.4.1) evaluate their arguments themselves.
 	switch name {
-	// Term constructors
 	case "BOUND":
 		if len(args) == 1 {
 			if v, ok := args[0].(*VarExpr); ok {
@@ -57,617 +45,95 @@ func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefi
 				return rdflibgo.NewLiteral(exists)
 			}
 		}
-		return rdflibgo.NewLiteral(false)
-
-	case "ISIRI", "ISURI":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			_, ok := vals[0].(rdflibgo.URIRef)
-			return rdflibgo.NewLiteral(ok)
-		}
-	case "ISBLANK":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			_, ok := vals[0].(rdflibgo.BNode)
-			return rdflibgo.NewLiteral(ok)
-		}
-	case "ISLITERAL":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			_, ok := vals[0].(rdflibgo.Literal)
-			return rdflibgo.NewLiteral(ok)
-		}
-	case "ISNUMERIC":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			// §17.4.2.5: true for a numeric value, false for an ill-typed
-			// numeric literal such as "1200"^^xsd:byte.
-			return rdflibgo.NewLiteral(isNumericTerm(vals[0]))
-		}
-		return rdflibgo.NewLiteral(false)
-
-	// String functions
-	case "STR":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			switch v := vals[0].(type) {
-			case rdflibgo.URIRef:
-				return rdflibgo.NewLiteral(v.Value())
-			case rdflibgo.Literal:
-				return rdflibgo.NewLiteral(v.Lexical())
-			default:
-				return rdflibgo.NewLiteral(vals[0].String())
-			}
-		}
-	case "STRLEN":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(utf8.RuneCountInString(termString(vals[0])))
-		}
-	case "SUBSTR":
-		vals := evalArgs()
-		if len(vals) < 1 {
-			return nil
-		}
-		s := termString(vals[0])
-		runes := []rune(s)
-		if len(vals) >= 2 {
-			start := int(toFloat64(vals[1])) - 1 // SPARQL is 1-based
-			if start < 0 {
-				start = 0
-			}
-			if start >= len(runes) {
-				return stringResult("", vals[0])
-			}
-			if len(vals) >= 3 {
-				length := int(toFloat64(vals[2]))
-				end := start + length
-				if end > len(runes) {
-					end = len(runes)
-				}
-				return stringResult(string(runes[start:end]), vals[0])
-			}
-			return stringResult(string(runes[start:]), vals[0])
-		}
-	case "UCASE":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return stringResult(strings.ToUpper(termString(vals[0])), vals[0])
-		}
-	case "LCASE":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return stringResult(strings.ToLower(termString(vals[0])), vals[0])
-		}
-	case "STRSTARTS":
-		vals := evalArgs()
-		if len(vals) == 2 {
-			return rdflibgo.NewLiteral(strings.HasPrefix(termString(vals[0]), termString(vals[1])))
-		}
-	case "STRENDS":
-		vals := evalArgs()
-		if len(vals) == 2 {
-			return rdflibgo.NewLiteral(strings.HasSuffix(termString(vals[0]), termString(vals[1])))
-		}
-	case "CONTAINS":
-		vals := evalArgs()
-		if len(vals) == 2 {
-			return rdflibgo.NewLiteral(strings.Contains(termString(vals[0]), termString(vals[1])))
-		}
-	case "CONCAT":
-		vals := evalArgs()
-		var sb strings.Builder
-		// Track language and direction: preserve only if ALL args match
-		var commonLang *string
-		var commonDir *string
-		hasError := false
-		for _, v := range vals {
-			if v == nil {
-				hasError = true
-				continue
-			}
-			// CONCAT requires string-compatible arguments
-			if !isStringLiteral(v) {
-				hasError = true
-				continue
-			}
-			sb.WriteString(termString(v))
-			if l, ok := v.(rdflibgo.Literal); ok {
-				lang := l.Language()
-				dir := l.Dir()
-				if commonLang == nil {
-					commonLang = &lang
-				} else if *commonLang != lang {
-					empty := ""
-					commonLang = &empty
-				}
-				if commonDir == nil {
-					commonDir = &dir
-				} else if *commonDir != dir {
-					empty := ""
-					commonDir = &empty
-				}
-			}
-		}
-		if hasError {
-			return nil
-		}
-		var opts []rdflibgo.LiteralOption
-		if commonLang != nil && *commonLang != "" && commonDir != nil && *commonDir != "" {
-			// All have same lang AND same dir
-			opts = append(opts, rdflibgo.WithLang(*commonLang))
-			opts = append(opts, rdflibgo.WithDir(*commonDir))
-		} else if commonLang != nil && *commonLang != "" && (commonDir == nil || *commonDir == "") {
-			// Check if any had dir — if some had dir and some didn't, drop lang
-			noneHaveDir := true
-			for _, v := range vals {
-				if l, ok := v.(rdflibgo.Literal); ok {
-					if l.Dir() != "" {
-						noneHaveDir = false
-						break
-					}
-				}
-			}
-			if noneHaveDir {
-				opts = append(opts, rdflibgo.WithLang(*commonLang))
-			}
-		}
-		return rdflibgo.NewLiteral(sb.String(), opts...)
-	case "REGEX":
-		vals := evalArgs()
-		if len(vals) >= 2 {
-			pattern := termString(vals[1])
-			flags := ""
-			if len(vals) >= 3 {
-				flags = termString(vals[2])
-			}
-			if strings.Contains(flags, "i") {
-				pattern = "(?i)" + pattern
-			}
-			re, err := cachedRegexpCompile(pattern)
-			if err != nil {
-				return rdflibgo.NewLiteral(false)
-			}
-			return rdflibgo.NewLiteral(re.MatchString(termString(vals[0])))
-		}
-	case "REPLACE":
-		vals := evalArgs()
-		if len(vals) >= 3 {
-			// REPLACE requires string literal input
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				if isNumericDatatype(l.Datatype()) {
-					return nil // type error
-				}
-			} else {
-				return nil // non-literal
-			}
-			pattern := termString(vals[1])
-			replacement := termString(vals[2])
-			flags := ""
-			if len(vals) >= 4 {
-				flags = termString(vals[3])
-			}
-			if strings.Contains(flags, "i") {
-				pattern = "(?i)" + pattern
-			}
-			re, err := cachedRegexpCompile(pattern)
-			if err != nil {
-				return vals[0]
-			}
-			return stringResult(re.ReplaceAllString(termString(vals[0]), replacement), vals[0])
-		}
-
-	// Term accessors
-	case "LANG":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				return rdflibgo.NewLiteral(l.Language())
-			}
-			return nil // type error for non-literals
-		}
-		return rdflibgo.NewLiteral("")
-	case "DATATYPE":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				return l.Datatype()
-			}
-		}
-
-	// Numeric
-	case "ABS":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(math.Abs(toFloat64(vals[0])))
-		}
-	case "ROUND":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(math.Round(toFloat64(vals[0])))
-		}
-	case "CEIL":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(math.Ceil(toFloat64(vals[0])))
-		}
-	case "FLOOR":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(math.Floor(toFloat64(vals[0])))
-		}
-
-	// Hash
-	case "MD5":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			h := md5.Sum([]byte(termString(vals[0])))
-			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
-		}
-	case "SHA1":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			h := sha1.Sum([]byte(termString(vals[0])))
-			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
-		}
-	case "SHA256":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			h := sha256.Sum256([]byte(termString(vals[0])))
-			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
-		}
-
-	// Conditional
+		return nil
 	case "IF":
-		if len(args) == 3 {
-			cond := evalExpr(args[0], bindings, prefixes)
-			if cond == nil {
-				return nil // error in condition propagates
-			}
-			if effectiveBooleanValue(cond) {
-				return evalExpr(args[1], bindings, prefixes)
-			}
-			return evalExpr(args[2], bindings, prefixes)
+		if len(args) != 3 {
+			return nil
 		}
+		cond, ok := ebv(evalExpr(args[0], bindings, prefixes))
+		if !ok {
+			return nil // an error in the condition propagates (§17.4.1.2)
+		}
+		if cond {
+			return evalExpr(args[1], bindings, prefixes)
+		}
+		return evalExpr(args[2], bindings, prefixes)
 	case "COALESCE":
 		for _, a := range args {
-			v := evalExpr(a, bindings, prefixes)
-			if v != nil {
+			if v := evalExpr(a, bindings, prefixes); v != nil {
 				return v
 			}
 		}
 		return nil
-	case "LANGMATCHES":
-		vals := evalArgs()
-		if len(vals) == 2 {
-			tag := strings.ToLower(termString(vals[0]))
-			range_ := strings.ToLower(termString(vals[1]))
-			if range_ == "*" {
-				return rdflibgo.NewLiteral(tag != "")
-			}
-			return rdflibgo.NewLiteral(tag == range_ || strings.HasPrefix(tag, range_+"-"))
-		}
-		return rdflibgo.NewLiteral(false)
-	case "SAMETERM":
-		vals := evalArgs()
-		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
-			return rdflibgo.NewLiteral(vals[0].N3() == vals[1].N3())
-		}
-		return rdflibgo.NewLiteral(false)
-
-	// String constructors
-	case "STRLANG":
-		vals := evalArgs()
-		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
-			// STRLANG requires a simple literal (no language, no datatype other than xsd:string)
-			l, ok := vals[0].(rdflibgo.Literal)
-			if !ok {
-				return nil // type error: non-literal
-			}
-			if l.Language() != "" {
-				return nil // type error
-			}
-			dt := l.Datatype()
-			if dt != rdflibgo.XSDString && dt.Value() != "" {
-				return nil // type error: has non-string datatype
-			}
-			lang := termString(vals[1])
-			if lang == "" {
-				return nil // empty language tag is an error
-			}
-			return rdflibgo.NewLiteral(l.Lexical(), rdflibgo.WithLang(lang))
-		}
-	case "STRDT":
-		vals := evalArgs()
-		if len(vals) == 2 && vals[0] != nil {
-			// STRDT requires a simple literal (no language, xsd:string or no datatype)
-			if !isStringLiteral(vals[0]) {
-				return nil // type error: non-string input
-			}
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				if l.Language() != "" {
-					return nil // type error: has language tag
-				}
-			}
-			if u, ok := vals[1].(rdflibgo.URIRef); ok {
-				return rdflibgo.NewLiteral(termString(vals[0]), rdflibgo.WithDatatype(u))
-			}
-		}
-	case "STRBEFORE":
-		vals := evalArgs()
-		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
-			if !isStringLiteral(vals[0]) || !isStringLiteral(vals[1]) {
-				return nil
-			}
-			if !strArgCompatible(vals[0], vals[1]) {
-				return nil
-			}
-			s := termString(vals[0])
-			arg := termString(vals[1])
-			if arg == "" {
-				return stringResult("", vals[0])
-			}
-			idx := strings.Index(s, arg)
-			if idx < 0 {
-				return rdflibgo.NewLiteral("")
-			}
-			return stringResult(s[:idx], vals[0])
-		}
-	case "STRAFTER":
-		vals := evalArgs()
-		if len(vals) == 2 && vals[0] != nil && vals[1] != nil {
-			if !isStringLiteral(vals[0]) || !isStringLiteral(vals[1]) {
-				return nil
-			}
-			if !strArgCompatible(vals[0], vals[1]) {
-				return nil
-			}
-			s := termString(vals[0])
-			arg := termString(vals[1])
-			if arg == "" {
-				return stringResult(s, vals[0])
-			}
-			idx := strings.Index(s, arg)
-			if idx < 0 {
-				return rdflibgo.NewLiteral("")
-			}
-			return stringResult(s[idx+len(arg):], vals[0])
-		}
-	case "ENCODE_FOR_URI":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			return rdflibgo.NewLiteral(encodeForURI(termString(vals[0])))
-		}
-	case "IRI", "URI":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			var s string
-			if u, ok := vals[0].(rdflibgo.URIRef); ok {
-				s = u.Value()
-			} else {
-				s = termString(vals[0])
-			}
-			// Resolve relative URI against base
-			if base, ok := prefixes[baseURIKey]; ok && !strings.Contains(s, ":") {
-				s = base + s
-			}
-			return rdflibgo.NewURIRefUnsafe(s)
-		}
 	case "BNODE":
 		if len(args) == 0 {
 			return rdflibgo.NewBNode("") // unique each call
 		}
-		vals := evalArgs()
-		if len(vals) == 1 {
-			// BNODE(str): same str → same bnode within a query
-			key := termString(vals[0])
-			// Use a deterministic bnode label based on the input
-			return rdflibgo.NewBNode("bnode_" + key)
+	case "RAND", "UUID", "STRUUID", "NOW":
+		if len(args) != 0 {
+			return nil
 		}
+		return evalNullary(name, prefixes)
+	}
 
-	// Date/time functions
-	case "NOW":
-		// Per SPARQL 1.1 spec §17.4.5.1, NOW() must return the same value
-		// throughout a single query evaluation.
-		nowStr := prefixes[queryStartTimeKey]
-		if nowStr == "" {
-			nowStr = timeNow()
+	vals := make([]rdflibgo.Term, len(args))
+	for i, a := range args {
+		v := evalExpr(a, bindings, prefixes)
+		if v == nil {
+			// §17.4.1.3 / §17.3: evaluating an unbound variable, or an
+			// expression that raised an error, makes the call an error. No
+			// function below accepts an error as an argument.
+			return nil
 		}
-		return rdflibgo.NewLiteral(nowStr, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime")))
-	case "YEAR":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if y, ok := extractDatePart(termString(vals[0]), "year"); ok {
-				return rdflibgo.NewLiteral(y, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-		}
-	case "MONTH":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if m, ok := extractDatePart(termString(vals[0]), "month"); ok {
-				return rdflibgo.NewLiteral(m, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-		}
-	case "DAY":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if d, ok := extractDatePart(termString(vals[0]), "day"); ok {
-				return rdflibgo.NewLiteral(d, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-		}
-	case "HOURS":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if h, ok := extractDatePart(termString(vals[0]), "hours"); ok {
-				return rdflibgo.NewLiteral(h, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-		}
-	case "MINUTES":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if m, ok := extractDatePart(termString(vals[0]), "minutes"); ok {
-				return rdflibgo.NewLiteral(m, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-		}
-	case "SECONDS":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if s, ok := extractDatePart(termString(vals[0]), "seconds"); ok {
-				return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-			}
-		}
-	case "TIMEZONE":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if tz, ok := extractTimezone(termString(vals[0])); ok {
-				return rdflibgo.NewLiteral(tz, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dayTimeDuration")))
-			}
-		}
-	case "TZ":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if tz, ok := extractTZ(termString(vals[0])); ok {
-				return rdflibgo.NewLiteral(tz)
-			}
-		}
+		vals[i] = v
+	}
 
-	// Hash
-	case "SHA384":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			h := sha512.Sum384([]byte(termString(vals[0])))
-			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
+	if b, ok := builtins[name]; ok {
+		if len(vals) < b.minArgs || (b.maxArgs >= 0 && len(vals) > b.maxArgs) {
+			return nil
 		}
-	case "SHA512":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			h := sha512.Sum512([]byte(termString(vals[0])))
-			return rdflibgo.NewLiteral(fmt.Sprintf("%x", h))
-		}
+		return b.fn(vals, prefixes)
+	}
 
-	// Random/UUID
+	switch name {
+	case "BNODE":
+		if len(vals) != 1 {
+			return nil
+		}
+		key, ok := simpleString(vals[0])
+		if !ok {
+			return nil // §17.4.2.9: BNODE takes a simple literal or xsd:string
+		}
+		return rdflibgo.NewBNode("bnode_" + key)
+	case "XSD:BOOLEAN", "XSD:INTEGER", "XSD:FLOAT", "XSD:DOUBLE", "XSD:DECIMAL", "XSD:STRING":
+		if len(vals) == 1 {
+			return castXSD(name, vals[0])
+		}
+		return nil
+	}
+	if strings.HasPrefix(name, "HTTP://WWW.W3.ORG/2001/XMLSCHEMA#") && len(vals) == 1 {
+		return castXSD("XSD:"+name[len("HTTP://WWW.W3.ORG/2001/XMLSCHEMA#"):], vals[0])
+	}
+	return nil
+}
+
+// evalNullary evaluates the functions that take no arguments.
+func evalNullary(name string, prefixes map[string]string) rdflibgo.Term {
+	switch name {
 	case "RAND":
 		return rdflibgo.NewLiteral(randFloat(), rdflibgo.WithDatatype(rdflibgo.XSDDouble))
 	case "UUID":
 		return rdflibgo.NewURIRefUnsafe("urn:uuid:" + newUUID())
 	case "STRUUID":
 		return rdflibgo.NewLiteral(newUUID())
-
-	// Triple term functions (SPARQL 1.2)
-	case "ISTRIPLE":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			_, ok := vals[0].(rdflibgo.TripleTerm)
-			return rdflibgo.NewLiteral(ok)
-		}
-		return rdflibgo.NewLiteral(false)
-	case "TRIPLE":
-		vals := evalArgs()
-		if len(vals) == 3 && vals[0] != nil && vals[1] != nil && vals[2] != nil {
-			subj, ok := vals[0].(rdflibgo.Subject)
-			if !ok {
-				return nil
-			}
-			pred, ok := vals[1].(rdflibgo.URIRef)
-			if !ok {
-				return nil
-			}
-			return rdflibgo.NewTripleTerm(subj, pred, vals[2])
-		}
-	case "SUBJECT":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			if tt, ok := vals[0].(rdflibgo.TripleTerm); ok {
-				return tt.Subject()
-			}
-		}
-	case "PREDICATE":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			if tt, ok := vals[0].(rdflibgo.TripleTerm); ok {
-				return tt.Predicate()
-			}
-		}
-	case "OBJECT":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			if tt, ok := vals[0].(rdflibgo.TripleTerm); ok {
-				return tt.Object()
-			}
-		}
-
-	// Language direction functions (SPARQL 1.2)
-	case "LANGDIR":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				return rdflibgo.NewLiteral(l.Dir())
-			}
-			return nil // type error for non-literals
-		}
-		return rdflibgo.NewLiteral("")
-	case "HASLANG":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				return rdflibgo.NewLiteral(l.Language() != "")
-			}
-		}
-		return rdflibgo.NewLiteral(false)
-	case "HASLANGDIR":
-		vals := evalArgs()
-		if len(vals) == 1 {
-			if l, ok := vals[0].(rdflibgo.Literal); ok {
-				return rdflibgo.NewLiteral(l.Dir() != "")
-			}
-		}
-		return rdflibgo.NewLiteral(false)
-	case "STRLANGDIR":
-		vals := evalArgs()
-		if len(vals) == 3 && vals[0] != nil && vals[1] != nil && vals[2] != nil {
-			// STRLANGDIR requires a simple literal (like STRLANG)
-			l, ok := vals[0].(rdflibgo.Literal)
-			if !ok {
-				return nil // non-literal
-			}
-			if l.Language() != "" {
-				return nil // type error
-			}
-			dt := l.Datatype()
-			if dt != rdflibgo.XSDString && dt.Value() != "" {
-				return nil // type error
-			}
-			lang := termString(vals[1])
-			dir := termString(vals[2])
-			// Direction must be exactly "ltr" or "rtl" (case-sensitive)
-			if dir != "ltr" && dir != "rtl" {
-				return nil // invalid or empty direction
-			}
-			// Per RDF 1.2, dirLangString requires a language tag
-			if lang == "" {
-				return nil // empty lang with dir is invalid
-			}
-			return rdflibgo.NewLiteral(l.Lexical(), rdflibgo.WithLang(lang), rdflibgo.WithDir(dir))
-		}
-
-	// Cast functions
-	case "XSD:BOOLEAN", "XSD:INTEGER", "XSD:FLOAT", "XSD:DOUBLE", "XSD:DECIMAL", "XSD:STRING":
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			return castXSD(name, vals[0])
-		}
 	}
-
-	// Try cast with full IRI
-	if strings.HasPrefix(name, "HTTP://WWW.W3.ORG/2001/XMLSCHEMA#") {
-		vals := evalArgs()
-		if len(vals) == 1 && vals[0] != nil {
-			localName := strings.ToUpper(name[len("HTTP://WWW.W3.ORG/2001/XMLSCHEMA#"):])
-			return castXSD("XSD:"+localName, vals[0])
-		}
+	// Per SPARQL 1.1 §17.4.5.1, NOW() must return the same value throughout a
+	// single query evaluation.
+	nowStr := prefixes[queryStartTimeKey]
+	if nowStr == "" {
+		nowStr = timeNow()
 	}
-
-	return nil
+	return rdflibgo.NewLiteral(nowStr, rdflibgo.WithDatatype(rdflibgo.XSDDateTime))
 }
 
 // --- Helpers ---
@@ -690,6 +156,9 @@ func isIntegral(t rdflibgo.Term) bool {
 	return false
 }
 
+// termString returns the string form of a term, "" for nil. It is not an
+// argument check: built-in functions validate their arguments with
+// simpleString / stringLiteral and treat nil as an error before reaching it.
 func termString(t rdflibgo.Term) string {
 	if t == nil {
 		return ""
@@ -839,302 +308,4 @@ func randFloat() float64 {
 
 func newUUID() string {
 	return uuid.New().String()
-}
-
-func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
-	lit, isLit := val.(rdflibgo.Literal)
-	_, isURI := val.(rdflibgo.URIRef)
-
-	switch name {
-	case "XSD:BOOLEAN":
-		if isURI {
-			return nil // can't cast URI to boolean
-		}
-		if !isLit {
-			return nil
-		}
-		s := lit.Lexical()
-		dt := lit.Datatype()
-		if dt == rdflibgo.XSDBoolean {
-			// Normalize: "0"/"1" → "false"/"true"
-			return rdflibgo.NewLiteral(effectiveBooleanValue(val))
-		}
-		if isNumericDatatype(dt) {
-			f, err := strconv.ParseFloat(s, 64)
-			if err != nil {
-				return nil
-			}
-			return rdflibgo.NewLiteral(f != 0)
-		}
-		// String/plain literal
-		switch strings.ToLower(s) {
-		case "true", "1":
-			return rdflibgo.NewLiteral(true)
-		case "false", "0":
-			return rdflibgo.NewLiteral(false)
-		default:
-			return nil // can't cast arbitrary string to boolean
-		}
-
-	case "XSD:INTEGER":
-		if !isLit {
-			return nil
-		}
-		s := lit.Lexical()
-		dt := lit.Datatype()
-		if dt == rdflibgo.XSDBoolean {
-			if s == "true" || s == "1" {
-				return rdflibgo.NewLiteral(1, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-			return rdflibgo.NewLiteral(0, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-		}
-		if isNumericDatatype(dt) {
-			// From numeric: truncate to integer
-			if f, err := strconv.ParseFloat(s, 64); err == nil {
-				if math.IsNaN(f) || math.IsInf(f, 0) || f > float64(math.MaxInt64) || f < float64(math.MinInt64) {
-					return nil
-				}
-				return rdflibgo.NewLiteral(int64(f), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-			}
-		}
-		// From string/plain: must be a valid integer lexical form
-		if _, err := strconv.ParseInt(strings.TrimLeft(s, "+"), 10, 64); err == nil {
-			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-		}
-		return nil
-
-	case "XSD:FLOAT":
-		if !isLit {
-			return nil
-		}
-		s := lit.Lexical()
-		if lit.Datatype() == rdflibgo.XSDBoolean {
-			if s == "true" || s == "1" {
-				s = "1.0"
-			} else {
-				s = "0.0"
-			}
-		}
-		if f, err := strconv.ParseFloat(s, 32); err == nil {
-			return rdflibgo.NewLiteral(strconv.FormatFloat(float64(float32(f)), 'E', -1, 32), rdflibgo.WithDatatype(rdflibgo.XSDFloat))
-		}
-		return nil
-
-	case "XSD:DOUBLE":
-		if !isLit {
-			return nil
-		}
-		s := lit.Lexical()
-		if lit.Datatype() == rdflibgo.XSDBoolean {
-			if s == "true" || s == "1" {
-				s = "1.0"
-			} else {
-				s = "0.0"
-			}
-		}
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return rdflibgo.NewLiteral(strconv.FormatFloat(f, 'E', -1, 64), rdflibgo.WithDatatype(rdflibgo.XSDDouble))
-		}
-		return nil
-
-	case "XSD:DECIMAL":
-		if !isLit {
-			return nil
-		}
-		s := lit.Lexical()
-		dt := lit.Datatype()
-		if dt == rdflibgo.XSDBoolean {
-			if effectiveBooleanValue(val) {
-				return rdflibgo.NewLiteral("1.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-			}
-			return rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-		}
-		// Reject scientific notation strings (not valid xsd:decimal)
-		if !isNumericDatatype(dt) && strings.ContainsAny(s, "eE") {
-			return nil
-		}
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return rdflibgo.NewLiteral(formatDecimal(f), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
-		}
-		return nil
-
-	case "XSD:STRING":
-		if isURI {
-			u := val.(rdflibgo.URIRef)
-			return rdflibgo.NewLiteral(u.Value(), rdflibgo.WithDatatype(rdflibgo.XSDString))
-		}
-		if !isLit {
-			return nil
-		}
-		// Canonical string representation per datatype
-		dt := lit.Datatype()
-		s := lit.Lexical()
-		if dt == rdflibgo.XSDBoolean {
-			if effectiveBooleanValue(val) {
-				s = "true"
-			} else {
-				s = "false"
-			}
-		} else if isIntegral(val) {
-			if v, err := strconv.ParseInt(s, 10, 64); err == nil {
-				s = strconv.FormatInt(v, 10)
-			}
-		} else if dt == rdflibgo.XSDDecimal {
-			if f, err := strconv.ParseFloat(s, 64); err == nil {
-				if f == float64(int64(f)) {
-					s = strconv.FormatInt(int64(f), 10)
-				} else {
-					s = strconv.FormatFloat(f, 'f', -1, 64)
-				}
-			}
-		} else if dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDFloat {
-			if f, err := strconv.ParseFloat(s, 64); err == nil {
-				if f == float64(int64(f)) && f != 0 {
-					s = strconv.FormatInt(int64(f), 10)
-				} else if f == 0 {
-					s = "0"
-				} else {
-					s = strconv.FormatFloat(f, 'f', -1, 64)
-				}
-			}
-		}
-		return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDString))
-	}
-	return nil
-}
-
-// termTypeOrder returns a numeric order for term types per SPARQL ordering:
-// Blanks < IRIs < Literals < TripleTerms
-func termTypeOrder(t rdflibgo.Term) int {
-	switch t.(type) {
-	case rdflibgo.BNode:
-		return 0
-	case rdflibgo.URIRef:
-		return 1
-	case rdflibgo.Literal:
-		return 2
-	case rdflibgo.TripleTerm:
-		return 3
-	}
-	return 4
-}
-
-func compareTermValues(a, b rdflibgo.Term) int {
-	if a == nil && b == nil {
-		return 0
-	}
-	if a == nil {
-		return -1
-	}
-	if b == nil {
-		return 1
-	}
-
-	// Different term types: compare by type order
-	aOrder := termTypeOrder(a)
-	bOrder := termTypeOrder(b)
-	if aOrder != bOrder {
-		return aOrder - bOrder
-	}
-
-	// Same term type
-	la, okA := a.(rdflibgo.Literal)
-	lb, okB := b.(rdflibgo.Literal)
-	if okA && okB {
-		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
-		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
-		if errA == nil && errB == nil && isNumericDatatype(la.Datatype()) && isNumericDatatype(lb.Datatype()) {
-			if math.IsNaN(fa) || math.IsNaN(fb) {
-				return strings.Compare(a.N3(), b.N3())
-			}
-			if fa < fb {
-				return -1
-			}
-			if fa > fb {
-				return 1
-			}
-			return 0
-		}
-		// Date/dateTime comparison
-		if isDateDatatype(la.Datatype()) && isDateDatatype(lb.Datatype()) {
-			if ta, tb, ok := parseDatePair(la, lb); ok {
-				if ta.Before(tb) {
-					return -1
-				}
-				if ta.After(tb) {
-					return 1
-				}
-				return 0
-			}
-		}
-	}
-
-	// URIs: compare by value, not N3 (to avoid angle bracket interference)
-	uA, aIsURI := a.(rdflibgo.URIRef)
-	uB, bIsURI := b.(rdflibgo.URIRef)
-	if aIsURI && bIsURI {
-		return strings.Compare(uA.Value(), uB.Value())
-	}
-
-	// Triple terms: compare component by component
-	ttA, aIsTT := a.(rdflibgo.TripleTerm)
-	ttB, bIsTT := b.(rdflibgo.TripleTerm)
-	if aIsTT && bIsTT {
-		if c := compareTermValues(ttA.Subject(), ttB.Subject()); c != 0 {
-			return c
-		}
-		if c := compareTermValues(ttA.Predicate(), ttB.Predicate()); c != 0 {
-			return c
-		}
-		return compareTermValues(ttA.Object(), ttB.Object())
-	}
-
-	return strings.Compare(a.N3(), b.N3())
-}
-
-func isDateDatatype(dt rdflibgo.URIRef) bool {
-	return dt == rdflibgo.XSDDateTime || dt == rdflibgo.XSDDate || dt == rdflibgo.XSDTime
-}
-
-// parseDatePair attempts to parse two date/dateTime/time literals into time.Time values.
-func parseDatePair(a, b rdflibgo.Literal) (time.Time, time.Time, bool) {
-	ta, okA := parseDateTime(a.Lexical(), a.Datatype())
-	tb, okB := parseDateTime(b.Lexical(), b.Datatype())
-	if okA && okB {
-		return ta, tb, true
-	}
-	return time.Time{}, time.Time{}, false
-}
-
-func parseDateTime(s string, dt rdflibgo.URIRef) (time.Time, bool) {
-	var formats []string
-	switch dt {
-	case rdflibgo.XSDDateTime:
-		formats = []string{
-			"2006-01-02T15:04:05Z07:00",
-			"2006-01-02T15:04:05",
-			"2006-01-02T15:04:05.999999999Z07:00",
-			"2006-01-02T15:04:05.999999999",
-		}
-	case rdflibgo.XSDDate:
-		formats = []string{
-			"2006-01-02Z07:00",
-			"2006-01-02",
-		}
-	case rdflibgo.XSDTime:
-		formats = []string{
-			"15:04:05Z07:00",
-			"15:04:05",
-			"15:04:05.999999999Z07:00",
-			"15:04:05.999999999",
-		}
-	default:
-		return time.Time{}, false
-	}
-	for _, f := range formats {
-		if t, err := time.Parse(f, s); err == nil {
-			return t, true
-		}
-	}
-	return time.Time{}, false
 }
