@@ -803,28 +803,28 @@ Fuzzing the provenance work turned up a crash that predated it: `jsonld.Parse` p
 
 ## Performance
 
-Benchmarked against Python rdflib 7.6.0 + pyshacl 0.31.0 on Apple M4 Max:
+Benchmarked against Python rdflib 7.6.0 + pyshacl 0.31.0 on Apple M4 Max. Go figures are the median of 6 runs, Python figures the median of 3.
 
 | Benchmark | Go | Python | Speedup |
 |-----------|---:|-------:|--------:|
-| NewURIRef | 40 ns | 332 ns | **8x** |
-| NewBNode | 251 ns | 2,655 ns | **11x** |
-| NewLiteral (string) | 16 ns | 1,310 ns | **82x** |
-| NewLiteral (int) | 16 ns | 1,976 ns | **124x** |
-| URIRef.N3() | 18 ns | 280 ns | **16x** |
-| Literal.N3() | 30 ns | 393 ns | **13x** |
-| Literal.Eq() | 20 ns | 339 ns | **17x** |
-| Store Add 10k | 12.4 ms | 89.4 ms | **7x** |
-| Store Lookup 1k | 7 us | 911 us | **130x** |
-| Parse Turtle | 5.4 us | 265 us | **49x** |
-| Serialize Turtle | 5.7 us | 96 us | **17x** |
-| SPARQL SELECT | 56 us | 1,820 us | **33x** |
-| SHACL Validate (10 nodes) | 21 us | 1,168 us | **56x** |
-| SHACL Validate (100 nodes) | 105 us | 8,021 us | **76x** |
-| SHACL Validate (complex) | 70 us | 8,111 us | **116x** |
+| NewURIRef | 33 ns | 337 ns | **10x** |
+| NewBNode | 224 ns | 2,545 ns | **11x** |
+| NewLiteral (string) | 14 ns | 1,318 ns | **91x** |
+| NewLiteral (int) | 14 ns | 1,922 ns | **134x** |
+| URIRef.N3() | 15 ns | 297 ns | **20x** |
+| Literal.N3() | 28 ns | 403 ns | **14x** |
+| Literal.Eq() | 20 ns | 335 ns | **16x** |
+| Store Add 10k | 10.8 ms | 83.0 ms | **8x** |
+| Store Lookup 1k | 5.7 us | 878 us | **153x** |
+| Parse Turtle | 5.0 us | 262 us | **52x** |
+| Serialize Turtle | 4.3 us | 96 us | **22x** |
+| SPARQL SELECT | 50 us | 1,825 us | **37x** |
+| SHACL Validate (10 nodes) | 17 us | 1,097 us | **65x** |
+| SHACL Validate (100 nodes) | 87 us | 8,202 us | **94x** |
+| SHACL Validate (complex) | 52 us | 7,849 us | **151x** |
 
 ```bash
-go test ./benchmarks/ -bench=. -benchmem
+go test ./benchmarks/ -bench=. -benchmem -count 6
 python3 benchmarks/bench_python.py
 ```
 
@@ -832,16 +832,19 @@ python3 benchmarks/bench_python.py
 
 | Metric | Memory | Badger | Badger Disk | SQLite | SQLite Disk |
 |--------|-------:|-------:|------------:|-------:|------------:|
-| **Ingest time** | 5.5s | 7.7s | 9.0s | 21.5s | 28.8s |
-| **Ingest rate** | 544K/s | 389K/s | 335K/s | 139K/s | 104K/s |
-| **RAM delta** | 8.1 GB | 489 MB | — | ~0 MB | — |
-| **Len()** | 4ms | 22ms | — | 229ms | — |
-| **Full scan** | 835ms | 1.75s | — | 1.6s | — |
-| **Subject lookup** | 144 ns | 3.5 us | 3.1 us | 5.5 us | 7.4 us |
-| **Predicate scan** | 2.6ms | 8.4ms | 8.8ms | 345ms | 1.2s |
+| **Ingest time** | 4.3s | 7.1s | 8.5s | 19.7s | 29.5s |
+| **Ingest rate** | 691K/s | 421K/s | 353K/s | 152K/s | 102K/s |
+| **Go heap delta** | 8.4 GB | 1.7 GB | — | outside Go heap | — |
+| **Len()** | 3.7 ns | 450ms | 434ms | 103ms | 147ms |
+| **Full scan** | 673ms | 1.76s | 1.75s | 1.91s | 3.75s |
+| **Subject lookup** | 88 ns | 2.1 us | 2.7 us | 1.8 us | 2.7 us |
+| **Predicate scan** (15K triples) | 0.93ms | 7.7ms | 8.0ms | 392ms | 1.56s |
+
+Ingest and heap delta are single runs of `TestStress3M`. Reads are the median of 6 runs of `BenchmarkStress3M`, which loads each backend once and repeats every read. SQLite (modernc.org/sqlite) allocates its pages outside the Go heap, so the heap delta cannot see them.
 
 ```bash
-go test ./store/ -run TestStress -v -count=1
+go test ./store/ -run TestStress3M -v -count=1
+go test ./store/ -run '^$' -bench BenchmarkStress3M -count 6
 ```
 
 ## Examples

@@ -334,6 +334,16 @@ The `store.Store` interface (13 methods) has four implementations:
   second key, so `(?, p, o)` scanned every object of `p`. That cost 10µs on
   `StoreLookup_FilmsByDirector_100k`, down to 77ns after the fix.
 
+### store stress numbers (README "Store Stress Test")
+- Ingest and heap delta come from `TestStress3M` (one run). Reads come from
+  `BenchmarkStress3M`, which loads each backend once per process and repeats
+  every read. The old one-shot timings after an 8 GB ingest measured GC:
+  `Len()` differed 47x between identical runs.
+- Compare versions by alternating processes AND reversing the order. A version
+  that always runs last after 8 GB processes looked 26% slower on
+  SubjectLookup; with the order reversed there was no difference.
+- modernc SQLite allocates outside the Go heap: heap delta cannot measure it.
+
 ### reasoning/ (RDFS + OWL 2 RL)
 - Entry: `Expand(g, RDFS|OWLRL)` → `ExpandCheck` (also returns `[]Inconsistency`)
 - **A class may be a blank node.** An anonymous class expression (`owl:Restriction`)
