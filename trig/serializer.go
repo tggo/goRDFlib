@@ -245,21 +245,37 @@ type trigState struct {
 	subjectMap map[string]rdflibgo.Subject
 
 	firstKey, restKey, nilKey string
+
+	// depth is the current inline nesting depth; see maxNestDepth.
+	depth int
+	// nodes whose inline form was suppressed by maxNestDepth; they are
+	// emitted as statements of their own so no triple is lost.
+	deferred    []string
+	deferredSet map[string]bool
 }
+
+// maxNestDepth bounds how deeply blank nodes and collections are nested
+// inline, as the Turtle serializer's default does. Inline nesting is
+// recursive, and without a bound a long chain of blank nodes (2,000,000 links,
+// rdflib #1424) overflowed the goroutine stack, which Go cannot recover from.
+// Beyond the limit a blank node is written as its label and its own statement
+// follows at the top level of the graph block.
+const maxNestDepth = 64
 
 func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef, usage *bnodeUsage) *trigState {
 	return &trigState{
-		g:          g,
-		usedNS:     usedNS,
-		spoMap:     make(map[string]map[string][]rdflibgo.Term),
-		refs:       usage.refs,
-		listCells:  make(map[string]bool),
-		pinned:     usage.pinned,
-		serialized: make(map[string]bool),
-		subjectMap: make(map[string]rdflibgo.Subject),
-		firstKey:   rdflibgo.RDF.First.N3(),
-		restKey:    rdflibgo.RDF.Rest.N3(),
-		nilKey:     rdflibgo.RDF.Nil.N3(),
+		g:           g,
+		usedNS:      usedNS,
+		spoMap:      make(map[string]map[string][]rdflibgo.Term),
+		refs:        usage.refs,
+		listCells:   make(map[string]bool),
+		pinned:      usage.pinned,
+		serialized:  make(map[string]bool),
+		subjectMap:  make(map[string]rdflibgo.Subject),
+		deferredSet: make(map[string]bool),
+		firstKey:    rdflibgo.RDF.First.N3(),
+		restKey:     rdflibgo.RDF.Rest.N3(),
+		nilKey:      rdflibgo.RDF.Nil.N3(),
 	}
 }
 
@@ -334,16 +350,39 @@ func (ts *trigState) orderSubjects() {
 }
 
 func (ts *trigState) writeIndented(w io.Writer, indent string) error {
-	for i, subj := range ts.subjects {
-		sk := subj.N3()
+	// A blank line separates consecutive statements.
+	wrote := false
+	writeOne := func(sk string) error {
 		if ts.serialized[sk] {
-			continue
+			return nil
 		}
-		if err := ts.writeSubject(w, subj, indent); err != nil {
+		if wrote {
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+		}
+		wrote = true
+		return ts.writeSubject(w, ts.subjectMap[sk], indent)
+	}
+	// Nodes that hit the nesting limit are written after the statement that
+	// referenced them. The queue can grow while it is drained; it terminates
+	// because each entry is a distinct subject and is marked serialized.
+	next := 0
+	drainDeferred := func() error {
+		for ; next < len(ts.deferred); next++ {
+			if err := writeOne(ts.deferred[next]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, subj := range ts.subjects {
+		if err := writeOne(subj.N3()); err != nil {
 			return err
 		}
-		if i < len(ts.subjects)-1 {
-			fmt.Fprintln(w)
+		if err := drainDeferred(); err != nil {
+			return err
 		}
 	}
 
@@ -359,15 +398,24 @@ func (ts *trigState) writeIndented(w io.Writer, indent string) error {
 	}
 	slices.Sort(rest)
 	for _, sk := range rest {
-		if ts.serialized[sk] {
-			continue
+		if err := writeOne(sk); err != nil {
+			return err
 		}
-		fmt.Fprintln(w)
-		if err := ts.writeSubject(w, ts.subjectMap[sk], indent); err != nil {
+		if err := drainDeferred(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// deferNode queues a blank node that was written as a label at the nesting
+// limit, so that its own statement is still emitted.
+func (ts *trigState) deferNode(bk string) {
+	if ts.serialized[bk] || ts.deferredSet[bk] || len(ts.spoMap[bk]) == 0 {
+		return
+	}
+	ts.deferredSet[bk] = true
+	ts.deferred = append(ts.deferred, bk)
 }
 
 func (ts *trigState) writeSubject(w io.Writer, subj rdflibgo.Subject, indent string) error {
@@ -470,10 +518,17 @@ func (ts *trigState) objectStr(t rdflibgo.Term) (string, error) {
 		return qnameOrFull(v, ts.usedNS), nil
 	case rdflibgo.BNode:
 		bk := v.N3()
+		if ts.serialized[bk] {
+			return v.N3(), nil
+		}
+		if ts.depth >= maxNestDepth {
+			ts.deferNode(bk)
+			return v.N3(), nil
+		}
 		if ts.listCells[bk] && ts.canWriteList(bk) {
 			return ts.listStr(v)
 		}
-		if ts.refs[bk] <= 1 && !ts.pinned[bk] && !ts.serialized[bk] {
+		if ts.refs[bk] <= 1 && !ts.pinned[bk] {
 			if preds := ts.spoMap[bk]; len(preds) > 0 {
 				return ts.inlineBNode(v)
 			}
@@ -529,6 +584,8 @@ func (ts *trigState) tripleTermStr(tt rdflibgo.TripleTerm) (string, error) {
 }
 
 func (ts *trigState) listStr(head rdflibgo.BNode) (string, error) {
+	ts.depth++
+	defer func() { ts.depth-- }()
 	var items []string
 	restKey := rdflibgo.RDF.Rest.N3()
 	firstKey := rdflibgo.RDF.First.N3()
@@ -557,6 +614,8 @@ func (ts *trigState) listStr(head rdflibgo.BNode) (string, error) {
 func (ts *trigState) inlineBNode(b rdflibgo.BNode) (string, error) {
 	sk := b.N3()
 	ts.serialized[sk] = true
+	ts.depth++
+	defer func() { ts.depth-- }()
 	preds := ts.spoMap[sk]
 
 	sortedPreds := ts.sortPredicates(preds)

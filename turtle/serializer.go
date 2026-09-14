@@ -16,7 +16,10 @@ import (
 //
 // By default the output is compact. Pass WithPretty or WithIndent for an
 // indented layout, and WithMaxNestDepth to change how deeply blank nodes are
-// nested inline.
+// nested inline. Depths above maxNestDepthLimit (1024) are clamped to it:
+// inline nesting recurses once per level, and a depth large enough to follow
+// a long blank node chain all the way would overflow the goroutine stack,
+// which Go cannot recover from (rdflib #1424).
 //
 // Serialize is safe for concurrent use provided the graph is not mutated
 // concurrently; it holds all of its state locally.
@@ -29,7 +32,7 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	ts.base = cfg.base
 	ts.pretty = cfg.pretty
 	ts.indentUnit = cfg.indentUnit()
-	ts.maxNestDepth = cfg.nestDepth()
+	ts.maxNestDepth = min(cfg.nestDepth(), maxNestDepthLimit)
 	if cfg.base != "" {
 		ts.checkIRI(cfg.base)
 	}
@@ -40,6 +43,9 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	ts.orderSubjects()
 	return ts.write(w)
 }
+
+// maxNestDepthLimit caps WithMaxNestDepth; see Serialize.
+const maxNestDepthLimit = 1024
 
 // termKey returns a string key for a term (its N3 representation).
 func termKey(t rdflibgo.Term) string {
