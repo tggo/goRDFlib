@@ -18,6 +18,11 @@ import (
 // by a lenient upstream (e.g. a JSON-LD expander) without aborting the parse.
 var ErrInvalidIRI = errors.New("invalid character in IRI")
 
+// ErrRelativeIRI marks a relative IRI. N-Triples 1.1 §2.2 and N-Quads 1.1
+// §2.2 allow only absolute IRIs, so the parser rejects a line holding one and
+// the serializer refuses to write one. Callers can match it with errors.Is.
+var ErrRelativeIRI = errors.New("relative IRI not allowed in N-Triples or N-Quads")
+
 // LineParser holds state for parsing a single N-Triples/N-Quads line.
 type LineParser struct {
 	Line       string
@@ -54,7 +59,7 @@ func (p *LineParser) ReadSubject() (rdflibgo.Subject, error) {
 			return nil, fmt.Errorf("line %d: subject: %w", p.LineNum, err)
 		}
 		if !isAbsoluteIRI(iri) {
-			return nil, fmt.Errorf("line %d: subject: relative IRI not allowed in N-Triples", p.LineNum)
+			return nil, fmt.Errorf("line %d: subject: %w", p.LineNum, ErrRelativeIRI)
 		}
 		validated, verr := rdflibgo.NewURIRef(iri)
 		if verr != nil {
@@ -84,7 +89,7 @@ func (p *LineParser) ReadObject() (rdflibgo.Term, error) {
 			return nil, fmt.Errorf("line %d: object: %w", p.LineNum, err)
 		}
 		if !isAbsoluteIRI(iri) {
-			return nil, fmt.Errorf("line %d: object: relative IRI not allowed in N-Triples", p.LineNum)
+			return nil, fmt.Errorf("line %d: object: %w", p.LineNum, ErrRelativeIRI)
 		}
 		validated, verr := rdflibgo.NewURIRef(iri)
 		if verr != nil {
@@ -152,7 +157,7 @@ func (p *LineParser) ReadPredicate() (rdflibgo.URIRef, error) {
 		return rdflibgo.URIRef{}, fmt.Errorf("line %d: predicate: %w", p.LineNum, err)
 	}
 	if !isAbsoluteIRI(iri) {
-		return rdflibgo.URIRef{}, fmt.Errorf("line %d: predicate: relative IRI not allowed in N-Triples", p.LineNum)
+		return rdflibgo.URIRef{}, fmt.Errorf("line %d: predicate: %w", p.LineNum, ErrRelativeIRI)
 	}
 	validated, verr := rdflibgo.NewURIRef(iri)
 	if verr != nil {
@@ -173,7 +178,7 @@ func (p *LineParser) ReadGraphLabel() (rdflibgo.Term, error) {
 			return nil, fmt.Errorf("line %d: graph: %w", p.LineNum, err)
 		}
 		if !isAbsoluteIRI(iri) {
-			return nil, fmt.Errorf("line %d: graph: relative IRI not allowed in N-Quads", p.LineNum)
+			return nil, fmt.Errorf("line %d: graph: %w", p.LineNum, ErrRelativeIRI)
 		}
 		validated, verr := rdflibgo.NewURIRef(iri)
 		if verr != nil {
@@ -365,7 +370,7 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, err)
 		}
 		if !isAbsoluteIRI(dt) {
-			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: relative IRI not allowed", p.LineNum)
+			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, ErrRelativeIRI)
 		}
 		opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt)))
 	}

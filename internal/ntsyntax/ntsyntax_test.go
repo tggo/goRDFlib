@@ -115,3 +115,24 @@ func TestIRIRejectsWhatIRIREFCannotCarry(t *testing.T) {
 		}
 	}
 }
+
+func TestParserRelativeIRIErrorsWrapSentinel(t *testing.T) {
+	for _, line := range []string{
+		`<s> <http://e/p> <http://e/o> .`,
+		`<http://e/s> <p> <http://e/o> .`,
+		`<http://e/s> <http://e/p> <o> .`,
+		`<http://e/s> <http://e/p> "v"^^<dt> .`,
+	} {
+		p := &LineParser{Line: line, LineNum: 1}
+		_, err := p.ReadSubject()
+		if err == nil {
+			_, err = p.ReadPredicate()
+		}
+		if err == nil {
+			_, err = p.ReadObject()
+		}
+		if !errors.Is(err, ErrRelativeIRI) {
+			t.Errorf("%s: want ErrRelativeIRI, got %v", line, err)
+		}
+	}
+}

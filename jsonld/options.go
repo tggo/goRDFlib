@@ -16,7 +16,8 @@ type config struct {
 	base                 string
 	form                 OutputForm
 	documentLoader       ld.DocumentLoader
-	skipInvalidIRI       bool
+	strictIRIs           bool
+	skipHandler          SkipHandler
 	unbounded            bool
 	provenance           ProvenanceHandler
 	preserveBlankNodeIDs bool
@@ -81,17 +82,38 @@ func WithExpandContext(ctx any) Option {
 	return func(c *config) { c.expandContext = ctx }
 }
 
-// WithSkipInvalidIRIs makes parsing tolerant of syntactically invalid IRIs (e.g.
-// a stray space, as in "schema: Dataset") that the JSON-LD expander emits into
-// the intermediate N-Quads instead of dropping. The offending triple is silently
-// skipped and parsing continues, rather than failing the whole document.
+// WithSkipInvalidIRIs used to make parsing tolerant of ill-formed IRIs (e.g. a
+// stray space, as in "schema: Dataset") that the JSON-LD expander emits into the
+// intermediate N-Quads. Dropping those statements is now the default, as the
+// JSON-LD 1.1 API requires (§8.1), so this option does nothing.
 //
-// This matches Python rdflib/pySHACL, which drop such triples before validation.
-// The default (option unset) is strict: an invalid IRI is a hard error. Note that
-// the bundled JSON-LD processor already drops most malformed IRIs on its own; this
-// option is a safety net for IRIs that slip through to the N-Quads layer.
+// Deprecated: skipping is the default. Use WithSkipHandler to see what was
+// dropped, or WithStrictIRIs to fail instead.
 func WithSkipInvalidIRIs() Option {
-	return func(c *config) { c.skipInvalidIRI = true }
+	return func(c *config) {}
+}
+
+// SkipHandler receives each statement dropped while parsing because it holds an
+// ill-formed IRI. statement is the intermediate N-Quads line json-gold produced
+// (not a line of the JSON-LD source) and err says which IRI was rejected and
+// why: errors.Is(err, nt.ErrRelativeIRI) for a relative IRI, and nt.ErrInvalidIRI
+// or rdflibgo.ErrInvalidIRI for a character no IRI may contain.
+type SkipHandler func(statement string, err error)
+
+// WithSkipHandler sets a callback for statements dropped because of an
+// ill-formed IRI. JSON-LD 1.1 API §8.1 drops such statements silently (for
+// instance "@type": "@id" on a node object, rdflib #2168); the handler is how a
+// caller finds out that data was left out. It has no effect with WithStrictIRIs.
+func WithSkipHandler(h SkipHandler) Option {
+	return func(c *config) { c.skipHandler = h }
+}
+
+// WithStrictIRIs makes an ill-formed IRI in the expanded document a parse error
+// instead of a dropped statement. The graph is left unchanged when that happens.
+// This departs from JSON-LD 1.1 API §8.1; use it when silently losing a
+// statement is worse than rejecting the document.
+func WithStrictIRIs() Option {
+	return func(c *config) { c.strictIRIs = true }
 }
 
 // WithUnboundedLines parses intermediate N-Quads lines of arbitrary length,

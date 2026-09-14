@@ -10,11 +10,6 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 )
 
-// ErrRelativeIRI is returned when a term to be serialized holds a relative
-// IRI. N-Triples 1.1 §2.2 and N-Quads 1.1 §2.2 allow only absolute IRIs, and
-// the parsers in this module reject anything else.
-var ErrRelativeIRI = errors.New("relative IRI cannot be written in N-Triples or N-Quads")
-
 // ErrInvalidUTF8 is returned when an IRI or literal to be serialized is not
 // valid UTF-8. N-Triples and N-Quads documents are UTF-8 (§4 media type
 // registration), and neither UCHAR nor ECHAR can spell a byte that is not part

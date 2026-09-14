@@ -262,19 +262,25 @@ const badNQuads = `<http://example.org/s> <http://example.org/p> <http://example
 <http://example.org/s> <http://example.org/p> <http://example.org/bad iri> .
 `
 
-// TestJSONLDStrictRejectsInvalidIRI documents the default: an invalid IRI that
-// reaches the N-Quads parser is a hard error.
+// TestJSONLDStrictRejectsInvalidIRI: with WithStrictIRIs an invalid IRI that
+// reaches the N-Quads parser is a hard error. (It was the default before
+// ill-formed IRIs were dropped per JSON-LD 1.1 API §8.1.)
 func TestJSONLDStrictRejectsInvalidIRI(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var cfg config
+	WithStrictIRIs()(&cfg)
 	err := parseNQuadsInto(g, badNQuads, &cfg, nil)
 	if err == nil {
-		t.Fatal("expected error parsing invalid IRI in strict (default) mode, got nil")
+		t.Fatal("expected error parsing invalid IRI in strict mode, got nil")
+	}
+	if g.Len() != 0 {
+		t.Errorf("failed parse left %d triples in the graph", g.Len())
 	}
 }
 
-// TestJSONLDSkipInvalidIRIs verifies WithSkipInvalidIRIs drops the malformed
-// triple and keeps the well-formed one — matching pyshacl's lenient behavior.
+// TestJSONLDSkipInvalidIRIs verifies the malformed triple is dropped and the
+// well-formed one kept — matching pyshacl's lenient behavior. The deprecated
+// WithSkipInvalidIRIs still compiles and changes nothing.
 func TestJSONLDSkipInvalidIRIs(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var cfg config
