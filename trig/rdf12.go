@@ -186,7 +186,7 @@ func (p *trigParser) readTripleTermInner() (rdflibgo.TripleTerm, error) {
 		return rdflibgo.TripleTerm{}, err
 	}
 
-	obj, err := p.readObject()
+	obj, err := p.readTripleTermObject()
 	if err != nil {
 		return rdflibgo.TripleTerm{}, err
 	}
@@ -219,6 +219,9 @@ func (p *trigParser) readTripleTermSubject() (rdflibgo.Subject, error) {
 	}
 	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
 		return p.readBlankNodeLabel()
+	}
+	if ch == '[' {
+		return p.readTripleTermANON()
 	}
 	uri, err := p.readPrefixedName()
 	if err != nil {
@@ -368,4 +371,70 @@ func (p *trigParser) readReifiedInnerObject() (rdflibgo.Term, error) {
 		return nil, err
 	}
 	return rdflibgo.NewURIRefUnsafe(uri), nil
+}
+
+// readTripleTermObject reads the object of a triple term. RDF 1.2 Turtle [34]
+// ttObject ::= iri | BlankNode | literal | tripleTerm, where BlankNode is a
+// label or the empty []. A blank node property list, a collection or a
+// reified triple is a syntax error here: each would assert triples, and a
+// triple term only denotes one.
+func (p *trigParser) readTripleTermObject() (rdflibgo.Term, error) {
+	p.skipWS()
+	if p.pos >= len(p.input) {
+		return nil, p.errorf("unexpected end of input, expected triple term object")
+	}
+	ch := p.input[p.pos]
+	switch {
+	case ch == '<' && p.pos+1 < len(p.input) && p.input[p.pos+1] == '<':
+		if p.pos+2 < len(p.input) && p.input[p.pos+2] == '(' {
+			return p.readTripleTermOrReified()
+		}
+		return nil, p.errorf("reified triple << ... >> not allowed as triple term object (only <<( ... )>>)")
+	case ch == '<':
+		iri, err := p.readIRI()
+		if err != nil {
+			return nil, err
+		}
+		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
+	case ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':':
+		return p.readBlankNodeLabel()
+	case ch == '[':
+		return p.readTripleTermANON()
+	case ch == '(':
+		return nil, p.errorf("collection not allowed as triple term object")
+	case ch == '"' || ch == '\'':
+		return p.readLiteral()
+	}
+
+	if ch == '+' || ch == '-' || (ch >= '0' && ch <= '9') || ch == '.' {
+		if lit, ok := p.tryNumeric(); ok {
+			return lit, nil
+		}
+	}
+	if p.startsWith("true") && (p.pos+4 >= len(p.input) || isDelimiter(p.input[p.pos+4])) {
+		p.pos += 4
+		return rdflibgo.NewLiteral(true), nil
+	}
+	if p.startsWith("false") && (p.pos+5 >= len(p.input) || isDelimiter(p.input[p.pos+5])) {
+		p.pos += 5
+		return rdflibgo.NewLiteral(false), nil
+	}
+
+	uri, err := p.readPrefixedName()
+	if err != nil {
+		return nil, err
+	}
+	return rdflibgo.NewURIRefUnsafe(uri), nil
+}
+
+// readTripleTermANON reads the empty blank node [] inside a triple term and
+// rejects a blank node property list.
+func (p *trigParser) readTripleTermANON() (rdflibgo.BNode, error) {
+	p.pos++ // skip '['
+	p.skipWS()
+	if p.pos < len(p.input) && p.input[p.pos] == ']' {
+		p.pos++
+		return rdflibgo.NewBNode(), nil
+	}
+	return rdflibgo.BNode{}, p.errorf("blank node property list not allowed in triple term (only [] is allowed)")
 }
