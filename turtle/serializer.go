@@ -67,6 +67,9 @@ type turtleState struct {
 	// serializer_lists.go
 	listCells map[string]bool
 
+	// blank nodes that occur inside a triple term and must keep their label
+	pinned map[string]bool
+
 	// serialized BNodes (avoid duplicates)
 	serialized map[string]bool
 
@@ -104,6 +107,7 @@ func newTurtleState(g *rdflibgo.Graph) *turtleState {
 		refs:        make(map[string]int),
 		usedNS:      make(map[string]rdflibgo.URIRef),
 		listCells:   make(map[string]bool),
+		pinned:      make(map[string]bool),
 		serialized:  make(map[string]bool),
 		subjectMap:  make(map[string]rdflibgo.Subject),
 		deferredSet: make(map[string]bool),
@@ -149,6 +153,9 @@ func (ts *turtleState) preprocess() {
 
 		// Count object references
 		ts.refs[termKey(t.Object)]++
+		if tt, ok := t.Object.(rdflibgo.TripleTerm); ok {
+			ts.pinTripleTermBNodes(tt)
+		}
 
 		// Track used namespaces
 		ts.trackNS(t.Subject)
@@ -381,7 +388,7 @@ func (ts *turtleState) writeSubject(w io.Writer, subj rdflibgo.Subject) error {
 
 	head := ts.label(subj)
 	// A BNode nothing refers to needs no label of its own.
-	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 {
+	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 && !ts.pinned[sk] {
 		head = "[]"
 	}
 	if _, err := io.WriteString(w, head); err != nil {
@@ -543,7 +550,7 @@ func (ts *turtleState) objectForm(t rdflibgo.Term) objectForm {
 		return formList
 	}
 	// Inline a blank node only when nothing else refers to it.
-	if ts.refs[bk] <= 1 && len(ts.spoMap[bk]) > 0 {
+	if ts.refs[bk] <= 1 && !ts.pinned[bk] && len(ts.spoMap[bk]) > 0 {
 		return formBNode
 	}
 	return formScalar
@@ -789,13 +796,28 @@ func isValidLocalName(s string) bool {
 	return true
 }
 
-// tripleTermStr serializes a TripleTerm as <<( s p o )>>.
+// tripleTermStr serializes a TripleTerm as <<( s p o )>>. A blank node inside
+// it is always written as its label: RDF 1.2 Turtle ttObject does not allow
+// [ ... ] or a collection, and an inline form would also cut the node off from
+// its other occurrences. The node's own triples are written elsewhere, because
+// pinTripleTermBNodes keeps it from being inlined.
 func (ts *turtleState) tripleTermStr(tt rdflibgo.TripleTerm) (string, error) {
 	s := ts.label(tt.Subject())
 	pred := ts.qnameOrFull(tt.Predicate())
-	o, err := ts.objectStr(tt.Object())
-	if err != nil {
-		return "", err
+	var o string
+	switch v := tt.Object().(type) {
+	case rdflibgo.BNode:
+		o = v.N3()
+	case rdflibgo.TripleTerm:
+		var err error
+		if o, err = ts.tripleTermStr(v); err != nil {
+			return "", err
+		}
+	default:
+		var err error
+		if o, err = ts.objectStr(v); err != nil {
+			return "", err
+		}
 	}
 	return "<<( " + s + " " + pred + " " + o + " )>>", nil
 }

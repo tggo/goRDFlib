@@ -16,6 +16,8 @@ import rdflibgo "github.com/tggo/goRDFlib"
 //     into. A second reference cannot be expressed without a label, and a node
 //     with no reference cannot be written as a collection at all, because a
 //     collection in subject position needs a predicate-object list,
+//   - absent from every triple term (a triple term holds a label, never a
+//     collection),
 //
 // and the chain must end in rdf:nil without a cycle.
 //
@@ -32,7 +34,7 @@ func (ts *turtleState) isListCellShape(k string) bool {
 	if _, ok := ts.subjectMap[k].(rdflibgo.BNode); !ok {
 		return false
 	}
-	if ts.refs[k] != 1 {
+	if ts.refs[k] != 1 || ts.pinned[k] {
 		return false
 	}
 	preds := ts.spoMap[k]
@@ -99,4 +101,25 @@ func (ts *turtleState) canWriteList(k string) bool {
 		}
 	}
 	return true
+}
+
+// pinTripleTermBNodes records every blank node inside a triple term, at any
+// nesting depth. RDF 1.2 Turtle ttSubject and ttObject allow only a blank node
+// label or [] there, so such a node must keep its label everywhere else too:
+// it is never inlined as [ ... ], never written as a collection, and never
+// written as an anonymous [] subject.
+func (ts *turtleState) pinTripleTermBNodes(tt rdflibgo.TripleTerm) {
+	stack := []rdflibgo.TripleTerm{tt}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, part := range []rdflibgo.Term{cur.Subject(), cur.Object()} {
+			switch v := part.(type) {
+			case rdflibgo.BNode:
+				ts.pinned[termKey(v)] = true
+			case rdflibgo.TripleTerm:
+				stack = append(stack, v)
+			}
+		}
+	}
 }

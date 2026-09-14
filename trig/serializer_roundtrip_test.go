@@ -142,7 +142,7 @@ func (s *shapeGen) existing() rdflibgo.BNode {
 }
 
 func (s *shapeGen) item(depth int) rdflibgo.Term {
-	switch s.r.IntN(6) {
+	switch s.r.IntN(7) {
 	case 0:
 		return s.iri()
 	case 1:
@@ -160,9 +160,33 @@ func (s *shapeGen) item(depth int) rdflibgo.Term {
 		return b
 	case 4:
 		return s.existing()
+	case 5:
+		if s.r.IntN(2) == 0 {
+			return s.tripleTerm(depth)
+		}
+		return rdflibgo.NewLiteral("x")
 	default:
 		return rdflibgo.NewLiteral("x")
 	}
+}
+
+// tripleTerm returns an RDF 1.2 triple term that mentions blank nodes, which
+// may also appear elsewhere in the graph.
+func (s *shapeGen) tripleTerm(depth int) rdflibgo.TripleTerm {
+	var subj rdflibgo.Subject = s.iri()
+	if s.r.IntN(2) == 0 {
+		subj = s.existing()
+	}
+	var obj rdflibgo.Term
+	switch {
+	case depth > 0 && s.r.IntN(4) == 0:
+		obj = s.tripleTerm(depth - 1)
+	case s.r.IntN(2) == 0:
+		obj = s.existing()
+	default:
+		obj = rdflibgo.NewLiteral(s.r.IntN(3))
+	}
+	return rdflibgo.NewTripleTerm(subj, exP, obj)
 }
 
 func (s *shapeGen) list(depth int) rdflibgo.Term {
@@ -239,6 +263,28 @@ func TestSerializeRoundTripGeneratedShapesTrig(t *testing.T) {
 			s := newShapeGen(seed, graph.NewDataset(), 1)
 			s.build()
 			assertDatasetRoundTrip(t, s.ds, memoryDataset)
+		})
+	}
+}
+
+// rdflib #3524: blank nodes inside triple terms lost their identity, and were
+// inlined as [ ... ] inside the triple term, which RDF 1.2 ttObject forbids.
+func TestSerializeBNodeInTripleTermKeepsIdentityTrig(t *testing.T) {
+	const prefix = "@prefix : <http://example.org/> . @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+	cases := map[string]string{
+		"subject in triple term":         `_:b :p :o . :x :q <<( _:b :p :o )>> .`,
+		"object in triple term, inlined": `:x :q <<( :s :p _:b )>> . :y :z _:b . _:b :r 1 .`,
+		"object only in triple term":     `:x :q <<( :s :p _:b )>> . _:b :r 1 .`,
+		"nested triple term":             `:x :q <<( :s :p <<( _:b :p _:c )>> )>> . _:b :r _:c . _:c :r 2 .`,
+		"list cell in triple term":       `:x :q <<( :s :p _:l )>> . :y :z _:l . _:l rdf:first 1 ; rdf:rest rdf:nil .`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			ds := graph.NewDataset()
+			if err := ParseDataset(ds, strings.NewReader(prefix+src)); err != nil {
+				t.Fatal(err)
+			}
+			assertDatasetRoundTrip(t, ds, memoryDataset)
 		})
 	}
 }

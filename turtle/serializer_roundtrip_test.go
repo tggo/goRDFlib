@@ -138,7 +138,7 @@ func (s *shapeGen) existing() rdflibgo.BNode {
 }
 
 func (s *shapeGen) item(depth int) rdflibgo.Term {
-	switch s.r.IntN(6) {
+	switch s.r.IntN(7) {
 	case 0:
 		return s.iri()
 	case 1:
@@ -156,9 +156,33 @@ func (s *shapeGen) item(depth int) rdflibgo.Term {
 		return b
 	case 4:
 		return s.existing()
+	case 5:
+		if s.r.IntN(2) == 0 {
+			return s.tripleTerm(depth)
+		}
+		return rdflibgo.NewLiteral("x")
 	default:
 		return rdflibgo.NewLiteral("x")
 	}
+}
+
+// tripleTerm returns an RDF 1.2 triple term that mentions blank nodes, which
+// may also appear elsewhere in the graph.
+func (s *shapeGen) tripleTerm(depth int) rdflibgo.TripleTerm {
+	var subj rdflibgo.Subject = s.iri()
+	if s.r.IntN(2) == 0 {
+		subj = s.existing()
+	}
+	var obj rdflibgo.Term
+	switch {
+	case depth > 0 && s.r.IntN(4) == 0:
+		obj = s.tripleTerm(depth - 1)
+	case s.r.IntN(2) == 0:
+		obj = s.existing()
+	default:
+		obj = rdflibgo.NewLiteral(s.r.IntN(3))
+	}
+	return rdflibgo.NewTripleTerm(subj, exP, obj)
 }
 
 // list builds a collection and then maybe breaks it.
@@ -237,6 +261,30 @@ func TestSerializeRoundTripGeneratedShapes(t *testing.T) {
 		for layout, opts := range roundTripLayouts {
 			t.Run(fmt.Sprintf("seed%d/%s", seed, layout), func(t *testing.T) {
 				assertTurtleRoundTrip(t, s.g, opts...)
+			})
+		}
+	}
+}
+
+// rdflib #3524: a blank node inside a triple term lost its identity. Its
+// references there were not counted, so the node was written as [] or inlined
+// as [ ... ] elsewhere, and inside the triple term it was inlined as
+// [ ... ], which RDF 1.2 Turtle ttObject does not allow.
+func TestSerializeBNodeInTripleTermKeepsIdentity(t *testing.T) {
+	const prefix = "@prefix : <http://example.org/> . @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+	cases := map[string]string{
+		"subject in triple term":         `_:b :p :o . :x :q <<( _:b :p :o )>> .`,
+		"object in triple term, inlined": `:x :q <<( :s :p _:b )>> . :y :z _:b . _:b :r 1 .`,
+		"object only in triple term":     `:x :q <<( :s :p _:b )>> . _:b :r 1 .`,
+		"nested triple term":             `:x :q <<( :s :p <<( _:b :p _:c )>> )>> . _:b :r _:c . _:c :r 2 .`,
+		"list cell in triple term":       `:x :q <<( :s :p _:l )>> . :y :z _:l . _:l rdf:first 1 ; rdf:rest rdf:nil .`,
+		"same node twice":                `:x :q <<( _:b :p _:b )>> .`,
+	}
+	for name, src := range cases {
+		g := mustParseTurtle(t, prefix+src)
+		for layout, opts := range roundTripLayouts {
+			t.Run(name+"/"+layout, func(t *testing.T) {
+				assertTurtleRoundTrip(t, g, opts...)
 			})
 		}
 	}

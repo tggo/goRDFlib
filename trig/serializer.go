@@ -187,6 +187,7 @@ type trigState struct {
 	subjects   []rdflibgo.Subject
 	refs       map[string]int
 	listCells  map[string]bool // see serializer_lists.go
+	pinned     map[string]bool // blank nodes inside triple terms
 	serialized map[string]bool
 	subjectMap map[string]rdflibgo.Subject
 
@@ -200,6 +201,7 @@ func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef) *trigState 
 		spoMap:     make(map[string]map[string][]rdflibgo.Term),
 		refs:       make(map[string]int),
 		listCells:  make(map[string]bool),
+		pinned:     make(map[string]bool),
 		serialized: make(map[string]bool),
 		subjectMap: make(map[string]rdflibgo.Subject),
 		firstKey:   rdflibgo.RDF.First.N3(),
@@ -219,6 +221,9 @@ func (ts *trigState) preprocess() {
 		ts.subjectMap[sk] = t.Subject
 		ts.spoMap[sk][pk] = append(ts.spoMap[sk][pk], t.Object)
 		ts.refs[t.Object.N3()]++
+		if tt, ok := t.Object.(rdflibgo.TripleTerm); ok {
+			ts.pinTripleTermBNodes(tt)
+		}
 		return true
 	})
 	ts.detectLists()
@@ -320,7 +325,7 @@ func (ts *trigState) writeSubject(w io.Writer, subj rdflibgo.Subject, indent str
 	sk := subj.N3()
 	ts.serialized[sk] = true
 
-	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 {
+	if _, isBNode := subj.(rdflibgo.BNode); isBNode && ts.refs[sk] == 0 && !ts.pinned[sk] {
 		fmt.Fprintf(w, "%s[]", indent)
 		return ts.writePredicates(w, sk, indent)
 	}
@@ -419,7 +424,7 @@ func (ts *trigState) objectStr(t rdflibgo.Term) (string, error) {
 		if ts.listCells[bk] && ts.canWriteList(bk) {
 			return ts.listStr(v)
 		}
-		if ts.refs[bk] <= 1 && !ts.serialized[bk] {
+		if ts.refs[bk] <= 1 && !ts.pinned[bk] && !ts.serialized[bk] {
 			if preds := ts.spoMap[bk]; len(preds) > 0 {
 				return ts.inlineBNode(v)
 			}
@@ -449,12 +454,27 @@ func (ts *trigState) literalStr(l rdflibgo.Literal) string {
 	return n3
 }
 
+// tripleTermStr serializes a TripleTerm as <<( s p o )>>. A blank node inside
+// it is always written as its label: RDF 1.2 TriG ttObject does not allow
+// [ ... ] or a collection, and an inline form would also cut the node off from
+// its other occurrences.
 func (ts *trigState) tripleTermStr(tt rdflibgo.TripleTerm) (string, error) {
 	s := ts.label(tt.Subject())
 	pred := qnameOrFull(tt.Predicate(), ts.usedNS)
-	o, err := ts.objectStr(tt.Object())
-	if err != nil {
-		return "", err
+	var o string
+	switch v := tt.Object().(type) {
+	case rdflibgo.BNode:
+		o = v.N3()
+	case rdflibgo.TripleTerm:
+		var err error
+		if o, err = ts.tripleTermStr(v); err != nil {
+			return "", err
+		}
+	default:
+		var err error
+		if o, err = ts.objectStr(v); err != nil {
+			return "", err
+		}
 	}
 	return "<<( " + s + " " + pred + " " + o + " )>>", nil
 }
