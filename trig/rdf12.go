@@ -134,6 +134,10 @@ func (p *trigParser) readReifierID() (rdflibgo.Subject, error) {
 }
 
 func (p *trigParser) readAnnotationBlock(reifier rdflibgo.Subject) error {
+	if err := p.enter(); err != nil {
+		return err
+	}
+	defer p.leave()
 	p.pos += 2 // skip "{|"
 	p.skipWS()
 
@@ -154,6 +158,10 @@ func (p *trigParser) readAnnotationBlock(reifier rdflibgo.Subject) error {
 }
 
 func (p *trigParser) readTripleTermOrReified() (rdflibgo.Term, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	p.pos += 2 // skip "<<"
 	p.skipWS()
 
@@ -220,6 +228,10 @@ func (p *trigParser) readTripleTermSubject() (rdflibgo.Subject, error) {
 }
 
 func (p *trigParser) readReifiedTriple() (rdflibgo.Subject, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	p.pos += 2 // skip "<<"
 	p.skipWS()
 

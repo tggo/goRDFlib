@@ -147,6 +147,10 @@ func (p *turtleParser) readReifierID() (rdflibgo.Subject, error) {
 
 // readAnnotationBlock reads {| predicateObjectList |} and asserts triples on the reifier.
 func (p *turtleParser) readAnnotationBlock(reifier rdflibgo.Subject, _ rdflibgo.TripleTerm) error {
+	if err := p.enter(); err != nil {
+		return err
+	}
+	defer p.leave()
 	// Consume "{|"
 	p.pos += 2
 	p.skipWS()
@@ -170,6 +174,10 @@ func (p *turtleParser) readAnnotationBlock(reifier rdflibgo.Subject, _ rdflibgo.
 
 // readTripleTermOrReified reads either <<( s p o )>> (triple term) or << s p o >> (reified triple in object position).
 func (p *turtleParser) readTripleTermOrReified() (rdflibgo.Term, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	p.pos += 2 // skip "<<"
 	p.skipWS()
 
@@ -243,6 +251,10 @@ func (p *turtleParser) readTripleTermSubject() (rdflibgo.Subject, error) {
 // readReifiedTriple reads << s p o >> or << s p o ~ id >> as a subject.
 // The reified triple creates a node (bnode or named) that gets rdf:reifies <<(s p o)>>.
 func (p *turtleParser) readReifiedTriple() (rdflibgo.Subject, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	p.pos += 2 // skip "<<"
 	p.skipWS()
 

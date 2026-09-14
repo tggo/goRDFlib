@@ -33,6 +33,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	}
 	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
 	p.bnodes = bnodes.New(cfg.preserveBlankNodeIDs)
+	p.maxDepth = cfg.maxDepth()
 	if err := p.parse(); err != nil {
 		return err
 	}
@@ -63,6 +64,7 @@ func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
 	}
 	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
 	p.bnodes = bnodes.New(cfg.preserveBlankNodeIDs)
+	p.maxDepth = cfg.maxDepth()
 	return p.parse()
 }
 
@@ -93,6 +95,8 @@ type trigParser struct {
 	prefixes     map[string]string // prefix -> namespace URI
 	provenance   ProvenanceHandler
 	bnodes       bnodes.Scope
+	depth        int // current nesting of [ ( << {| ; see enter
+	maxDepth     int
 }
 
 // emit adds a triple to the active graph and, when provenance tracking is
@@ -776,6 +780,10 @@ func (p *trigParser) readBlankNodeLabel() (rdflibgo.BNode, error) {
 
 // readBlankNodePropertyList reads [...].
 func (p *trigParser) readBlankNodePropertyList() (rdflibgo.BNode, error) {
+	if err := p.enter(); err != nil {
+		return rdflibgo.BNode{}, err
+	}
+	defer p.leave()
 	p.pos++ // skip '['
 	p.skipWS()
 
@@ -798,6 +806,10 @@ func (p *trigParser) readBlankNodePropertyList() (rdflibgo.BNode, error) {
 
 // readCollection reads (...) and builds rdf:List triples.
 func (p *trigParser) readCollection() (rdflibgo.Term, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	p.pos++ // skip '('
 	p.skipWS()
 

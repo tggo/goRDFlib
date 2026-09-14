@@ -17,6 +17,7 @@ type config struct {
 	base                 string
 	provenance           ProvenanceHandler
 	preserveBlankNodeIDs bool
+	maxParseDepth        int // 0 means "unset"; resolved by maxDepth
 
 	pretty       bool
 	indentWidth  int // 0 means "unset"; resolved by indentUnit

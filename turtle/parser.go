@@ -31,6 +31,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		prefixes:   make(map[string]string),
 		provenance: cfg.provenance,
 		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
+		maxDepth:   cfg.maxDepth(),
 	}
 	// Copy graph namespace bindings as initial prefixes
 	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
@@ -50,6 +51,8 @@ type turtleParser struct {
 	prefixes   map[string]string // prefix -> namespace URI
 	provenance ProvenanceHandler
 	bnodes     bnodes.Scope
+	depth      int // current nesting of [ ( << {| ; see enter
+	maxDepth   int
 }
 
 // emit adds a triple to the graph and, when provenance tracking is enabled,
@@ -526,6 +529,10 @@ func (p *turtleParser) readBlankNodeLabel() (rdflibgo.BNode, error) {
 
 // readBlankNodePropertyList reads [...].
 func (p *turtleParser) readBlankNodePropertyList() (rdflibgo.BNode, error) {
+	if err := p.enter(); err != nil {
+		return rdflibgo.BNode{}, err
+	}
+	defer p.leave()
 	p.pos++ // skip '['
 	p.skipWS()
 
@@ -549,6 +556,10 @@ func (p *turtleParser) readBlankNodePropertyList() (rdflibgo.BNode, error) {
 
 // readCollection reads (...) and builds rdf:List triples.
 func (p *turtleParser) readCollection() (rdflibgo.Term, error) {
+	if err := p.enter(); err != nil {
+		return nil, err
+	}
+	defer p.leave()
 	p.pos++ // skip '('
 	p.skipWS()
 

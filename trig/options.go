@@ -6,6 +6,7 @@ type config struct {
 	base                 string
 	provenance           ProvenanceHandler
 	preserveBlankNodeIDs bool
+	maxParseDepth        int // 0 means "unset"; resolved by maxDepth
 }
 
 // Option configures TriG parsing or serialization.
