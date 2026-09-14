@@ -1656,26 +1656,6 @@ func TestParseXMLBaseOnProperty(t *testing.T) {
 	}
 }
 
-// TestSerializeTripleTermObject covers serializer with a TripleTerm object
-// (falls through switch, emitted as nothing — TripleTerm isn't URIRef/BNode/Literal).
-func TestSerializeTripleTermObject(t *testing.T) {
-	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	inner := rdflibgo.NewTripleTerm(
-		rdflibgo.NewURIRefUnsafe("http://example.org/a"),
-		rdflibgo.NewURIRefUnsafe("http://example.org/b"),
-		rdflibgo.NewURIRefUnsafe("http://example.org/c"),
-	)
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), inner)
-
-	var buf bytes.Buffer
-	// Should not error (TripleTerm is silently skipped in the switch)
-	if err := Serialize(g, &buf); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestParseRDFLangOnRoot covers xml:lang on rdf:RDF root element.
 func TestParseRDFLangOnRoot(t *testing.T) {
 	input := `<?xml version="1.0"?>

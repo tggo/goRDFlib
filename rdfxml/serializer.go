@@ -77,6 +77,12 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	if cfg.base != "" {
 		fmt.Fprintf(&out, "\n   xml:base=%s", xmlAttr(cfg.base))
 	}
+	if sw.rdf12 {
+		// RDF 1.2 XML Syntax: rdf:parseType="Triple" is recognized only
+		// under rdf:version="1.2". It is left off RDF 1.1 content so that
+		// output stays readable by RDF 1.1 processors.
+		out.WriteString("\n   rdf:version=\"1.2\"")
+	}
 	out.WriteString(">\n")
 	out.Write(sw.body.Bytes())
 	out.WriteString("</rdf:RDF>\n")
@@ -91,6 +97,7 @@ type xmlWriter struct {
 	labels    map[string]bool   // every blank node label in the graph
 	relabeled map[string]string // label -> NCName label used in rdf:nodeID
 	nextLabel int
+	rdf12     bool // output uses RDF 1.2 syntax and needs rdf:version="1.2"
 }
 
 func (sw *xmlWriter) writeSubject(triples []rdflibgo.Triple) error {
@@ -168,6 +175,22 @@ func (sw *xmlWriter) writeProperty(indent string, pred rdflibgo.URIRef, obj rdfl
 		} else {
 			fmt.Fprintf(b, "%s<%s>%s</%s>\n", indent, predQN, xmlEscape(o.Lexical()), predQN)
 		}
+	case rdflibgo.TripleTerm:
+		// RDF 1.2 XML Syntax, rdf:parseType="Triple": one node element with
+		// exactly one property element spells the triple term.
+		sw.rdf12 = true
+		subjAttr, err := sw.nodeAttr(o.Subject())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(b, "%s<%s rdf:parseType=\"Triple\">\n", indent, predQN)
+		fmt.Fprintf(b, "%s  <rdf:Description %s>\n", indent, subjAttr)
+		if err := sw.writeProperty(indent+"    ", o.Predicate(), o.Object()); err != nil {
+			return err
+		}
+		fmt.Fprintf(b, "%s  </rdf:Description>\n%s</%s>\n", indent, indent, predQN)
+	default:
+		return fmt.Errorf("rdfxml: cannot write object %T %s of <%s>", obj, obj.N3(), pred.Value())
 	}
 	return nil
 }
