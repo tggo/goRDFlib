@@ -127,7 +127,8 @@ func WithIndent(width int) Option {
 // indentation steps, so the widest line is bounded by (2*depth+1) steps.
 //
 // Values <= 0 select the default. Raise it if your data genuinely nests deeper
-// and you want it inlined.
+// and you want it inlined; values above 1024 are clamped to 1024, so a large
+// setting cannot bring back unbounded recursion.
 func WithMaxNestDepth(depth int) Option {
 	return func(c *config) { c.maxNestDepth = depth }
 }

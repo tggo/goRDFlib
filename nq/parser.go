@@ -17,6 +17,17 @@ import (
 // internal line reader so callers outside the module can match against it.
 var ErrLineTooLong = ntsyntax.ErrLineTooLong
 
+// Serialize refuses terms N-Quads cannot express; these are the errors it
+// wraps (shared with the N-Triples writer).
+var (
+	// ErrRelativeIRI: N-Quads requires absolute IRIs.
+	ErrRelativeIRI = ntsyntax.ErrRelativeIRI
+	// ErrInvalidUTF8: a literal or IRI is not valid UTF-8.
+	ErrInvalidUTF8 = ntsyntax.ErrInvalidUTF8
+	// ErrInvalidIRI: an IRI contains a character IRIREF does not allow.
+	ErrInvalidIRI = ntsyntax.ErrInvalidIRI
+)
+
 // QuadHandler is called for each parsed quad. The graph term may be nil for triples
 // without an explicit graph context.
 type QuadHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term)

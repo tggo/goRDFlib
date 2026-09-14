@@ -54,6 +54,14 @@ func WithUnboundedLines() Option {
 	return func(l *defaultLoader) { l.unbounded = true }
 }
 
+// WithMaxParseDepth sets how deeply Turtle and TriG documents may nest blank
+// node property lists, collections and triple terms before the parse fails
+// with turtle.ErrNestingTooDeep / trig.ErrNestingTooDeep. The default is
+// turtle.DefaultMaxParseDepth. No effect on the other formats.
+func WithMaxParseDepth(depth int) Option {
+	return func(l *defaultLoader) { l.maxParseDepth = depth }
+}
+
 // WithPreserveBlankNodeIDs disables the fresh blank-node scope for each load.
 // It forwards the compatibility option to all six parsers. Separate documents
 // can then share blank-node IDs; callers must manage that identity themselves.
@@ -68,6 +76,7 @@ type defaultLoader struct {
 	maxLineLen           int
 	unbounded            bool
 	preserveBlankNodeIDs bool
+	maxParseDepth        int
 }
 
 // DefaultLoader returns a Loader that handles file:// and http(s):// URIs.
@@ -176,7 +185,8 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 }
 
 // parseFormat dispatches to the appropriate parser by format name, forwarding
-// the line-length options to the line-based parsers (N-Triples, N-Quads).
+// the line-length options to the line-based parsers (N-Triples, N-Quads) and
+// the nesting limit to Turtle and TriG.
 // The blank-node identity option is forwarded to every format.
 func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) error {
 	switch format {
@@ -184,6 +194,9 @@ func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) 
 		var opts []turtle.Option
 		if l.preserveBlankNodeIDs {
 			opts = append(opts, turtle.WithPreserveBlankNodeIDs())
+		}
+		if l.maxParseDepth > 0 {
+			opts = append(opts, turtle.WithMaxParseDepth(l.maxParseDepth))
 		}
 		return turtle.Parse(g, r, opts...)
 	case "nt":
@@ -194,6 +207,9 @@ func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) 
 		var opts []trig.Option
 		if l.preserveBlankNodeIDs {
 			opts = append(opts, trig.WithPreserveBlankNodeIDs())
+		}
+		if l.maxParseDepth > 0 {
+			opts = append(opts, trig.WithMaxParseDepth(l.maxParseDepth))
 		}
 		return trig.Parse(g, r, opts...)
 	case "xml":

@@ -101,7 +101,23 @@ var (
 	ErrTermNotInNamespace = term.ErrTermNotInNamespace
 	ErrInvalidCURIE       = term.ErrInvalidCURIE
 	ErrPrefixNotBound     = term.ErrPrefixNotBound
+	ErrInvalidLanguageTag = term.ErrInvalidLanguageTag
 )
+
+// --- Default graph ---
+
+// DefaultGraph is the identifier of the default graph. A nil context and
+// DefaultGraph both address it; a blank node context names a graph.
+var DefaultGraph = store.DefaultGraph
+
+// IsDefaultGraph reports whether ctx addresses the default graph.
+func IsDefaultGraph(ctx Term) bool { return store.IsDefaultGraph(ctx) }
+
+// ValidLanguageTag reports whether tag is a well-formed language tag.
+func ValidLanguageTag(tag string) bool { return term.ValidLanguageTag(tag) }
+
+// ValidIRI reports whether s can be used as an IRI.
+func ValidIRI(s string) bool { return term.ValidIRI(s) }
 
 // --- XSD datatype URIs ---
 

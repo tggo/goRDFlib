@@ -66,7 +66,7 @@ The `store.Store` interface (13 methods) has four implementations:
 - BadgerStore: 3 KV indexes (SPO/POS/OSP) via prefix scans, MVCC concurrency
 - SQLiteStore: relational schema with 3 SQL indexes, WAL mode, inspectable with sqlite3 CLI
 - SPARQLStore: translates Store methods to SPARQL queries/updates over HTTP
-- BNode contexts treated as default graph in all persistent stores
+- The default graph is `store.DefaultGraph`; a BNode context is a named graph in every store except sparqlstore (see the conventions below)
 - Write ops silently ignore errors (store.Store interface constraint)
 
 ### store/storetest (shared conformance suite)
@@ -90,8 +90,24 @@ The `store.Store` interface (13 methods) has four implementations:
   used to say `nil = all` for `Len` and "removes from all contexts" for
   `Remove`; all three persistent backends did the opposite. The doc was wrong,
   not the code.
-- A **BNode context is the default graph** too — `Graph` passes its own
-  identifier through, and an unnamed graph's identifier is a BNode.
+- **The default graph has an identifier: `store.DefaultGraph`
+  (`<urn:x-rdflib:default>`).** A nil context and `DefaultGraph` both address
+  it; test with `store.IsDefaultGraph`, never `ctx == nil`. `graph.NewGraph()`
+  and a Dataset's default context carry it, which is what keeps `sparql`/`paths`
+  (they pass `g.Identifier()` to the store) on the default graph.
+- **A BNode context is a named graph** (TriG `_:g { }`, rdflib #2445). It used
+  to be folded into the default graph in every store, because unnamed graphs
+  had BNode identifiers. Old Badger/SQLite data is unaffected (it was stored
+  under the empty key). sparqlstore cannot express it (SPARQL `GRAPH` takes
+  VarOrIri) and declares that in `Known`. The Mongo satellite had to switch its
+  `graphKey` to `store.IsDefaultGraph`.
+- **MemoryStore is context-aware:** one index set per graph; the default graph
+  is a fixed field so single-graph reads don't pay a map lookup. `Triples` must
+  not capture the context in the default-graph closure (keeps its allocation
+  size class). Cardinality is exact per pattern AND context.
+- **`ConjunctiveGraph` is a real union:** `Triples`/`Len` dedup across the
+  default and named graphs. It only looked like one before because MemoryStore
+  ignored contexts.
 - `Contexts` reports named graphs only.
 - Iteration order is unspecified and need not be stable between calls.
   MemoryStore's genuinely is not (Go randomizes map iteration), so
@@ -343,6 +359,74 @@ The `store.Store` interface (13 methods) has four implementations:
   that always runs last after 8 GB processes looked 26% slower on
   SubjectLookup; with the order reversed there was no difference.
 - modernc SQLite allocates outside the Go heap: heap delta cannot measure it.
+
+### term/ literals and IRIs
+- Numeric N3 shorthand (writer and `TermFromKey` decoder) follows the Turtle
+  INTEGER/DECIMAL/DOUBLE productions in `term/turtle_numeric.go`. They are
+  disjoint, which keeps `TermKey` injective — every store indexes on it. A
+  looser check once merged "1.5e3"^^xsd:decimal with the double in the store.
+- `testutil.AssertGraphEqual` compares term identity (lexical, datatype, lang,
+  dir), never `N3()`. It is exponential on long blank-node chains (every link
+  has the same signature): walk such chains link by link in tests.
+- `Literal.ValueEqual` (`literal_value.go`) is exact: math/big for integers and
+  decimals, XSD lexical spaces only, timezoned and untimezoned dateTimes never
+  equal, NaN != NaN, an ill-typed literal equals only an identical one.
+- `NewURIRef` rejects #x00-#x20; `ValidIRI`, `ValidLanguageTag` are exported
+  (and re-exported from the root package).
+
+### parsers and serializers
+- Relative IRIs go through `internal/iri.Resolve` (RFC 3986 §5.2 on strings).
+  Never use net/url for IRIs (it percent-encodes, breaks opaque bases, drops an
+  empty `#`), and never unescape a resolved IRI.
+- Turtle/TriG parsing is bounded by `WithMaxParseDepth` (default 10000, also on
+  rdfloader); serializers flatten nesting beyond 64 (TriG) / `WithMaxNestDepth`
+  capped at 1024 (Turtle). A Go stack overflow is fatal and cannot be recovered.
+- A list is written as `( ... )` only under the rule in
+  `turtle/serializer_lists.go`; TriG has a copy — keep them in sync. TriG counts
+  blank-node references across the whole dataset (`bnodeUsage`); blank nodes
+  inside triple terms are never inlined.
+- Round-trip tests for multi-graph datasets: use a Badger store and flatten by
+  putting the graph name into the predicate; encoding quads as triple terms
+  makes the isomorphism check hang.
+- RDF/XML serializer renders the body before writing anything (a failed
+  Serialize writes nothing) and decides prefixes while rendering; unwritable
+  names are `ErrNoQName` / `ErrReservedPropertyName` / `ErrUnrepresentableChar`.
+- N-Triples/N-Quads serializers refuse any term their own parser would reject.
+- JSON-LD parsing adds to the graph only on success and drops ill-formed IRIs by
+  default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
+  json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.
+
+### sparql/ expression semantics
+- A nil term means "error" throughout the evaluator. Built-ins get arguments
+  already checked for unbound; only FILTER turns an error into false.
+- `=` and `<` use `rdfTermEqual`/`valueCompare`; ORDER BY, MIN, MAX use the
+  total order in `compareTermValues`. Don't mix them.
+- The W3C result comparison matches numbers by value only (`srx.go`), so the
+  datatype and lexical form of numeric results need our own tests.
+- An ill-typed xsd:boolean used as a boolean is an error (follows SPARQL 1.2
+  test `expression/not-not`, which contradicts 1.1).
+- Parser-generated variables start with `.` (`isInternalVar`); never hide user
+  variables by a `_` prefix again.
+- Template blank nodes need one `bnodes.New(false)` per instantiation; don't
+  write generated nodes into solution maps, rows can share them.
+- Known gaps: `BNODE("x")` is not fresh per solution; `_:b` in a WHERE pattern
+  acts as an unnamed wildcard; aggregates inside function calls stay unbound.
+
+### shacl/ recursion, datatypes, order
+- Any new place that creates an `evalContext` or `nodeExprContext` must pass on
+  `guard` (`sharedGuard()`); a fresh guard lets a cycle through that boundary
+  overflow the stack. Recursive (shape, node) pairs are assumed to conform
+  (§3.4.3); the guard is a per-path set, not a cache.
+- Shape definitions in node expressions come from
+  `nodeExprContext.shapeDefinitions()`, never `ctx.dataGraph` (the W3C tests
+  keep shapes and data in one graph and cannot catch this).
+- `Validate` sorts the report (`orderResults`); blank-node labels only break
+  ties. `ResultMessages` is shared with the graph index — copy before sorting.
+- `sh:datatype` lexical checks live in `xsd_lexical.go` (XSD 1.1 grammars, no
+  whitespace trimming; "1."^^xsd:decimal is valid).
+- Processor failures that don't change conforms go through `cfg.report` /
+  `WithErrorHandler`: unsupported `sh:entailment` (`ErrUnsupportedEntailment`)
+  and declared `sh:SPARQLFunction` with advanced features off.
 
 ### reasoning/ (RDFS + OWL 2 RL)
 - Entry: `Expand(g, RDFS|OWLRL)` → `ExpandCheck` (also returns `[]Inconsistency`)
