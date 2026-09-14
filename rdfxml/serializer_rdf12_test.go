@@ -37,3 +37,27 @@ func TestSerializeNoVersionWithoutRDF12Terms(t *testing.T) {
 		t.Errorf("RDF 1.1 graph written with RDF 1.2 markers:\n%s", out)
 	}
 }
+
+// "abc"@ar--rtl was written with xml:lang only and came back as @ar.
+func TestSerializeBaseDirection(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("abc", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
+	g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("abc", rdflibgo.WithLang("en"), rdflibgo.WithDir("ltr")))
+	g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("abc", rdflibgo.WithLang("en")))
+	g.Add(iri("http://e/s"), iri("http://e/q"), rdflibgo.NewTripleTerm(iri("http://e/a"), iri("http://e/b"),
+		rdflibgo.NewLiteral("x", rdflibgo.WithLang("he"), rdflibgo.WithDir("rtl"))))
+	out := assertRoundTrip(t, g)
+	for _, want := range []string{`xmlns:its="http://www.w3.org/2005/11/its"`, `its:version="2.0"`, `rdf:version="1.2"`, `its:dir="rtl"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+}
+
+// A user prefix "its" bound elsewhere must not shadow the ITS namespace.
+func TestSerializeBaseDirectionItsPrefixTaken(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	g.Bind("its", iri("http://e/"))
+	g.Add(iri("http://e/s"), iri("http://e/p"), rdflibgo.NewLiteral("abc", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
+	assertRoundTrip(t, g)
+}

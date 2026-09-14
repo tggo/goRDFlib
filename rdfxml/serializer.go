@@ -38,6 +38,7 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	subjects := make(map[string][]rdflibgo.Triple)
 	var subjectOrder []string
 	labels := make(map[string]bool)
+	hasDir := false
 	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
 		sk := termKey(t.Subject)
 		if _, exists := subjects[sk]; !exists {
@@ -46,6 +47,7 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		subjects[sk] = append(subjects[sk], t)
 		collectLabels(t.Subject, labels)
 		collectLabels(t.Object, labels)
+		hasDir = hasDir || usesDirection(t.Object)
 		return true
 	})
 	slices.Sort(subjectOrder)
@@ -55,8 +57,12 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		bindings[prefix] = ns.Value()
 		return true
 	})
+	reserved := map[string]string{"rdf": rdfNS}
+	if hasDir {
+		reserved["its"] = itsNS
+	}
 	sw := &xmlWriter{
-		ns:        newNSTable(bindings, map[string]string{"rdf": rdfNS}),
+		ns:        newNSTable(bindings, reserved),
 		labels:    labels,
 		relabeled: make(map[string]string),
 	}
@@ -82,6 +88,11 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		// under rdf:version="1.2". It is left off RDF 1.1 content so that
 		// output stays readable by RDF 1.1 processors.
 		out.WriteString("\n   rdf:version=\"1.2\"")
+	}
+	if hasDir {
+		// Base direction is its:dir, which RDF 1.2 XML Syntax reads only
+		// with its:version="2.0" and rdf:version="1.2" in scope.
+		out.WriteString("\n   its:version=\"2.0\"")
 	}
 	out.WriteString(">\n")
 	out.Write(sw.body.Bytes())
@@ -168,7 +179,10 @@ func (sw *xmlWriter) writeProperty(indent string, pred rdflibgo.URIRef, obj rdfl
 	case rdflibgo.BNode:
 		fmt.Fprintf(b, "%s<%s rdf:nodeID=%s/>\n", indent, predQN, xmlAttr(sw.nodeID(o)))
 	case rdflibgo.Literal:
-		if o.Language() != "" {
+		if o.Language() != "" && o.Dir() != "" {
+			sw.rdf12 = true
+			fmt.Fprintf(b, "%s<%s xml:lang=%s its:dir=%s>%s</%s>\n", indent, predQN, xmlAttr(o.Language()), xmlAttr(o.Dir()), xmlEscape(o.Lexical()), predQN)
+		} else if o.Language() != "" {
 			fmt.Fprintf(b, "%s<%s xml:lang=%s>%s</%s>\n", indent, predQN, xmlAttr(o.Language()), xmlEscape(o.Lexical()), predQN)
 		} else if o.Datatype() != (rdflibgo.URIRef{}) && o.Datatype() != rdflibgo.XSDString {
 			fmt.Fprintf(b, "%s<%s rdf:datatype=%s>%s</%s>\n", indent, predQN, xmlAttr(o.Datatype().Value()), xmlEscape(o.Lexical()), predQN)
@@ -225,6 +239,18 @@ func collectLabels(t rdflibgo.Term, labels map[string]bool) {
 		collectLabels(v.Subject(), labels)
 		collectLabels(v.Object(), labels)
 	}
+}
+
+// usesDirection reports whether t is, or nests, a literal with a base
+// direction.
+func usesDirection(t rdflibgo.Term) bool {
+	switch v := t.(type) {
+	case rdflibgo.Literal:
+		return v.Dir() != ""
+	case rdflibgo.TripleTerm:
+		return usesDirection(v.Object())
+	}
+	return false
 }
 
 // xmlAttr returns an XML-escaped, double-quoted attribute value.
