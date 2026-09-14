@@ -398,7 +398,7 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 		var fullIRI string
 		if idx := strings.Index(name, ":"); idx >= 0 {
 			prefix := name[:idx]
-			local := name[idx+1:]
+			local := unescapePNLocal(name[idx+1:])
 			if ns, ok := p.prefixes[prefix]; ok {
 				fullIRI = ns + local
 				upperName = strings.ToUpper(fullIRI)

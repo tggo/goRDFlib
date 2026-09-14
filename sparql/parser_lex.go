@@ -123,11 +123,7 @@ func (p *sparqlParser) readTermOrVar() string {
 
 	// Prefixed name (may start with digit for local part like :123)
 	start := p.pos
-	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
-		p.pos++
-	}
-	if p.pos < len(p.input) && p.input[p.pos] == ':' {
-		p.pos++
+	if _, ok := p.readPNameNS(); ok {
 		p.readPNLocal()
 	}
 	return p.input[start:p.pos]
@@ -183,10 +179,8 @@ afterString:
 			if p.pos < len(p.input) {
 				p.pos++
 			}
-		} else {
-			for p.pos < len(p.input) && (isNameChar(rune(p.input[p.pos])) || p.input[p.pos] == ':') {
-				p.pos++
-			}
+		} else if _, ok := p.readPNameNS(); ok {
+			p.readPNLocal()
 		}
 	}
 	return p.input[start:p.pos]
@@ -294,15 +288,43 @@ func (p *sparqlParser) parseBnodePropertyListTriples() (string, []Triple, error)
 	return bnode, triples, nil
 }
 
-// readPNLocal reads the local part of a prefixed name (after the colon).
-// Supports SPARQL 1.1 PN_LOCAL: name chars, dots, dashes, colons, % escapes, \ escapes.
+// readPNameNS reads a PNAME_NS (SPARQL 1.1 grammar [164], [168]): an optional
+// PN_PREFIX followed by ':'. PN_PREFIX may contain '-' and '.', but not end
+// with '.'. It returns the prefix and true with the parser after the colon;
+// otherwise it leaves the parser after the leading name characters, as
+// callers that read a keyword or function name expect.
+func (p *sparqlParser) readPNameNS() (string, bool) {
+	start := p.pos
+	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
+		p.pos++
+	}
+	nameEnd := p.pos
+	if p.pos > start {
+		for p.pos < len(p.input) && (isNameChar(rune(p.input[p.pos])) || p.input[p.pos] == '-' || p.input[p.pos] == '.') {
+			p.pos++
+		}
+	}
+	if p.pos < len(p.input) && p.input[p.pos] == ':' && p.input[p.pos-1] != '.' {
+		prefix := p.input[start:p.pos]
+		p.pos++
+		return prefix, true
+	}
+	p.pos = nameEnd
+	return "", false
+}
+
+// readPNLocal reads the local part of a prefixed name (after the colon), per
+// SPARQL 1.1 grammar [169]-[173] PN_LOCAL: name characters, digits and ':'
+// anywhere, '.' and '-' after the first character but not as the last one,
+// PERCENT ('%' HEX HEX) and PN_LOCAL_ESC ('\' followed by one of
+// _~.-!$&'()*+,;=/?#@%).
 func (p *sparqlParser) readPNLocal() string {
 	start := p.pos
 	for p.pos < len(p.input) {
 		ch := p.input[p.pos]
-		if isNameChar(rune(ch)) || ch == '.' || ch == '-' || ch == ':' {
+		if isNameChar(rune(ch)) || ch == ':' || ((ch == '.' || ch == '-') && p.pos > start) {
 			p.pos++
-		} else if ch == '%' && p.pos+2 < len(p.input) {
+		} else if ch == '%' && p.pos+2 < len(p.input) && isHexDigit(p.input[p.pos+1]) && isHexDigit(p.input[p.pos+2]) {
 			// Percent-encoded char: %HH
 			p.pos += 3
 		} else if ch == '\\' && p.pos+1 < len(p.input) && isPNLocalEscChar(p.input[p.pos+1]) {
@@ -513,12 +535,19 @@ func (p *sparqlParser) readIRIRef() string {
 	return iri
 }
 
+// readFuncName reads a built-in function name or a prefixed name. A prefixed
+// name is read with the full PN_LOCAL rules, so ex:a-b, ex:a.b and ex:a\/b are
+// one token in an expression just as in a triple pattern.
 func (p *sparqlParser) readFuncName() string {
 	start := p.pos
-	for p.pos < len(p.input) && (isNameChar(rune(p.input[p.pos])) || p.input[p.pos] == ':') {
-		p.pos++
+	if _, ok := p.readPNameNS(); ok {
+		p.readPNLocal()
 	}
 	return p.input[start:p.pos]
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 func (p *sparqlParser) readUntil(ch byte) string {

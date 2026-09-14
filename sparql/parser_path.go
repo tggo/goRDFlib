@@ -318,12 +318,7 @@ func (p *sparqlParser) resolvePathURI() string {
 	}
 	// Prefixed name
 	start := p.pos
-	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
-		p.pos++
-	}
-	if p.pos < len(p.input) && p.input[p.pos] == ':' {
-		prefix := p.input[start:p.pos]
-		p.pos++
+	if prefix, ok := p.readPNameNS(); ok {
 		local := unescapePNLocal(p.readPNLocal())
 		if ns, ok := p.prefixes[prefix]; ok {
 			return ns + local

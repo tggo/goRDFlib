@@ -590,7 +590,7 @@ func resolveTermRef(s string, prefixes map[string]string) rdflibgo.Term {
 		return rdflibgo.NewURIRefUnsafe(iri)
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
-		return parseLiteralString(s)
+		return parseLiteralWithPrefixes(s, prefixes)
 	}
 	if s == "true" {
 		return rdflibgo.NewLiteral(true)
@@ -1140,7 +1140,7 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 		return rdflibgo.NewLiteral(false)
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
-		return parseLiteralString(s)
+		return parseLiteralWithPrefixes(s, prefixes)
 	}
 	if len(s) > 0 && (s[0] >= '0' && s[0] <= '9' || s[0] == '+' || s[0] == '-') {
 		if strings.ContainsAny(s, "eE") {
@@ -1153,7 +1153,9 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 	}
 	if idx := strings.Index(s, ":"); idx >= 0 {
 		prefix := s[:idx]
-		local := s[idx+1:]
+		// PN_LOCAL_ESC: ex:a\/b names <...a/b>, the backslash is not part of
+		// the IRI (SPARQL 1.1 grammar [173]).
+		local := unescapePNLocal(s[idx+1:])
 		if ns, ok := prefixes[prefix]; ok {
 			return rdflibgo.NewURIRefUnsafe(ns + local)
 		}

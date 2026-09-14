@@ -53,22 +53,7 @@ func (p *sparqlParser) resolveTermValue(s string) rdflibgo.Term {
 		return rdflibgo.NewBNode(label)
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
-		// Check for prefixed datatype (^^prefix:local)
-		if idx := strings.Index(s, "^^"); idx >= 0 {
-			dtPart := s[idx+2:]
-			if !strings.HasPrefix(dtPart, "<") {
-				// It's a prefixed name datatype
-				if cidx := strings.Index(dtPart, ":"); cidx >= 0 {
-					prefix := dtPart[:cidx]
-					local := dtPart[cidx+1:]
-					if ns, ok := p.prefixes[prefix]; ok {
-						lit := parseLiteralString(s[:idx])
-						return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(ns+local)))
-					}
-				}
-			}
-		}
-		return parseLiteralString(s)
+		return parseLiteralWithPrefixes(s, p.prefixes)
 	}
 	if s == "true" {
 		return rdflibgo.NewLiteral(true)
@@ -97,6 +82,31 @@ func (p *sparqlParser) resolveTermValue(s string) rdflibgo.Term {
 		}
 	}
 	return rdflibgo.NewLiteral(s)
+}
+
+// parseLiteralWithPrefixes parses a literal token whose datatype may be a
+// prefixed name ("a"^^xsd:string), resolving it against prefixes. The "^^" is
+// looked for after the closing quote, so a "^^" inside the lexical form is
+// not mistaken for the datatype separator.
+func parseLiteralWithPrefixes(s string, prefixes map[string]string) rdflibgo.Literal {
+	quote := s[0]
+	long := len(s) >= 6 && s[1] == quote && s[2] == quote
+	end := closingQuoteIndex(s, quote, long)
+	if end >= 0 {
+		after := end + 1
+		if long {
+			after = end + 3
+		}
+		if rest := s[after:]; strings.HasPrefix(rest, "^^") && !strings.HasPrefix(rest, "^^<") {
+			if prefix, local, ok := strings.Cut(rest[2:], ":"); ok {
+				if ns, ok := prefixes[prefix]; ok {
+					lit := parseLiteralString(s[:after])
+					return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(ns+unescapePNLocal(local))))
+				}
+			}
+		}
+	}
+	return parseLiteralString(s)
 }
 
 func parseLiteralString(s string) rdflibgo.Literal {
