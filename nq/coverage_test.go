@@ -268,8 +268,8 @@ func TestSerializeBNodeGraph(t *testing.T) {
 	if err := Serialize(g, &buf); err != nil {
 		t.Fatal(err)
 	}
-	// BNode context should not produce a graph term suffix
-	if strings.Contains(buf.String(), "_:g1") {
-		t.Error("did not expect bnode graph in NQ output")
+	// A blank node names a graph, so every line carries it as graph label.
+	if !strings.Contains(buf.String(), "\"v\" _:g1 .") {
+		t.Errorf("blank-node graph label missing from N-Quads output:\n%s", buf.String())
 	}
 }

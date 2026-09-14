@@ -3,6 +3,7 @@ package badgerstore
 import (
 	"testing"
 
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -112,9 +113,13 @@ func TestGraphKey(t *testing.T) {
 	if gk := graphKey(nil); gk != "" {
 		t.Errorf("graphKey(nil) = %q, want empty", gk)
 	}
+	if gk := graphKey(store.DefaultGraph); gk != "" {
+		t.Errorf("graphKey(DefaultGraph) = %q, want empty", gk)
+	}
+	// A blank node names a graph (rdflib #2445).
 	bn := term.NewBNode("b1")
-	if gk := graphKey(bn); gk != "" {
-		t.Errorf("graphKey(BNode) = %q, want empty", gk)
+	if gk := graphKey(bn); gk != term.TermKey(bn) {
+		t.Errorf("graphKey(BNode) = %q, want %q", gk, term.TermKey(bn))
 	}
 	uri := term.NewURIRefUnsafe("http://example.org/g")
 	if gk := graphKey(uri); gk == "" {

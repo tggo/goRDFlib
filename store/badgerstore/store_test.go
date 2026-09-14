@@ -418,15 +418,18 @@ func TestRemoveFromNamedGraph(t *testing.T) {
 	}
 }
 
-func TestBNodeContextIgnored(t *testing.T) {
+func TestBNodeContextIsNamedGraph(t *testing.T) {
 	s := newTestStore(t)
 	bn := term.NewBNode("")
 	t1 := term.Triple{Subject: alice, Predicate: name, Object: term.NewLiteral("Alice")}
 	s.Add(t1, bn)
 
-	// BNode context should be treated as default graph.
-	if got := s.Len(nil); got != 1 {
-		t.Errorf("Len(nil) with BNode ctx = %d, want 1", got)
+	// A blank node names a graph; it is not the default graph (rdflib #2445).
+	if got := s.Len(nil); got != 0 {
+		t.Errorf("Len(nil) with BNode ctx = %d, want 0", got)
+	}
+	if got := s.Len(bn); got != 1 {
+		t.Errorf("Len(bnode) = %d, want 1", got)
 	}
 }
 
@@ -544,9 +547,12 @@ func TestAddNWithBNodeGraph(t *testing.T) {
 		{Triple: term.Triple{Subject: alice, Predicate: name, Object: term.NewLiteral("Alice")}, Graph: bn},
 	}
 	s.AddN(quads)
-	// BNode graph should be treated as default graph.
-	if got := s.Len(nil); got != 1 {
-		t.Errorf("Len(nil) with BNode graph in AddN = %d, want 1", got)
+	// A blank node names a graph; it is not the default graph.
+	if got := s.Len(nil); got != 0 {
+		t.Errorf("Len(nil) with BNode graph in AddN = %d, want 0", got)
+	}
+	if got := s.Len(bn); got != 1 {
+		t.Errorf("Len(bnode) with BNode graph in AddN = %d, want 1", got)
 	}
 }
 
@@ -1067,10 +1073,13 @@ func TestSetWithBNodeContext(t *testing.T) {
 	s := newTestStore(t)
 	bn := term.NewBNode("ctx")
 	s.Add(term.Triple{Subject: alice, Predicate: name, Object: term.NewLiteral("Alice")}, bn)
-	// Set with BNode context should operate on default graph.
+	// Set with a BNode context operates on that blank-node graph only.
 	s.Set(term.Triple{Subject: alice, Predicate: name, Object: term.NewLiteral("Alice Updated")}, bn)
-	if got := s.Len(nil); got != 1 {
-		t.Errorf("Len after Set with BNode ctx = %d, want 1", got)
+	if got := s.Len(bn); got != 1 {
+		t.Errorf("Len(bnode) after Set with BNode ctx = %d, want 1", got)
+	}
+	if got := s.Len(nil); got != 0 {
+		t.Errorf("Len(nil) after Set with BNode ctx = %d, want 0", got)
 	}
 }
 

@@ -632,16 +632,15 @@ func testNamespaces(t *testing.T, cfg Config) {
 
 // --- context conventions ---------------------------------------------------
 
-// testContextConventions pins the two rules that are convention rather than
+// testContextConventions pins the rules that are convention rather than
 // interface, and that a new backend therefore gets wrong by default:
 //
 //   - a nil context means the default graph, not "every graph";
-//   - a blank node cannot name a graph over the wire, so a BNode context is
-//     folded into the default graph.
-//
-// Graph passes its identifier — a BNode for an unnamed graph — straight through
-// to the store, so the second rule is what makes an ordinary in-memory Graph
-// behave the same on a persistent backend.
+//   - store.DefaultGraph means the default graph too — it is the identifier an
+//     unnamed Graph passes through to the store;
+//   - a blank node is an ordinary graph name. TriG writes `_:g { … }`, and
+//     folding blank-node contexts into the default graph lost those graphs
+//     (rdflib #2445).
 func testContextConventions(t *testing.T, cfg Config) {
 	cfg.run(t, "nil context means the default graph", func(t *testing.T) {
 		s := cfg.New(t)
@@ -656,13 +655,15 @@ func testContextConventions(t *testing.T, cfg Config) {
 		wantTriples(t, s, pattern(nil, nil, nil), nil, 1, "Triples(nil) reads only the default graph")
 	})
 
-	cfg.run(t, "a BNode context is the default graph", func(t *testing.T) {
+	cfg.run(t, "the DefaultGraph identifier is the default graph", func(t *testing.T) {
 		s := cfg.New(t)
-		bn := term.NewBNode()
+		s.Add(triple(Alice, Name, lit("Alice")), store.DefaultGraph)
+		s.Add(triple(Bob, Name, lit("Bob")), nil)
 
-		s.Add(triple(Alice, Name, lit("Alice")), bn)
-		wantLen(t, s, nil, 1, "a triple added under a BNode context")
-		wantTriples(t, s, pattern(nil, nil, nil), bn, 1, "reading back through the same BNode")
+		wantLen(t, s, nil, 2, "Len(nil) after adds under nil and DefaultGraph")
+		wantLen(t, s, store.DefaultGraph, 2, "Len(DefaultGraph)")
+		wantTriples(t, s, pattern(Alice, nil, nil), nil, 1, "reading a DefaultGraph triple through nil")
+		wantTriples(t, s, pattern(Bob, nil, nil), store.DefaultGraph, 1, "reading a nil-context triple through DefaultGraph")
 
 		if s.ContextAware() {
 			seen := 0
@@ -671,13 +672,52 @@ func testContextConventions(t *testing.T, cfg Config) {
 				return true
 			})
 			if seen != 0 {
-				t.Errorf("Contexts reported %d contexts; a BNode context must not become a named graph", seen)
+				t.Errorf("Contexts reported %d contexts; DefaultGraph is not a named graph", seen)
 			}
 		}
 
-		// A different BNode addresses the same default graph, which is the
-		// whole point: the identity of the blank node is not preserved.
-		wantTriples(t, s, pattern(nil, nil, nil), term.NewBNode(), 1, "reading through a different BNode")
+		s.Remove(pattern(Alice, nil, nil), store.DefaultGraph)
+		wantLen(t, s, nil, 1, "Remove under DefaultGraph deletes from the default graph")
+		s.Set(triple(Bob, Name, lit("Robert")), store.DefaultGraph)
+		wantTriples(t, s, pattern(Bob, pred(Name), lit("Robert")), nil, 1, "Set under DefaultGraph")
+		wantLen(t, s, nil, 1, "Set under DefaultGraph replaced the value")
+	})
+
+	cfg.run(t, "a BNode context is a named graph", func(t *testing.T) {
+		s := cfg.New(t)
+		if !s.ContextAware() {
+			t.Skip("backend is not context aware")
+		}
+		bn := term.NewBNode()
+		other := term.NewBNode()
+
+		s.Add(triple(Alice, Name, lit("Alice")), bn)
+		s.Add(triple(Bob, Name, lit("Bob")), nil)
+		s.AddN([]term.Quad{{Triple: triple(Carol, Name, lit("Carol")), Graph: other}})
+
+		wantLen(t, s, bn, 1, "the blank-node graph")
+		wantLen(t, s, other, 1, "a second blank-node graph")
+		wantLen(t, s, nil, 1, "the default graph must not see blank-node graphs")
+		wantTriples(t, s, pattern(nil, nil, nil), bn, 1, "reading back through the same BNode")
+		wantTriples(t, s, pattern(Alice, nil, nil), other, 0, "a different BNode is a different graph")
+		wantTriples(t, s, pattern(Alice, nil, nil), nil, 0, "the default graph")
+
+		var names []string
+		s.Contexts(nil)(func(c term.Term) bool {
+			names = append(names, c.N3())
+			return true
+		})
+		sort.Strings(names)
+		want := []string{bn.N3(), other.N3()}
+		sort.Strings(want)
+		if len(names) != 2 || names[0] != want[0] || names[1] != want[1] {
+			t.Errorf("Contexts = %v, want the two blank-node graphs %v", names, want)
+		}
+
+		s.Remove(pattern(nil, nil, nil), bn)
+		wantLen(t, s, bn, 0, "the blank-node graph after Remove")
+		wantLen(t, s, other, 1, "Remove in one blank-node graph must not touch another")
+		wantLen(t, s, nil, 1, "Remove in a blank-node graph must not touch the default graph")
 	})
 }
 
@@ -823,6 +863,10 @@ func testPersistence(t *testing.T, cfg Config) {
 	s.Add(triple(Alice, Name, lit("Alice")), nil)
 	s.Add(triple(Alice, Age, lit(30)), nil)
 	s.Add(triple(Bob, Knows, Alice), Graph1)
+	bn := term.NewBNode("persistedgraph")
+	if s.ContextAware() {
+		s.Add(triple(Carol, Knows, Alice), bn)
+	}
 	s.Bind("ex", term.NewURIRefUnsafe("http://example.org/"))
 
 	s2 := cfg.Reopen(t, s)
@@ -832,6 +876,15 @@ func testPersistence(t *testing.T, cfg Config) {
 
 	if s2.ContextAware() {
 		wantLen(t, s2, Graph1, 1, "named graph after reopen")
+		wantLen(t, s2, bn, 1, "blank-node graph after reopen")
+		found := false
+		s2.Contexts(nil)(func(c term.Term) bool {
+			found = found || c.N3() == bn.N3()
+			return true
+		})
+		if !found {
+			t.Error("Contexts after reopen does not report the blank-node graph")
+		}
 	}
 
 	ns, ok := s2.Namespace("ex")

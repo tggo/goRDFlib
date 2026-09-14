@@ -66,13 +66,13 @@ func TestBlankNodeDatasetScope(t *testing.T) {
 				}
 				previous = labelled
 			}
-			// The default memory store counts the union, not individual contexts.
-			// Each document contributes two unique triples and one blank graph name.
+			// The dataset union counts each distinct triple once. Each document
+			// contributes two unique triples and one blank graph name.
 			want, wantGraphs := 2, 3
 			if sameDataset {
 				want, wantGraphs = 4, 4
 			}
-			if got := ds.DefaultContext().Len(); got != want {
+			if got := ds.Len(); got != want {
 				t.Errorf("dataset union has %d triples, want %d", got, want)
 			}
 			graphs := 0
@@ -175,11 +175,13 @@ _:LABEL <http://example.org/p> <<( _:LABEL <http://example.org/q> <<( _:LABEL <h
 			if preserve {
 				want = 4
 			}
+			got := g.Len()
 			if dataset {
-				g = ds.DefaultContext()
+				// The triples live in the blank-node graphs, so count the union.
+				got = ds.Len()
 			}
-			if g.Len() != want {
-				t.Errorf("got %d triples, want %d", g.Len(), want)
+			if got != want {
+				t.Errorf("got %d triples, want %d", got, want)
 			}
 		}
 	}

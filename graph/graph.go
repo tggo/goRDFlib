@@ -23,7 +23,14 @@ func WithStore(s store.Store) GraphOption {
 	return func(g *Graph) { g.store = s }
 }
 
-// WithIdentifier sets the graph identifier.
+// DefaultGraph is the identifier of a graph created without WithIdentifier,
+// and of a Dataset's default context. Stores address the default graph with it;
+// see store.DefaultGraph.
+var DefaultGraph = store.DefaultGraph
+
+// WithIdentifier sets the graph identifier. Any term other than DefaultGraph —
+// an IRI or a blank node — names a graph, so graphs over one store with
+// different identifiers hold different triples.
 func WithIdentifier(id term.Term) GraphOption {
 	return func(g *Graph) { g.identifier = id }
 }
@@ -44,7 +51,7 @@ func NewGraph(opts ...GraphOption) *Graph {
 		g.store = store.NewMemoryStore()
 	}
 	if g.identifier == nil {
-		g.identifier = term.NewBNode()
+		g.identifier = store.DefaultGraph
 	}
 	// Default namespace bindings
 	g.Bind("rdf", term.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
@@ -63,7 +70,7 @@ func NewGraphFromStore(s store.Store, id term.Term) *Graph {
 // Store returns the underlying store.
 func (g *Graph) Store() store.Store { return g.store }
 
-// Identifier returns the graph identifier.
+// Identifier returns the graph identifier: DefaultGraph for an unnamed graph.
 func (g *Graph) Identifier() term.Term { return g.identifier }
 
 // Add adds a triple to the graph. Returns the graph for chaining.

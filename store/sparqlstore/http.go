@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -90,9 +91,13 @@ func patternToSPARQL(p term.TriplePattern) string {
 // BNode contexts are treated as the default graph (blank nodes cannot name
 // SPARQL graphs, and Graph passes its BNode identifier as context).
 func wrapGraph(ctx term.Term, body string) string {
-	if ctx == nil {
+	if store.IsDefaultGraph(ctx) {
 		return body
 	}
+	// SPARQL cannot name a graph with a blank node (GRAPH takes VarOrIri, and a
+	// blank node in INSERT DATA denotes a fresh node anyway), so a blank-node
+	// context has no representation on the wire. It falls back to the default
+	// graph; storetest records this as a declared limitation.
 	if _, isBNode := ctx.(term.BNode); isBNode {
 		return body
 	}

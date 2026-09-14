@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -62,5 +63,42 @@ func TestDatasetNamedGraphsOnMemoryStore(t *testing.T) {
 	ds.Remove(nil, nil, nil, g1)
 	if ds.DefaultContext().Len() != 1 {
 		t.Error("Remove in g1 touched the default graph")
+	}
+}
+
+// TestUnnamedGraphUsesDefaultGraphIdentifier pins the identifier contract that
+// replaced "a blank node is the default graph": an unnamed graph carries
+// store.DefaultGraph, and a graph named by a blank node is a named graph even on
+// a shared store (rdflib #2445).
+func TestUnnamedGraphUsesDefaultGraphIdentifier(t *testing.T) {
+	if id := graph.NewGraph().Identifier(); !store.IsDefaultGraph(id) {
+		t.Errorf("NewGraph().Identifier() = %v, want store.DefaultGraph", id)
+	}
+	if id := graph.NewDataset().DefaultContext().Identifier(); !store.IsDefaultGraph(id) {
+		t.Errorf("Dataset default context identifier = %v, want store.DefaultGraph", id)
+	}
+
+	s := store.NewMemoryStore()
+	p := term.NewURIRefUnsafe("http://e/p")
+	unnamed := graph.NewGraph(graph.WithStore(s))
+	bn := term.NewBNode()
+	blank := graph.NewGraph(graph.WithStore(s), graph.WithIdentifier(bn))
+
+	unnamed.Add(term.NewURIRefUnsafe("http://e/a"), p, term.NewLiteral("default"))
+	blank.Add(term.NewURIRefUnsafe("http://e/b"), p, term.NewLiteral("named"))
+
+	if unnamed.Len() != 1 || blank.Len() != 1 {
+		t.Errorf("unnamed=%d blank=%d, want 1 each", unnamed.Len(), blank.Len())
+	}
+	if s.Len(nil) != 1 {
+		t.Errorf("default graph holds %d triples, want 1", s.Len(nil))
+	}
+	found := false
+	s.Contexts(nil)(func(c term.Term) bool {
+		found = found || c.Equal(bn)
+		return true
+	})
+	if !found {
+		t.Error("the blank-node graph is not reported by Contexts")
 	}
 }

@@ -14,11 +14,13 @@ import (
 //   - A nil context means the default graph. It does NOT mean "all graphs":
 //     Len(nil) counts the default graph, Triples(pat, nil) reads it, and
 //     Remove(pat, nil) deletes from it.
-//   - A BNode context means the default graph as well. Blank nodes cannot name
-//     a graph in a serialization or over a protocol, and Graph passes its own
-//     identifier — a BNode for an unnamed graph — straight through, so folding
-//     it into the default graph is what makes an ordinary Graph behave the same
-//     on every backend.
+//   - DefaultGraph means the default graph as well. It is the identifier of an
+//     unnamed Graph, which passes it straight through; test a context with
+//     IsDefaultGraph rather than against nil.
+//   - Every other term names a graph, a blank node included: TriG and N-Quads
+//     name graphs with blank nodes, and treating them as the default graph lost
+//     those graphs. A backend whose protocol cannot express a blank-node graph
+//     name (SPARQL) documents that as a limitation.
 //   - Contexts reports named graphs only; the default graph is not a context.
 //
 // Iteration order is unspecified and need not be stable between calls. Terms
@@ -35,7 +37,7 @@ type Store interface {
 	AddN(quads []term.Quad)
 
 	// Remove deletes triples matching the pattern from the given context.
-	// A nil or BNode context means the default graph.
+	// A nil context or DefaultGraph means the default graph.
 	Remove(pattern term.TriplePattern, context term.Term)
 
 	// Set atomically removes all triples matching (s, p, *) and adds (s, p, o)
@@ -48,7 +50,7 @@ type Store interface {
 	Triples(pattern term.TriplePattern, context term.Term) TripleIterator
 
 	// Len returns the number of triples in the given context.
-	// A nil or BNode context means the default graph.
+	// A nil context or DefaultGraph means the default graph.
 	Len(context term.Term) int
 
 	// Contexts returns an iterator over all contexts, optionally filtered by a triple.

@@ -815,14 +815,14 @@ func TestNamedGraphs(t *testing.T) {
 	}
 }
 
-func TestBNodeContextIgnored(t *testing.T) {
+func TestBNodeContextIsNamedGraph(t *testing.T) {
 	s := newTestStore(t)
 	bn := term.NewBNode("")
 	s.Add(term.Triple{Subject: alice, Predicate: name, Object: term.NewLiteral("Alice")}, bn)
-	if got := s.Len(nil); got != 1 {
-		t.Errorf("Len(nil) with BNode ctx = %d, want 1", got)
+	// A blank node names a graph; it is not the default graph (rdflib #2445).
+	if got := s.Len(nil); got != 0 {
+		t.Errorf("Len(nil) with BNode ctx = %d, want 0", got)
 	}
-	// BNode context should also be treated as default graph for queries.
 	if got := s.Len(bn); got != 1 {
 		t.Errorf("Len(bnode) = %d, want 1", got)
 	}

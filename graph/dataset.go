@@ -55,6 +55,9 @@ func (ds *Dataset) AddGraph(g *Graph) {
 // RemoveGraph removes a named graph from the dataset.
 // Ported from: rdflib.graph.Dataset.remove_graph
 func (ds *Dataset) RemoveGraph(id term.Term) {
+	if id == nil {
+		return
+	}
 	k := term.TermKey(id)
 	if k == term.TermKey(ds.defaultContext.identifier) {
 		return

@@ -527,7 +527,6 @@ func (s *SQLiteStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
 	return err == nil
 }
 
-// graphKey returns the TermKey for a context term, or "" for the default graph.
 // dsnWithPragmas returns dsn with the connection pragmas attached as DSN
 // parameters.
 //
@@ -551,11 +550,14 @@ func dsnWithPragmas(dsn string) string {
 	return dsn + "?" + pragmas
 }
 
+// graphKey returns the TermKey for a context term, or "" for the default graph
+// (a nil context or store.DefaultGraph). A blank node names a graph like an IRI
+// does.
+//
+// Rows written before blank nodes named graphs are unaffected: a blank-node
+// context was stored under the empty graph key, which is still the default graph.
 func graphKey(ctx term.Term) string {
-	if ctx == nil {
-		return ""
-	}
-	if _, isBNode := ctx.(term.BNode); isBNode {
+	if store.IsDefaultGraph(ctx) {
 		return ""
 	}
 	return term.TermKey(ctx)

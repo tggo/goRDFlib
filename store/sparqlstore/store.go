@@ -266,7 +266,7 @@ func resolveVar(varName string, fixed term.Term, row map[string]term.Term) term.
 
 // termKeyOrDefault returns a string key for context grouping.
 func termKeyOrDefault(ctx term.Term) string {
-	if ctx == nil {
+	if store.IsDefaultGraph(ctx) {
 		return ""
 	}
 	return ctx.N3()

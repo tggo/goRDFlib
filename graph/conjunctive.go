@@ -25,7 +25,7 @@ func NewConjunctiveGraph(opts ...GraphOption) *ConjunctiveGraph {
 		g.store = store.NewMemoryStore()
 	}
 	if g.identifier == nil {
-		g.identifier = term.NewBNode()
+		g.identifier = store.DefaultGraph
 	}
 	defaultCtx := &Graph{store: g.store, identifier: g.identifier}
 	defaultCtx.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))

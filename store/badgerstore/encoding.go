@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -93,13 +94,14 @@ func ctxKey(gk string) []byte {
 	return buf
 }
 
-// graphKey returns the TermKey for a context term, or "" for the default graph.
-// BNode contexts are treated as the default graph (same as sparqlstore).
+// graphKey returns the TermKey for a context term, or "" for the default graph
+// (a nil context or store.DefaultGraph). A blank node names a graph like an IRI
+// does.
+//
+// Data written before blank nodes named graphs is unaffected: a blank-node
+// context was stored under "", which is still the default graph's key.
 func graphKey(ctx term.Term) string {
-	if ctx == nil {
-		return ""
-	}
-	if _, isBNode := ctx.(term.BNode); isBNode {
+	if store.IsDefaultGraph(ctx) {
 		return ""
 	}
 	return term.TermKey(ctx)

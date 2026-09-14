@@ -23,6 +23,9 @@ const (
 	blankNodes = "a blank node label cannot survive the SPARQL protocol: a " +
 		"blank node in INSERT DATA denotes a fresh node on the server, so the " +
 		"label written is never the label read back"
+	blankNodeGraphs = "SPARQL cannot name a graph with a blank node (GRAPH takes " +
+		"VarOrIri), so a blank-node context has no representation on the wire " +
+		"and falls back to the default graph"
 	tripleTerms = "the bundled test server does not round-trip RDF 1.2 triple " +
 		"terms through the SPARQL results formats"
 )
@@ -37,6 +40,8 @@ func TestConformance(t *testing.T) {
 			"Remove/stays inside its graph":                    namedGraphs,
 			"Triples/is scoped to its graph":                   namedGraphs,
 			"Contexts":                                         namedGraphs,
+
+			"ContextConventions/a BNode context is a named graph": blankNodeGraphs,
 
 			"TermRoundTrip/BNode subject": blankNodes,
 			"TermRoundTrip/BNode object":  blankNodes,

@@ -53,13 +53,9 @@ func (m *MemoryStore) ContextAware() bool { return true }
 func (m *MemoryStore) TransactionAware() bool { return false }
 
 // isDefaultContext reports whether ctx addresses the default graph under the
-// Store context conventions.
+// Store context conventions: nil or DefaultGraph. A blank node names a graph.
 func isDefaultContext(ctx term.Term) bool {
-	if ctx == nil {
-		return true
-	}
-	_, isBNode := ctx.(term.BNode)
-	return isBNode
+	return IsDefaultGraph(ctx)
 }
 
 // index returns the graph addressed by ctx for reading, or nil if a named

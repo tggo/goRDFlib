@@ -7,7 +7,7 @@
 // store.Store documents is only half a specification; the rest of it lives in
 // the assertions this package makes, such as "adding the same triple twice
 // leaves Len at 1", "Contexts does not report the default graph", or "a BNode
-// context is treated as the default graph".
+// context is a named graph, and store.DefaultGraph is the default graph".
 //
 // Usage from a backend's own test file:
 //

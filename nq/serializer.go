@@ -8,6 +8,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
+	"github.com/tggo/goRDFlib/store"
 )
 
 // Serialize writes the graph in N-Quads format.
@@ -19,9 +20,11 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	lines := make([]string, 0, g.Len())
 	var serErr error
 
-	// Determine graph context once
+	// Determine graph context once. Every identifier except the default graph's
+	// is a graph name, a blank node included (N-Quads graphLabel ::= IRIREF |
+	// BLANK_NODE_LABEL).
 	var graphSuffix string
-	if id, ok := g.Identifier().(rdflibgo.URIRef); ok {
+	if id := g.Identifier(); !store.IsDefaultGraph(id) {
 		term, err := ntsyntax.Term(id)
 		if err != nil {
 			return err
