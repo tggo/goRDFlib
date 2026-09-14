@@ -111,7 +111,7 @@ func (ts *trigState) canWriteList(k string) bool {
 // label or [] there, so such a node must keep its label everywhere else too:
 // it is never inlined as [ ... ], never written as a collection, and never
 // written as an anonymous [] subject.
-func (ts *trigState) pinTripleTermBNodes(tt rdflibgo.TripleTerm) {
+func pinTripleTermBNodes(tt rdflibgo.TripleTerm, pinned map[string]bool) {
 	stack := []rdflibgo.TripleTerm{tt}
 	for len(stack) > 0 {
 		cur := stack[len(stack)-1]
@@ -119,7 +119,7 @@ func (ts *trigState) pinTripleTermBNodes(tt rdflibgo.TripleTerm) {
 		for _, part := range []rdflibgo.Term{cur.Subject(), cur.Object()} {
 			switch v := part.(type) {
 			case rdflibgo.BNode:
-				ts.pinned[nodeKey(v)] = true
+				pinned[nodeKey(v)] = true
 			case rdflibgo.TripleTerm:
 				stack = append(stack, v)
 			}

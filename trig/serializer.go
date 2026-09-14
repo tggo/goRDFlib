@@ -56,10 +56,16 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 	if cfg.base != "" && !term.ValidIRI(cfg.base) {
 		return invalidIRIError(cfg.base)
 	}
+	usage := newBNodeUsage()
 	for g := range ds.Graphs() {
 		allGraphs = append(allGraphs, g)
 		checkIRIs(g.Identifier())
+		gk := g.Identifier().N3()
+		if b, ok := g.Identifier().(rdflibgo.BNode); ok && g.Identifier() != defaultCtx.Identifier() {
+			usage.pinned[b.N3()] = true
+		}
 		g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+			usage.add(gk, t)
 			trackNSForTerm(t.Subject, ds, usedNS)
 			trackNSForTerm(t.Predicate, ds, usedNS)
 			trackNSForTerm(t.Object, ds, usedNS)
@@ -122,25 +128,72 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 		}
 		first = false
 
-		ts := newTrigState(g, usedNS)
+		ts := newTrigState(g, usedNS, usage)
 		ts.preprocess()
 		ts.orderSubjects()
 
 		if isDefault {
 			// Default graph: emit triples in { } block
 			fmt.Fprintln(bw, "{")
-			ts.writeIndented(bw, "    ")
-			fmt.Fprintln(bw, "}")
 		} else {
 			// Named graph
-			label := trigLabel(g.Identifier(), usedNS)
-			fmt.Fprintf(bw, "%s {\n", label)
-			ts.writeIndented(bw, "    ")
-			fmt.Fprintln(bw, "}")
+			fmt.Fprintf(bw, "%s {\n", trigLabel(g.Identifier(), usedNS))
 		}
+		if err := ts.writeIndented(bw, "    "); err != nil {
+			return err
+		}
+		fmt.Fprintln(bw, "}")
 	}
 
-	return nil
+	return bw.Flush()
+}
+
+// bnodeUsage is what the serializer knows about blank nodes across the whole
+// dataset. A blank node label is scoped to the TriG document, not to a graph
+// block, so one node may occur in several graphs. Counting references per
+// graph made such a node look unreferenced in a graph that only used it as a
+// subject: it was written as [] there, or inlined as [ ... ] in the graph
+// holding its one reference, and the link between the graphs was lost.
+type bnodeUsage struct {
+	// refs counts object occurrences over all graphs.
+	refs map[string]int
+	// pinned marks blank nodes that must keep their label everywhere: those
+	// that occur in more than one graph, name a graph, or occur inside a
+	// triple term.
+	pinned map[string]bool
+	// graphOf is the graph a blank node was first seen in.
+	graphOf map[string]string
+}
+
+func newBNodeUsage() *bnodeUsage {
+	return &bnodeUsage{
+		refs:    make(map[string]int),
+		pinned:  make(map[string]bool),
+		graphOf: make(map[string]string),
+	}
+}
+
+func (u *bnodeUsage) add(graphKey string, t rdflibgo.Triple) {
+	u.refs[t.Object.N3()]++
+	u.seen(graphKey, t.Subject)
+	u.seen(graphKey, t.Object)
+	if tt, ok := t.Object.(rdflibgo.TripleTerm); ok {
+		pinTripleTermBNodes(tt, u.pinned)
+	}
+}
+
+// seen pins a blank node the second time it turns up in a different graph.
+func (u *bnodeUsage) seen(graphKey string, t rdflibgo.Term) {
+	b, ok := t.(rdflibgo.BNode)
+	if !ok {
+		return
+	}
+	k := b.N3()
+	if first, ok := u.graphOf[k]; !ok {
+		u.graphOf[k] = graphKey
+	} else if first != graphKey {
+		u.pinned[k] = true
+	}
 }
 
 // checkTermIRIs returns an error for the first IRI in t (including a literal's
@@ -185,23 +238,23 @@ type trigState struct {
 
 	spoMap     map[string]map[string][]rdflibgo.Term
 	subjects   []rdflibgo.Subject
-	refs       map[string]int
+	refs       map[string]int  // dataset-wide, shared, read-only
 	listCells  map[string]bool // see serializer_lists.go
-	pinned     map[string]bool // blank nodes inside triple terms
+	pinned     map[string]bool // dataset-wide, shared, read-only; see bnodeUsage
 	serialized map[string]bool
 	subjectMap map[string]rdflibgo.Subject
 
 	firstKey, restKey, nilKey string
 }
 
-func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef) *trigState {
+func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef, usage *bnodeUsage) *trigState {
 	return &trigState{
 		g:          g,
 		usedNS:     usedNS,
 		spoMap:     make(map[string]map[string][]rdflibgo.Term),
-		refs:       make(map[string]int),
+		refs:       usage.refs,
 		listCells:  make(map[string]bool),
-		pinned:     make(map[string]bool),
+		pinned:     usage.pinned,
 		serialized: make(map[string]bool),
 		subjectMap: make(map[string]rdflibgo.Subject),
 		firstKey:   rdflibgo.RDF.First.N3(),
@@ -220,10 +273,6 @@ func (ts *trigState) preprocess() {
 		}
 		ts.subjectMap[sk] = t.Subject
 		ts.spoMap[sk][pk] = append(ts.spoMap[sk][pk], t.Object)
-		ts.refs[t.Object.N3()]++
-		if tt, ok := t.Object.(rdflibgo.TripleTerm); ok {
-			ts.pinTripleTermBNodes(tt)
-		}
 		return true
 	})
 	ts.detectLists()

@@ -288,3 +288,43 @@ func TestSerializeBNodeInTripleTermKeepsIdentityTrig(t *testing.T) {
 		})
 	}
 }
+
+// A blank node label is scoped to the document, not to a graph block.
+// References were counted per graph, so a node used as an object in one graph
+// and as a subject in another was written as [] or inlined, and the link
+// between the graphs was lost.
+func TestSerializeBNodeSharedAcrossGraphs(t *testing.T) {
+	const prefix = "@prefix : <http://example.org/> . @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
+	cases := map[string]string{
+		"object here, subject there": `:s :p _:x . :g { _:x :q :o . }`,
+		"inlined in one graph":       `:g1 { :s :p _:x . _:x :q 1 . } :g2 { _:x :q 2 . }`,
+		"subject in two graphs":      `:g1 { _:x :q 1 . } :g2 { _:x :q 2 . }`,
+		"list cell used elsewhere":   `:s :p _:l . _:l rdf:first 1 ; rdf:rest rdf:nil . :g { _:l :q 3 . }`,
+		"list split over graphs":     `:s :p _:l . _:l rdf:first 1 ; rdf:rest _:m . :g { _:m rdf:first 2 ; rdf:rest rdf:nil . }`,
+		"triple term across graphs":  `:s :p <<( _:x :q 1 )>> . :g { _:x :q 2 . }`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			ds := newBadgerDataset(t)
+			if err := ParseDataset(ds, strings.NewReader(prefix+src)); err != nil {
+				t.Fatal(err)
+			}
+			assertDatasetRoundTrip(t, ds, newBadgerDataset)
+		})
+	}
+}
+
+// Round-trip property over several graphs sharing blank nodes.
+func TestSerializeRoundTripGeneratedDatasets(t *testing.T) {
+	seeds := 150
+	if testing.Short() {
+		seeds = 50
+	}
+	for seed := range seeds {
+		t.Run(fmt.Sprintf("seed%d", seed), func(t *testing.T) {
+			s := newShapeGen(seed, newBadgerDataset(t), 3)
+			s.build()
+			assertDatasetRoundTrip(t, s.ds, newBadgerDataset)
+		})
+	}
+}
