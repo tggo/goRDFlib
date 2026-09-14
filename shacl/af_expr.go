@@ -141,6 +141,7 @@ func (e *afFilterShapeExpr) Eval(ctx *nodeExprContext) []Term {
 		shapesMap:      ctx.shapesMap,
 		classInstances: ctx.classInstances,
 		af:             ctx.af,
+		guard:          ctx.sharedGuard(),
 	}
 	shape := resolveShape(evalCtx, e.Shape)
 	if shape == nil {

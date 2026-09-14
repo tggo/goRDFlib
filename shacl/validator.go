@@ -90,6 +90,10 @@ func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []Validatio
 	if s.IsProperty && s.Path != nil {
 		results = append(results, validatePropertyShape(ctx, s, focusNode)...)
 	} else {
+		if !ctx.enter(s, focusNode) {
+			return nil // see recursionGuard
+		}
+		defer ctx.leave(s, focusNode)
 		valueNodes := []Term{focusNode}
 		for _, c := range s.Constraints {
 			results = append(results, c.Evaluate(ctx, s, focusNode, valueNodes)...)
@@ -106,6 +110,11 @@ func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []Validatio
 }
 
 func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []ValidationResult {
+	if !ctx.enter(s, focusNode) {
+		return nil // see recursionGuard
+	}
+	defer ctx.leave(s, focusNode)
+
 	var results []ValidationResult
 	var valueNodes []Term
 

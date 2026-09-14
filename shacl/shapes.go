@@ -102,6 +102,63 @@ type evalContext struct {
 	// shapes graph declares, which have to reach every SPARQL query run on
 	// its behalf. Nil means AF is off and no AF vocabulary is interpreted.
 	af *afContext
+
+	// guard tracks the (shape, focus node) pairs being validated on the current
+	// path, so a recursive shape over cyclic data terminates. Every context
+	// derived from this one — including the node expression contexts in
+	// between — must share it, or a cycle that passes through a context
+	// boundary starts with an empty set each time round and never ends.
+	guard *recursionGuard
+}
+
+// recursionGuard records which (shape, focus node) pairs are in progress.
+//
+// SHACL 1.0 §3.4.3 leaves the validation of recursive shapes undefined and up
+// to the processor. This one takes the coinductive reading: a pair that is
+// already being validated further up the current path is assumed to conform
+// when it is reached again. A cycle therefore contributes no results of its
+// own, while anything that fails anywhere along it is still reported by the
+// visit that reaches it first. The set is per path, not a memo: a pair is
+// removed once its validation returns, so the same pair reached again on a
+// different branch is validated in full.
+//
+// The pair is keyed by shape ID, not *Shape, because SHACL-AF re-parses the
+// shapes graph per rule round and parses anonymous shapes on demand, so one
+// shape can have several *Shape values.
+//
+// Not safe for concurrent use; a validation run is single-goroutine.
+type recursionGuard struct {
+	active map[string]struct{}
+}
+
+func guardKey(s *Shape, node Term) string {
+	return s.ID.TermKey() + "\x00" + node.TermKey()
+}
+
+// sharedGuard returns ctx's guard, creating it on first use, so that a context
+// derived from ctx can be given the same one.
+func (ctx *evalContext) sharedGuard() *recursionGuard {
+	if ctx.guard == nil {
+		ctx.guard = &recursionGuard{active: make(map[string]struct{})}
+	}
+	return ctx.guard
+}
+
+// enter marks (s, node) as in progress. It returns false when the pair already
+// is, in which case the caller must treat it as conforming and must not call
+// leave.
+func (ctx *evalContext) enter(s *Shape, node Term) bool {
+	g := ctx.sharedGuard()
+	k := guardKey(s, node)
+	if _, busy := g.active[k]; busy {
+		return false
+	}
+	g.active[k] = struct{}{}
+	return true
+}
+
+func (ctx *evalContext) leave(s *Shape, node Term) {
+	delete(ctx.guard.active, guardKey(s, node))
 }
 
 // report hands err to the caller's error handler, if one was installed.

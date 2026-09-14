@@ -20,6 +20,7 @@ func (c *ExpressionConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNod
 		classInstances: ctx.classInstances,
 		focusNode:      focusNode,
 		af:             ctx.af,
+		guard:          ctx.sharedGuard(),
 	}
 	result := expr.Eval(nCtx)
 	if isTruthy(result) {

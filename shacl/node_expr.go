@@ -28,6 +28,31 @@ type nodeExprContext struct {
 	shapesGraph    *Graph
 	classInstances map[string][]Term
 	af             *afContext
+
+	// guard is the recursion guard of the validation this expression runs in;
+	// see evalContext.guard.
+	guard *recursionGuard
+}
+
+// shapeDefinitions returns the graph that shapes referenced from an expression
+// are read from: the shapes graph when the expression runs inside a validation,
+// or the data graph when it is evaluated on its own (the SHACL 1.2 node
+// expression tests keep both in one graph). Reading the data graph inside a
+// validation made a shape reached through shnex:filterShape lose every
+// constraint defined in the shapes graph, sh:expression included.
+func (ctx *nodeExprContext) shapeDefinitions() *Graph {
+	if ctx.shapesGraph != nil {
+		return ctx.shapesGraph
+	}
+	return ctx.dataGraph
+}
+
+// sharedGuard returns ctx's recursion guard, creating it on first use.
+func (ctx *nodeExprContext) sharedGuard() *recursionGuard {
+	if ctx.guard == nil {
+		ctx.guard = &recursionGuard{active: make(map[string]struct{})}
+	}
+	return ctx.guard
 }
 
 // ---------- ConstantExpr ----------
@@ -293,16 +318,17 @@ func (e *FilterShapeExpr) Eval(ctx *nodeExprContext) []Term {
 	shape := ctx.shapesMap[e.ShapeRef.String()]
 	if shape == nil {
 		// Parse ad-hoc shape from the graph
-		shape = parseAdHocShape(ctx.dataGraph, e.ShapeRef, ctx.shapesMap)
+		shape = parseAdHocShape(ctx.shapeDefinitions(), e.ShapeRef, ctx.shapesMap)
 	}
 	if shape == nil {
 		return nodes // no constraints = all pass
 	}
 	eCtx := &evalContext{
 		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.dataGraph,
+		shapesGraph:    ctx.shapeDefinitions(),
 		shapesMap:      ctx.shapesMap,
 		classInstances: buildClassIndex(ctx.dataGraph),
+		guard:          ctx.sharedGuard(),
 	}
 	var result []Term
 	for _, n := range nodes {
@@ -328,7 +354,7 @@ func (e *FindFirstExpr) Eval(ctx *nodeExprContext) []Term {
 	}
 	shape := ctx.shapesMap[e.ShapeRef.String()]
 	if shape == nil {
-		shape = parseAdHocShape(ctx.dataGraph, e.ShapeRef, ctx.shapesMap)
+		shape = parseAdHocShape(ctx.shapeDefinitions(), e.ShapeRef, ctx.shapesMap)
 	}
 	if shape == nil {
 		// No constraints = first node passes
@@ -336,9 +362,10 @@ func (e *FindFirstExpr) Eval(ctx *nodeExprContext) []Term {
 	}
 	eCtx := &evalContext{
 		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.dataGraph,
+		shapesGraph:    ctx.shapeDefinitions(),
 		shapesMap:      ctx.shapesMap,
 		classInstances: buildClassIndex(ctx.dataGraph),
+		guard:          ctx.sharedGuard(),
 	}
 	for _, n := range nodes {
 		if len(validateNodeAgainstShape(eCtx, shape, n)) == 0 {
@@ -360,16 +387,17 @@ func (e *MatchAllExpr) Eval(ctx *nodeExprContext) []Term {
 	nodes := e.Nodes.Eval(ctx)
 	shape := ctx.shapesMap[e.ShapeRef.String()]
 	if shape == nil {
-		shape = parseAdHocShape(ctx.dataGraph, e.ShapeRef, ctx.shapesMap)
+		shape = parseAdHocShape(ctx.shapeDefinitions(), e.ShapeRef, ctx.shapesMap)
 	}
 	if shape == nil {
 		return []Term{Literal("true", XSD+"boolean", "")}
 	}
 	eCtx := &evalContext{
 		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.dataGraph,
+		shapesGraph:    ctx.shapeDefinitions(),
 		shapesMap:      ctx.shapesMap,
 		classInstances: buildClassIndex(ctx.dataGraph),
+		guard:          ctx.sharedGuard(),
 	}
 	for _, n := range nodes {
 		if len(validateNodeAgainstShape(eCtx, shape, n)) > 0 {
@@ -389,16 +417,17 @@ type NodesMatchingExpr struct {
 func (e *NodesMatchingExpr) Eval(ctx *nodeExprContext) []Term {
 	shape := ctx.shapesMap[e.ShapeRef.String()]
 	if shape == nil {
-		shape = parseAdHocShape(ctx.dataGraph, e.ShapeRef, ctx.shapesMap)
+		shape = parseAdHocShape(ctx.shapeDefinitions(), e.ShapeRef, ctx.shapesMap)
 	}
 	if shape == nil {
 		return allNodes(ctx.dataGraph)
 	}
 	eCtx := &evalContext{
 		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.dataGraph,
+		shapesGraph:    ctx.shapeDefinitions(),
 		shapesMap:      ctx.shapesMap,
 		classInstances: buildClassIndex(ctx.dataGraph),
+		guard:          ctx.sharedGuard(),
 	}
 	candidates := allNodes(ctx.dataGraph)
 	var result []Term
@@ -498,10 +527,14 @@ func evalFlatMap(ctx *nodeExprContext, nodesExpr, mapExpr NodeExpr) []Term {
 	var result []Term
 	for _, n := range nodes {
 		subCtx := &nodeExprContext{
-			dataGraph: ctx.dataGraph,
-			shapesMap: ctx.shapesMap,
-			focusNode: n,
-			vars:      ctx.vars,
+			dataGraph:      ctx.dataGraph,
+			shapesMap:      ctx.shapesMap,
+			focusNode:      n,
+			vars:           ctx.vars,
+			shapesGraph:    ctx.shapesGraph,
+			classInstances: ctx.classInstances,
+			af:             ctx.af,
+			guard:          ctx.sharedGuard(),
 		}
 		result = append(result, mapExpr.Eval(subCtx)...)
 	}
@@ -609,10 +642,14 @@ func (e *OrderByExpr) Eval(ctx *nodeExprContext) []Term {
 	entries := make([]entry, len(nodes))
 	for i, n := range nodes {
 		subCtx := &nodeExprContext{
-			dataGraph: ctx.dataGraph,
-			shapesMap: ctx.shapesMap,
-			focusNode: n,
-			vars:      ctx.vars,
+			dataGraph:      ctx.dataGraph,
+			shapesMap:      ctx.shapesMap,
+			focusNode:      n,
+			vars:           ctx.vars,
+			shapesGraph:    ctx.shapesGraph,
+			classInstances: ctx.classInstances,
+			af:             ctx.af,
+			guard:          ctx.sharedGuard(),
 		}
 		entries[i] = entry{node: n, key: e.KeyExpr.Eval(subCtx)}
 	}

@@ -194,6 +194,7 @@ func (ctx *afContext) applyTripleRule(eval *evalContext, rule *afRule, focusNode
 			classInstances: eval.classInstances,
 			focusNode:      fn,
 			af:             ctx,
+			guard:          eval.sharedGuard(),
 		}
 		subjects := rule.triple.subject.Eval(exprCtx)
 		predicates := rule.triple.predicate.Eval(exprCtx)
