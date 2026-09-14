@@ -696,6 +696,12 @@ done:
 		if err != nil {
 			return rdflibgo.Literal{}, err
 		}
+		// RDF 1.1 Concepts §3.3: a literal is rdf:langString (rdf:dirLangString
+		// in RDF 1.2) if and only if it has a language tag, so the datatype
+		// cannot be written without one. The N-Triples parser rejects it too.
+		if dt == rdflibgo.RDFLangString.Value() || dt == rdflibgo.RDFDirLangString.Value() {
+			return rdflibgo.Literal{}, p.errorf("datatype <%s> requires a language tag; write \"...\"@lang instead", dt)
+		}
 		lopts = append(lopts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt)))
 	}
 
