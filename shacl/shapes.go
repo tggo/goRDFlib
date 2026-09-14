@@ -126,14 +126,31 @@ type evalContext struct {
 // shapes graph per rule round and parses anonymous shapes on demand, so one
 // shape can have several *Shape values.
 //
+// The in-progress pairs are kept as a stack, because entering and leaving
+// happens for every shape on every focus node. At the depths ordinary shapes
+// reach, a linear scan of a few entries is much cheaper than hashing the pair
+// into a map, which cost about a third of a validation run that never
+// recursed. Past guardScanDepth the stack is mirrored into a map so a deep
+// recursion does not turn quadratic.
+//
+// Detection has to stay immediate: deferring it (letting a pair repeat a few
+// levels before recording it) changes the answer for shapes under sh:not,
+// where each repetition inverts the result
+// (TestRecursion_LogicalConstraints/not).
+//
 // Not safe for concurrent use; a validation run is single-goroutine.
 type recursionGuard struct {
-	active map[guardKey]struct{}
+	stack  []guardKey
+	active map[guardKey]struct{} // mirrors stack once it grows past guardScanDepth
 }
 
+// guardScanDepth is the stack depth up to which the guard scans instead of
+// hashing.
+const guardScanDepth = 32
+
 // guardKey identifies a (shape, focus node) pair. Term is comparable, so the
-// pair is a map key as it is; building a string key from TermKey allocated on
-// every shape entered and doubled the allocations of a validation run.
+// pair is compared and hashed as it is; building a string key from TermKey
+// allocated on every shape entered.
 type guardKey struct {
 	shape, node Term
 }
@@ -142,7 +159,7 @@ type guardKey struct {
 // derived from ctx can be given the same one.
 func (ctx *evalContext) sharedGuard() *recursionGuard {
 	if ctx.guard == nil {
-		ctx.guard = &recursionGuard{active: make(map[guardKey]struct{})}
+		ctx.guard = &recursionGuard{}
 	}
 	return ctx.guard
 }
@@ -153,15 +170,41 @@ func (ctx *evalContext) sharedGuard() *recursionGuard {
 func (ctx *evalContext) enter(s *Shape, node Term) bool {
 	g := ctx.sharedGuard()
 	k := guardKey{s.ID, node}
+	if g.active == nil {
+		for _, busy := range g.stack {
+			if busy == k {
+				return false
+			}
+		}
+		g.stack = append(g.stack, k)
+		if len(g.stack) > guardScanDepth {
+			g.active = make(map[guardKey]struct{}, 2*len(g.stack))
+			for _, e := range g.stack {
+				g.active[e] = struct{}{}
+			}
+		}
+		return true
+	}
 	if _, busy := g.active[k]; busy {
 		return false
 	}
 	g.active[k] = struct{}{}
+	g.stack = append(g.stack, k)
 	return true
 }
 
+// leave undoes the matching enter. Enter and leave nest, so the pair being
+// left is the top of the stack.
 func (ctx *evalContext) leave(s *Shape, node Term) {
-	delete(ctx.guard.active, guardKey{s.ID, node})
+	g := ctx.guard
+	top := g.stack[len(g.stack)-1]
+	g.stack = g.stack[:len(g.stack)-1]
+	if g.active != nil {
+		delete(g.active, top)
+		if len(g.stack) <= guardScanDepth/2 {
+			g.active = nil // back to scanning; rebuilt if the stack grows again
+		}
+	}
 }
 
 // report hands err to the caller's error handler, if one was installed.

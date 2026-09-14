@@ -50,7 +50,7 @@ func (ctx *nodeExprContext) shapeDefinitions() *Graph {
 // sharedGuard returns ctx's recursion guard, creating it on first use.
 func (ctx *nodeExprContext) sharedGuard() *recursionGuard {
 	if ctx.guard == nil {
-		ctx.guard = &recursionGuard{active: make(map[guardKey]struct{})}
+		ctx.guard = &recursionGuard{}
 	}
 	return ctx.guard
 }

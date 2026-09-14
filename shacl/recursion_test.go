@@ -1,7 +1,9 @@
 package shacl
 
 import (
+	"fmt"
 	"testing"
+	"time"
 )
 
 // Recursive shapes over cyclic data (pySHACL #154). Before the recursion guard
@@ -202,5 +204,43 @@ ex:S a sh:NodeShape ; sh:targetNode ex:a ;
 	}
 	if !report.Conforms {
 		t.Fatalf("expected conforms, got %d results", len(report.Results))
+	}
+}
+
+// A cycle through a node with many values must be caught as soon as a pair
+// repeats. A guard that let pairs repeat for 16 levels before recording them
+// did not finish this 8-node clique in a minute.
+func TestRecursion_DenseCycleStaysCheap(t *testing.T) {
+	shapes := `@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://example.org/> .
+ex:S a sh:NodeShape ; sh:targetNode ex:n0 ; sh:property [ sh:path ex:next ; sh:node ex:S ] .`
+	data := "@prefix ex: <http://example.org/> .\n"
+	for i := range 8 {
+		data += fmt.Sprintf("ex:n%d", i)
+		sep := " ex:next "
+		for j := range 8 {
+			if j != i {
+				data += fmt.Sprintf("%sex:n%d", sep, j)
+				sep = " , "
+			}
+		}
+		data += " .\n"
+	}
+	sg, err := LoadTurtleString(shapes, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dg, err := LoadTurtleString(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan *ValidationReport, 1)
+	go func() { r := Validate(dg, sg); done <- &r }()
+	select {
+	case r := <-done:
+		if !r.Conforms {
+			t.Errorf("a cycle with no failing constraint must conform; got %d results", len(r.Results))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("validating an 8-node clique took more than 5s: the recursion guard lets the work grow per level")
 	}
 }
