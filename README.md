@@ -633,6 +633,8 @@ the suite both reference implementations are tested against.
 go get github.com/tggo/goRDFlib
 ```
 
+Upgrading from an earlier version? [MIGRATION.md](MIGRATION.md) lists, version by version, what changes and how to find the affected code.
+
 ## Quick Start
 
 ```go
