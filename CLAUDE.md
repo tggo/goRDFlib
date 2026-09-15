@@ -162,6 +162,21 @@ The `store.Store` interface (13 methods) has four implementations:
   are gone).
 - Files: `doc.go`, `store.go`, `http.go`, `server.go`, `register.go`
 
+### store.SnapshotStore (Badger)
+- A query opens one read snapshot per store (`sparql/snapshot.go`, from
+  `EvalQueryContext`) instead of one Badger transaction per lookup. Opening and
+  discarding a transaction goes through Badger's watermark channel, and under
+  16 concurrent queries that bookkeeping was most of the CPU.
+- Badger iterators run with `PrefetchValues = false` (`iteratePrefix`): the
+  default prefetches values in goroutines, which costs more than short index
+  lookups of small values save.
+- Measured: `BenchmarkStoreBackendQuery/badger` 212 µs → 66 µs; sparql-server
+  throughput on Badger ~4.8k → ~14.6k req/s (median of 6 alternating runs).
+- Badger throughput runs right after a bulk load are bimodal (background
+  compaction). Compare builds by alternating processes.
+- SQLite is still ~250 req/s on the same test: it has no snapshot or
+  cardinality support yet.
+
 ### endpoint/ (SPARQL 1.1 Protocol + Graph Store HTTP Protocol)
 - `New(*sparql.Dataset)`, `NewForGraph`, `NewForStore(*graph.Dataset)` (copies
   graphs an update creates into the store, because `getOrCreateGraph` makes

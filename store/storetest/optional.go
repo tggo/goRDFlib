@@ -173,6 +173,94 @@ func testQueryable(t *testing.T, cfg Config) {
 	})
 }
 
+// --- SnapshotStore ---------------------------------------------------------
+
+// testSnapshot pins what a query relies on when it evaluates against a read
+// snapshot: the same answers as the store, a stable view while the store
+// changes, and no way to write through it.
+func testSnapshot(t *testing.T, cfg Config) {
+	seed := func(t *testing.T) store.Store {
+		s := cfg.New(t)
+		s.Add(triple(Alice, Knows, Bob), nil)
+		s.Add(triple(Alice, Name, lit("Alice")), nil)
+		s.Add(triple(Bob, Knows, Carol), Graph1)
+		return s
+	}
+
+	cfg.run(t, "reads match the store", func(t *testing.T) {
+		s := seed(t)
+		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		defer release()
+		for _, p := range []term.TriplePattern{
+			pattern(nil, nil, nil),
+			pattern(Alice, nil, nil),
+			pattern(nil, pred(Knows), nil),
+			pattern(Alice, pred(Knows), Bob),
+			pattern(Dave, nil, nil),
+		} {
+			for _, ctx := range []term.Term{nil, Graph1} {
+				if got, want := count(snap.Triples(p, ctx)), count(s.Triples(p, ctx)); got != want {
+					t.Errorf("pattern %v in %v: snapshot has %d, store has %d", p, ctx, got, want)
+				}
+			}
+		}
+		if got, want := snap.Len(nil), s.Len(nil); got != want {
+			t.Errorf("Len: snapshot %d, store %d", got, want)
+		}
+	})
+
+	cfg.run(t, "nested iteration over one snapshot", func(t *testing.T) {
+		s := seed(t)
+		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		defer release()
+		pairs := 0
+		for outer := range snap.Triples(pattern(nil, pred(Knows), nil), nil) {
+			for range snap.Triples(pattern(outer.Subject, nil, nil), nil) {
+				pairs++
+			}
+		}
+		if pairs != 2 {
+			t.Errorf("nested iteration found %d pairs, want 2", pairs)
+		}
+	})
+
+	cfg.run(t, "later writes are not visible", func(t *testing.T) {
+		s := seed(t)
+		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		defer release()
+		s.Add(triple(Carol, Knows, Dave), nil)
+		s.Remove(pattern(Alice, pred(Name), nil), nil)
+		if count(snap.Triples(pattern(Carol, nil, nil), nil)) != 0 {
+			t.Error("a triple added after the snapshot is visible in it")
+		}
+		if count(snap.Triples(pattern(Alice, pred(Name), nil), nil)) != 1 {
+			t.Error("a triple removed after the snapshot is gone from it")
+		}
+	})
+
+	cfg.run(t, "writing to a snapshot panics", func(t *testing.T) {
+		s := seed(t)
+		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		defer release()
+		defer func() {
+			if recover() == nil {
+				t.Error("Add on a read snapshot did not panic")
+			}
+		}()
+		snap.Add(triple(Dave, Knows, Alice), nil)
+	})
+
+	cfg.run(t, "release is idempotent", func(t *testing.T) {
+		s := seed(t)
+		_, release := s.(store.SnapshotStore).ReadSnapshot()
+		release()
+		release()
+		if count(s.Triples(pattern(nil, nil, nil), nil)) != 2 {
+			t.Error("the store is not readable after a snapshot was released")
+		}
+	})
+}
+
 // --- CardinalityStore ------------------------------------------------------
 
 // testCardinality pins Cardinality to what Triples yields for every pattern

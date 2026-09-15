@@ -108,6 +108,20 @@ type QueryableStore interface {
 	Exists(pattern term.TriplePattern, ctx term.Term) bool
 }
 
+// SnapshotStore is an optional interface for stores that can serve a series of
+// reads from one consistent snapshot. A query makes many small reads — a
+// nested loop looks up every match of one pattern in the next — and a store
+// that opens a transaction per read pays for that on every lookup; under
+// concurrent queries Badger spent most of its time in transaction bookkeeping
+// rather than reading.
+//
+// ReadSnapshot returns a read-only Store over the data as of the call, and a
+// release function that must be called when the reads are done. The snapshot
+// is not safe for concurrent use, and writing to it is a programming error.
+type SnapshotStore interface {
+	ReadSnapshot() (snapshot Store, release func())
+}
+
 // CardinalityStore is an optional interface for stores that can report how
 // many triples match a pattern without visiting the matches, typically from
 // index sizes. The SPARQL engine uses it to plan join order; a store without

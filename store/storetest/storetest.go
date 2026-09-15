@@ -105,6 +105,11 @@ func Run(t *testing.T, cfg Config) {
 	} else {
 		t.Log("backend does not implement store.QueryableStore; section skipped")
 	}
+	if _, ok := probe.(store.SnapshotStore); ok {
+		cfg.run(t, "Snapshot", func(t *testing.T) { testSnapshot(t, cfg) })
+	} else {
+		t.Log("backend does not implement store.SnapshotStore; section skipped")
+	}
 	if _, ok := probe.(store.CardinalityStore); ok {
 		cfg.run(t, "Cardinality", func(t *testing.T) { testCardinality(t, cfg) })
 	} else {

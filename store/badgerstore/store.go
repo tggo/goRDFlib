@@ -1,7 +1,9 @@
 package badgerstore
 
 import (
+	"errors"
 	"log"
+	"sync"
 
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/tggo/goRDFlib/store"
@@ -9,9 +11,13 @@ import (
 )
 
 // BadgerStore implements store.Store using Badger as a persistent KV backend.
-// All methods are safe for concurrent use (delegated to Badger's MVCC).
+// All methods are safe for concurrent use (delegated to Badger's MVCC), except
+// on a read snapshot returned by ReadSnapshot.
 type BadgerStore struct {
 	db *badger.DB
+	// snap is set on a read snapshot (see ReadSnapshot): every read uses this
+	// one transaction and writes are refused.
+	snap *badger.Txn
 }
 
 // Option configures a BadgerStore.
@@ -57,7 +63,43 @@ func New(opts ...Option) (*BadgerStore, error) {
 
 // Close closes the Badger database. Must be called when the store is no longer needed.
 func (s *BadgerStore) Close() error {
+	if s.snap != nil {
+		return errors.New("badgerstore: Close on a read snapshot; call its release function instead")
+	}
 	return s.db.Close()
+}
+
+// ReadSnapshot returns a read-only view of the store backed by one Badger read
+// transaction, and the function that releases it. Queries evaluate thousands
+// of lookups; opening a transaction for each one made concurrent queries spend
+// most of their time in Badger's transaction bookkeeping.
+//
+// The snapshot sees the data as of the call, is not safe for concurrent use,
+// and panics on writes. Hold it only for the duration of a query: an open read
+// transaction keeps old versions from being garbage-collected.
+func (s *BadgerStore) ReadSnapshot() (store.Store, func()) {
+	if s.snap != nil {
+		return s, func() {}
+	}
+	txn := s.db.NewTransaction(false)
+	var once sync.Once
+	return &BadgerStore{db: s.db, snap: txn}, func() { once.Do(txn.Discard) }
+}
+
+// read runs fn in the snapshot's transaction, or in a new read transaction when
+// s is not a snapshot.
+func (s *BadgerStore) read(fn func(txn *badger.Txn) error) error {
+	if s.snap != nil {
+		return fn(s.snap)
+	}
+	return s.db.View(fn)
+}
+
+// writable panics when s is a read snapshot.
+func (s *BadgerStore) writable(op string) {
+	if s.snap != nil {
+		panic("badgerstore: " + op + " on a read snapshot")
+	}
 }
 
 // ContextAware reports true — BadgerStore supports named graphs.
@@ -68,6 +110,7 @@ func (s *BadgerStore) TransactionAware() bool { return true }
 
 // Add inserts a triple into the store, associated with the given context.
 func (s *BadgerStore) Add(t term.Triple, ctx term.Term) {
+	s.writable("Add")
 	gk := graphKey(ctx)
 	sk := term.TermKey(t.Subject)
 	pk := term.TermKey(t.Predicate)
@@ -106,6 +149,7 @@ func (s *BadgerStore) Add(t term.Triple, ctx term.Term) {
 
 // AddN batch-inserts multiple quads.
 func (s *BadgerStore) AddN(quads []term.Quad) {
+	s.writable("AddN")
 	if len(quads) == 0 {
 		return
 	}
@@ -145,11 +189,12 @@ func (s *BadgerStore) AddN(quads []term.Quad) {
 
 // Remove deletes triples matching the pattern from the given context.
 func (s *BadgerStore) Remove(pattern term.TriplePattern, ctx term.Term) {
+	s.writable("Remove")
 	gk := graphKey(ctx)
 
 	// Collect matching triples first, then delete.
 	var toRemove []tripleKeys
-	err := s.db.View(func(txn *badger.Txn) error {
+	err := s.read(func(txn *badger.Txn) error {
 		return s.scanTriples(txn, pattern, gk, func(sk, pk, ok string, _ term.Triple) bool {
 			toRemove = append(toRemove, tripleKeys{gk: gk, sk: sk, pk: pk, ok: ok})
 			return true
@@ -190,6 +235,7 @@ type tripleKeys struct {
 
 // Set atomically replaces triples matching (s, p, *) with the new triple.
 func (s *BadgerStore) Set(t term.Triple, ctx term.Term) {
+	s.writable("Set")
 	gk := graphKey(ctx)
 	sk := term.TermKey(t.Subject)
 	pk := term.TermKey(t.Predicate)
@@ -245,8 +291,8 @@ func (s *BadgerStore) Set(t term.Triple, ctx term.Term) {
 func (s *BadgerStore) Triples(pattern term.TriplePattern, ctx term.Term) store.TripleIterator {
 	return func(yield func(term.Triple) bool) {
 		gk := graphKey(ctx)
-		_ = s.db.View(func(txn *badger.Txn) error {
-			return s.scanTriplesInTxn(txn, pattern, gk, func(_, _, _ string, t term.Triple) bool {
+		_ = s.read(func(txn *badger.Txn) error {
+			return s.scanTripleValues(txn, pattern, gk, func(t term.Triple) bool {
 				return yield(t)
 			})
 		})
@@ -257,7 +303,7 @@ func (s *BadgerStore) Triples(pattern term.TriplePattern, ctx term.Term) store.T
 func (s *BadgerStore) Len(ctx term.Term) int {
 	gk := graphKey(ctx)
 	count := 0
-	_ = s.db.View(func(txn *badger.Txn) error {
+	_ = s.read(func(txn *badger.Txn) error {
 		prefix := makePrefixKey(pfxSPO, gk)
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
@@ -276,7 +322,7 @@ func (s *BadgerStore) Len(ctx term.Term) int {
 // a triple that must exist in the graph.
 func (s *BadgerStore) Contexts(triple *term.Triple) store.TermIterator {
 	return func(yield func(term.Term) bool) {
-		_ = s.db.View(func(txn *badger.Txn) error {
+		_ = s.read(func(txn *badger.Txn) error {
 			prefix := []byte{pfxCTX, sep}
 			opts := badger.DefaultIteratorOptions
 			opts.PrefetchValues = false
@@ -322,6 +368,7 @@ func (s *BadgerStore) Contexts(triple *term.Triple) store.TermIterator {
 
 // Bind associates a prefix with a namespace URI.
 func (s *BadgerStore) Bind(prefix string, namespace term.URIRef) {
+	s.writable("Bind")
 	err := s.db.Update(func(txn *badger.Txn) error {
 		if err := txn.Set(nsKey(prefix), []byte(namespace.Value())); err != nil {
 			return err
@@ -337,7 +384,7 @@ func (s *BadgerStore) Bind(prefix string, namespace term.URIRef) {
 func (s *BadgerStore) Namespace(prefix string) (term.URIRef, bool) {
 	var ns term.URIRef
 	var found bool
-	_ = s.db.View(func(txn *badger.Txn) error {
+	_ = s.read(func(txn *badger.Txn) error {
 		item, err := txn.Get(nsKey(prefix))
 		if err != nil {
 			return nil
@@ -355,7 +402,7 @@ func (s *BadgerStore) Namespace(prefix string) (term.URIRef, bool) {
 func (s *BadgerStore) Prefix(namespace term.URIRef) (string, bool) {
 	var prefix string
 	var found bool
-	_ = s.db.View(func(txn *badger.Txn) error {
+	_ = s.read(func(txn *badger.Txn) error {
 		item, err := txn.Get(nuKey(namespace.Value()))
 		if err != nil {
 			return nil
@@ -372,7 +419,7 @@ func (s *BadgerStore) Prefix(namespace term.URIRef) (string, bool) {
 // Namespaces returns an iterator over all (prefix, namespace) bindings.
 func (s *BadgerStore) Namespaces() store.NamespaceIterator {
 	return func(yield func(string, term.URIRef) bool) {
-		_ = s.db.View(func(txn *badger.Txn) error {
+		_ = s.read(func(txn *badger.Txn) error {
 			prefix := []byte{pfxNS, sep}
 			opts := badger.DefaultIteratorOptions
 			opts.Prefix = prefix
@@ -444,15 +491,61 @@ func (s *BadgerStore) scanTriplesInTxn(txn *badger.Txn, pattern term.TriplePatte
 		prefix = makePrefixKey(pfxSPO, gk)
 	}
 
+	return iteratePrefix(txn, prefix, func(t term.Triple) bool {
+		return fn(term.TermKey(t.Subject), term.TermKey(t.Predicate), term.TermKey(t.Object), t)
+	})
+}
+
+// scanTripleValues is scanTriplesInTxn for callers that only need the triples:
+// it skips building the three term keys per match, which Triples and
+// TriplesWithLimit never read.
+func (s *BadgerStore) scanTripleValues(txn *badger.Txn, pattern term.TriplePattern, gk string, fn func(t term.Triple) bool) error {
+	if pattern.Subject != nil && pattern.Predicate != nil && pattern.Object != nil {
+		return s.scanTriplesInTxn(txn, pattern, gk, func(_, _, _ string, t term.Triple) bool { return fn(t) })
+	}
+	return iteratePrefix(txn, scanPrefix(pattern, gk), fn)
+}
+
+// scanPrefix returns the index prefix scanTriplesInTxn scans for a pattern that
+// is not fully bound.
+func scanPrefix(pattern term.TriplePattern, gk string) []byte {
+	sk := term.OptTermKey(pattern.Subject)
+	pk := term.OptPredKey(pattern.Predicate)
+	ok := term.OptTermKey(pattern.Object)
+	switch {
+	case sk != "" && pk != "":
+		return makePrefixKey(pfxSPO, gk, sk, pk)
+	case sk != "" && ok != "":
+		return makePrefixKey(pfxOSP, gk, ok, sk)
+	case sk != "":
+		return makePrefixKey(pfxSPO, gk, sk)
+	case pk != "" && ok != "":
+		return makePrefixKey(pfxPOS, gk, pk, ok)
+	case pk != "":
+		return makePrefixKey(pfxPOS, gk, pk)
+	case ok != "":
+		return makePrefixKey(pfxOSP, gk, ok)
+	default:
+		return makePrefixKey(pfxSPO, gk)
+	}
+}
+
+// iteratePrefix decodes every triple stored under prefix until fn returns false.
+//
+// Values are not prefetched. Badger's default iterator reads values ahead in
+// background goroutines, which pays off for long scans of large values; a
+// query mostly does short index lookups of a few small values, and there the
+// goroutines and their wait groups cost more than the reads.
+func iteratePrefix(txn *badger.Txn, prefix []byte, fn func(t term.Triple) bool) error {
 	opts := badger.DefaultIteratorOptions
 	opts.Prefix = prefix
+	opts.PrefetchValues = false
 	it := txn.NewIterator(opts)
 	defer it.Close()
 
 	for it.Seek(prefix); it.Valid(); it.Next() {
-		item := it.Item()
 		var t term.Triple
-		err := item.Value(func(val []byte) error {
+		err := it.Item().Value(func(val []byte) error {
 			var decErr error
 			t, decErr = decodeTriple(val)
 			return decErr
@@ -460,10 +553,7 @@ func (s *BadgerStore) scanTriplesInTxn(txn *badger.Txn, pattern term.TriplePatte
 		if err != nil {
 			continue
 		}
-		tsk := term.TermKey(t.Subject)
-		tpk := term.TermKey(t.Predicate)
-		tok := term.TermKey(t.Object)
-		if !fn(tsk, tpk, tok, t) {
+		if !fn(t) {
 			return nil
 		}
 	}
@@ -478,8 +568,8 @@ func (s *BadgerStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term
 		gk := graphKey(ctx)
 		skipped := 0
 		yielded := 0
-		_ = s.db.View(func(txn *badger.Txn) error {
-			return s.scanTriplesInTxn(txn, pattern, gk, func(_, _, _ string, t term.Triple) bool {
+		_ = s.read(func(txn *badger.Txn) error {
+			return s.scanTripleValues(txn, pattern, gk, func(t term.Triple) bool {
 				if skipped < offset {
 					skipped++
 					return true // skip this triple
@@ -504,7 +594,7 @@ func (s *BadgerStore) Count(pattern term.TriplePattern, ctx term.Term) int {
 	ok := term.OptTermKey(pattern.Object)
 
 	count := 0
-	_ = s.db.View(func(txn *badger.Txn) error {
+	_ = s.read(func(txn *badger.Txn) error {
 		// Exact lookup: just check key existence.
 		if sk != "" && pk != "" && ok != "" {
 			if _, err := txn.Get(spoKey(gk, sk, pk, ok)); err == nil {
@@ -555,7 +645,7 @@ func (s *BadgerStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
 	ok := term.OptTermKey(pattern.Object)
 
 	found := false
-	_ = s.db.View(func(txn *badger.Txn) error {
+	_ = s.read(func(txn *badger.Txn) error {
 		// Exact lookup: just check key existence.
 		if sk != "" && pk != "" && ok != "" {
 			if _, err := txn.Get(spoKey(gk, sk, pk, ok)); err == nil {
@@ -601,3 +691,6 @@ var _ store.Store = (*BadgerStore)(nil)
 
 // Compile-time check that BadgerStore implements store.QueryableStore.
 var _ store.QueryableStore = (*BadgerStore)(nil)
+
+// Compile-time check: BadgerStore must implement SnapshotStore.
+var _ store.SnapshotStore = (*BadgerStore)(nil)
