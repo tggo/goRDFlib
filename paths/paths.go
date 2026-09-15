@@ -12,6 +12,8 @@ import (
 type Path interface {
 	// Eval returns matching (subject, object) pairs.
 	Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool)
+	// eval is Eval with a stopper; a nil stopper never stops. See EvalContext.
+	eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool)
 	pathString() string
 }
 
@@ -29,6 +31,10 @@ func Inv(p Path) *InvPath {
 func (p *InvPath) pathString() string { return "^(" + p.Arg.pathString() + ")" }
 
 func (p *InvPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return p.eval(nil, g, subj, obj)
+}
+
+func (p *InvPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	return func(yield func(term.Term, term.Term) bool) {
 		// Swap subject/object, evaluate inner, then swap back
 		var objSubj term.Subject
@@ -37,7 +43,7 @@ func (p *InvPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 				objSubj = s
 			}
 		}
-		p.Arg.Eval(g, objSubj, subj)(func(s, o term.Term) bool {
+		p.Arg.eval(st, g, objSubj, subj)(func(s, o term.Term) bool {
 			return yield(o, s)
 		})
 	}
@@ -66,30 +72,37 @@ func (p *SequencePath) pathString() string {
 }
 
 func (p *SequencePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return p.eval(nil, g, subj, obj)
+}
+
+func (p *SequencePath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	return func(yield func(term.Term, term.Term) bool) {
 		if len(p.Args) == 0 {
 			return
 		}
 		if len(p.Args) == 1 {
-			p.Args[0].Eval(g, subj, obj)(yield)
+			p.Args[0].eval(st, g, subj, obj)(yield)
 			return
 		}
 		// Evaluate first path, then chain remaining
 		rest := &SequencePath{Args: p.Args[1:]}
-		p.Args[0].Eval(g, subj, nil)(func(s1, mid term.Term) bool {
+		p.Args[0].eval(st, g, subj, nil)(func(s1, mid term.Term) bool {
+			if st.stop() {
+				return false
+			}
 			midSubj, ok := mid.(term.Subject)
 			if !ok {
 				return true
 			}
 			cont := true
-			rest.Eval(g, midSubj, obj)(func(_, o term.Term) bool {
+			rest.eval(st, g, midSubj, obj)(func(_, o term.Term) bool {
 				if !yield(s1, o) {
 					cont = false
 					return false
 				}
 				return true
 			})
-			return cont
+			return cont && !st.halted()
 		})
 	}
 }
@@ -117,17 +130,21 @@ func (p *AlternativePath) pathString() string {
 }
 
 func (p *AlternativePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return p.eval(nil, g, subj, obj)
+}
+
+func (p *AlternativePath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	return func(yield func(term.Term, term.Term) bool) {
 		for _, alt := range p.Args {
 			cont := true
-			alt.Eval(g, subj, obj)(func(s, o term.Term) bool {
+			alt.eval(st, g, subj, obj)(func(s, o term.Term) bool {
 				if !yield(s, o) {
 					cont = false
 					return false
 				}
 				return true
 			})
-			if !cont {
+			if !cont || st.halted() {
 				return
 			}
 		}
@@ -172,10 +189,17 @@ func (p *MulPath) pathString() string {
 }
 
 func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return p.eval(nil, g, subj, obj)
+}
+
+func (p *MulPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	return func(yield func(term.Term, term.Term) bool) {
 		done := make(map[string]bool)
 
 		emit := func(s, o term.Term) bool {
+			if st.stop() {
+				return false
+			}
 			k := term.TermKey(s) + "|" + term.TermKey(o)
 			if done[k] {
 				return true
@@ -199,7 +223,7 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 				return
 			}
 			seen := make(map[string]bool)
-			p.fwdFrom(g, subj, subj, obj, seen, emit)
+			p.fwdFrom(st, g, subj, subj, obj, seen, emit)
 		} else if obj != nil {
 			// Backward evaluation to a known object. The object may be a
 			// literal — nothing can be traversed *from* a literal, but plenty
@@ -213,20 +237,26 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 				return
 			}
 			seen := make(map[string]bool)
-			p.bwdTo(g, obj, obj, seen, emit)
+			p.bwdTo(st, g, obj, obj, seen, emit)
 		} else {
 			// No constraints: evaluate from all nodes
+			nodes := g.AllNodes()
 			if p.Zero {
-				for _, n := range g.AllNodes() {
+				for _, n := range nodes {
 					if !emit(n, n) {
 						return
 					}
 				}
 			}
-			for _, n := range g.AllNodes() {
+			for _, n := range nodes {
+				if st.stop() {
+					return
+				}
 				if s, ok := n.(term.Subject); ok {
 					seen := make(map[string]bool)
-					p.fwdFrom(g, s, s, nil, seen, emit)
+					if !p.fwdFrom(st, g, s, s, nil, seen, emit) {
+						return
+					}
 				}
 			}
 		}
@@ -237,56 +267,66 @@ func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yi
 // The obj parameter is not passed to the inner path evaluation to avoid
 // restricting the DFS frontier — all neighbors must be explored for correct
 // transitive closure. Filtering by obj is done at the emit/done level.
-func (p *MulPath) fwdFrom(g *graph.Graph, origin term.Term, node term.Subject, obj term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+//
+// It returns false when the traversal must end: emit declined a pair, or st
+// stopped. Every level of the recursion honours that, so a consumer that stops
+// early is never called again.
+func (p *MulPath) fwdFrom(st *stopper, g *graph.Graph, origin term.Term, node term.Subject, obj term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) bool {
 	k := term.TermKey(node)
 	if seen[k] {
-		return
+		return true
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, node, nil)(func(_, o term.Term) bool {
-		// Only emit pairs that match the obj constraint (if any)
-		if obj != nil && term.TermKey(o) != term.TermKey(obj) {
-			// Don't emit this pair, but still recurse through it
-			if p.More {
-				if next, ok := o.(term.Subject); ok {
-					p.fwdFrom(g, origin, next, obj, seen, emit)
-				}
-			}
-			return true
+	cont := true
+	p.Path.eval(st, g, node, nil)(func(_, o term.Term) bool {
+		if st.stop() {
+			cont = false
+			return false
 		}
-		if !emit(origin, o) {
+		// Only emit pairs that match the obj constraint (if any). A pair
+		// that does not match is still recursed through.
+		if (obj == nil || term.TermKey(o) == term.TermKey(obj)) && !emit(origin, o) {
+			cont = false
 			return false
 		}
 		if p.More {
 			if next, ok := o.(term.Subject); ok {
-				p.fwdFrom(g, origin, next, obj, seen, emit)
+				if !p.fwdFrom(st, g, origin, next, obj, seen, emit) {
+					cont = false
+					return false
+				}
 			}
 		}
 		return true
 	})
+	return cont && !st.halted()
 }
 
 // bwdTo traverses backward from node, emitting (reachable, target) pairs.
 // node is a term.Term rather than a term.Subject because a backward traversal
 // legitimately starts at a literal: literals cannot be subjects, but they can
-// be the endpoint of a path.
-func (p *MulPath) bwdTo(g *graph.Graph, node term.Term, target term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) {
+// be the endpoint of a path. Its result means what fwdFrom's does.
+func (p *MulPath) bwdTo(st *stopper, g *graph.Graph, node term.Term, target term.Term, seen map[string]bool, emit func(term.Term, term.Term) bool) bool {
 	k := term.TermKey(node)
 	if seen[k] {
-		return
+		return true
 	}
 	seen[k] = true
 
-	p.Path.Eval(g, nil, node)(func(s, _ term.Term) bool {
+	cont := true
+	p.Path.eval(st, g, nil, node)(func(s, _ term.Term) bool {
 		if !emit(s, target) {
+			cont = false
 			return false
 		}
-		if p.More {
-			p.bwdTo(g, s, target, seen, emit)
+		if p.More && !p.bwdTo(st, g, s, target, seen, emit) {
+			cont = false
+			return false
 		}
 		return true
 	})
+	return cont && !st.halted()
 }
 
 // --- NegatedPath: !p ---
@@ -314,6 +354,10 @@ func (p *NegatedPath) pathString() string {
 }
 
 func (p *NegatedPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return p.eval(nil, g, subj, obj)
+}
+
+func (p *NegatedPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	excluded := make(map[string]bool)
 	for _, u := range p.Excluded {
 		excluded[term.TermKey(u)] = true
@@ -321,6 +365,9 @@ func (p *NegatedPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) fun
 
 	return func(yield func(term.Term, term.Term) bool) {
 		g.Triples(subj, nil, obj)(func(t term.Triple) bool {
+			if st.stop() {
+				return false
+			}
 			if !excluded[term.TermKey(t.Predicate)] {
 				return yield(t.Subject, t.Object)
 			}
@@ -339,9 +386,16 @@ type URIRefPath struct {
 func (p URIRefPath) pathString() string { return p.URI.N3() }
 
 func (p URIRefPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	return p.eval(nil, g, subj, obj)
+}
+
+func (p URIRefPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	u := p.URI
 	return func(yield func(term.Term, term.Term) bool) {
 		g.Triples(subj, &u, obj)(func(t term.Triple) bool {
+			if st.stop() {
+				return false
+			}
 			return yield(t.Subject, t.Object)
 		})
 	}
