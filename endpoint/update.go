@@ -80,9 +80,9 @@ func (x *exchange) update(req *protocolRequest) error {
 }
 
 // checkGraphRefs rejects graph management operations whose graph is neither
-// DEFAULT, NAMED, ALL nor an absolute IRI. The update parser accepts any term
-// there (CLEAR XYZ parses and clears nothing), which would turn a typo into a
-// silent success.
+// DEFAULT, NAMED, ALL nor an absolute IRI. The update parser already rejects
+// terms that are not IRIs (CLEAR XYZ); this also refuses relative IRIs, which
+// would name a graph that depends on the request's base.
 func checkGraphRefs(u *sparql.ParsedUpdate) error {
 	for _, op := range u.Operations {
 		g, ok := op.(*sparql.GraphMgmtOp)

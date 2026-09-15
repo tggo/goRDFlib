@@ -589,7 +589,11 @@ func (p *sparqlParser) parseGraphMgmt(opName string) (*GraphMgmtOp, error) {
 		op.Silent = true
 		p.skipWS()
 	}
-	op.Target = p.parseGraphRef()
+	target, err := p.parseGraphRef()
+	if err != nil {
+		return nil, err
+	}
+	op.Target = target
 	return op, nil
 }
 
@@ -606,11 +610,9 @@ func (p *sparqlParser) parseCreate() (*GraphMgmtOp, error) {
 	}
 	p.pos += 5
 	p.skipWS()
-	iri := p.readTermOrVar()
-	if t := p.resolveTermValue(iri); t != nil {
-		if u, ok := t.(term.URIRef); ok {
-			iri = u.Value()
-		}
+	iri, err := p.readGraphIRI("CREATE GRAPH")
+	if err != nil {
+		return nil, err
 	}
 	op.Target = iri
 	return op, nil
@@ -624,66 +626,63 @@ func (p *sparqlParser) parseTransfer(opName string) (*GraphMgmtOp, error) {
 		op.Silent = true
 		p.skipWS()
 	}
-	op.Source = p.parseGraphRefAll()
+	src, err := p.parseGraphRefAll()
+	if err != nil {
+		return nil, err
+	}
+	op.Source = src
 	p.skipWS()
 	if p.matchKeywordCI("TO") {
 		p.pos += 2
 		p.skipWS()
 	}
-	op.Target = p.parseGraphRefAll()
+	if op.Target, err = p.parseGraphRefAll(); err != nil {
+		return nil, err
+	}
 	return op, nil
 }
 
 // parseGraphRef parses DEFAULT | NAMED | ALL | GRAPH <iri> | <iri>
-func (p *sparqlParser) parseGraphRef() string {
-	if p.matchKeywordCI("DEFAULT") {
-		p.pos += 7
-		return "DEFAULT"
-	}
-	if p.matchKeywordCI("NAMED") {
-		p.pos += 5
-		return "NAMED"
-	}
-	if p.matchKeywordCI("ALL") {
-		p.pos += 3
-		return "ALL"
-	}
-	if p.matchKeywordCI("GRAPH") {
-		p.pos += 5
-		p.skipWS()
-	}
-	iri := p.readTermOrVar()
-	if t := p.resolveTermValue(iri); t != nil {
+func (p *sparqlParser) parseGraphRef() (string, error) {
+	return p.parseGraphRefAll()
+}
+
+// readGraphIRI reads the IRI of a graph reference: an IRIREF or a prefixed
+// name that resolves to an IRI (grammar [46] GraphRef ::= 'GRAPH' iri). Any
+// other term used to parse and name a graph nobody has, so CLEAR XYZ cleared
+// nothing and reported success.
+func (p *sparqlParser) readGraphIRI(context string) (string, error) {
+	start := p.pos
+	tok := p.readTermOrVar()
+	if t := p.resolveTermValue(tok); t != nil {
 		if u, ok := t.(term.URIRef); ok {
-			return u.Value()
+			return u.Value(), nil
 		}
 	}
-	return iri
+	p.pos = start
+	if tok == "" {
+		return "", p.errorf("%s: expected a graph IRI", context)
+	}
+	return "", p.errorf("%s: expected a graph IRI, DEFAULT, NAMED or ALL, got %q", context, tok)
 }
 
 // parseGraphRefAll parses DEFAULT | NAMED | ALL | GRAPH <iri> | <iri>
-func (p *sparqlParser) parseGraphRefAll() string {
+func (p *sparqlParser) parseGraphRefAll() (string, error) {
 	if p.matchKeywordCI("DEFAULT") {
 		p.pos += 7
-		return "DEFAULT"
+		return "DEFAULT", nil
 	}
 	if p.matchKeywordCI("NAMED") {
 		p.pos += 5
-		return "NAMED"
+		return "NAMED", nil
 	}
 	if p.matchKeywordCI("ALL") {
 		p.pos += 3
-		return "ALL"
+		return "ALL", nil
 	}
 	if p.matchKeywordCI("GRAPH") {
 		p.pos += 5
 		p.skipWS()
 	}
-	iri := p.readTermOrVar()
-	if t := p.resolveTermValue(iri); t != nil {
-		if u, ok := t.(term.URIRef); ok {
-			return u.Value()
-		}
-	}
-	return iri
+	return p.readGraphIRI("graph reference")
 }

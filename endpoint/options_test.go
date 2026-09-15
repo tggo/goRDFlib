@@ -38,7 +38,7 @@ func TestUpdateErrors(t *testing.T) {
 		body                string
 	}{
 		{"syntax error with position", "INSERT DATA {\n <a:b> <a:c> }", "", 400, "line"},
-		{"CLEAR of a non-graph", "CLEAR XYZ", "", 400, "not a graph"},
+		{"CLEAR of a non-graph", "CLEAR XYZ", "", 400, "expected a graph IRI"},
 		{"using-graph-uri with WITH", "WITH <http://example.org/g1> DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }", "?using-graph-uri=" + url.QueryEscape(ex+"g1"), 400, "§2.2.3"},
 		{"using-named-graph-uri with USING", "DELETE { ?s ?p ?o } USING <http://example.org/g1> WHERE { ?s ?p ?o }", "?using-named-graph-uri=" + url.QueryEscape(ex+"g1"), 400, "§2.2.3"},
 		{"LOAD is disabled", "LOAD <http://169.254.169.254/latest/meta-data/>", "", 403, "WithLoader"},
