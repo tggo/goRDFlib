@@ -151,8 +151,8 @@ func TestUpdatePOSTDirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
 
 	if ds.Default.Len() != 2 {
@@ -170,8 +170,8 @@ func TestUpdatePOSTForm(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
 
 	if ds.Default.Len() != 2 {
@@ -298,7 +298,9 @@ func TestConstructQuery(t *testing.T) {
 	ts, _ := newTestDataset(t)
 
 	query := `CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }`
-	resp, err := http.Get(ts.URL + "/query?query=" + url.QueryEscape(query))
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/query?query="+url.QueryEscape(query), nil)
+	req.Header.Set("Accept", "application/n-triples")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,6 +423,7 @@ func TestWriteNTriples(t *testing.T) {
 	}
 }
 
+// A GET without a query is answered with the service description.
 func TestQueryMissingParameter(t *testing.T) {
 	ts, _ := newTestDataset(t)
 
@@ -428,9 +431,10 @@ func TestQueryMissingParameter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "sd:Service") {
+		t.Errorf("status = %d, body %s; want the service description", resp.StatusCode, body)
 	}
 }
 
@@ -546,7 +550,9 @@ func TestConstructEmptyResult(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	query := `CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }`
-	resp, err := http.Get(ts.URL + "/query?query=" + url.QueryEscape(query))
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/query?query="+url.QueryEscape(query), nil)
+	req.Header.Set("Accept", "application/n-triples")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -690,9 +696,16 @@ func TestDirLangLiteralXMLAndJSON(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	// Should contain lang with dir: ar--rtl
-	if !strings.Contains(string(body), "ar--rtl") {
-		t.Errorf("XML should contain dir lang tag, got: %s", body)
+	// SPARQL 1.2 results: the direction is an its:dir attribute.
+	if !strings.Contains(string(body), `xml:lang="ar" its:dir="rtl"`) {
+		t.Errorf("XML should carry xml:lang and its:dir, got: %s", body)
+	}
+	res, err := sparql.ParseSRX(strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lit, ok := res.Bindings[0]["o"].(term.Literal); !ok || lit.Language() != "ar" || lit.Dir() != "rtl" {
+		t.Errorf("round trip lost the direction: %v", res.Bindings[0]["o"])
 	}
 
 	// JSON
@@ -704,8 +717,8 @@ func TestDirLangLiteralXMLAndJSON(t *testing.T) {
 	}
 	defer resp2.Body.Close()
 	body2, _ := io.ReadAll(resp2.Body)
-	if !strings.Contains(string(body2), "ar--rtl") {
-		t.Errorf("JSON should contain dir lang tag, got: %s", body2)
+	if !strings.Contains(string(body2), `"xml:lang":"ar","its:dir":"rtl"`) {
+		t.Errorf("JSON should carry xml:lang and its:dir, got: %s", body2)
 	}
 }
 
