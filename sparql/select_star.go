@@ -22,28 +22,50 @@ func isInternalVar(name string) bool {
 // selectStarVars returns the variables of SELECT *: every variable in scope in
 // the WHERE pattern (SPARQL 1.1 §18.2.1, §16.1.1), whether or not a solution
 // binds it, plus any other user variable a solution carries (pre-bound
-// values). Parser-generated variables are left out. The result is sorted.
+// values). Parser-generated variables are left out.
+//
+// Variables come in the order they first appear in the query, which is the
+// order every W3C expected result uses (csv-tsv-res, for one) and what users
+// see in other engines. Variables that appear only in solutions (pre-bound)
+// follow, sorted, so the list is deterministic.
 func selectStarVars(where Pattern, solutions []map[string]rdflibgo.Term) []string {
-	set := make(map[string]bool)
+	set := &orderedVars{seen: make(map[string]bool)}
 	addInScopeVars(where, set)
+	var extra []string
 	for _, s := range solutions {
 		for k := range s {
-			set[k] = true
+			if !set.seen[k] {
+				set.seen[k] = true
+				extra = append(extra, k)
+			}
 		}
 	}
-	vars := make([]string, 0, len(set))
-	for v := range set {
+	slices.Sort(extra)
+	vars := make([]string, 0, len(set.order)+len(extra))
+	for _, v := range append(set.order, extra...) {
 		if !isInternalVar(v) {
 			vars = append(vars, v)
 		}
 	}
-	slices.Sort(vars)
 	return vars
+}
+
+// orderedVars is a set of variable names that remembers insertion order.
+type orderedVars struct {
+	seen  map[string]bool
+	order []string
+}
+
+func (o *orderedVars) add(v string) {
+	if !o.seen[v] {
+		o.seen[v] = true
+		o.order = append(o.order, v)
+	}
 }
 
 // addInScopeVars adds the in-scope variables of a pattern per the table in
 // SPARQL 1.1 §18.2.1.
-func addInScopeVars(p Pattern, set map[string]bool) {
+func addInScopeVars(p Pattern, set *orderedVars) {
 	switch pat := p.(type) {
 	case *BGP:
 		for _, t := range pat.Triples {
@@ -66,10 +88,10 @@ func addInScopeVars(p Pattern, set map[string]bool) {
 		addInScopeVars(pat.Pattern, set)
 	case *BindPattern:
 		addInScopeVars(pat.Pattern, set)
-		set[pat.Var] = true
+		set.add(pat.Var)
 	case *ValuesPattern:
 		for _, v := range pat.Vars {
-			set[v] = true
+			set.add(v)
 		}
 	case *GraphPattern:
 		addTermVars(pat.Name, set)
@@ -81,19 +103,19 @@ func addInScopeVars(p Pattern, set map[string]bool) {
 			return
 		}
 		for _, v := range q.Variables {
-			set[v] = true
+			set.add(v)
 		}
 		for _, pe := range q.ProjectExprs {
-			set[pe.Var] = true
+			set.add(pe.Var)
 		}
 	}
 }
 
 // addTermVars adds the variables of a pattern term: a variable itself, or the
 // variables inside a triple term "<<( s p o )>>".
-func addTermVars(s string, set map[string]bool) {
+func addTermVars(s string, set *orderedVars) {
 	if strings.HasPrefix(s, "?") {
-		set[s[1:]] = true
+		set.add(s[1:])
 		return
 	}
 	if strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>") {
