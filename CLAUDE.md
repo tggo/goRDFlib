@@ -157,10 +157,48 @@ The `store.Store` interface (13 methods) has four implementations:
   pragmas now travel in the DSN (`dsnWithPragmas`).
 
 ### store/sparqlstore (details)
-- `Server` is an httptest-based SPARQL endpoint for integration testing
+- `Server` is deprecated and delegates to `endpoint`; it answers updates with 204
+  and serves named graphs and triple terms (the conformance exemptions for both
+  are gone).
 - Files: `doc.go`, `store.go`, `http.go`, `server.go`, `register.go`
-- Server queries `ds.Default` only; named graphs not queryable on test server
-- Test coverage: 99.7% (71 tests)
+
+### endpoint/ (SPARQL 1.1 Protocol + Graph Store HTTP Protocol)
+- `New(*sparql.Dataset)`, `NewForGraph`, `NewForStore(*graph.Dataset)` (copies
+  graphs an update creates into the store, because `getOrCreateGraph` makes
+  in-memory graphs). Auth, metrics, limits are options; CORS, gzip, TLS and the
+  listener belong to the binary (tggo/sparql-server).
+- W3C manifests `protocol` (34/34) and `http-rdf-update` (19/19) run from the
+  manifests themselves; four GSP manifest defects are worked around and
+  commented in `w3c_gsp_test.go`.
+- Status decisions: 422 for `WithMaxResultRows` (fail, never truncate), 503
+  without Retry-After for timeouts (incl. waiting for the lock), 501 DESCRIBE,
+  499 in the hook on client disconnect.
+- SELECT/ASK are evaluated fully, then `results.Write` pre-checks every value
+  before the first byte; a failure after the header aborts the connection
+  (`http.ErrAbortHandler`) rather than sending a complete-looking document.
+- Lock: readers-writer, cancellable, writer-preferring. Queries share it while
+  evaluating (not while writing the response); updates and GSP writes hold it
+  exclusively. Multi-operation updates are not atomic.
+- Security defaults: LOAD disabled unless `WithLoader` (rdfloader would read
+  local files: SSRF); JSON-LD payloads never fetch remote contexts; body limits
+  on every request; panics recovered.
+- FROM/FROM NAMED are read by a lexical scanner (`scan.go`) because the parser
+  drops them; moving FROM into `ParsedQuery` would let the scanner go.
+
+### sparql/ cancellation and results
+- `sparql/cancel.go`: every evaluation loop calls `ec.stop()` (polls ctx every
+  1024 calls, counts matched triples not rows) and passes `ec` down, never nil.
+  An update builds its changes first and calls `ec.poll()` before the first
+  write. New path types implement `eval(st, …)`; a recursive traversal must stop
+  when a deeper level returns false.
+- Cancellation test pattern: cancel after 20 ms, allow 250 ms, and prove the test
+  fails with the check removed. A triple term with variables in the BGP stops the
+  planner from reordering a deliberately slow query.
+- `sparql/results`: `check.go` must reject exactly what the encoders reject
+  (`FuzzWriters` enforces it). A Writer writes nothing before the first row, and
+  blank nodes are relabelled per document. One-column CSV writes `""` for empty
+  values because CSV readers skip blank lines. `TestW3CCSVTSV` is the
+  conformance suite.
 
 ### provenance/ + shacl source lines
 - `provenance.Index` collects the `WithProvenance` callback the nt/nq/turtle/trig
