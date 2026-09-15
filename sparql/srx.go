@@ -63,10 +63,12 @@ type srxResult struct {
 	Bindings []srxBinding `xml:"binding"`
 }
 
+// URI and BNode are pointers so that an element that is present but empty
+// (<uri></uri>, the empty relative IRI) is told apart from a missing one.
 type srxBinding struct {
 	Name    string      `xml:"name,attr"`
-	URI     string      `xml:"uri"`
-	BNode   string      `xml:"bnode"`
+	URI     *string     `xml:"uri"`
+	BNode   *string     `xml:"bnode"`
 	Literal *srxLiteral `xml:"literal"`
 	Triple  *srxTriple  `xml:"triple"`
 }
@@ -85,18 +87,18 @@ type srxTriple struct {
 }
 
 type srxTripleComponent struct {
-	URI     string      `xml:"uri"`
-	BNode   string      `xml:"bnode"`
+	URI     *string     `xml:"uri"`
+	BNode   *string     `xml:"bnode"`
 	Literal *srxLiteral `xml:"literal"`
 	Triple  *srxTriple  `xml:"triple"`
 }
 
 func parseSRXBinding(b srxBinding) rdflibgo.Term {
-	if b.URI != "" {
-		return rdflibgo.NewURIRefUnsafe(b.URI)
+	if b.URI != nil {
+		return rdflibgo.NewURIRefUnsafe(*b.URI)
 	}
-	if b.BNode != "" {
-		return rdflibgo.NewBNode(b.BNode)
+	if b.BNode != nil {
+		return rdflibgo.NewBNode(*b.BNode)
 	}
 	if b.Literal != nil {
 		return parseSRXLiteral(b.Literal)
@@ -128,11 +130,11 @@ func parseSRXLiteral(lit *srxLiteral) rdflibgo.Literal {
 }
 
 func parseSRXTripleComponent(c srxTripleComponent) rdflibgo.Term {
-	if c.URI != "" {
-		return rdflibgo.NewURIRefUnsafe(c.URI)
+	if c.URI != nil {
+		return rdflibgo.NewURIRefUnsafe(*c.URI)
 	}
-	if c.BNode != "" {
-		return rdflibgo.NewBNode(c.BNode)
+	if c.BNode != nil {
+		return rdflibgo.NewBNode(*c.BNode)
 	}
 	if c.Literal != nil {
 		return parseSRXLiteral(c.Literal)

@@ -56,7 +56,8 @@ func WithLang(lang string) LiteralOption {
 }
 
 // WithDir sets the base direction for directional language-tagged strings (RDF 1.2).
-// Valid values are "ltr" and "rtl". Other values are silently ignored.
+// Valid values are "ltr" and "rtl". Other values are silently ignored, and so
+// is a direction on a literal without a (valid) language tag.
 func WithDir(dir string) LiteralOption {
 	return func(l *Literal) {
 		if dir == "ltr" || dir == "rtl" {
@@ -86,13 +87,17 @@ func NewLiteral(value any, opts ...LiteralOption) Literal {
 		opt(&lit)
 	}
 
-	// Language-tagged literals: dir requires lang.
+	// Language-tagged literals: dir requires lang. A direction without a
+	// language tag is not an RDF 1.2 literal (Concepts §3.3), so it is dropped
+	// rather than kept on a term no format can write.
 	if lit.lang != "" {
 		if lit.dir != "" {
 			lit.datatype = RDFDirLangString
 		} else {
 			lit.datatype = RDFLangString
 		}
+	} else {
+		lit.dir = ""
 	}
 
 	return lit

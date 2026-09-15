@@ -2017,7 +2017,7 @@ func TestResolveModifyGraphWithAndVariable(t *testing.T) {
 // --- SRX triple parsing ---
 
 func TestParseSRXTripleComponentBNode(t *testing.T) {
-	c := srxTripleComponent{BNode: "b1"}
+	c := srxTripleComponent{BNode: strp("b1")}
 	result := parseSRXTripleComponent(c)
 	if result == nil {
 		t.Fatal("expected non-nil")
@@ -2047,8 +2047,8 @@ func TestParseSRXTripleInvalidSubject(t *testing.T) {
 	// Triple where subject is a literal (not Subject interface)
 	st := &srxTriple{
 		Subject:   srxTripleComponent{Literal: &srxLiteral{Value: "lit"}},
-		Predicate: srxTripleComponent{URI: "http://example.org/p"},
-		Object:    srxTripleComponent{URI: "http://example.org/o"},
+		Predicate: srxTripleComponent{URI: strp("http://example.org/p")},
+		Object:    srxTripleComponent{URI: strp("http://example.org/o")},
 	}
 	result := parseSRXTriple(st)
 	if result != nil {
@@ -2058,9 +2058,9 @@ func TestParseSRXTripleInvalidSubject(t *testing.T) {
 
 func TestParseSRXTripleValid(t *testing.T) {
 	st := &srxTriple{
-		Subject:   srxTripleComponent{URI: "http://example.org/s"},
-		Predicate: srxTripleComponent{URI: "http://example.org/p"},
-		Object:    srxTripleComponent{URI: "http://example.org/o"},
+		Subject:   srxTripleComponent{URI: strp("http://example.org/s")},
+		Predicate: srxTripleComponent{URI: strp("http://example.org/p")},
+		Object:    srxTripleComponent{URI: strp("http://example.org/o")},
 	}
 	result := parseSRXTriple(st)
 	if result == nil {
@@ -2079,9 +2079,9 @@ func TestSRXBindingNil(t *testing.T) {
 func TestSRXBindingTriple(t *testing.T) {
 	b := srxBinding{
 		Triple: &srxTriple{
-			Subject:   srxTripleComponent{URI: "http://s"},
-			Predicate: srxTripleComponent{URI: "http://p"},
-			Object:    srxTripleComponent{URI: "http://o"},
+			Subject:   srxTripleComponent{URI: strp("http://s")},
+			Predicate: srxTripleComponent{URI: strp("http://p")},
+			Object:    srxTripleComponent{URI: strp("http://o")},
 		},
 	}
 	result := parseSRXBinding(b)
@@ -7019,3 +7019,5 @@ func TestDropNamedViaUpdate(t *testing.T) {
 		t.Error("expected graph to be removed after DROP")
 	}
 }
+
+func strp(s string) *string { return &s }
