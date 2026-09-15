@@ -9,7 +9,7 @@ import (
 // evalExpr evaluates an expression without a graph: EXISTS evaluates to an
 // error. Use evalExprWithGraph wherever the active graph is known.
 func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
-	return evalExprWithGraph(expr, bindings, prefixes, nil, nil)
+	return evalExprWithGraph(nil, expr, bindings, prefixes, nil, nil)
 }
 
 // evalExprWithGraph evaluates an expression against a solution. g and
@@ -18,7 +18,7 @@ func evalExpr(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]
 // in SELECT expressions, GROUP BY, HAVING, ORDER BY and inside function
 // arguments. The graph is passed down through every sub-expression. It
 // returns nil for an evaluation error.
-func evalExprWithGraph(expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
+func evalExprWithGraph(ec *evalCtx, expr Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
 	if expr == nil {
 		return nil
 	}
@@ -36,23 +36,23 @@ func evalExprWithGraph(expr Expr, bindings map[string]rdflibgo.Term, prefixes ma
 		}
 		return rdflibgo.NewURIRefUnsafe(iri)
 	case *BinaryExpr:
-		left := evalExprWithGraph(e.Left, bindings, prefixes, g, namedGraphs)
-		right := evalExprWithGraph(e.Right, bindings, prefixes, g, namedGraphs)
+		left := evalExprWithGraph(ec, e.Left, bindings, prefixes, g, namedGraphs)
+		right := evalExprWithGraph(ec, e.Right, bindings, prefixes, g, namedGraphs)
 		return evalBinaryOp(e.Op, left, right)
 	case *UnaryExpr:
-		return evalUnaryOp(e.Op, evalExprWithGraph(e.Arg, bindings, prefixes, g, namedGraphs))
+		return evalUnaryOp(e.Op, evalExprWithGraph(ec, e.Arg, bindings, prefixes, g, namedGraphs))
 	case *FuncExpr:
 		// A registered extension function (SPARQL 1.1 §17.6) wins over the
 		// built-in table, so callers can override e.g. an xsd: cast.
-		if res, handled := evalExtensionFunc(e, bindings, prefixes, g, namedGraphs); handled {
+		if res, handled := evalExtensionFunc(ec, e, bindings, prefixes, g, namedGraphs); handled {
 			return res
 		}
-		return evalFuncWithGraph(e.Name, e.Args, bindings, prefixes, g, namedGraphs)
+		return evalFuncWithGraph(ec, e.Name, e.Args, bindings, prefixes, g, namedGraphs)
 	case *ExistsExpr:
 		if g == nil {
 			return nil // no active graph to evaluate the pattern against
 		}
-		exists := len(evalPatternWithBindings(g, e.Pattern, bindings, prefixes, namedGraphs)) > 0
+		exists := len(evalPatternWithBindings(ec, g, e.Pattern, bindings, prefixes, namedGraphs)) > 0
 		if e.Not {
 			exists = !exists
 		}

@@ -36,12 +36,12 @@ func cachedRegexpCompile(pattern string) (*regexp.Regexp, error) {
 // unbound or failed to evaluate, or an argument of the wrong type.
 // Ported from: rdflib.plugins.sparql.operators
 func evalFunc(name string, args []Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
-	return evalFuncWithGraph(name, args, bindings, prefixes, nil, nil)
+	return evalFuncWithGraph(nil, name, args, bindings, prefixes, nil, nil)
 }
 
 // evalFuncWithGraph is evalFunc with a graph for EXISTS inside the arguments.
-func evalFuncWithGraph(name string, args []Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
-	evalArg := func(a Expr) rdflibgo.Term { return evalExprWithGraph(a, bindings, prefixes, g, namedGraphs) }
+func evalFuncWithGraph(ec *evalCtx, name string, args []Expr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) rdflibgo.Term {
+	evalArg := func(a Expr) rdflibgo.Term { return evalExprWithGraph(ec, a, bindings, prefixes, g, namedGraphs) }
 	// Functional forms (§17.4.1) evaluate their arguments themselves.
 	switch name {
 	case "BOUND":

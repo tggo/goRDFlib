@@ -25,7 +25,40 @@ type Dataset struct {
 }
 
 // EvalUpdate evaluates a parsed SPARQL Update request against a dataset.
+//
+// It cannot be cancelled; EvalUpdateContext can.
 func EvalUpdate(ds *Dataset, u *ParsedUpdate) error {
+	return EvalUpdateContext(context.Background(), ds, u)
+}
+
+// EvalUpdateContext evaluates a parsed SPARQL Update request against a
+// dataset, and stops once ctx is done. A stopped request returns an error that
+// matches ErrQueryCancelled and ctx.Err() under errors.Is.
+//
+// What a cancellation can leave behind:
+//
+//   - One operation is all or nothing with respect to cancellation. DELETE
+//     WHERE and DELETE/INSERT … WHERE evaluate their WHERE clause and
+//     instantiate their templates, both interruptible, before they change
+//     anything, and check the context once more just before. Once the first
+//     triple is removed or added, the operation runs to the end. The one trace
+//     a stopped operation can leave is an empty entry in Dataset.NamedGraphs
+//     for a template graph that did not exist yet, because template graphs
+//     are resolved during instantiation.
+//   - A request is not. Its operations run in order and the context is checked
+//     before each one; the operations that completed before the cancellation
+//     stay applied. There is no rollback, so a request whose later operations
+//     depend on its earlier ones can be left half done.
+//   - INSERT DATA, DELETE DATA, CLEAR, DROP, CREATE, ADD, COPY and MOVE are not
+//     interrupted once started. Their cost is the size of the request or of a
+//     graph copy, not a join.
+//   - LOAD passes ctx to Dataset.Loader. What a load cancelled halfway leaves
+//     in the target graph is up to the Loader.
+//
+// None of this is isolation: other goroutines writing to the same graphs see,
+// and can interleave with, the changes as they are applied.
+func EvalUpdateContext(ctx context.Context, ds *Dataset, u *ParsedUpdate) error {
+	ec := newEvalCtx(ctx)
 	prefixes := u.Prefixes
 	if prefixes == nil {
 		prefixes = make(map[string]string)
@@ -35,25 +68,35 @@ func EvalUpdate(ds *Dataset, u *ParsedUpdate) error {
 	}
 
 	for _, op := range u.Operations {
-		if err := evalUpdateOp(ds, op, prefixes); err != nil {
+		if ec.poll() {
+			return ec.failure()
+		}
+		err := evalUpdateOp(ec, ds, op, prefixes)
+		// An operation that noticed the cancellation returns nil without
+		// changing anything; a LOAD whose Loader gave up returns the Loader's
+		// error. Either way the request reports the cancellation.
+		if ec.poll() {
+			return ec.failure()
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func evalUpdateOp(ds *Dataset, op UpdateOperation, prefixes map[string]string) error {
+func evalUpdateOp(ec *evalCtx, ds *Dataset, op UpdateOperation, prefixes map[string]string) error {
 	switch o := op.(type) {
 	case *InsertDataOp:
 		return evalInsertData(ds, o, prefixes)
 	case *DeleteDataOp:
 		return evalDeleteData(ds, o, prefixes)
 	case *DeleteWhereOp:
-		return evalDeleteWhere(ds, o, prefixes)
+		return evalDeleteWhere(ec, ds, o, prefixes)
 	case *ModifyOp:
-		return evalModify(ds, o, prefixes)
+		return evalModify(ec, ds, o, prefixes)
 	case *GraphMgmtOp:
-		return evalGraphMgmt(ds, o, prefixes)
+		return evalGraphMgmt(ec, ds, o, prefixes)
 	default:
 		return fmt.Errorf("unknown update operation type: %T", op)
 	}
@@ -112,14 +155,27 @@ func evalDeleteData(ds *Dataset, op *DeleteDataOp, prefixes map[string]string) e
 	return nil
 }
 
-func evalDeleteWhere(ds *Dataset, op *DeleteWhereOp, prefixes map[string]string) error {
+func evalDeleteWhere(ec *evalCtx, ds *Dataset, op *DeleteWhereOp, prefixes map[string]string) error {
 	// Build a WHERE pattern from the quads and use the same quads as template
 	pattern := quadsToPattern(op.Quads, prefixes)
 	namedGraphs := ds.NamedGraphs
 
-	solutions := evalPattern(ds.Default, pattern, prefixes, namedGraphs)
+	solutions := evalPattern(ec, ds.Default, pattern, prefixes, namedGraphs)
 
+	// Instantiate every removal before applying any, so a cancellation during
+	// the WHERE clause or the instantiation leaves the dataset untouched (see
+	// EvalUpdateContext).
+	type removal struct {
+		graph *rdflibgo.Graph
+		subj  term.Subject
+		pred  term.URIRef
+		obj   rdflibgo.Term
+	}
+	var removals []removal
 	for _, sol := range solutions {
+		if ec.stop() {
+			return nil
+		}
 		scope := bnodes.New(false)
 		for _, qp := range op.Quads {
 			g := graphForQuadSolution(ds, qp.Graph, sol)
@@ -141,14 +197,20 @@ func evalDeleteWhere(ds *Dataset, op *DeleteWhereOp, prefixes map[string]string)
 				if !ok {
 					continue
 				}
-				g.Remove(subj, &pred, o)
+				removals = append(removals, removal{g, subj, pred, o})
 			}
 		}
+	}
+	if ec.poll() {
+		return nil
+	}
+	for _, r := range removals {
+		r.graph.Remove(r.subj, &r.pred, r.obj)
 	}
 	return nil
 }
 
-func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
+func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	// Determine the query graph
 	queryGraph := ds.Default
 	namedGraphs := ds.NamedGraphs
@@ -175,6 +237,9 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 				// Merge into default graph
 				if ng, ok := ds.NamedGraphs[uc.IRI]; ok {
 					for tr := range ng.Triples(nil, nil, nil) {
+						if ec.stop() {
+							return nil
+						}
 						merged.Add(tr.Subject, tr.Predicate, tr.Object)
 					}
 				}
@@ -185,7 +250,7 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 		namedGraphs = usedNamed
 	}
 
-	solutions := evalPattern(queryGraph, op.Where, prefixes, namedGraphs)
+	solutions := evalPattern(ec, queryGraph, op.Where, prefixes, namedGraphs)
 
 	// Collect all deletions/insertions first (snapshot semantics)
 	type tripleAction struct {
@@ -197,6 +262,9 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	var deletes, inserts []tripleAction
 
 	for _, sol := range solutions {
+		if ec.stop() {
+			return nil
+		}
 		// Update §3.1.3: template blank nodes are fresh for each solution.
 		scope := bnodes.New(false)
 		for _, qp := range op.Delete {
@@ -247,7 +315,11 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 		}
 	}
 
-	// Apply deletions then insertions
+	// Apply deletions then insertions. The last chance to stop without having
+	// changed anything is here (see EvalUpdateContext).
+	if ec.poll() {
+		return nil
+	}
 	for _, d := range deletes {
 		d.graph.Remove(d.subj, &d.pred, d.obj)
 	}
@@ -258,7 +330,7 @@ func evalModify(ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	return nil
 }
 
-func evalGraphMgmt(ds *Dataset, op *GraphMgmtOp, prefixes map[string]string) error {
+func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[string]string) error {
 	switch op.Op {
 	case "CLEAR", "DROP":
 		switch op.Target {
@@ -309,7 +381,7 @@ func evalGraphMgmt(ds *Dataset, op *GraphMgmtOp, prefixes map[string]string) err
 			}
 			return "DEFAULT"
 		}())
-		if err := ds.Loader.Load(context.Background(), target, op.Source); err != nil {
+		if err := ds.Loader.Load(ec.context(), target, op.Source); err != nil {
 			if !op.Silent {
 				return fmt.Errorf("LOAD <%s>: %w", op.Source, err)
 			}

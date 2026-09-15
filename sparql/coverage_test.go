@@ -530,14 +530,14 @@ func TestEvalExprWithGraphDefault(t *testing.T) {
 	// Non-Exists expr falls through to evalExpr
 	g := makeSPARQLGraph(t)
 	e := &LiteralExpr{Value: rdflibgo.NewLiteral(42)}
-	result := evalExprWithGraph(e, nil, nil, g, nil)
+	result := evalExprWithGraph(nil, e, nil, nil, g, nil)
 	if result == nil {
 		t.Fatal("expected non-nil")
 	}
 }
 
 func TestEvalExprWithGraphNil(t *testing.T) {
-	result := evalExprWithGraph(nil, nil, nil, nil, nil)
+	result := evalExprWithGraph(nil, nil, nil, nil, nil, nil)
 	if result != nil {
 		t.Error("expected nil for nil expr")
 	}
@@ -4885,7 +4885,7 @@ func (*testUnknownOp) isUpdateOp() {}
 
 func TestEvalUpdateOpUnknownCov(t *testing.T) {
 	ds := makeUpdateDataset()
-	err := evalUpdateOp(ds, &testUnknownOp{}, nil)
+	err := evalUpdateOp(nil, ds, &testUnknownOp{}, nil)
 	if err == nil {
 		t.Error("expected error for unknown update op")
 	}
@@ -5498,7 +5498,7 @@ func TestDeleteWhereNonSubjectSkip(t *testing.T) {
 		}},
 	}
 	// This will match and try to delete using the bound values
-	err := evalDeleteWhere(ds, op, nil)
+	err := evalDeleteWhere(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5523,7 +5523,7 @@ func TestModifyNonSubjectPredSkip(t *testing.T) {
 			{Subject: "?s", Predicate: "<http://example.org/p>", Object: "?o"},
 		}},
 	}
-	err := evalModify(ds, op, nil)
+	err := evalModify(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5543,7 +5543,7 @@ func TestModifyNonSubjectPredSkip(t *testing.T) {
 			{Subject: "?s", Predicate: "<http://example.org/p>", Object: "?o"},
 		}},
 	}
-	err = evalModify(ds, op2, nil)
+	err = evalModify(nil, ds, op2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5551,7 +5551,7 @@ func TestModifyNonSubjectPredSkip(t *testing.T) {
 
 func TestEvalUpdateUnknownOp(t *testing.T) {
 	ds := makeUpdateDataset()
-	err := evalUpdateOp(ds, &testUnknownOp{}, nil)
+	err := evalUpdateOp(nil, ds, &testUnknownOp{}, nil)
 	if err == nil {
 		t.Error("expected error for unknown op")
 	}
@@ -5561,7 +5561,7 @@ func TestLoadWithoutLoaderSilent(t *testing.T) {
 	ds := makeUpdateDataset()
 	// LOAD SILENT without Loader should not error
 	op := &GraphMgmtOp{Op: "LOAD", Silent: true, Source: "http://example.org/data"}
-	err := evalGraphMgmt(ds, op, nil)
+	err := evalGraphMgmt(nil, ds, op, nil)
 	if err != nil {
 		t.Errorf("expected no error for silent LOAD without loader, got %v", err)
 	}
@@ -5570,7 +5570,7 @@ func TestLoadWithoutLoaderSilent(t *testing.T) {
 func TestLoadWithoutLoaderNonSilent(t *testing.T) {
 	ds := makeUpdateDataset()
 	op := &GraphMgmtOp{Op: "LOAD", Silent: false, Source: "http://example.org/data"}
-	err := evalGraphMgmt(ds, op, nil)
+	err := evalGraphMgmt(nil, ds, op, nil)
 	if err == nil {
 		t.Error("expected error for non-silent LOAD without loader")
 	}
@@ -5580,7 +5580,7 @@ func TestCreateExistingGraphSilentCov(t *testing.T) {
 	ds := makeUpdateDataset()
 	ds.NamedGraphs["http://example.org/g"] = graph.NewGraph()
 	op := &GraphMgmtOp{Op: "CREATE", Silent: true, Target: "http://example.org/g"}
-	err := evalGraphMgmt(ds, op, nil)
+	err := evalGraphMgmt(nil, ds, op, nil)
 	if err != nil {
 		t.Errorf("expected no error for silent CREATE on existing graph, got %v", err)
 	}
@@ -5590,13 +5590,13 @@ func TestClearDropNonExistentGraphSilent(t *testing.T) {
 	ds := makeUpdateDataset()
 	// CLEAR non-existent graph with silent
 	op := &GraphMgmtOp{Op: "CLEAR", Silent: true, Target: "http://example.org/noexist"}
-	err := evalGraphMgmt(ds, op, nil)
+	err := evalGraphMgmt(nil, ds, op, nil)
 	if err != nil {
 		t.Errorf("expected no error for silent CLEAR, got %v", err)
 	}
 	// DROP non-existent graph without silent (should not error per spec)
 	op2 := &GraphMgmtOp{Op: "DROP", Silent: false, Target: "http://example.org/noexist"}
-	err = evalGraphMgmt(ds, op2, nil)
+	err = evalGraphMgmt(nil, ds, op2, nil)
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
@@ -5668,7 +5668,7 @@ func TestConstructWithLimitAndOffset(t *testing.T) {
 
 func TestEvalPatternNil(t *testing.T) {
 	g := graph.NewGraph()
-	result := evalPattern(g, nil, nil, nil)
+	result := evalPattern(nil, g, nil, nil, nil)
 	if len(result) != 1 {
 		t.Errorf("expected 1 empty binding, got %d", len(result))
 	}
@@ -5697,7 +5697,7 @@ func TestEvalGraphPatternNoNamedGraphsCov(t *testing.T) {
 		Pattern: &BGP{Triples: []Triple{{Subject: "?s", Predicate: "?p", Object: "?o"}}},
 	}
 	// No named graphs available - evaluate against default graph
-	result := evalGraphPattern(g, gp, nil, nil)
+	result := evalGraphPattern(nil, g, gp, nil, nil)
 	if len(result) == 0 {
 		t.Error("expected results from default graph")
 	}
@@ -5710,7 +5710,7 @@ func TestEvalGraphPatternNonExistentNamedGraph(t *testing.T) {
 		Name:    "<http://example.org/noexist>",
 		Pattern: &BGP{Triples: []Triple{{Subject: "?s", Predicate: "?p", Object: "?o"}}},
 	}
-	result := evalGraphPattern(g, gp, nil, namedGraphs)
+	result := evalGraphPattern(nil, g, gp, nil, namedGraphs)
 	if len(result) != 0 {
 		t.Error("expected no results for non-existent named graph")
 	}
@@ -5723,7 +5723,7 @@ func TestEvalGraphPatternResolveNilTerm(t *testing.T) {
 		Name:    "???invalid",
 		Pattern: &BGP{Triples: []Triple{{Subject: "?s", Predicate: "?p", Object: "?o"}}},
 	}
-	result := evalGraphPattern(g, gp, nil, namedGraphs)
+	result := evalGraphPattern(nil, g, gp, nil, namedGraphs)
 	if result != nil {
 		t.Error("expected nil for unresolvable graph name")
 	}
@@ -6098,7 +6098,7 @@ func TestBGPWithPropertyPath(t *testing.T) {
 		Object:        "?o",
 		PredicatePath: paths.URIRefPath{URI: rdflibgo.NewURIRefUnsafe("http://example.org/p")},
 	}
-	result := evalBGP(g, []Triple{tp}, map[string]rdflibgo.Term{}, nil)
+	result := evalBGP(nil, g, []Triple{tp}, map[string]rdflibgo.Term{}, nil)
 	if len(result) == 0 {
 		t.Error("expected results for property path BGP")
 	}
@@ -6334,7 +6334,7 @@ func TestDeleteWhereNonSubjectPredSkip(t *testing.T) {
 			},
 		}},
 	}
-	err := evalDeleteWhere(ds, op, nil)
+	err := evalDeleteWhere(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6358,7 +6358,7 @@ func TestModifyDeleteNilResolve(t *testing.T) {
 			{Subject: "?s", Predicate: "<http://example.org/p>", Object: "?o"},
 		}},
 	}
-	err := evalModify(ds, op, nil)
+	err := evalModify(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6611,7 +6611,7 @@ func TestModifyNilResolvesInBothTemplates(t *testing.T) {
 			{Subject: "?s", Predicate: "<http://example.org/p>", Object: "?o"},
 		}},
 	}
-	err := evalModify(ds, op, nil)
+	err := evalModify(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6747,7 +6747,7 @@ func TestGraphPatternResolvedNonURIRef(t *testing.T) {
 		Name:    "ex:g",
 		Pattern: &BGP{Triples: []Triple{{Subject: "?s", Predicate: "?p", Object: "?o"}}},
 	}
-	result := evalGraphPattern(g, gp, prefixes, namedGraphs)
+	result := evalGraphPattern(nil, g, gp, prefixes, namedGraphs)
 	// ex:g resolves to http://example.org/g but no such named graph exists
 	if len(result) != 0 {
 		t.Error("expected no results")
