@@ -620,6 +620,60 @@ still be used concurrently. The same mechanism is available directly:
 **Conformance:** 13/13 DASH advanced-features test cases (`testdata/dash-af/`),
 the suite both reference implementations are tested against.
 
+#### Prepared validation and structural walking
+
+Validation reports contain findings, not every shape application. To inspect nested
+applications even when constraints pass or validation skips a logical branch, use
+`shacl/shaclwalk` with a prepared run:
+
+```go
+prepared := shacl.Prepare(data, shapes, shacl.WithAdvancedFeatures())
+report := prepared.Validate()
+
+var events []shaclwalk.Event
+shaclwalk.Walk(prepared, func(event shaclwalk.Event) {
+    events = append(events, event)
+})
+```
+
+Import `github.com/tggo/goRDFlib/shacl/shaclwalk` for the walker. `Prepare` runs the
+configured derivation once and retains the parsed shapes and derived data. Walking
+can precede or follow validation; neither operation reruns rules. The existing
+`shacl.Validate(data, shapes, opts...)` delegates to the same preparation and
+validation implementation.
+
+`Walk` follows `sh:property`, `sh:node`, `sh:and`, `sh:or`, `sh:xone`, and `sh:not`.
+It visits all active branches of those links without using constraint outcomes to
+choose them. A property with no values still receives an event; its nested shapes
+have no applications unless its value selection supplies nodes. Rule conditions,
+target definitions, qualified shapes, and other shape-valued parameters are not
+walked through those roles. Shapes with independent targets remain independent
+applications. Target selection and navigation use the engine, including its
+existing `sh:values` behavior.
+
+Each event has the current `Shape` and `Focus`, the originating `SelectedShape` and
+`SelectedFocus`, and the incoming SHACL predicate in `Via`. `Via` is the zero term
+for a target-selected application. `Enter` and `Leave` delimit structural context;
+`Cycle` reports an edge to an already active `(shape, focus)` pair without following
+it again. A cycle event has no matching enter/leave pair and makes no conformance
+claim. Completed applications can be visited again through another branch or
+origin. The walker does not define field visibility, requiredness, or editing scope.
+
+Prepared inspection methods expose detached data rather than mutable engine graphs:
+
+- `Shapes` and `Shape` expose `ShapeInfo` descriptions, including the RDF path node.
+- `Targets` returns focus nodes, cached on first use and shared with validation.
+- `ShapeLinks` enumerates the supported parsed structural references.
+- `ValueNodes` selects a shape's values; `PathValues` evaluates an RDF-defined path.
+- `ShapeObjects` reads shape parameters and path-definition triples.
+
+Keep caller-owned data and shapes unchanged for the prepared run's entire lifetime.
+`Prepared` is not safe for concurrent use; independent prepared runs may share
+immutable sources. Returned metadata and term slices do not expose mutable engine
+state. Existing `WithErrorHandler` reporting is unchanged. These interfaces do not
+add cancellation, general work limits, or stronger execution-error propagation;
+cycle detection is not a substitute for those separate guarantees.
+
 ### Plugin System
 
 - Format auto-detection by filename extension (`.ttl`, `.trig`, `.nt`, `.nq`, `.rdf`, `.owl`, `.jsonld`)

@@ -33,34 +33,24 @@ var ErrMalformedTarget = errors.New("shacl: malformed target")
 // so the same input gives the same report order on every run; see
 // orderResults for how blank nodes are handled.
 func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
-	cfg := newConfig(opts)
-	af, dataGraph := prepareAdvanced(dataGraph, shapesGraph, cfg)
+	return Prepare(dataGraph, shapesGraph, opts...).Validate()
+}
 
-	shapes := parseShapes(shapesGraph)
-	if af != nil {
-		addAFTargets(af, shapes)
-	}
-
-	ctx := &evalContext{
-		dataGraph:      dataGraph,
-		shapesGraph:    shapesGraph,
-		shapesMap:      shapes,
-		classInstances: buildClassIndex(dataGraph),
-		cfg:            cfg,
-		af:             af,
-	}
-
+// Validate checks the prepared graph without rerunning rules or reparsing shapes.
+// Each call uses its own recursion state and preserves ordinary report behavior.
+func (p *Prepared) Validate() ValidationReport {
+	ctx := p.evaluation()
 	var allResults []ValidationResult
 
 	// Shapes are visited in the order of their keys rather than map order, so
 	// that anything reported to the error handler along the way arrives in the
 	// same sequence on every run.
-	for _, s := range shapesInOrder(shapes) {
+	for _, s := range shapesInOrder(ctx.shapesMap) {
 		if s.Deactivated {
 			continue
 		}
 
-		targets := resolveTargets(ctx, s)
+		targets := p.targetNodes(ctx, s)
 		if len(targets) == 0 {
 			continue
 		}
@@ -76,7 +66,7 @@ func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 	// Source lines are filled in once over the finished report rather than at
 	// each place a result is built, so a constraint never has to know that
 	// provenance exists. Costs nothing when WithSourceLines was not passed.
-	annotateSourceLines(allResults, cfg.provenance)
+	annotateSourceLines(allResults, ctx.cfg.provenance)
 
 	// SHACL 1.2: sh:Debug and sh:Trace severities don't affect sh:conforms
 	conforms := true
@@ -140,14 +130,7 @@ func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []Validat
 	defer ctx.leave(s, focusNode)
 
 	var results []ValidationResult
-	var valueNodes []Term
-
-	if s.Values != nil {
-		// SHACL 1.2: sh:values — compute value nodes via SPARQL
-		valueNodes = evalSPARQLValues(ctx, s.Values, focusNode)
-	} else {
-		valueNodes = evalPath(ctx.dataGraph, s.Path, focusNode)
-	}
+	valueNodes := propertyValueNodes(ctx, s, focusNode)
 
 	for _, c := range s.Constraints {
 		results = append(results, c.Evaluate(ctx, s, focusNode, valueNodes)...)
@@ -163,6 +146,14 @@ func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []Validat
 	}
 
 	return results
+}
+
+func propertyValueNodes(ctx *evalContext, s *Shape, focusNode Term) []Term {
+	if s.Values != nil {
+		// SHACL 1.2: sh:values — compute value nodes via SPARQL
+		return evalSPARQLValues(ctx, s.Values, focusNode)
+	}
+	return evalPath(ctx.dataGraph, s.Path, focusNode)
 }
 
 // evalSPARQLValues computes value nodes using a SPARQL query or expression.
