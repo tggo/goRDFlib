@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	iriref "github.com/tggo/goRDFlib/internal/iri"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -741,6 +742,18 @@ func (ts *turtleState) computeQName(u rdflibgo.URIRef) string {
 		// Verify local name is valid (no special chars)
 		if isValidLocalName(local) {
 			return bestPrefix + ":" + local
+		}
+	}
+	return iriRef(ts.base, u)
+}
+
+// iriRef writes u as an IRIREF, relative to base when base is set and a
+// relative reference resolves back to exactly u (issue #34). Relativize only
+// shortens; the characters it keeps are u's own, so checkIRI still applies.
+func iriRef(base string, u rdflibgo.URIRef) string {
+	if base != "" {
+		if ref, ok := iriref.Relativize(base, u.Value()); ok {
+			return "<" + ref + ">"
 		}
 	}
 	return u.N3()

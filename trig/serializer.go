@@ -10,6 +10,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
+	iriref "github.com/tggo/goRDFlib/internal/iri"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -128,7 +129,7 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 		}
 		first = false
 
-		ts := newTrigState(g, usedNS, usage)
+		ts := newTrigState(g, usedNS, cfg.base, usage)
 		ts.preprocess()
 		ts.orderSubjects()
 
@@ -137,7 +138,7 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 			fmt.Fprintln(bw, "{")
 		} else {
 			// Named graph
-			fmt.Fprintf(bw, "%s {\n", trigLabel(g.Identifier(), usedNS))
+			fmt.Fprintf(bw, "%s {\n", trigLabel(g.Identifier(), usedNS, cfg.base))
 		}
 		if err := ts.writeIndented(bw, "    "); err != nil {
 			return err
@@ -224,9 +225,9 @@ func invalidIRIError(uri string) error {
 	return fmt.Errorf("trig: cannot serialize IRI %q: %w: TriG IRIs cannot contain spaces, control characters or <>\"{}|^`\\, not even escaped; percent-encode them", uri, rdflibgo.ErrInvalidIRI)
 }
 
-func trigLabel(t rdflibgo.Term, usedNS map[string]rdflibgo.URIRef) string {
+func trigLabel(t rdflibgo.Term, usedNS map[string]rdflibgo.URIRef, base string) string {
 	if u, ok := t.(rdflibgo.URIRef); ok {
-		return qnameOrFull(u, usedNS)
+		return qnameOrFull(u, usedNS, base)
 	}
 	return t.N3()
 }
@@ -235,6 +236,7 @@ func trigLabel(t rdflibgo.Term, usedNS map[string]rdflibgo.URIRef) string {
 type trigState struct {
 	g      *graph.Graph
 	usedNS map[string]rdflibgo.URIRef
+	base   string // IRIs that resolve against it are written relative to it
 
 	spoMap     map[string]map[string][]rdflibgo.Term
 	subjects   []rdflibgo.Subject
@@ -262,10 +264,11 @@ type trigState struct {
 // follows at the top level of the graph block.
 const maxNestDepth = 64
 
-func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef, usage *bnodeUsage) *trigState {
+func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef, base string, usage *bnodeUsage) *trigState {
 	return &trigState{
 		g:           g,
 		usedNS:      usedNS,
+		base:        base,
 		spoMap:      make(map[string]map[string][]rdflibgo.Term),
 		refs:        usage.refs,
 		listCells:   make(map[string]bool),
@@ -498,7 +501,7 @@ func (ts *trigState) sortPredicates(preds map[string][]rdflibgo.Term) []string {
 
 func (ts *trigState) label(t rdflibgo.Term) string {
 	if u, ok := t.(rdflibgo.URIRef); ok {
-		return qnameOrFull(u, ts.usedNS)
+		return qnameOrFull(u, ts.usedNS, ts.base)
 	}
 	return t.N3()
 }
@@ -509,13 +512,13 @@ func (ts *trigState) predLabel(pk string) string {
 	}
 	uri := strings.TrimPrefix(strings.TrimSuffix(pk, ">"), "<")
 	u := rdflibgo.NewURIRefUnsafe(uri)
-	return qnameOrFull(u, ts.usedNS)
+	return qnameOrFull(u, ts.usedNS, ts.base)
 }
 
 func (ts *trigState) objectStr(t rdflibgo.Term) (string, error) {
 	switch v := t.(type) {
 	case rdflibgo.URIRef:
-		return qnameOrFull(v, ts.usedNS), nil
+		return qnameOrFull(v, ts.usedNS, ts.base), nil
 	case rdflibgo.BNode:
 		bk := v.N3()
 		if ts.serialized[bk] {
@@ -550,7 +553,7 @@ func (ts *trigState) literalStr(l rdflibgo.Literal) string {
 	}
 	if l.Language() == "" && l.Datatype() != (rdflibgo.URIRef{}) && l.Datatype() != rdflibgo.XSDString {
 		dtN3 := l.Datatype().N3()
-		dtQName := qnameOrFull(l.Datatype(), ts.usedNS)
+		dtQName := qnameOrFull(l.Datatype(), ts.usedNS, ts.base)
 		if dtQName != dtN3 {
 			return strings.Replace(n3, "^^"+dtN3, "^^"+dtQName, 1)
 		}
@@ -564,7 +567,7 @@ func (ts *trigState) literalStr(l rdflibgo.Literal) string {
 // its other occurrences.
 func (ts *trigState) tripleTermStr(tt rdflibgo.TripleTerm) (string, error) {
 	s := ts.label(tt.Subject())
-	pred := qnameOrFull(tt.Predicate(), ts.usedNS)
+	pred := qnameOrFull(tt.Predicate(), ts.usedNS, ts.base)
 	var o string
 	switch v := tt.Object().(type) {
 	case rdflibgo.BNode:
@@ -643,8 +646,9 @@ func (ts *trigState) inlineBNode(b rdflibgo.BNode) (string, error) {
 	return "[ " + strings.Join(parts, " ; ") + " ]", nil
 }
 
-// qnameOrFull returns a prefixed name if possible, otherwise the full N3 form.
-func qnameOrFull(u rdflibgo.URIRef, usedNS map[string]rdflibgo.URIRef) string {
+// qnameOrFull returns a prefixed name if possible, otherwise an IRIREF, written
+// relative to base when a relative reference resolves back to exactly u.
+func qnameOrFull(u rdflibgo.URIRef, usedNS map[string]rdflibgo.URIRef, base string) string {
 	uri := u.Value()
 	bestPrefix := ""
 	bestNS := ""
@@ -662,6 +666,11 @@ func qnameOrFull(u rdflibgo.URIRef, usedNS map[string]rdflibgo.URIRef) string {
 		local := uri[len(bestNS):]
 		if isValidLocalName(local) {
 			return bestPrefix + ":" + local
+		}
+	}
+	if base != "" {
+		if ref, ok := iriref.Relativize(base, u.Value()); ok {
+			return "<" + ref + ">"
 		}
 	}
 	return u.N3()

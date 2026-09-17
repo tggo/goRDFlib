@@ -109,6 +109,7 @@ test-fuzz:
 	for target in \
 		"sparql:FuzzParse" \
 		"sparql:FuzzParseUpdate" \
+		"internal/iri:FuzzRelativize" \
 		"provenance:FuzzIndexKeyCollisions" \
 		"provenance:FuzzTripleKeySplit" \
 		"provenance:FuzzSubjectLineIsTheMinimum" \

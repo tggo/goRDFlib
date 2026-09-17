@@ -434,6 +434,12 @@ The `store.Store` interface (13 methods) has four implementations:
 - Turtle/TriG parsing is bounded by `WithMaxParseDepth` (default 10000, also on
   rdfloader); serializers flatten nesting beyond 64 (TriG) / `WithMaxNestDepth`
   capped at 1024 (Turtle). A Go stack overflow is fatal and cannot be recovered.
+- With `WithBase`, the Turtle and TriG serializers write IRIs relative to the
+  base (issue #34) through `internal/iri.Relativize`, which keeps a candidate
+  only if `Resolve(base, candidate) == target`. Never shorten an IRI without
+  that check: resolution normalises dot segments, so a hand-built relative
+  form can name a different resource. A prefixed name still wins over a
+  relative IRI. Guard: `FuzzRelativize`.
 - A list is written as `( ... )` only under the rule in
   `turtle/serializer_lists.go`; TriG has a copy — keep them in sync. TriG counts
   blank-node references across the whole dataset (`bnodeUsage`); blank nodes

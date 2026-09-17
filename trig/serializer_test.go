@@ -388,7 +388,7 @@ func TestSerialize_qnameOrFull_NoMatch(t *testing.T) {
 		"ex": rdflibgo.NewURIRefUnsafe("http://example.org/"),
 	}
 	u := rdflibgo.NewURIRefUnsafe("http://other.org/thing")
-	got := qnameOrFull(u, usedNS)
+	got := qnameOrFull(u, usedNS, "")
 	if got != "<http://other.org/thing>" {
 		t.Errorf("expected full IRI, got %q", got)
 	}
@@ -401,7 +401,7 @@ func TestSerialize_qnameOrFull_InvalidLocal(t *testing.T) {
 	}
 	// local part ends with dot, invalid
 	u := rdflibgo.NewURIRefUnsafe("http://example.org/bad.")
-	got := qnameOrFull(u, usedNS)
+	got := qnameOrFull(u, usedNS, "")
 	if got != "<http://example.org/bad.>" {
 		t.Errorf("expected full IRI for invalid local, got %q", got)
 	}
@@ -691,7 +691,7 @@ func TestSerialize_ListWithLiterals(t *testing.T) {
 func TestSerialize_TrigLabel_BNode(t *testing.T) {
 	b := rdflibgo.NewBNode()
 	usedNS := map[string]rdflibgo.URIRef{}
-	got := trigLabel(b, usedNS)
+	got := trigLabel(b, usedNS, "")
 	if !strings.HasPrefix(got, "_:") {
 		t.Errorf("expected bnode N3 label, got %q", got)
 	}

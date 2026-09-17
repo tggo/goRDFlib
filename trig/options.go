@@ -34,7 +34,10 @@ func WithPreserveBlankNodeIDs() Option {
 	return func(c *config) { c.preserveBlankNodeIDs = true }
 }
 
-// WithBase sets the base IRI for resolving relative IRIs.
+// WithBase sets the base IRI. When parsing, relative IRIs resolve against it.
+// When serializing, it is written as @base and every IRI that no prefix covers
+// is written relative to it where a relative reference resolves back to
+// exactly that IRI ("<http://x/doc.ttl#a>" becomes "<#a>").
 func WithBase(base string) Option {
 	return func(c *config) { c.base = base }
 }
