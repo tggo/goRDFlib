@@ -137,7 +137,11 @@ func (e *owlrlEngine) run() (int, []Inconsistency) {
 		}
 
 		hasSchemaTriples := false
-		for _, t := range newTriples {
+		for i, t := range newTriples {
+			// See rdfsEngine.run: adding is the slow part of a large pass.
+			if e.stop.tick() {
+				return totalAdded + i, nil
+			}
 			e.g.Add(t.Subject, t.Predicate, t.Object)
 			if e.isSchemaTriple(t) {
 				hasSchemaTriples = true

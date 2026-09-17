@@ -129,6 +129,7 @@ func TestExpandContextCancelled(t *testing.T) {
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("%s: err = %v after %v; the closure finished instead of stopping", name, err, elapsed)
 		}
+		t.Logf("%s: stopped after %v", name, elapsed)
 		if elapsed > 250*time.Millisecond {
 			t.Fatalf("%s: stopped after %v", name, elapsed)
 		}

@@ -69,7 +69,13 @@ func (e *rdfsEngine) run() int {
 		}
 
 		hasSchemaTriples := false
-		for _, t := range newTriples {
+		for i, t := range newTriples {
+			// One pass can derive hundreds of thousands of triples, and adding
+			// them is the slow part. Stopping here leaves only the triples added
+			// so far, each of them a valid entailment.
+			if e.stop.tick() {
+				return totalAdded + i
+			}
 			e.g.Add(t.Subject, t.Predicate, t.Object)
 			pk := term.TermKey(t.Predicate)
 			if pk == term.TermKey(namespace.RDFS.SubClassOf) ||
@@ -173,6 +179,18 @@ func (e *rdfsEngine) applyRules() []term.Triple {
 	var newTriples []term.Triple
 	rdfType := namespace.RDF.Type
 
+	// Every derivation passes through emit, which is where the stop is counted:
+	// one scanned triple can derive a type for every superclass in a long
+	// chain, so counting scanned triples alone polls far too rarely.
+	emit := func(s term.Subject, p term.URIRef, o term.Term) {
+		if e.stop.tick() {
+			return
+		}
+		if e.ded.addNew(s, p, o) {
+			newTriples = append(newTriples, term.Triple{Subject: s, Predicate: p, Object: o})
+		}
+	}
+
 	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
 		if e.stop.tick() {
 			return false
@@ -180,49 +198,34 @@ func (e *rdfsEngine) applyRules() []term.Triple {
 		pk := term.TermKey(t.Predicate)
 
 		// rdfs2: ?p rdfs:domain ?C, ?s ?p ?o → ?s rdf:type ?C
-		if domains, ok := e.domains[pk]; ok {
-			for _, c := range domains {
-				if e.ded.addNew(t.Subject, rdfType, c) {
-					newTriples = append(newTriples, term.Triple{Subject: t.Subject, Predicate: rdfType, Object: c})
-				}
-			}
+		for _, c := range e.domains[pk] {
+			emit(t.Subject, rdfType, c)
 		}
 
 		// rdfs3: ?p rdfs:range ?C, ?s ?p ?o → ?o rdf:type ?C (only if o is a Subject)
 		if ranges, ok := e.ranges[pk]; ok {
 			if oSubj, ok := t.Object.(term.Subject); ok {
 				for _, c := range ranges {
-					if e.ded.addNew(oSubj, rdfType, c) {
-						newTriples = append(newTriples, term.Triple{Subject: oSubj, Predicate: rdfType, Object: c})
-					}
+					emit(oSubj, rdfType, c)
 				}
 			}
 		}
 
 		// rdfs7: ?p rdfs:subPropertyOf ?q, ?s ?p ?o → ?s ?q ?o
-		if superProps, ok := e.subPropOf[pk]; ok {
-			for _, q := range superProps {
-				if e.ded.addNew(t.Subject, q, t.Object) {
-					newTriples = append(newTriples, term.Triple{Subject: t.Subject, Predicate: q, Object: t.Object})
-				}
-			}
+		for _, q := range e.subPropOf[pk] {
+			emit(t.Subject, q, t.Object)
 		}
 
 		// rdfs9: ?s rdf:type ?C1, ?C1 rdfs:subClassOf ?C2 → ?s rdf:type ?C2
 		// C1 is keyed directly, so an anonymous class expression is looked up
 		// like a named one. A literal simply never matches an index entry.
 		if pk == term.TermKey(rdfType) {
-			c1k := term.TermKey(t.Object)
-			if superClasses, ok := e.subClassOf[c1k]; ok {
-				for _, c2 := range superClasses {
-					if e.ded.addNew(t.Subject, rdfType, c2) {
-						newTriples = append(newTriples, term.Triple{Subject: t.Subject, Predicate: rdfType, Object: c2})
-					}
-				}
+			for _, c2 := range e.subClassOf[term.TermKey(t.Object)] {
+				emit(t.Subject, rdfType, c2)
 			}
 		}
 
-		return true
+		return !e.stop.halted()
 	})
 
 	return newTriples
