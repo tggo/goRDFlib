@@ -18,15 +18,29 @@ import (
 // and updates sent via the W3C SPARQL 1.1 Protocol.
 //
 // All methods are safe for concurrent use.
+//
+// It implements store.ContextBinder: BindContext returns a view whose HTTP
+// requests are made with the given context, so they carry its deadline and
+// cancellation, and whatever a tracing http.RoundTripper reads from it. The
+// SPARQL engine binds its evaluation context this way. Without a bound
+// context, requests use context.Background and WithTimeout's limit.
 type SPARQLStore struct {
 	queryURL  string
 	updateURL string
 	client    *http.Client
 
-	// Local namespace cache (no standard SPARQL way to query prefixes).
-	nsMu     sync.RWMutex
-	nsPrefix map[string]term.URIRef // prefix → namespace
-	nsURI    map[string]string      // namespace → prefix
+	// ctx is the context requests are made with; nil means Background.
+	ctx context.Context
+
+	// ns is the local namespace cache (there is no standard SPARQL way to
+	// query prefixes). It is shared with every view BindContext returns.
+	ns *namespaces
+}
+
+type namespaces struct {
+	mu     sync.RWMutex
+	prefix map[string]term.URIRef // prefix → namespace
+	uri    map[string]string      // namespace → prefix
 }
 
 // Option configures a SPARQLStore.
@@ -53,13 +67,31 @@ func New(queryURL string, opts ...Option) *SPARQLStore {
 	s := &SPARQLStore{
 		queryURL: queryURL,
 		client:   &http.Client{Timeout: 30 * time.Second},
-		nsPrefix: make(map[string]term.URIRef),
-		nsURI:    make(map[string]string),
+		ns: &namespaces{
+			prefix: make(map[string]term.URIRef),
+			uri:    make(map[string]string),
+		},
 	}
 	for _, o := range opts {
 		o(s)
 	}
 	return s
+}
+
+// BindContext returns a view of the store whose requests are made with ctx. The
+// view shares the endpoint, HTTP client and namespace cache with s.
+func (s *SPARQLStore) BindContext(ctx context.Context) store.Store {
+	v := *s
+	v.ctx = ctx
+	return &v
+}
+
+// requestContext is the context an HTTP request is made with.
+func (s *SPARQLStore) requestContext() context.Context {
+	if s.ctx == nil {
+		return context.Background()
+	}
+	return s.ctx
 }
 
 // ContextAware reports true — remote SPARQL stores typically support named graphs.
@@ -76,7 +108,7 @@ func (s *SPARQLStore) Add(t term.Triple, ctx term.Term) {
 	stmt := "INSERT DATA { " + wrapGraph(ctx, tripleToSPARQL(t)) + " }"
 	// Error intentionally ignored: store.Store interface does not return errors
 	// from write operations. Use execUpdate directly for error handling.
-	_ = s.execUpdate(context.Background(), stmt)
+	_ = s.execUpdate(s.requestContext(), stmt)
 }
 
 // AddN batch-inserts multiple quads, grouping them by context for efficient
@@ -101,7 +133,7 @@ func (s *SPARQLStore) AddN(quads []term.Quad) {
 		stmt := "INSERT DATA { " + wrapGraph(qs[0].Graph, sb.String()) + " }"
 		// Error intentionally ignored: store.Store interface does not return errors
 		// from write operations. Use execUpdate directly for error handling.
-		_ = s.execUpdate(context.Background(), stmt)
+		_ = s.execUpdate(s.requestContext(), stmt)
 	}
 }
 
@@ -114,7 +146,7 @@ func (s *SPARQLStore) Remove(pattern term.TriplePattern, ctx term.Term) {
 	stmt := "DELETE WHERE { " + wrapGraph(ctx, sp) + " }"
 	// Error intentionally ignored: store.Store interface does not return errors
 	// from write operations. Use execUpdate directly for error handling.
-	_ = s.execUpdate(context.Background(), stmt)
+	_ = s.execUpdate(s.requestContext(), stmt)
 }
 
 // Set atomically replaces triples matching (s, p, *) with the new triple.
@@ -128,7 +160,7 @@ func (s *SPARQLStore) Set(t term.Triple, ctx term.Term) {
 	ins := "INSERT DATA { " + wrapGraph(ctx, tripleToSPARQL(t)) + " }"
 	// Error intentionally ignored: store.Store interface does not return errors
 	// from write operations. Use execUpdate directly for error handling.
-	_ = s.execUpdate(context.Background(), del+" ;\n"+ins)
+	_ = s.execUpdate(s.requestContext(), del+" ;\n"+ins)
 }
 
 // Triples returns an iterator over matching triples.
@@ -147,7 +179,7 @@ func (s *SPARQLStore) Triples(pattern term.TriplePattern, ctx term.Term) store.T
 		body := fmt.Sprintf("%s %s %s .", sv, pv, ov)
 		query := "SELECT ?s ?p ?o WHERE { " + wrapGraph(ctx, body) + " }"
 
-		result, err := s.execQuery(context.Background(), query)
+		result, err := s.execQuery(s.requestContext(), query)
 		if err != nil {
 			return
 		}
@@ -170,7 +202,7 @@ func (s *SPARQLStore) Triples(pattern term.TriplePattern, ctx term.Term) store.T
 func (s *SPARQLStore) Len(ctx term.Term) int {
 	body := "?s ?p ?o ."
 	query := "SELECT (COUNT(*) AS ?c) WHERE { " + wrapGraph(ctx, body) + " }"
-	result, err := s.execQuery(context.Background(), query)
+	result, err := s.execQuery(s.requestContext(), query)
 	if err != nil || len(result.Bindings) == 0 {
 		return 0
 	}
@@ -196,7 +228,7 @@ func (s *SPARQLStore) Contexts(triple *term.Triple) store.TermIterator {
 			body = body[:len(body)-2] // trim " ."
 		}
 		query := "SELECT DISTINCT ?g WHERE { GRAPH ?g { " + body + " } }"
-		result, err := s.execQuery(context.Background(), query)
+		result, err := s.execQuery(s.requestContext(), query)
 		if err != nil {
 			return
 		}
@@ -212,34 +244,34 @@ func (s *SPARQLStore) Contexts(triple *term.Triple) store.TermIterator {
 
 // Bind associates a prefix with a namespace (local cache only).
 func (s *SPARQLStore) Bind(prefix string, namespace term.URIRef) {
-	s.nsMu.Lock()
-	defer s.nsMu.Unlock()
-	s.nsPrefix[prefix] = namespace
-	s.nsURI[namespace.Value()] = prefix
+	s.ns.mu.Lock()
+	defer s.ns.mu.Unlock()
+	s.ns.prefix[prefix] = namespace
+	s.ns.uri[namespace.Value()] = prefix
 }
 
 // Namespace returns the namespace URI for a prefix.
 func (s *SPARQLStore) Namespace(prefix string) (term.URIRef, bool) {
-	s.nsMu.RLock()
-	defer s.nsMu.RUnlock()
-	ns, ok := s.nsPrefix[prefix]
+	s.ns.mu.RLock()
+	defer s.ns.mu.RUnlock()
+	ns, ok := s.ns.prefix[prefix]
 	return ns, ok
 }
 
 // Prefix returns the prefix for a namespace URI.
 func (s *SPARQLStore) Prefix(namespace term.URIRef) (string, bool) {
-	s.nsMu.RLock()
-	defer s.nsMu.RUnlock()
-	p, ok := s.nsURI[namespace.Value()]
+	s.ns.mu.RLock()
+	defer s.ns.mu.RUnlock()
+	p, ok := s.ns.uri[namespace.Value()]
 	return p, ok
 }
 
 // Namespaces returns an iterator over all namespace bindings.
 func (s *SPARQLStore) Namespaces() store.NamespaceIterator {
 	return func(yield func(string, term.URIRef) bool) {
-		s.nsMu.RLock()
-		defer s.nsMu.RUnlock()
-		for prefix, ns := range s.nsPrefix {
+		s.ns.mu.RLock()
+		defer s.ns.mu.RUnlock()
+		for prefix, ns := range s.ns.prefix {
 			if !yield(prefix, ns) {
 				return
 			}

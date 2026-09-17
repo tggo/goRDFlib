@@ -1,10 +1,12 @@
 package shacl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/tggo/goRDFlib/provenance"
+	"github.com/tggo/goRDFlib/sparql"
 )
 
 // SHACL Advanced Features (SHACL-AF) support.
@@ -112,7 +114,13 @@ func newConfig(opts []Option) *config {
 
 // report hands err to the caller's error handler, if any. Used on the paths
 // that cannot return an error, so an AF problem is visible rather than silent.
+//
+// A query stopped by its context is not reported: it says nothing about the
+// shapes, and the run that was stopped returns ErrCancelled itself.
 func (c *config) report(err error) {
+	if errors.Is(err, sparql.ErrQueryCancelled) || errors.Is(err, ErrCancelled) {
+		return
+	}
 	if err != nil && c.errorHandler != nil {
 		c.errorHandler(err)
 	}
@@ -182,11 +190,23 @@ func WithErrorHandler(h func(error)) Option {
 // rules by name is the opt-in. It is not safe to call concurrently with other
 // use of dataGraph.
 func ApplyRules(dataGraph, shapesGraph *Graph, opts ...Option) (int, error) {
+	return ApplyRulesContext(context.Background(), dataGraph, shapesGraph, opts...)
+}
+
+// ApplyRulesContext is ApplyRules with a context. The rules' queries run with
+// ctx, and the context is checked before every rule and focus node. A stopped
+// run returns the triples added so far with an error matching ErrCancelled and
+// ctx.Err(); those triples stay in dataGraph.
+func ApplyRulesContext(goctx context.Context, dataGraph, shapesGraph *Graph, opts ...Option) (int, error) {
+	if err := buildIndexes(goctx, dataGraph, shapesGraph); err != nil {
+		return 0, err
+	}
 	c := newConfig(opts)
 	c.advanced = true
 	ctx, err := newAFContext(dataGraph, shapesGraph, c)
 	if err != nil {
 		return 0, err
 	}
+	ctx.ctx = goctx
 	return ctx.applyRules()
 }

@@ -91,6 +91,9 @@ func (e *owlrlEngine) applyTransitiveRules(allTriples []ruleTriple, emit emitFun
 
 	for _, pe := range propMap {
 		for _, t := range allTriples {
+			if e.stop.halted() {
+				return
+			}
 			if term.TermKey(t.p) != term.TermKey(pe.pred) {
 				continue
 			}

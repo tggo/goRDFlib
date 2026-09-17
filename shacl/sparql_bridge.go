@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"context"
 	"sort"
 	"strings"
 
@@ -43,11 +44,12 @@ func addWellKnownPrefixes(query string) string {
 	return sb.String()
 }
 
-// executeSPARQL runs a SPARQL SELECT query against the underlying graph.Graph,
+// executeSPARQL runs a SPARQL SELECT query against the underlying graph.Graph
+// with ctx, which reaches its store and stops the query (see cancel.go),
 // returning result bindings converted to shacl Terms.
 // funcs binds SHACL functions declared by the shapes graph for the duration of
 // this query; it is nil unless SHACL-AF is enabled.
-func executeSPARQL(g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.Function) ([]map[string]Term, error) {
+func executeSPARQL(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.ContextFunction) ([]map[string]Term, error) {
 	query = addWellKnownPrefixes(query)
 	query = fixSPARQLSyntax(query)
 	pq, err := sparql.Parse(query)
@@ -57,8 +59,8 @@ func executeSPARQL(g *Graph, query string, initBindings map[string]term.Term, na
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
-	pq.BindFunctions(funcs)
-	result, err := sparql.EvalQuery(g.g, pq, initBindings)
+	pq.BindContextFunctions(funcs)
+	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +109,7 @@ func fixSPARQLSyntax(query string) string {
 
 // executeSPARQLAsk runs a SPARQL ASK query against the underlying graph.Graph.
 // funcs carries SHACL functions as in executeSPARQL.
-func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.Function) (bool, error) {
+func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.ContextFunction) (bool, error) {
 	query = addWellKnownPrefixes(query)
 	query = fixSPARQLSyntax(query)
 	pq, err := sparql.Parse(query)
@@ -117,8 +119,8 @@ func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term,
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
-	pq.BindFunctions(funcs)
-	result, err := sparql.EvalQuery(g.g, pq, initBindings)
+	pq.BindContextFunctions(funcs)
+	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
 	if err != nil {
 		return false, err
 	}
@@ -130,15 +132,15 @@ func executeSPARQLAsk(g *Graph, query string, initBindings map[string]term.Term,
 //
 // It is used for SHACL-AF's sh:construct rules, where the constructed triples
 // are added to the data graph rather than returned to a caller.
-func executeSPARQLConstruct(g *Graph, query string, initBindings map[string]term.Term, funcs map[string]sparql.Function) ([]Triple, error) {
+func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, funcs map[string]sparql.ContextFunction) ([]Triple, error) {
 	query = addWellKnownPrefixes(query)
 	query = fixSPARQLSyntax(query)
 	pq, err := sparql.Parse(query)
 	if err != nil {
 		return nil, err
 	}
-	pq.BindFunctions(funcs)
-	result, err := sparql.EvalQuery(g.g, pq, initBindings)
+	pq.BindContextFunctions(funcs)
+	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
 	if err != nil {
 		return nil, err
 	}

@@ -1,5 +1,7 @@
 package shacl
 
+import "context"
+
 // afContext holds everything the SHACL-AF layer needs while it runs: the two
 // graphs, the caller's options, and the functions declared by the shapes graph.
 //
@@ -9,6 +11,11 @@ type afContext struct {
 	shapesGraph *Graph
 	cfg         *config
 	funcs       map[string]*shaclFunction
+
+	// ctx is the context rules run with; nil means context.Background. SHACL
+	// functions do not use it: they run with the context of the query that
+	// calls them.
+	ctx context.Context
 
 	// afTargets holds the sh:target definitions of the shapes graph, resolved
 	// once and keyed by shape. Shapes are re-parsed on every rule round, so
@@ -61,5 +68,6 @@ func (ctx *afContext) evalCtx() *evalContext {
 		classInstances: buildClassIndex(ctx.dataGraph),
 		cfg:            ctx.cfg,
 		af:             ctx,
+		guard:          &recursionGuard{ctx: ctx.ctx},
 	}
 }

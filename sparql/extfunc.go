@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -57,14 +58,39 @@ var ErrInvalidFunctionIRI = errors.New("sparql: invalid extension function IRI")
 // from several goroutines for one query.
 type Function func(args []rdflibgo.Term) (rdflibgo.Term, error)
 
+// ContextFunction is a Function that also receives the context the query is
+// evaluated with: the ctx passed to QueryContext or EvalQueryContext, and
+// context.Background for Query and EvalQuery. Use it for a function that calls
+// out (a store, a service, a nested query) and should carry the caller's
+// tracing span or deadline, or stop when the query is cancelled.
+//
+// Errors mean the same as for Function. A function that gives up because ctx
+// is done may return any error; the query then reports the cancellation.
+type ContextFunction func(ctx context.Context, args []rdflibgo.Term) (rdflibgo.Term, error)
+
 var (
 	extFuncMu sync.RWMutex
-	extFuncs  = make(map[string]Function)
+	extFuncs  = make(map[string]ContextFunction)
 )
+
+// withoutContext adapts a Function to the registry, which holds ContextFunction.
+func withoutContext(fn Function) ContextFunction {
+	return func(_ context.Context, args []rdflibgo.Term) (rdflibgo.Term, error) { return fn(args) }
+}
 
 // RegisterFunction binds fn to iri. It returns ErrFunctionRegistered if the IRI
 // is already bound and ErrInvalidFunctionIRI if the IRI is empty or relative.
 func RegisterFunction(iri string, fn Function) error {
+	if fn == nil {
+		return RegisterContextFunction(iri, nil)
+	}
+	return RegisterContextFunction(iri, withoutContext(fn))
+}
+
+// RegisterContextFunction is RegisterFunction for a function that receives the
+// query's context. Function and ContextFunction share one registry: an IRI is
+// bound to at most one function of either kind.
+func RegisterContextFunction(iri string, fn ContextFunction) error {
 	if err := validateFunctionIRI(iri); err != nil {
 		return err
 	}
@@ -91,6 +117,22 @@ func MustRegisterFunction(iri string, fn Function) {
 // ReplaceFunction binds fn to iri whether or not the IRI is already bound. It
 // reports whether an existing binding was overwritten.
 func ReplaceFunction(iri string, fn Function) (replaced bool, err error) {
+	if fn == nil {
+		return ReplaceContextFunction(iri, nil)
+	}
+	return ReplaceContextFunction(iri, withoutContext(fn))
+}
+
+// MustRegisterContextFunction is RegisterContextFunction, panicking on error.
+func MustRegisterContextFunction(iri string, fn ContextFunction) {
+	if err := RegisterContextFunction(iri, fn); err != nil {
+		panic(err)
+	}
+}
+
+// ReplaceContextFunction is ReplaceFunction for a function that receives the
+// query's context.
+func ReplaceContextFunction(iri string, fn ContextFunction) (replaced bool, err error) {
 	if err := validateFunctionIRI(iri); err != nil {
 		return false, err
 	}
@@ -114,8 +156,19 @@ func UnregisterFunction(iri string) bool {
 	return existed
 }
 
-// LookupFunction returns the function bound to iri, if any.
+// LookupFunction returns the function bound to iri, if any. A function
+// registered with a context is returned calling it with context.Background.
 func LookupFunction(iri string) (Function, bool) {
+	fn, ok := LookupContextFunction(iri)
+	if !ok {
+		return nil, false
+	}
+	return func(args []rdflibgo.Term) (rdflibgo.Term, error) { return fn(context.Background(), args) }, true
+}
+
+// LookupContextFunction returns the function bound to iri, if any, whichever
+// way it was registered.
+func LookupContextFunction(iri string) (ContextFunction, bool) {
 	extFuncMu.RLock()
 	defer extFuncMu.RUnlock()
 	fn, ok := extFuncs[iri]
@@ -158,13 +211,13 @@ func validateFunctionIRI(iri string) error {
 // registered globally for the same IRI, so a caller-supplied vocabulary never
 // silently picks up a process-wide definition.
 func evalExtensionFunc(ec *evalCtx, e *FuncExpr, bindings map[string]rdflibgo.Term, prefixes map[string]string, g *rdflibgo.Graph, namedGraphs map[string]*rdflibgo.Graph) (rdflibgo.Term, bool) {
-	fn := e.Fn
-	if fn == nil {
+	fn := e.FnCtx
+	if fn == nil && e.Fn == nil {
 		if e.IRI == "" {
 			return nil, false
 		}
 		var ok bool
-		fn, ok = LookupFunction(e.IRI)
+		fn, ok = LookupContextFunction(e.IRI)
 		if !ok {
 			return nil, false
 		}
@@ -173,7 +226,13 @@ func evalExtensionFunc(ec *evalCtx, e *FuncExpr, bindings map[string]rdflibgo.Te
 	for i, a := range e.Args {
 		args[i] = evalExprWithGraph(ec, a, bindings, prefixes, g, namedGraphs)
 	}
-	result, err := fn(args)
+	var result rdflibgo.Term
+	var err error
+	if fn != nil {
+		result, err = fn(ec.context(), args)
+	} else {
+		result, err = e.Fn(args)
+	}
 	if err != nil {
 		// SPARQL expression error → unbound. See Function's documentation.
 		return nil, true

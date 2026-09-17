@@ -120,6 +120,11 @@ func Run(t *testing.T, cfg Config) {
 	} else {
 		t.Log("backend does not implement store.ReachabilityStore; section skipped")
 	}
+	if _, ok := probe.(store.ContextBinder); ok {
+		cfg.run(t, "ContextBinder", func(t *testing.T) { testContextBinder(t, cfg) })
+	} else {
+		t.Log("backend does not implement store.ContextBinder; section skipped")
+	}
 
 	if !cfg.SkipConcurrency {
 		cfg.run(t, "Concurrency", func(t *testing.T) { testConcurrency(t, cfg) })

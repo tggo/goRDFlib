@@ -116,6 +116,39 @@ The `store.Store` interface (13 methods) has four implementations:
 - `TriplesWithLimit` with `limit <= 0` means **no limit**. SQLite spells that as
   a negative LIMIT; passing 0 through returned nothing, which is the opposite.
 
+### context.Context reaching stores (issue #35, `store.ContextBinder`)
+- `store.Store` takes no `context.Context`, and adding one would break every
+  backend including the satellites. A store opts in with
+  `BindContext(ctx) Store`, a **view** over the same data. Engines bind, they
+  never change the Store interface.
+- The view must keep the receiver's optional interfaces (Queryable, Snapshot,
+  Cardinality, Reachability); engines type-assert on the store they get, so a
+  view that drops one silently loses the pushdown. storetest checks it.
+- Queries bind once at entry (`evalCtx.bindQuery`, before the snapshot
+  redirect). Updates bind **where a graph is taken from the Dataset**
+  (`ec.bind`, `getOrCreateGraph`), because operations create and drop entries
+  in `Dataset.NamedGraphs`: a bound copy of the map would lose them, and a
+  bound view stored in the caller's map would outlive the request (and break
+  `endpoint`'s `g.Store() == st` commit check). Guard:
+  `TestUpdateContextReachesStore`.
+- A bound store that gives up on a read looks like "no match" (Store has no
+  errors). So a query that used one polls once more before returning, SHACL
+  checks after every focus node and at the end, and a stopped run returns an
+  error, never a partial result. Prepared must not cache targets selected
+  while the context was done.
+- A query stopped by its context is never reported through `WithErrorHandler`
+  (`config.report` filters it): it is not a malformed target or rule.
+- SHACL carries the context on `recursionGuard.ctx`, because the guard is the
+  one object every derived evalContext/nodeExprContext already shares. SHACL
+  functions do not use the afContext's context: they are `ContextFunction`s
+  and run with the context of the query that calls them.
+- Extension functions: `Function` stays; `ContextFunction` sits beside it in
+  one registry. `FuncExpr.Fn`/`FnCtx`: at most one is set. Do not wrap `Fn` in
+  a closure per call (it allocates per row).
+- Reasoning: an OWL RL rule pass can be long (prp-trp is quadratic in a chain),
+  so `emit` ticks the stopper. A pass cut short adds nothing: the dedup set
+  already counts its unemitted triples as known.
+
 ### store.ReachabilityStore + paths pushdown
 - `Reachable(q) ([]term.Term, error)` returns every node reachable in **>= 1**
   steps. Start is in the result only if a cycle leads back to it. Literals count

@@ -119,6 +119,9 @@ g.Add(alice, name, rdf.NewLiteral("Alice"))
 - Content negotiation: `application/sparql-results+xml`, `application/sparql-results+json`
 - Named graph support via `GRAPH` clause wrapping
 - Options: `WithUpdate()`, `WithHTTPClient()`, `WithTimeout()`
+- Implements `store.ContextBinder`: under `sparql.QueryContext` and the other
+  `*Context` entry points, its HTTP requests carry the caller's context
+  (deadline, cancellation, tracing span) — see [Contexts](#contexts-tracing-deadlines-cancellation)
 - Built-in test server (`sparqlstore.Server`) for integration testing
 - Registered as `"sparql"` store type via the plugin system
 
@@ -271,6 +274,12 @@ without them:
   returns an error — so declining is always safe, and a backend may decline per
   query when a limit would be exceeded.
 
+**A context on every call.** `store.Store` methods take no `context.Context`.
+A backend that wants one (for tracing, deadlines or credentials) implements
+`store.ContextBinder`, whose `BindContext(ctx)` returns a view of the same data
+with `ctx` attached. The `*Context` entry points bind their context this way; see
+[Contexts](#contexts-tracing-deadlines-cancellation).
+
 **Registration.** `plugin.RegisterStore("mongo", factory)` in the backend's
 `init()` makes it available by name; the consumer blank-imports the package.
 
@@ -417,7 +426,41 @@ unbound), not a query failure. See `examples/custom_function_example`.
 The registry is global and safe for concurrent use:
 `RegisterFunction` (error on duplicate), `MustRegisterFunction` (panic on
 duplicate), `ReplaceFunction`, `UnregisterFunction`, `LookupFunction`,
-`RegisteredFunctions`.
+`RegisteredFunctions`. A function that calls out and should carry the query's
+context is a `sparql.ContextFunction`, registered with `RegisterContextFunction`
+(or bound per query with `ParsedQuery.BindContextFunctions`); it receives the
+`ctx` passed to `QueryContext`.
+
+#### Contexts: tracing, deadlines, cancellation
+
+Every long-running entry point has a `*Context` variant:
+
+| Package | Functions |
+|---------|-----------|
+| `sparql` | `QueryContext`, `EvalQueryContext`, `UpdateContext`, `EvalUpdateContext` |
+| `paths` | `EvalContext` |
+| `shacl` | `ValidateContext`, `PrepareContext`, `Prepared.ValidateContext`, `ApplyRulesContext` |
+| `reasoning` | `ExpandContext`, `ExpandCheckContext` |
+
+The context does two things. It **stops the work** once it is done: the call
+returns an error matching both the package's sentinel (`sparql.ErrQueryCancelled`,
+`shacl.ErrCancelled`, `reasoning.ErrCancelled`) and `ctx.Err()`, never a partial
+result that looks complete. And it **reaches the stores**: a backend that
+implements `store.ContextBinder` gets every read and write made on the caller's
+behalf through a view bound to `ctx`. That includes the queries inside SHACL
+constraints, targets, rules and SHACL functions, and extension functions
+registered as `ContextFunction`. So an OpenTelemetry-instrumented store sees the
+caller's span:
+
+```go
+ctx, span := tracer.Start(ctx, "validate order")
+defer span.End()
+report, err := shacl.ValidateContext(ctx, data, shapes)
+```
+
+`sparqlstore` implements `ContextBinder`, so its HTTP requests carry the context.
+The Graph Store Protocol handlers in `endpoint` do not bind the request context
+yet; its SPARQL query and update handlers do.
 
 ### SPARQL 1.2 Extensions
 

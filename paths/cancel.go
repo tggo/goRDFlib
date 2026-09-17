@@ -65,9 +65,12 @@ func (s *stopper) poll() bool {
 // they may be a prefix of it.
 //
 // A transitive repetition that is pushed down to a store.ReachabilityStore
-// runs as one store call, which has no context and is not interrupted; the
-// pairs it returns are still emitted with cancellation checks.
+// runs as one store call, which is not interrupted; the pairs it returns are
+// still emitted with cancellation checks. A store that implements
+// store.ContextBinder is bound to ctx, so that call and every other lookup
+// carry it.
 func EvalContext(ctx context.Context, p Path, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
+	g = g.BindContext(ctx)
 	done := ctx.Done()
 	if done == nil {
 		return p.Eval(g, subj, obj)

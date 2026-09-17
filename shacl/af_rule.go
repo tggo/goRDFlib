@@ -65,8 +65,16 @@ func (ctx *afContext) applyRules() (int, error) {
 
 	total := 0
 	for _, group := range groups {
+		if serr := stopped(ctx.ctx); serr != nil {
+			return total, serr
+		}
 		added, groupErr := ctx.applyGroup(group)
 		total += added
+		if serr := stopped(ctx.ctx); serr != nil {
+			// A rule whose query was cut short inferred less than it should
+			// have; the run is reported as stopped, not as a malformed rule.
+			return total, serr
+		}
 		if groupErr != nil && err == nil {
 			err = groupErr
 		}
@@ -93,6 +101,9 @@ func (ctx *afContext) applyGroup(group ruleGroup) (int, error) {
 		added := 0
 		var firstErr error
 		for i := range group.rules {
+			if err := stopped(ctx.ctx); err != nil {
+				return total + added, err
+			}
 			n, err := ctx.applyRule(eval, group.shapeID, &group.rules[i])
 			added += n
 			if err != nil && firstErr == nil {
@@ -224,8 +235,11 @@ func (ctx *afContext) applySPARQLRule(rule *afRule, focusNodes []Term) (int, err
 	added := 0
 	var firstErr error
 	for _, fn := range focusNodes {
+		if err := stopped(ctx.ctx); err != nil {
+			return added, err
+		}
 		query, bindings := preBindThis(rule.query, fn)
-		triples, err := executeSPARQLConstruct(ctx.dataGraph, query, bindings, ctx.functionsAtDepth(1))
+		triples, err := executeSPARQLConstruct(orBackground(ctx.ctx), ctx.dataGraph, query, bindings, ctx.functionsAtDepth(1))
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("%w: sh:construct of %s: %w", ErrMalformedRule, rule.node, err)

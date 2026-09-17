@@ -55,7 +55,7 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 		}
 	}
 
-	rows, err := executeSPARQL(ctx.dataGraph, query, initBindings, namedGraphs, ctx.sparqlFuncs())
+	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, namedGraphs, ctx.sparqlFuncs())
 	if err != nil {
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		r.SourceConstraint = c.Node

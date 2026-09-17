@@ -12,14 +12,15 @@ import (
 //
 // Not safe for concurrent use.
 func RDFSClosure(g *graph.Graph) int {
-	e := newRDFSEngine(g)
+	e := newRDFSEngine(g, nil)
 	return e.run()
 }
 
 // rdfsEngine holds schema indexes and dedup state for RDFS closure computation.
 type rdfsEngine struct {
-	g   *graph.Graph
-	ded *dedupSet
+	g    *graph.Graph
+	ded  *dedupSet
+	stop *stopper // nil never stops
 
 	// Schema indexes.
 	//
@@ -35,10 +36,11 @@ type rdfsEngine struct {
 	subPropOf  map[string][]term.URIRef  // property key → transitive superproperties
 }
 
-func newRDFSEngine(g *graph.Graph) *rdfsEngine {
+func newRDFSEngine(g *graph.Graph, stop *stopper) *rdfsEngine {
 	return &rdfsEngine{
-		g:   g,
-		ded: newDedupSet(g.Len()),
+		g:    g,
+		ded:  newDedupSet(g.Len()),
+		stop: stop,
 	}
 }
 
@@ -60,7 +62,9 @@ func (e *rdfsEngine) run() int {
 	// Fixed-point loop
 	for {
 		newTriples := e.applyRules()
-		if len(newTriples) == 0 {
+		// A pass cut short found only some of its triples, and the dedup set
+		// already counts the rest as known: stop before adding any of them.
+		if e.stop.poll() || len(newTriples) == 0 {
 			break
 		}
 
@@ -170,6 +174,9 @@ func (e *rdfsEngine) applyRules() []term.Triple {
 	rdfType := namespace.RDF.Type
 
 	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+		if e.stop.tick() {
+			return false
+		}
 		pk := term.TermKey(t.Predicate)
 
 		// rdfs2: ?p rdfs:domain ?C, ?s ?p ?o → ?s rdf:type ?C

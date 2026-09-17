@@ -6,6 +6,7 @@
 package shacl
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -399,6 +400,13 @@ type graphIndexes struct {
 // serialised and the finished set published atomically; a second caller that
 // arrives mid-build waits rather than seeing a half-filled map.
 func (g *Graph) ensureIndexes() *graphIndexes {
+	return g.ensureIndexesContext(nil)
+}
+
+// ensureIndexesContext is ensureIndexes reading the wrapped graph with ctx
+// bound to its store. An index built while ctx became done may be missing
+// triples the store abandoned, so it is returned but not kept.
+func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 	if idx := g.idx.Load(); idx != nil {
 		return idx
 	}
@@ -413,7 +421,7 @@ func (g *Graph) ensureIndexes() *graphIndexes {
 		pos: make(map[string]map[string][]Term),
 		p:   make(map[string][]Triple),
 	}
-	g.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	g.g.BindContext(ctx).Triples(nil, nil, nil)(func(t term.Triple) bool {
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
@@ -437,6 +445,9 @@ func (g *Graph) ensureIndexes() *graphIndexes {
 		return true
 	})
 
+	if ctx != nil && ctx.Err() != nil {
+		return idx
+	}
 	g.idx.Store(idx)
 	return idx
 }

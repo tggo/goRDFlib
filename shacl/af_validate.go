@@ -1,6 +1,10 @@
 package shacl
 
-import "fmt"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
 
 // prepareAdvanced sets up the SHACL-AF layer for a validation run.
 //
@@ -8,7 +12,7 @@ import "fmt"
 // validate — a copy carrying the inferred triples when rules ran, otherwise the
 // caller's graph untouched. Returning the graph rather than mutating in place
 // is what keeps Validate free of side effects on its input.
-func prepareAdvanced(dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *Graph) {
+func prepareAdvanced(goctx context.Context, dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *Graph) {
 	checkEntailment(shapesGraph, cfg)
 	if !cfg.advanced {
 		reportUnavailableFunctions(shapesGraph, cfg)
@@ -20,6 +24,7 @@ func prepareAdvanced(dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *G
 		cfg.report(err)
 		return nil, dataGraph
 	}
+	ctx.ctx = goctx
 	cfg.report(ctx.loadErr)
 
 	if !hasRules(shapesGraph) {
@@ -30,7 +35,8 @@ func prepareAdvanced(dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *G
 	expanded := NewGraph()
 	expanded.Merge(dataGraph)
 	ctx.dataGraph = expanded
-	if _, err := ctx.applyRules(); err != nil {
+	if _, err := ctx.applyRules(); err != nil && !errors.Is(err, ErrCancelled) {
+		// A stop is not a malformed rule; PrepareContext reports it itself.
 		cfg.report(err)
 	}
 	return ctx, expanded

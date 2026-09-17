@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -232,7 +233,7 @@ func (tc dashTestCase) runFunction(t *testing.T, g *Graph) {
 	}
 
 	query := dashPrefixes(g) + "SELECT (" + exprs[0].Value() + " AS ?result) WHERE { }"
-	rows, err := executeSPARQL(g, query, nil, nil, af.functionsAtDepth(1))
+	rows, err := executeSPARQL(context.Background(), g, query, nil, nil, af.functionsAtDepth(1))
 	if err != nil {
 		t.Fatalf("evaluating %q: %v", exprs[0].Value(), err)
 	}

@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"context"
 	"errors"
 
 	"github.com/tggo/goRDFlib/graph"
@@ -32,12 +33,29 @@ func Expand(g *graph.Graph, r Regime) (int, error) {
 // ExpandCheck applies entailment regime(s) and checks for OWL 2 RL inconsistencies.
 // Returns the number of triples added, detected inconsistencies, and any error.
 func ExpandCheck(g *graph.Graph, r Regime) (int, []Inconsistency, error) {
+	return ExpandCheckContext(context.Background(), g, r)
+}
+
+// ExpandCheckContext is ExpandCheck with a context; see ExpandContext. A
+// stopped run returns no inconsistencies, since the consistency checks run on
+// the closed graph.
+func ExpandCheckContext(ctx context.Context, g *graph.Graph, r Regime) (int, []Inconsistency, error) {
 	known := RDFS | OWLRL
 	if r == 0 || r&^known != 0 {
 		return 0, nil, ErrUnknownRegime
 	}
+	stop := newStopper(ctx)
+	if stop.poll() {
+		return 0, nil, stop.failure()
+	}
+	if ctx != nil {
+		g = g.BindContext(ctx)
+	}
 	// RDFS is always applied first (OWL RL builds on RDFS).
-	total := RDFSClosure(g)
+	total := newRDFSEngine(g, stop).run()
+	if err := stop.failure(); err != nil {
+		return total, nil, err
+	}
 	if r&OWLRL == 0 {
 		return total, nil, nil
 	}
@@ -51,14 +69,20 @@ func ExpandCheck(g *graph.Graph, r Regime) (int, []Inconsistency, error) {
 	// introduces fresh terms, so the closure is finite.
 	var incon []Inconsistency
 	for {
-		n, ic := OWLRLClosureCheck(g)
+		n, ic := newOWLRLEngine(g, stop).run()
 		incon = ic
 		total += n
+		if err := stop.failure(); err != nil {
+			return total, nil, err
+		}
 		if n == 0 {
 			break
 		}
-		m := RDFSClosure(g)
+		m := newRDFSEngine(g, stop).run()
 		total += m
+		if err := stop.failure(); err != nil {
+			return total, nil, err
+		}
 		if m == 0 {
 			break
 		}

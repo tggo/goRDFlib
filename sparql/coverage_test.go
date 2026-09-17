@@ -1955,7 +1955,7 @@ func TestGraphForQuadSolutionVariableBound(t *testing.T) {
 	sol := map[string]rdflibgo.Term{
 		"g": ex("http://example.org/named"),
 	}
-	result := graphForQuadSolution(ds, "?g", sol)
+	result := graphForQuadSolution(nil, ds, "?g", sol)
 	if result == nil {
 		t.Fatal("expected non-nil graph")
 	}
@@ -1966,7 +1966,7 @@ func TestGraphForQuadSolutionVariableNotBound(t *testing.T) {
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	sol := map[string]rdflibgo.Term{}
 	// Update §3.1.3: the quad is skipped, never redirected to the default graph.
-	result := graphForQuadSolution(ds, "?g", sol)
+	result := graphForQuadSolution(nil, ds, "?g", sol)
 	if result != nil {
 		t.Error("expected nil (skip quad) when variable not bound")
 	}
@@ -1978,7 +1978,7 @@ func TestGraphForQuadSolutionLiteral(t *testing.T) {
 	sol := map[string]rdflibgo.Term{
 		"g": rdflibgo.NewLiteral("not-a-uri"),
 	}
-	result := graphForQuadSolution(ds, "?g", sol)
+	result := graphForQuadSolution(nil, ds, "?g", sol)
 	if result != nil {
 		t.Error("expected nil (skip quad) when variable bound to literal")
 	}
@@ -1990,7 +1990,7 @@ func TestResolveModifyGraphWithAndVariable(t *testing.T) {
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 
 	// Test WITH clause
-	result := resolveModifyGraph(ds, "", "http://example.org/g1", nil)
+	result := resolveModifyGraph(nil, ds, "", "http://example.org/g1", nil)
 	if result == g {
 		t.Error("expected a new graph, not default")
 	}
@@ -1999,7 +1999,7 @@ func TestResolveModifyGraphWithAndVariable(t *testing.T) {
 	sol := map[string]rdflibgo.Term{
 		"g": ex("http://example.org/g2"),
 	}
-	result = resolveModifyGraph(ds, "?g", "", sol)
+	result = resolveModifyGraph(nil, ds, "?g", "", sol)
 	if result == g {
 		t.Error("expected a new graph for variable")
 	}
@@ -2008,7 +2008,7 @@ func TestResolveModifyGraphWithAndVariable(t *testing.T) {
 	sol2 := map[string]rdflibgo.Term{
 		"g": rdflibgo.NewLiteral("not-a-uri"),
 	}
-	result = resolveModifyGraph(ds, "?g", "", sol2)
+	result = resolveModifyGraph(nil, ds, "?g", "", sol2)
 	if result != nil {
 		t.Error("expected nil (skip quad) for non-URI variable")
 	}
@@ -3623,7 +3623,7 @@ func TestTransferGraphsSourceNotFound(t *testing.T) {
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{},
 	}
-	err := transferGraphs(ds, "http://nonexistent", "DEFAULT", false, false)
+	err := transferGraphs(nil, ds, "http://nonexistent", "DEFAULT", false, false)
 	if err == nil {
 		t.Error("expected error for source not found")
 	}
@@ -3634,7 +3634,7 @@ func TestTransferGraphsSourceNotFoundSilent(t *testing.T) {
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{},
 	}
-	err := transferGraphs(ds, "http://nonexistent", "DEFAULT", false, true)
+	err := transferGraphs(nil, ds, "http://nonexistent", "DEFAULT", false, true)
 	if err != nil {
 		t.Errorf("expected no error for silent, got %v", err)
 	}
@@ -3645,7 +3645,7 @@ func TestGetOrCreateGraphNew(t *testing.T) {
 		Default:     graph.NewGraph(),
 		NamedGraphs: nil, // nil map
 	}
-	g := getOrCreateGraph(ds, "http://new")
+	g := getOrCreateGraph(nil, ds, "http://new")
 	if g == nil {
 		t.Fatal("expected non-nil graph")
 	}
@@ -5415,7 +5415,7 @@ func TestInsertDataNonSubjectSkip(t *testing.T) {
 			},
 		}},
 	}
-	err := evalInsertData(ds, op, nil)
+	err := evalInsertData(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5427,7 +5427,7 @@ func TestInsertDataNonSubjectSkip(t *testing.T) {
 			},
 		}},
 	}
-	err = evalInsertData(ds, op2, nil)
+	err = evalInsertData(nil, ds, op2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5439,7 +5439,7 @@ func TestInsertDataNonSubjectSkip(t *testing.T) {
 			},
 		}},
 	}
-	err = evalInsertData(ds, op3, nil)
+	err = evalInsertData(nil, ds, op3, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5456,7 +5456,7 @@ func TestDeleteDataNonSubjectSkip(t *testing.T) {
 			},
 		}},
 	}
-	err := evalDeleteData(ds, op, nil)
+	err := evalDeleteData(nil, ds, op, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5468,7 +5468,7 @@ func TestDeleteDataNonSubjectSkip(t *testing.T) {
 			},
 		}},
 	}
-	err = evalDeleteData(ds, op2, nil)
+	err = evalDeleteData(nil, ds, op2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5480,7 +5480,7 @@ func TestDeleteDataNonSubjectSkip(t *testing.T) {
 			},
 		}},
 	}
-	err = evalDeleteData(ds, op3, nil)
+	err = evalDeleteData(nil, ds, op3, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

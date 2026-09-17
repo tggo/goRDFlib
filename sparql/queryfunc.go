@@ -34,16 +34,48 @@ func (q *ParsedQuery) BindFunctions(funcs map[string]Function) int {
 	if q == nil || len(funcs) == 0 {
 		return 0
 	}
-	b := &funcBinder{funcs: funcs, seen: make(map[*ParsedQuery]bool)}
+	b := &funcBinder{
+		bind: func(x *FuncExpr) bool {
+			fn, ok := funcs[x.IRI]
+			if ok {
+				x.Fn, x.FnCtx = fn, nil
+			}
+			return ok
+		},
+		seen: make(map[*ParsedQuery]bool),
+	}
 	b.query(q)
 	return b.bound
 }
 
-// funcBinder walks a query's expression trees. seen guards against a cyclic
-// sub-query graph, which the parser does not build but a caller could assemble
-// by hand; without it such a value would recurse forever.
+// BindContextFunctions is BindFunctions for functions that receive the
+// evaluation's context (see ContextFunction): the ctx passed to
+// EvalQueryContext, or context.Background for EvalQuery. Binding the same IRI
+// with both methods keeps the binding made last.
+func (q *ParsedQuery) BindContextFunctions(funcs map[string]ContextFunction) int {
+	if q == nil || len(funcs) == 0 {
+		return 0
+	}
+	b := &funcBinder{
+		bind: func(x *FuncExpr) bool {
+			fn, ok := funcs[x.IRI]
+			if ok {
+				x.Fn, x.FnCtx = nil, fn
+			}
+			return ok
+		},
+		seen: make(map[*ParsedQuery]bool),
+	}
+	b.query(q)
+	return b.bound
+}
+
+// funcBinder walks a query's expression trees and offers every IRI-named call
+// to bind. seen guards against a cyclic sub-query graph, which the parser does
+// not build but a caller could assemble by hand; without it such a value would
+// recurse forever.
 type funcBinder struct {
-	funcs map[string]Function
+	bind  func(*FuncExpr) bool
 	seen  map[*ParsedQuery]bool
 	bound int
 }
@@ -85,8 +117,7 @@ func (b *funcBinder) expr(e Expr) {
 		if x.IRI == "" {
 			return
 		}
-		if fn, ok := b.funcs[x.IRI]; ok {
-			x.Fn = fn
+		if b.bind(x) {
 			b.bound++
 		}
 	case *ExistsExpr:

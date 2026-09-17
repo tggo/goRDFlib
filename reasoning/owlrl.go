@@ -28,7 +28,7 @@ func OWLRLClosure(g *graph.Graph) int {
 //
 // Not safe for concurrent use.
 func OWLRLClosureCheck(g *graph.Graph) (int, []Inconsistency) {
-	e := newOWLRLEngine(g)
+	e := newOWLRLEngine(g, nil)
 	return e.run()
 }
 
@@ -64,8 +64,9 @@ type negPropAssertion struct {
 
 // owlrlEngine holds schema indexes and dedup state for OWL 2 RL closure.
 type owlrlEngine struct {
-	g   *graph.Graph
-	ded *dedupSet
+	g    *graph.Graph
+	ded  *dedupSet
+	stop *stopper // nil never stops
 
 	// Phase 1: Core property indexes
 	symmetricProps  map[string]struct{}       // owl:SymmetricProperty
@@ -107,10 +108,11 @@ type owlrlEngine struct {
 	inconsistencies []Inconsistency
 }
 
-func newOWLRLEngine(g *graph.Graph) *owlrlEngine {
+func newOWLRLEngine(g *graph.Graph, stop *stopper) *owlrlEngine {
 	return &owlrlEngine{
-		g:   g,
-		ded: newDedupSet(g.Len()),
+		g:    g,
+		ded:  newDedupSet(g.Len()),
+		stop: stop,
 	}
 }
 
@@ -126,6 +128,10 @@ func (e *owlrlEngine) run() (int, []Inconsistency) {
 
 	for {
 		newTriples := e.applyRules()
+		// See rdfsEngine.run: a pass cut short adds nothing.
+		if e.stop.poll() {
+			return totalAdded, nil
+		}
 		if len(newTriples) == 0 {
 			break
 		}
@@ -579,19 +585,34 @@ func (e *owlrlEngine) applyRules() []term.Triple {
 
 	var allTriples []ruleTriple
 	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+		if e.stop.tick() {
+			return false
+		}
 		allTriples = append(allTriples, ruleTriple{t.Subject, t.Predicate, t.Object})
 		return true
 	})
+	if e.stop.poll() {
+		return nil
+	}
 
+	// Every candidate a rule derives passes through emit, so that is where a
+	// long rule (prp-trp over a long chain is quadratic) notices the stop.
+	// Once stopped, emit does nothing and the rule loops run out quickly.
 	emit := func(s term.Subject, p term.URIRef, o term.Term) {
+		if e.stop.tick() {
+			return
+		}
 		if e.ded.addNew(s, p, o) {
 			newTriples = append(newTriples, term.Triple{Subject: s, Predicate: p, Object: o})
 		}
 	}
 
-	e.applyEqualityRules(allTriples, emit)
-	e.applyPropertyRules(allTriples, emit)
-	e.applyClassRules(allTriples, emit)
+	for _, apply := range []func([]ruleTriple, emitFunc){e.applyEqualityRules, e.applyPropertyRules, e.applyClassRules} {
+		apply(allTriples, emit)
+		if e.stop.halted() {
+			return nil
+		}
+	}
 
 	return newTriples
 }

@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -159,7 +160,9 @@ func sortParameters(params []shaclParameter) {
 // nothing, or a node expression produced no nodes. It is passed through only
 // for an optional parameter; for a required one the call yields no result,
 // which is what SPARQL does with an expression error.
-func (fn *shaclFunction) call(ctx *afContext, args []term.Term, depth int) (term.Term, error) {
+// goctx is the context of the query that called the function; the function's
+// own query runs with it.
+func (fn *shaclFunction) call(goctx context.Context, ctx *afContext, args []term.Term, depth int) (term.Term, error) {
 	if depth > maxFunctionDepth {
 		return nil, fmt.Errorf("%w: %s recursed more than %d levels deep; a function whose body calls itself does not terminate",
 			ErrMalformedExpression, fn.iri, maxFunctionDepth)
@@ -181,14 +184,14 @@ func (fn *shaclFunction) call(ctx *afContext, args []term.Term, depth int) (term
 	}
 
 	if fn.isAsk {
-		ok, err := executeSPARQLAsk(ctx.dataGraph, fn.query, bindings, nil, ctx.functionsAtDepth(depth+1))
+		ok, err := executeSPARQLAsk(goctx, ctx.dataGraph, fn.query, bindings, nil, ctx.functionsAtDepth(depth+1))
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", ErrMalformedExpression, fn.iri, err)
 		}
 		return term.NewLiteral(strconv.FormatBool(ok), term.WithDatatype(term.MustURIRef(XSD+"boolean"))), nil
 	}
 
-	rows, err := executeSPARQL(ctx.dataGraph, fn.query, bindings, nil, ctx.functionsAtDepth(depth+1))
+	rows, err := executeSPARQL(goctx, ctx.dataGraph, fn.query, bindings, nil, ctx.functionsAtDepth(depth+1))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrMalformedExpression, fn.iri, err)
 	}
@@ -268,15 +271,15 @@ func firstProjectedVar(query string) string {
 //
 // depth is the nesting level of the query being bound: a function called from
 // inside another function's body must not be able to recurse without bound.
-func (ctx *afContext) functionsAtDepth(depth int) map[string]sparql.Function {
+func (ctx *afContext) functionsAtDepth(depth int) map[string]sparql.ContextFunction {
 	if len(ctx.funcs) == 0 || depth > maxFunctionDepth {
 		return nil
 	}
-	table := make(map[string]sparql.Function, len(ctx.funcs))
+	table := make(map[string]sparql.ContextFunction, len(ctx.funcs))
 	for iri, fn := range ctx.funcs {
 		fn := fn
-		table[iri] = func(args []term.Term) (term.Term, error) {
-			return fn.call(ctx, args, depth)
+		table[iri] = func(goctx context.Context, args []term.Term) (term.Term, error) {
+			return fn.call(goctx, ctx, args, depth)
 		}
 	}
 	return table

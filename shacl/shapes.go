@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"context"
 	"github.com/tggo/goRDFlib/sparql"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -140,6 +141,11 @@ type evalContext struct {
 //
 // Not safe for concurrent use; a validation run is single-goroutine.
 type recursionGuard struct {
+	// ctx is the context the validation runs with (see cancel.go). The guard
+	// carries it because every context derived during a run shares the guard;
+	// nil means context.Background.
+	ctx context.Context
+
 	stack  []guardKey
 	active map[guardKey]struct{} // mirrors stack once it grows past guardScanDepth
 }
@@ -222,7 +228,7 @@ func (ctx *evalContext) report(err error) {
 
 // sparqlFuncs returns the SHACL functions to bind to a query run for this
 // validation, or nil when SHACL-AF is not enabled.
-func (ctx *evalContext) sparqlFuncs() map[string]sparql.Function {
+func (ctx *evalContext) sparqlFuncs() map[string]sparql.ContextFunction {
 	if ctx == nil || ctx.af == nil {
 		return nil
 	}

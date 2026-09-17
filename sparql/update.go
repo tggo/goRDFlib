@@ -88,9 +88,9 @@ func EvalUpdateContext(ctx context.Context, ds *Dataset, u *ParsedUpdate) error 
 func evalUpdateOp(ec *evalCtx, ds *Dataset, op UpdateOperation, prefixes map[string]string) error {
 	switch o := op.(type) {
 	case *InsertDataOp:
-		return evalInsertData(ds, o, prefixes)
+		return evalInsertData(ec, ds, o, prefixes)
 	case *DeleteDataOp:
-		return evalDeleteData(ds, o, prefixes)
+		return evalDeleteData(ec, ds, o, prefixes)
 	case *DeleteWhereOp:
 		return evalDeleteWhere(ec, ds, o, prefixes)
 	case *ModifyOp:
@@ -102,13 +102,13 @@ func evalUpdateOp(ec *evalCtx, ds *Dataset, op UpdateOperation, prefixes map[str
 	}
 }
 
-func evalInsertData(ds *Dataset, op *InsertDataOp, prefixes map[string]string) error {
+func evalInsertData(ec *evalCtx, ds *Dataset, op *InsertDataOp, prefixes map[string]string) error {
 	// SPARQL 1.1 Update §3.1.1: blank nodes in INSERT DATA are new nodes. A
 	// label names the same node throughout the operation, and a different one
 	// in every other operation and request.
 	scope := bnodes.New(false)
 	for _, qp := range op.Quads {
-		g := graphForQuad(ds, qp.Graph)
+		g := graphForQuad(ec, ds, qp.Graph)
 		for _, t := range qp.Triples {
 			s := resolveTemplateValue(t.Subject, nil, prefixes, scope)
 			p := resolveTemplateValue(t.Predicate, nil, prefixes, scope)
@@ -130,10 +130,10 @@ func evalInsertData(ds *Dataset, op *InsertDataOp, prefixes map[string]string) e
 	return nil
 }
 
-func evalDeleteData(ds *Dataset, op *DeleteDataOp, prefixes map[string]string) error {
+func evalDeleteData(ec *evalCtx, ds *Dataset, op *DeleteDataOp, prefixes map[string]string) error {
 	scope := bnodes.New(false) // DELETE DATA may not contain blank nodes (§3.1.2)
 	for _, qp := range op.Quads {
-		g := graphForQuad(ds, qp.Graph)
+		g := graphForQuad(ec, ds, qp.Graph)
 		for _, t := range qp.Triples {
 			s := resolveTemplateValue(t.Subject, nil, prefixes, scope)
 			p := resolveTemplateValue(t.Predicate, nil, prefixes, scope)
@@ -158,9 +158,9 @@ func evalDeleteData(ds *Dataset, op *DeleteDataOp, prefixes map[string]string) e
 func evalDeleteWhere(ec *evalCtx, ds *Dataset, op *DeleteWhereOp, prefixes map[string]string) error {
 	// Build a WHERE pattern from the quads and use the same quads as template
 	pattern := quadsToPattern(op.Quads, prefixes)
-	namedGraphs := ds.NamedGraphs
+	namedGraphs, _ := ec.bindNamed(ds.NamedGraphs)
 
-	solutions := evalPattern(ec, ds.Default, pattern, prefixes, namedGraphs)
+	solutions := evalPattern(ec, ec.bind(ds.Default), pattern, prefixes, namedGraphs)
 
 	// Instantiate every removal before applying any, so a cancellation during
 	// the WHERE clause or the instantiation leaves the dataset untouched (see
@@ -178,7 +178,7 @@ func evalDeleteWhere(ec *evalCtx, ds *Dataset, op *DeleteWhereOp, prefixes map[s
 		}
 		scope := bnodes.New(false)
 		for _, qp := range op.Quads {
-			g := graphForQuadSolution(ds, qp.Graph, sol)
+			g := graphForQuadSolution(ec, ds, qp.Graph, sol)
 			if g == nil {
 				continue
 			}
@@ -212,13 +212,13 @@ func evalDeleteWhere(ec *evalCtx, ds *Dataset, op *DeleteWhereOp, prefixes map[s
 
 func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	// Determine the query graph
-	queryGraph := ds.Default
-	namedGraphs := ds.NamedGraphs
+	queryGraph := ec.bind(ds.Default)
+	namedGraphs, _ := ec.bindNamed(ds.NamedGraphs)
 
 	if op.With != "" {
 		// WITH <g> makes the named graph the default for pattern matching
 		if ng, ok := ds.NamedGraphs[op.With]; ok {
-			queryGraph = ng
+			queryGraph = ec.bind(ng)
 		} else {
 			queryGraph = rdflibgo.NewGraph()
 		}
@@ -231,12 +231,12 @@ func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]stri
 		for _, uc := range op.Using {
 			if uc.Named {
 				if ng, ok := ds.NamedGraphs[uc.IRI]; ok {
-					usedNamed[uc.IRI] = ng
+					usedNamed[uc.IRI] = ec.bind(ng)
 				}
 			} else {
 				// Merge into default graph
 				if ng, ok := ds.NamedGraphs[uc.IRI]; ok {
-					for tr := range ng.Triples(nil, nil, nil) {
+					for tr := range ec.bind(ng).Triples(nil, nil, nil) {
 						if ec.stop() {
 							return nil
 						}
@@ -268,7 +268,7 @@ func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]stri
 		// Update §3.1.3: template blank nodes are fresh for each solution.
 		scope := bnodes.New(false)
 		for _, qp := range op.Delete {
-			g := resolveModifyGraph(ds, qp.Graph, op.With, sol)
+			g := resolveModifyGraph(ec, ds, qp.Graph, op.With, sol)
 			if g == nil {
 				continue
 			}
@@ -291,7 +291,7 @@ func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]stri
 			}
 		}
 		for _, qp := range op.Insert {
-			g := resolveModifyGraph(ds, qp.Graph, op.With, sol)
+			g := resolveModifyGraph(ec, ds, qp.Graph, op.With, sol)
 			if g == nil {
 				continue
 			}
@@ -335,25 +335,25 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 	case "CLEAR", "DROP":
 		switch op.Target {
 		case "DEFAULT":
-			clearGraph(ds.Default)
+			clearGraph(ec.bind(ds.Default))
 		case "NAMED":
 			for k := range ds.NamedGraphs {
-				clearGraph(ds.NamedGraphs[k])
+				clearGraph(ec.bind(ds.NamedGraphs[k]))
 				if op.Op == "DROP" {
 					delete(ds.NamedGraphs, k)
 				}
 			}
 		case "ALL":
-			clearGraph(ds.Default)
+			clearGraph(ec.bind(ds.Default))
 			for k := range ds.NamedGraphs {
-				clearGraph(ds.NamedGraphs[k])
+				clearGraph(ec.bind(ds.NamedGraphs[k]))
 				if op.Op == "DROP" {
 					delete(ds.NamedGraphs, k)
 				}
 			}
 		default:
 			if g, ok := ds.NamedGraphs[op.Target]; ok {
-				clearGraph(g)
+				clearGraph(ec.bind(g))
 				if op.Op == "DROP" {
 					delete(ds.NamedGraphs, op.Target)
 				}
@@ -375,7 +375,7 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 			}
 			return nil
 		}
-		target := getOrCreateGraph(ds, func() string {
+		target := getOrCreateGraph(ec, ds, func() string {
 			if op.Into != "" {
 				return op.Into
 			}
@@ -388,20 +388,20 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 		}
 
 	case "ADD":
-		return transferGraphs(ds, op.Source, op.Target, false, op.Silent)
+		return transferGraphs(ec, ds, op.Source, op.Target, false, op.Silent)
 
 	case "COPY":
-		return transferGraphs(ds, op.Source, op.Target, true, op.Silent)
+		return transferGraphs(ec, ds, op.Source, op.Target, true, op.Silent)
 
 	case "MOVE":
 		if op.Source == op.Target {
 			break // no-op
 		}
-		if err := transferGraphs(ds, op.Source, op.Target, true, op.Silent); err != nil {
+		if err := transferGraphs(ec, ds, op.Source, op.Target, true, op.Silent); err != nil {
 			return err
 		}
 		// Clear source
-		src := getGraph(ds, op.Source)
+		src := getGraph(ec, ds, op.Source)
 		if src != nil {
 			clearGraph(src)
 			if op.Source != "DEFAULT" {
@@ -413,8 +413,8 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 	return nil
 }
 
-func transferGraphs(ds *Dataset, srcName, dstName string, replace bool, silent bool) error {
-	src := getGraph(ds, srcName)
+func transferGraphs(ec *evalCtx, ds *Dataset, srcName, dstName string, replace bool, silent bool) error {
+	src := getGraph(ec, ds, srcName)
 	if src == nil {
 		if silent {
 			return nil
@@ -433,7 +433,7 @@ func transferGraphs(ds *Dataset, srcName, dstName string, replace bool, silent b
 		triples = append(triples, triple{tr.Subject, tr.Predicate, tr.Object})
 	}
 
-	dst := getOrCreateGraph(ds, dstName)
+	dst := getOrCreateGraph(ec, ds, dstName)
 	if replace {
 		clearGraph(dst)
 	}
@@ -444,40 +444,43 @@ func transferGraphs(ds *Dataset, srcName, dstName string, replace bool, silent b
 	return nil
 }
 
-func getGraph(ds *Dataset, name string) *rdflibgo.Graph {
+func getGraph(ec *evalCtx, ds *Dataset, name string) *rdflibgo.Graph {
 	if name == "DEFAULT" {
-		return ds.Default
+		return ec.bind(ds.Default)
 	}
 	if g, ok := ds.NamedGraphs[name]; ok {
-		return g
+		return ec.bind(g)
 	}
 	return nil
 }
 
-func getOrCreateGraph(ds *Dataset, name string) *rdflibgo.Graph {
+// getOrCreateGraph returns the named graph, bound to the evaluation's context.
+// A graph it creates is stored in ds unbound, so the caller's dataset never
+// holds a view tied to one request's context.
+func getOrCreateGraph(ec *evalCtx, ds *Dataset, name string) *rdflibgo.Graph {
 	if name == "DEFAULT" {
-		return ds.Default
+		return ec.bind(ds.Default)
 	}
 	if g, ok := ds.NamedGraphs[name]; ok {
-		return g
+		return ec.bind(g)
 	}
 	g := rdflibgo.NewGraph()
 	if ds.NamedGraphs == nil {
 		ds.NamedGraphs = make(map[string]*rdflibgo.Graph)
 	}
 	ds.NamedGraphs[name] = g
-	return g
+	return ec.bind(g)
 }
 
 func clearGraph(g *rdflibgo.Graph) {
 	g.Remove(nil, nil, nil)
 }
 
-func graphForQuad(ds *Dataset, graphName string) *rdflibgo.Graph {
+func graphForQuad(ec *evalCtx, ds *Dataset, graphName string) *rdflibgo.Graph {
 	if graphName == "" {
-		return ds.Default
+		return ec.bind(ds.Default)
 	}
-	return getOrCreateGraph(ds, graphName)
+	return getOrCreateGraph(ec, ds, graphName)
 }
 
 // graphForVar returns the graph named by a GRAPH variable in an update
@@ -485,39 +488,39 @@ func graphForQuad(ds *Dataset, graphName string) *rdflibgo.Graph {
 // not an IRI. SPARQL 1.1 Update §3.1.3: a template triple that contains an
 // unbound variable or an illegal RDF construct is not included, so the caller
 // must skip the quad rather than fall back to the default graph.
-func graphForVar(ds *Dataset, name string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
+func graphForVar(ec *evalCtx, ds *Dataset, name string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
 	u, ok := sol[name].(term.URIRef)
 	if !ok {
 		return nil
 	}
-	return getOrCreateGraph(ds, u.Value())
+	return getOrCreateGraph(ec, ds, u.Value())
 }
 
 // graphForQuadSolution returns the graph a DELETE WHERE quad applies to, or nil
 // when the quad must be skipped (see graphForVar).
-func graphForQuadSolution(ds *Dataset, graphName string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
+func graphForQuadSolution(ec *evalCtx, ds *Dataset, graphName string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
 	if graphName == "" {
-		return ds.Default
+		return ec.bind(ds.Default)
 	}
 	if strings.HasPrefix(graphName, "?") {
-		return graphForVar(ds, graphName[1:], sol)
+		return graphForVar(ec, ds, graphName[1:], sol)
 	}
-	return getOrCreateGraph(ds, graphName)
+	return getOrCreateGraph(ec, ds, graphName)
 }
 
 // resolveModifyGraph returns the graph a DELETE/INSERT template quad applies
 // to, or nil when the quad must be skipped (see graphForVar).
-func resolveModifyGraph(ds *Dataset, graphName, with string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
+func resolveModifyGraph(ec *evalCtx, ds *Dataset, graphName, with string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
 	if graphName == "" {
 		if with != "" {
-			return getOrCreateGraph(ds, with)
+			return getOrCreateGraph(ec, ds, with)
 		}
-		return ds.Default
+		return ec.bind(ds.Default)
 	}
 	if strings.HasPrefix(graphName, "?") {
-		return graphForVar(ds, graphName[1:], sol)
+		return graphForVar(ec, ds, graphName[1:], sol)
 	}
-	return getOrCreateGraph(ds, graphName)
+	return getOrCreateGraph(ec, ds, graphName)
 }
 
 // quadsToPattern converts QuadPattern slice to a Pattern for WHERE evaluation.

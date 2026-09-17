@@ -48,6 +48,8 @@ type evalCtx struct {
 	n    uint32
 	// err is the context's error once stop has reported true. It is sticky.
 	err error
+	// bound caches graphs with ctx bound to their store; see bind.
+	bound map[*rdflibgo.Graph]*rdflibgo.Graph
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
@@ -140,7 +142,11 @@ func sortSolutions(ec *evalCtx, solutions []map[string]rdflibgo.Term, cmp func(a
 // about a millisecond of CPU time. Two things are not interrupted: a single
 // call into a store (for example a transitive path pushed down to a
 // store.ReachabilityStore, or a COUNT pushed down to a store.QueryableStore),
-// and a single call to an extension function, since Function has no context.
+// and a single call to an extension function registered without a context
+// (Function; a ContextFunction receives ctx).
+//
+// A store that implements store.ContextBinder is bound to ctx for the whole
+// evaluation, so its calls carry ctx: a tracing span, a deadline, credentials.
 //
 // Like EvalQuery, it never mutates q.
 func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
@@ -148,9 +154,17 @@ func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, in
 	if ec.poll() {
 		return nil, ec.failure()
 	}
+	g, q = ec.bindQuery(g, q)
 	g, q, release := snapshotQueryGraphs(g, q)
 	defer release()
 	res, err := evalQuery(ec, g, q, initBindings)
+	if len(ec.bound) > 0 {
+		// A bound store sees the cancellation too, and Store cannot report
+		// errors: a lookup it abandoned looks like a lookup that matched
+		// nothing. So a query that used one does not trust a result finished
+		// after ctx was done, even if evaluation never polled in between.
+		ec.poll()
+	}
 	if ferr := ec.failure(); ferr != nil {
 		return nil, ferr
 	}

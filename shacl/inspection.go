@@ -45,6 +45,11 @@ func (p *Prepared) targetNodes(ctx *evalContext, s *Shape) []Term {
 		p.targets = make(map[*Shape][]Term, len(p.ctx.shapesMap))
 	}
 	targets := resolveTargets(ctx, s)
+	if ctx.goContext().Err() != nil {
+		// A SPARQL target cut short selected too little; caching it would make
+		// the next run miss focus nodes. The run itself reports the stop.
+		return targets
+	}
 	p.targets[s] = targets
 	return targets
 }

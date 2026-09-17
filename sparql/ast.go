@@ -171,6 +171,11 @@ type FuncExpr struct {
 	// When set it is called instead of consulting the global registry. It is
 	// written before evaluation starts and only read thereafter.
 	Fn Function
+
+	// FnCtx is Fn for a function bound by ParsedQuery.BindContextFunctions,
+	// which receives the evaluation's context. At most one of Fn and FnCtx is
+	// set: the binding made last wins.
+	FnCtx ContextFunction
 }
 
 func (*FuncExpr) isExpr() {}
