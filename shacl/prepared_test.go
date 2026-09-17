@@ -206,3 +206,57 @@ ex:Counter a sh:NodeShape ;
 		t.Fatalf("preparation modified caller data: %v", data.Triples())
 	}
 }
+
+func TestPreparedShapeLinksFollowEveryStructuralReference(t *testing.T) {
+	shapes := preparedGraph(t, `
+ex:Root a sh:NodeShape ;
+    sh:property ex:P ;
+    sh:node ex:N ;
+    sh:and ( ex:A1 ex:A2 ) ;
+    sh:or ( ex:O ) ;
+    sh:xone ( ex:X ) ;
+    sh:not ex:Not ;
+    sh:qualifiedValueShape ex:Q ; sh:qualifiedMinCount 1 .
+ex:P sh:path ex:p .
+ex:N a sh:NodeShape . ex:A1 a sh:NodeShape . ex:A2 a sh:NodeShape .
+ex:O a sh:NodeShape . ex:X a sh:NodeShape . ex:Not a sh:NodeShape . ex:Q a sh:NodeShape .
+`)
+	prepared := shacl.Prepare(preparedGraph(t, ""), shapes)
+	ex := func(local string) shacl.Term { return shacl.IRI("http://example.org/" + local) }
+	got := map[string][]shacl.Term{}
+	for via, ref := range prepared.ShapeLinks(ex("Root")) {
+		got[via.Value()] = append(got[via.Value()], ref)
+	}
+	want := map[string][]shacl.Term{
+		shacl.SH + "property": {ex("P")},
+		shacl.SH + "node":     {ex("N")},
+		shacl.SH + "and":      {ex("A1"), ex("A2")},
+		shacl.SH + "or":       {ex("O")},
+		shacl.SH + "xone":     {ex("X")},
+		shacl.SH + "not":      {ex("Not")},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("links = %v, want %v (qualified shapes are not followed)", got, want)
+	}
+
+	n := 0
+	for range prepared.ShapeLinks(ex("Root")) {
+		n++
+		break
+	}
+	if n != 1 {
+		t.Fatalf("ShapeLinks kept yielding after break")
+	}
+	for range prepared.ShapeLinks(ex("Missing")) {
+		t.Fatal("unknown shape yielded a link")
+	}
+	if _, ok := prepared.Shape(ex("Missing")); ok {
+		t.Fatal("unknown shape found")
+	}
+	if prepared.Targets(ex("Missing")) != nil || prepared.ValueNodes(ex("Missing"), ex("x")) != nil {
+		t.Fatal("unknown shape returned targets or values")
+	}
+	if got := prepared.ValueNodes(ex("Root"), ex("x")); !reflect.DeepEqual(got, []shacl.Term{ex("x")}) {
+		t.Fatalf("node shape value nodes = %v, want the focus", got)
+	}
+}
