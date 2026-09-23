@@ -230,8 +230,11 @@ The `store.Store` interface (13 methods) has four implementations:
 - Security defaults: LOAD disabled unless `WithLoader` (rdfloader would read
   local files: SSRF); JSON-LD payloads never fetch remote contexts; body limits
   on every request; panics recovered.
-- FROM/FROM NAMED are read by a lexical scanner (`scan.go`) because the parser
-  drops them; moving FROM into `ParsedQuery` would let the scanner go.
+- FROM/FROM NAMED come from `ParsedQuery.DatasetClause` (issue #37); the
+  endpoint resolves a relative one against the service base and lets protocol
+  parameters win (§2.1.4). `scan.go` is left with `scanForm`, the one thing
+  that must happen before parsing: DESCRIBE and updates get their own status
+  instead of a syntax error.
 
 ### sparql/ cancellation and results
 - `sparql/cancel.go`: every evaluation loop calls `ec.stop()` (polls ctx every
