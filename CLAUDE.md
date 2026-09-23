@@ -402,6 +402,26 @@ The `store.Store` interface (13 methods) has four implementations:
   `WithErrorHandler` rather than selecting nothing. Selecting nothing is a legal
   outcome, so a discarded error here is invisible by construction.
 
+### sparql/ FROM and FROM NAMED (issues #37, #38)
+- `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
+  builds that dataset out of `NamedGraphs` (§13.2): default = merge of the
+  FROM graphs (**not** the graph passed in), `FROM NAMED` alone leaves the
+  default graph empty, `GRAPH` ranges over the FROM NAMED graphs only.
+- The engine **never fetches a graph**. An IRI `NamedGraphs` has no graph for
+  is `ErrUnknownGraph`. Answering from the graph the clause excluded is the
+  bug that was there for years; answering from an empty graph would be the
+  same bug with a different silence.
+- A caller that builds the dataset itself **clears `DatasetClause`** — the
+  documented opt-out, and what `endpoint` does (protocol parameters outrank
+  the clause, §2.1.4, and a graph the service lacks is empty there, not an
+  error). `applyDatasetClause` also clears it on the copy it evaluates, so a
+  nested evaluation cannot rebuild the dataset from the graphs it replaced.
+- Guard: `TestW3CDataset` (DAWG `sparql10/dataset`, 12/12). Those tests carry
+  no `qt:data` — the dataset is only what the query names — so 8 of them fail
+  the moment the clause stops being applied. The runner loads the named files
+  from disk and resolves the IRIs exactly as the engine does; resolve them
+  differently and every lookup misses.
+
 ### sparql/ initial bindings
 - `evalPatternPreBound` (used only for caller-supplied `initBindings`) pushes
   values down so `BIND`/`FILTER` expressions see them — they are constants
