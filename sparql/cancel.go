@@ -154,13 +154,16 @@ func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, in
 	if ec.poll() {
 		return nil, ec.failure()
 	}
+	g, q = ec.bindQuery(g, q)
+	g, q, release := snapshotQueryGraphs(g, q)
+	defer release()
+	// After binding and snapshotting, never before: a FROM clause merges the
+	// graphs it names, and that read must go through the bound view and the
+	// store's read snapshot like every other read the query makes.
 	g, q, derr := applyDatasetClause(ec, g, q)
 	if derr != nil {
 		return nil, derr
 	}
-	g, q = ec.bindQuery(g, q)
-	g, q, release := snapshotQueryGraphs(g, q)
-	defer release()
 	res, err := evalQuery(ec, g, q, initBindings)
 	if len(ec.bound) > 0 {
 		// A bound store sees the cancellation too, and Store cannot report

@@ -411,11 +411,23 @@ The `store.Store` interface (13 methods) has four implementations:
   is `ErrUnknownGraph`. Answering from the graph the clause excluded is the
   bug that was there for years; answering from an empty graph would be the
   same bug with a different silence.
+- `applyDatasetClause` runs **after `bindQuery` and `snapshotQueryGraphs`**.
+  The merge is a read like any other: before them it reached the store with a
+  context the caller never gave (a `sparqlstore` FROM graph would fetch on
+  `context.Background()`, ignoring the query deadline) and outside the read
+  snapshot, so two `FROM` graphs on one Badger store could tear against a
+  concurrent write. Guard: `TestDatasetClauseContextReachesStore`.
 - A caller that builds the dataset itself **clears `DatasetClause`** — the
   documented opt-out, and what `endpoint` does (protocol parameters outrank
   the clause, §2.1.4, and a graph the service lacks is empty there, not an
   error). `applyDatasetClause` also clears it on the copy it evaluates, so a
   nested evaluation cannot rebuild the dataset from the graphs it replaced.
+- `shacl` clears it too (`useDataGraphAsDataset`, all three bridge entry
+  points): SHACL evaluates `sh:select`/`sh:ask`/`sh:construct` against the data
+  graph, and a shapes graph cannot supply a FROM graph. Without it a shape
+  query carrying a FROM did not merely error — the failure surfaced as extra
+  violations, i.e. a wrong validation report. Guard:
+  `shacl/sparql_dataset_test.go`.
 - Guard: `TestW3CDataset` (DAWG `sparql10/dataset`, 12/12). Those tests carry
   no `qt:data` — the dataset is only what the query names — so 8 of them fail
   the moment the clause stops being applied. The runner loads the named files
