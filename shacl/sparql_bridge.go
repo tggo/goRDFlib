@@ -59,6 +59,7 @@ func executeSPARQL(ctx context.Context, g *Graph, query string, initBindings map
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
+	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
 	if err != nil {
@@ -107,6 +108,16 @@ func fixSPARQLSyntax(query string) string {
 	return sb.String()
 }
 
+// useDataGraphAsDataset pins the dataset of a query that came out of a shapes
+// graph. SHACL evaluates sh:select, sh:ask and sh:construct against the data
+// graph; the shapes graph has no way to supply the graphs a FROM or FROM NAMED
+// clause would name, so the engine would reject such a query with
+// ErrUnknownGraph. Every release before the engine honored the clause ignored
+// it here, and that is still the right answer for a shapes query.
+func useDataGraphAsDataset(pq *sparql.ParsedQuery) {
+	pq.DatasetClause = nil
+}
+
 // executeSPARQLAsk runs a SPARQL ASK query against the underlying graph.Graph.
 // funcs carries SHACL functions as in executeSPARQL.
 func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.ContextFunction) (bool, error) {
@@ -119,6 +130,7 @@ func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings 
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
+	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
 	if err != nil {
@@ -139,6 +151,7 @@ func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBin
 	if err != nil {
 		return nil, err
 	}
+	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
 	if err != nil {

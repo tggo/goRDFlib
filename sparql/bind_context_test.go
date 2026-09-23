@@ -183,3 +183,31 @@ func TestContextFunctionReceivesQueryContext(t *testing.T) {
 		t.Fatalf("plain call: %v, %q", err, seen)
 	}
 }
+
+// TestDatasetClauseContextReachesStore covers the one read that is easy to
+// forget: a FROM clause merges the graphs it names into the default graph, and
+// that merge is a read like any other. Done before the query binds its graphs,
+// it would reach the store with a context the caller never supplied.
+func TestDatasetClauseContextReachesStore(t *testing.T) {
+	st := newTracingStore()
+	ex := func(s string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + s) }
+	named := graph.NewGraph(graph.WithStore(st), graph.WithIdentifier(ex("g")))
+	named.Add(ex("a"), ex("p"), ex("b"))
+	st.log = &callLog{}
+
+	q, err := sparql.Parse(`SELECT ?x WHERE { ?x <http://example.org/p> ?y }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.DatasetClause = []sparql.DatasetClause{{IRI: "http://example.org/g"}}
+	q.NamedGraphs = map[string]*rdflibgo.Graph{"http://example.org/g": named}
+
+	res, err := sparql.EvalQueryContext(tracedCtx(), graph.NewGraph(), q, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Bindings) != 1 {
+		t.Fatalf("bindings = %v, want the one triple of the FROM graph", res.Bindings)
+	}
+	assertAllTraced(t, st)
+}

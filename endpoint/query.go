@@ -130,8 +130,7 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 	defaults, nameds := req.defaultGraphs, req.namedGraphs
 	if len(defaults) == 0 && len(nameds) == 0 {
 		// SPARQL 1.1 Protocol §2.1.4: without protocol parameters the dataset
-		// of the query applies. The engine records FROM but does not act on
-		// it, so the dataset is built here.
+		// of the query applies, and it is built out of the service's graphs.
 		defaults, nameds = datasetClauses(q, base)
 	}
 	if len(defaults) > 0 || len(nameds) > 0 {
@@ -142,6 +141,13 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 		}
 	}
 	q.NamedGraphs = named
+	// The dataset is this layer's to build, not the engine's: protocol
+	// parameters outrank the query's own clause (§2.1.4), and the service's
+	// own default graph is addressable here as store.DefaultGraphIRI, which
+	// the engine knows nothing about. Clearing the clause is what keeps the
+	// engine from building the dataset a second time, out of the graphs this
+	// one just replaced.
+	q.DatasetClause = nil
 
 	res, err := sparql.EvalQueryContext(ctx, def, q, nil)
 	if err != nil {

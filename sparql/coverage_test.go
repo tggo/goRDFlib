@@ -2533,6 +2533,9 @@ func TestConstructWhereShorthand(t *testing.T) {
 
 func TestConstructWithFromClause(t *testing.T) {
 	g := makeSPARQLGraph(t)
+	// FROM restricts the dataset to a graph the caller did not supply, so the
+	// query runs against an empty default graph rather than against the graph
+	// its own clause excluded.
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:name ?name }
@@ -2542,8 +2545,9 @@ func TestConstructWithFromClause(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// FROM doesn't actually restrict in the default store, but shouldn't error
-	_ = r
+	if r.Graph != nil && r.Graph.Len() != 0 {
+		t.Errorf("CONSTRUCT built %d triples, want none", r.Graph.Len())
+	}
 }
 
 // --- CONSTRUCT with FROM NAMED ---
@@ -6242,7 +6246,6 @@ func TestSelectReduced(t *testing.T) {
 func TestFromNamedClause(t *testing.T) {
 	g := graph.NewGraph()
 	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	// FROM / FROM NAMED are parsed but not enforced
 	r, err := Query(g, `
 		SELECT ?s
 		FROM <http://example.org/default>
@@ -6252,7 +6255,9 @@ func TestFromNamedClause(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	if len(r.Bindings) != 0 {
+		t.Errorf("bindings = %v, want none: the clause excludes the caller's graph", r.Bindings)
+	}
 }
 
 func TestConstructWithAnnotationsCov(t *testing.T) {

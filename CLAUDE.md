@@ -402,6 +402,41 @@ The `store.Store` interface (13 methods) has four implementations:
   `WithErrorHandler` rather than selecting nothing. Selecting nothing is a legal
   outcome, so a discarded error here is invisible by construction.
 
+### sparql/ FROM and FROM NAMED (issues #37, #38)
+- `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
+  builds that dataset out of `NamedGraphs` (§13.2): default = merge of the
+  FROM graphs (**not** the graph passed in), `FROM NAMED` alone leaves the
+  default graph empty, `GRAPH` ranges over the FROM NAMED graphs only.
+- The clause **restricts the dataset the caller supplied**; the engine never
+  fetches a graph. An IRI with no graph behind it contributes an empty graph
+  and, for `FROM NAMED`, is not a named graph at all (`GRAPH ?g` does not bind
+  it) — Jena's dynamic dataset, RDF4J and rdflib all behave this way, and an
+  error here would be the outlier. What it must never do is answer from the
+  graph the clause excluded, which is the bug that stood for years.
+- `applyDatasetClause` runs **after `bindQuery` and `snapshotQueryGraphs`**.
+  The merge is a read like any other: before them it reached the store with a
+  context the caller never gave (a `sparqlstore` FROM graph would fetch on
+  `context.Background()`, ignoring the query deadline) and outside the read
+  snapshot, so two `FROM` graphs on one Badger store could tear against a
+  concurrent write. Guard: `TestDatasetClauseContextReachesStore`.
+- A caller that builds the dataset itself **clears `DatasetClause`** — the
+  documented opt-out, and what `endpoint` does (protocol parameters outrank
+  the clause, §2.1.4, and a graph the service lacks is empty there, not an
+  error). `applyDatasetClause` also clears it on the copy it evaluates, so a
+  nested evaluation cannot rebuild the dataset from the graphs it replaced.
+- `shacl` clears it too (`useDataGraphAsDataset`, all three bridge entry
+  points): SHACL evaluates `sh:select`/`sh:ask`/`sh:construct` against the data
+  graph, and a shapes graph cannot supply a FROM graph. Without it a shape
+  query carrying a FROM validates against an empty dataset — a wrong
+  validation report, not a visible failure. Guards in
+  `shacl/sparql_dataset_test.go` must read the data graph, or they pass from
+  any dataset and prove nothing.
+- Guard: `TestW3CDataset` (DAWG `sparql10/dataset`, 12/12). Those tests carry
+  no `qt:data` — the dataset is only what the query names — so 8 of them fail
+  the moment the clause stops being applied. The runner loads the named files
+  from disk and resolves the IRIs exactly as the engine does; resolve them
+  differently and every lookup misses.
+
 ### sparql/ initial bindings
 - `evalPatternPreBound` (used only for caller-supplied `initBindings`) pushes
   values down so `BIND`/`FILTER` expressions see them — they are constants
