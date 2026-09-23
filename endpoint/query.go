@@ -142,6 +142,11 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 		}
 	}
 	q.NamedGraphs = named
+	// The dataset is this layer's to build: protocol parameters outrank the
+	// query's own clause (§2.1.4), and a graph the service does not have is an
+	// empty graph here, not an error. Both are decisions the engine must not
+	// take again on its own.
+	q.DatasetClause = nil
 
 	res, err := sparql.EvalQueryContext(ctx, def, q, nil)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/internal/iri"
 	"github.com/tggo/goRDFlib/nt"
 	"github.com/tggo/goRDFlib/rdfxml"
 	"github.com/tggo/goRDFlib/sparql"
@@ -52,6 +53,29 @@ func TestW3C(t *testing.T) {
 	}
 }
 
+// TestW3CDataset runs the DAWG dataset manifest, the conformance suite for
+// FROM and FROM NAMED. Its tests declare no data of their own: every graph
+// comes from the query's dataset clause, so a runner that ignored the clause
+// would answer all twelve of them with nothing.
+func TestW3CDataset(t *testing.T) {
+	const manifestPath = "../testdata/w3c/rdf-tests/sparql/sparql10/dataset/manifest.ttl"
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Skip("W3C SPARQL test suite not found (rdf-tests submodule)")
+	}
+	manifest, err := w3c.ParseManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("failed to parse manifest: %v", err)
+	}
+	if len(manifest.Entries) == 0 {
+		t.Fatal("no entries in the dataset manifest")
+	}
+	for _, entry := range manifest.Entries {
+		t.Run(entry.Name, func(t *testing.T) {
+			runQueryEvalTest(t, entry)
+		})
+	}
+}
+
 func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	// Load default graph data
 	g := rdflibgo.NewGraph()
@@ -90,23 +114,21 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	queryStr := string(queryBytes)
 
 	// Execute query
-	var result *sparql.Result
-	if namedGraphs != nil {
-		pq, perr := sparql.Parse(queryStr)
-		if perr != nil {
-			t.Fatalf("query parse failed: %v", perr)
-		}
-		pq.NamedGraphs = namedGraphs
-		// Set base URI for relative IRI resolution
-		if pq.BaseURI == "" {
-			pq.BaseURI = "file://" + filepath.Dir(queryPath) + "/"
-		}
-		var evalErr error
-		result, evalErr = sparql.EvalQuery(g, pq, nil)
-		err = evalErr
-	} else {
-		result, err = sparql.Query(g, queryStr)
+	pq, err := sparql.Parse(queryStr)
+	if err != nil {
+		t.Fatalf("query parse failed: %v", err)
 	}
+	pq.NamedGraphs = namedGraphs
+	// Set base URI for relative IRI resolution
+	if pq.BaseURI == "" {
+		pq.BaseURI = "file://" + filepath.Dir(queryPath) + "/"
+	}
+	// The engine never fetches a graph: resolving the IRIs of a FROM or FROM
+	// NAMED clause is the caller's job, and here the caller is a test runner
+	// with the files on disk. Tests in the DAWG dataset manifest declare no
+	// qt:data at all — their dataset is only what the query names.
+	loadDatasetGraphs(t, pq)
+	result, err := sparql.EvalQuery(g, pq, nil)
 	if err != nil {
 		t.Fatalf("query execution failed: %v", err)
 	}
@@ -130,6 +152,33 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 		if len(expected.Bindings) <= 10 {
 			t.Logf("Expected: %v", formatBindings(expected.Bindings))
 		}
+	}
+}
+
+// loadDatasetGraphs loads the graphs a query's FROM and FROM NAMED clauses
+// name into pq.NamedGraphs, reading each one from the file the resolved IRI
+// points at. An IRI already supplied by the manifest is left alone.
+func loadDatasetGraphs(t *testing.T, pq *sparql.ParsedQuery) {
+	t.Helper()
+	for _, dc := range pq.DatasetClause {
+		// Resolved exactly as the engine resolves it, or the lookup misses.
+		name := dc.IRI
+		if !iri.IsAbsolute(name) {
+			name = iri.Resolve(pq.BaseURI, name)
+		}
+		if _, ok := pq.NamedGraphs[name]; ok {
+			continue
+		}
+		path, ok := strings.CutPrefix(name, "file://")
+		if !ok {
+			continue
+		}
+		ng := rdflibgo.NewGraph()
+		loadDataFile(t, ng, path)
+		if pq.NamedGraphs == nil {
+			pq.NamedGraphs = make(map[string]*rdflibgo.Graph)
+		}
+		pq.NamedGraphs[name] = ng
 	}
 }
 

@@ -154,6 +154,10 @@ func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, in
 	if ec.poll() {
 		return nil, ec.failure()
 	}
+	g, q, derr := applyDatasetClause(ec, g, q)
+	if derr != nil {
+		return nil, derr
+	}
 	g, q = ec.bindQuery(g, q)
 	g, q, release := snapshotQueryGraphs(g, q)
 	defer release()

@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -2533,17 +2534,18 @@ func TestConstructWhereShorthand(t *testing.T) {
 
 func TestConstructWithFromClause(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	r, err := Query(g, `
+	// FROM names a graph the caller did not supply: the query asks for a
+	// dataset that cannot be built, which is an error rather than a silent
+	// answer from the graph the clause excluded.
+	_, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:name ?name }
 		FROM <http://example.org/graph1>
 		WHERE { ?s ex:name ?name }
 	`)
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrUnknownGraph) {
+		t.Fatalf("err = %v, want ErrUnknownGraph", err)
 	}
-	// FROM doesn't actually restrict in the default store, but shouldn't error
-	_ = r
 }
 
 // --- CONSTRUCT with FROM NAMED ---
@@ -6242,17 +6244,15 @@ func TestSelectReduced(t *testing.T) {
 func TestFromNamedClause(t *testing.T) {
 	g := graph.NewGraph()
 	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	// FROM / FROM NAMED are parsed but not enforced
-	r, err := Query(g, `
+	_, err := Query(g, `
 		SELECT ?s
 		FROM <http://example.org/default>
 		FROM NAMED <http://example.org/named>
 		WHERE { ?s <http://example.org/p> ?o }
 	`)
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrUnknownGraph) {
+		t.Fatalf("err = %v, want ErrUnknownGraph", err)
 	}
-	_ = r
 }
 
 func TestConstructWithAnnotationsCov(t *testing.T) {
