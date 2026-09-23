@@ -142,10 +142,11 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 	}
 	q.NamedGraphs = named
 	// The dataset is this layer's to build, not the engine's: protocol
-	// parameters outrank the query's own clause (§2.1.4), and a graph the
-	// service does not have is an empty graph here rather than the engine's
-	// ErrUnknownGraph. Clearing the clause is what keeps the engine from
-	// building it a second time, out of graphs it does not have.
+	// parameters outrank the query's own clause (§2.1.4), and the service's
+	// own default graph is addressable here as store.DefaultGraphIRI, which
+	// the engine knows nothing about. Clearing the clause is what keeps the
+	// engine from building the dataset a second time, out of the graphs this
+	// one just replaced.
 	q.DatasetClause = nil
 
 	res, err := sparql.EvalQueryContext(ctx, def, q, nil)

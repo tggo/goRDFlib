@@ -52,14 +52,16 @@ ex:ThingShape a sh:NodeShape ;
 }
 
 // The same for a SHACL function, whose body is a query from the shapes graph
-// too, and which reaches the engine by a different path.
+// too and reaches the engine by a different path. The body has to read the
+// data graph, or it would answer the same from any dataset and prove nothing.
 func TestSHACLFunctionIgnoresDatasetClause(t *testing.T) {
 	got := inferObjects(t, `
-ex:focus ex:width 6 .
+ex:focus ex:width ex:six .
+ex:six ex:doubled 12 .
 
 ex:double a sh:SPARQLFunction ;
     sh:parameter [ sh:path ex:op1 ] ;
-    sh:select "SELECT ($op1 * 2 AS ?result) FROM <http://example.org/nowhere> WHERE { }" .
+    sh:select "SELECT ?result FROM <http://example.org/nowhere> WHERE { $op1 <http://example.org/doubled> ?result }" .
 `, `[ ex:double ( [ sh:path ex:width ] ) ]`)
 
 	if len(got) != 1 || !strings.Contains(got[0], "12") {

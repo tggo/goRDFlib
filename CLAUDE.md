@@ -407,10 +407,12 @@ The `store.Store` interface (13 methods) has four implementations:
   builds that dataset out of `NamedGraphs` (§13.2): default = merge of the
   FROM graphs (**not** the graph passed in), `FROM NAMED` alone leaves the
   default graph empty, `GRAPH` ranges over the FROM NAMED graphs only.
-- The engine **never fetches a graph**. An IRI `NamedGraphs` has no graph for
-  is `ErrUnknownGraph`. Answering from the graph the clause excluded is the
-  bug that was there for years; answering from an empty graph would be the
-  same bug with a different silence.
+- The clause **restricts the dataset the caller supplied**; the engine never
+  fetches a graph. An IRI with no graph behind it contributes an empty graph
+  and, for `FROM NAMED`, is not a named graph at all (`GRAPH ?g` does not bind
+  it) — Jena's dynamic dataset, RDF4J and rdflib all behave this way, and an
+  error here would be the outlier. What it must never do is answer from the
+  graph the clause excluded, which is the bug that stood for years.
 - `applyDatasetClause` runs **after `bindQuery` and `snapshotQueryGraphs`**.
   The merge is a read like any other: before them it reached the store with a
   context the caller never gave (a `sparqlstore` FROM graph would fetch on
@@ -425,9 +427,10 @@ The `store.Store` interface (13 methods) has four implementations:
 - `shacl` clears it too (`useDataGraphAsDataset`, all three bridge entry
   points): SHACL evaluates `sh:select`/`sh:ask`/`sh:construct` against the data
   graph, and a shapes graph cannot supply a FROM graph. Without it a shape
-  query carrying a FROM did not merely error — the failure surfaced as extra
-  violations, i.e. a wrong validation report. Guard:
-  `shacl/sparql_dataset_test.go`.
+  query carrying a FROM validates against an empty dataset — a wrong
+  validation report, not a visible failure. Guards in
+  `shacl/sparql_dataset_test.go` must read the data graph, or they pass from
+  any dataset and prove nothing.
 - Guard: `TestW3CDataset` (DAWG `sparql10/dataset`, 12/12). Those tests carry
   no `qt:data` — the dataset is only what the query names — so 8 of them fail
   the moment the clause stops being applied. The runner loads the named files

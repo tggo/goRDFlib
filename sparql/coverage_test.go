@@ -1,7 +1,6 @@
 package sparql
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -2534,17 +2533,20 @@ func TestConstructWhereShorthand(t *testing.T) {
 
 func TestConstructWithFromClause(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	// FROM names a graph the caller did not supply: the query asks for a
-	// dataset that cannot be built, which is an error rather than a silent
-	// answer from the graph the clause excluded.
-	_, err := Query(g, `
+	// FROM restricts the dataset to a graph the caller did not supply, so the
+	// query runs against an empty default graph rather than against the graph
+	// its own clause excluded.
+	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:name ?name }
 		FROM <http://example.org/graph1>
 		WHERE { ?s ex:name ?name }
 	`)
-	if !errors.Is(err, ErrUnknownGraph) {
-		t.Fatalf("err = %v, want ErrUnknownGraph", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Graph != nil && r.Graph.Len() != 0 {
+		t.Errorf("CONSTRUCT built %d triples, want none", r.Graph.Len())
 	}
 }
 
@@ -6244,14 +6246,17 @@ func TestSelectReduced(t *testing.T) {
 func TestFromNamedClause(t *testing.T) {
 	g := graph.NewGraph()
 	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	_, err := Query(g, `
+	r, err := Query(g, `
 		SELECT ?s
 		FROM <http://example.org/default>
 		FROM NAMED <http://example.org/named>
 		WHERE { ?s <http://example.org/p> ?o }
 	`)
-	if !errors.Is(err, ErrUnknownGraph) {
-		t.Fatalf("err = %v, want ErrUnknownGraph", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Bindings) != 0 {
+		t.Errorf("bindings = %v, want none: the clause excludes the caller's graph", r.Bindings)
 	}
 }
 

@@ -1,7 +1,6 @@
 package sparql_test
 
 import (
-	"errors"
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -126,18 +125,37 @@ func contains(xs []string, s string) bool {
 	return false
 }
 
-// TestEvalDatasetClauseUnknownGraph pins the loud half of the contract: the
-// engine does not fetch graphs, so a clause it cannot satisfy is an error
-// rather than an answer from a dataset nobody asked for.
+// TestEvalDatasetClauseUnknownGraph pins the quiet half of the contract: the
+// engine never fetches a graph, so an IRI the caller did not supply
+// contributes an empty graph — a restriction of the dataset, as in Jena,
+// RDF4J and rdflib — and never the graph the clause excluded.
 func TestEvalDatasetClauseUnknownGraph(t *testing.T) {
 	for _, q := range []string{
 		`SELECT ?s FROM <http://ex/missing> WHERE { ?s ?p ?o }`,
 		`SELECT ?s FROM NAMED <http://ex/missing> WHERE { ?s ?p ?o }`,
+		`SELECT ?s FROM <http://ex/missing> WHERE { GRAPH <http://ex/missing> { ?s ?p ?o } }`,
+		`SELECT ?g FROM NAMED <http://ex/missing> WHERE { GRAPH ?g { } }`,
 	} {
-		_, err := evalWith(t, q, nil)
-		if !errors.Is(err, sparql.ErrUnknownGraph) {
-			t.Errorf("%s: err = %v, want ErrUnknownGraph", q, err)
+		res, err := evalWith(t, q, nil)
+		if err != nil {
+			t.Errorf("%s: %v", q, err)
+			continue
 		}
+		if len(res.Bindings) != 0 {
+			t.Errorf("%s: bindings = %v, want none", q, res.Bindings)
+		}
+	}
+}
+
+// A graph the caller did supply is still merged when another clause names one
+// it did not: a missing graph subtracts nothing.
+func TestEvalDatasetClauseMixesKnownAndUnknown(t *testing.T) {
+	res, err := evalWith(t, `SELECT ?s FROM <http://ex/g1> FROM <http://ex/missing> WHERE { ?s ?p ?o }`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := subjects(t, res, "s"); len(got) != 1 || got[0] != "<http://ex/s1>" {
+		t.Errorf("?s = %v, want <http://ex/s1>", got)
 	}
 }
 
@@ -145,7 +163,7 @@ func TestEvalDatasetClauseUnknownGraph(t *testing.T) {
 // every release before this one, for a caller that handles FROM itself (the
 // SPARQL Protocol endpoint does).
 func TestEvalDatasetClauseOptOut(t *testing.T) {
-	res, err := evalWith(t, `SELECT ?s FROM <http://ex/missing> WHERE { ?s ?p ?o }`,
+	res, err := evalWith(t, `SELECT ?s FROM <http://ex/g1> WHERE { ?s ?p ?o }`,
 		func(q *sparql.ParsedQuery) { q.DatasetClause = nil })
 	if err != nil {
 		t.Fatalf("EvalQuery: %v", err)
