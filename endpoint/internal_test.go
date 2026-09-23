@@ -11,47 +11,39 @@ import (
 	"time"
 )
 
-func TestScanQuery(t *testing.T) {
-	const base = "http://base.example/dir/"
+func TestScanForm(t *testing.T) {
 	cases := []struct {
-		query           string
-		form            string
-		from, fromNamed string
+		query string
+		form  string
 	}{
-		{`SELECT * WHERE { ?s ?p ?o }`, "SELECT", "", ""},
-		{`select * from <g> where {}`, "SELECT", base + "g", ""},
+		{`SELECT * WHERE { ?s ?p ?o }`, "SELECT"},
+		{`select * from <g> where {}`, "SELECT"},
 		{`PREFIX ex: <http://ex.org/> BASE <http://other.example/>
-		  ASK FROM ex:a FROM NAMED ex:b FROM NAMED <c> {}`, "ASK", "http://ex.org/a", "http://ex.org/b http://other.example/c"},
-		{`CONSTRUCT { ?s <from> ?o } FROM <http://g/> WHERE { ?s ?p ?o }`, "CONSTRUCT", "http://g/", ""},
-		// Words that look like FROM but are not dataset clauses.
-		{`SELECT ?from WHERE { ?s ?p "FROM <http://no/>" } # FROM <http://no/>`, "SELECT", "", ""},
-		{`SELECT (?a < ?b AS ?from) WHERE { ?a ?b ?c FILTER(?a < <x>) }`, "SELECT", "", ""},
-		{`SELECT * WHERE { { SELECT * FROM <http://no/> WHERE {} } }`, "SELECT", "", ""},
-		{`SELECT * WHERE { ?s ?p """FROM <http://no/>
-		  """ } `, "SELECT", "", ""},
-		{`SELECT * WHERE { ?s ?p 'x'@en } FROM <http://late/>`, "SELECT", "http://late/", ""},
-		{`VERSION "1.2" DESCRIBE <x>`, "DESCRIBE", "", ""},
-		{`PREFIX : <http://empty/> SELECT * FROM :g {}`, "SELECT", "http://empty/g", ""},
-		{`SELECT * FROM undeclared:g {}`, "SELECT", "", ""},
-		{`INSERT DATA { <a> <b> <c> }`, "INSERT", "", ""},
+		  ASK FROM ex:a FROM NAMED ex:b {}`, "ASK"},
+		{`PREFIX : <http://empty/> SELECT * FROM :g {}`, "SELECT"},
+		{`CONSTRUCT { ?s <from> ?o } WHERE { ?s ?p ?o }`, "CONSTRUCT"},
+		{`VERSION "1.2" DESCRIBE <x>`, "DESCRIBE"},
+		{`# DESCRIBE <x>
+		  SELECT * WHERE { ?s ?p "DESCRIBE <x>" }`, "SELECT"},
+		{`INSERT DATA { <a> <b> <c> }`, "INSERT"},
+		{``, ""},
+		{`<a> "b"`, ""},
 	}
 	for _, c := range cases {
-		sh := scanQuery(c.query, base)
-		if sh.form != c.form || strings.Join(sh.from, " ") != c.from || strings.Join(sh.fromNamed, " ") != c.fromNamed {
-			t.Errorf("scanQuery(%q) = %q from %v named %v; want %q from %q named %q",
-				c.query, sh.form, sh.from, sh.fromNamed, c.form, c.from, c.fromNamed)
+		if form := scanForm(c.query); form != c.form {
+			t.Errorf("scanForm(%q) = %q; want %q", c.query, form, c.form)
 		}
 	}
 }
 
-// FuzzScanQuery checks that the scanner terminates and never panics on
+// FuzzScanForm checks that the scanner terminates and never panics on
 // arbitrary input.
-func FuzzScanQuery(f *testing.F) {
+func FuzzScanForm(f *testing.F) {
 	for _, s := range []string{`SELECT * FROM <g> {}`, `"""`, `'`, `<`, `PREFIX`, `FROM NAMED`, "\\", `?`, `ex:a.`} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		scanQuery(s, "http://b/")
+		scanForm(s)
 	})
 }
 

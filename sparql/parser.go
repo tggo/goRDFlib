@@ -97,20 +97,25 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		return nil, p.errorf("expected SELECT, ASK, or CONSTRUCT")
 	}
 
-	// FROM / FROM NAMED clauses (skip dataset declarations)
+	// FROM / FROM NAMED dataset clauses
 	for {
 		p.skipWS()
-		if p.matchKeywordCI("FROM") {
-			p.pos += 4
-			p.skipWS()
-			if p.matchKeywordCI("NAMED") {
-				p.pos += 5
-				p.skipWS()
-			}
-			p.readTermOrVar() // skip the IRI
-			continue
+		if !p.matchKeywordCI("FROM") {
+			break
 		}
-		break
+		p.pos += 4
+		p.skipWS()
+		named := false
+		if p.matchKeywordCI("NAMED") {
+			p.pos += 5
+			named = true
+			p.skipWS()
+		}
+		iriTerm := p.readTermOrVar()
+		q.DatasetClause = append(q.DatasetClause, DatasetClause{
+			IRI:   p.datasetIRI(iriTerm, q.BaseURI),
+			Named: named,
+		})
 	}
 
 	// WHERE clause

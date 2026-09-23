@@ -6,92 +6,32 @@ import (
 	"github.com/tggo/goRDFlib/internal/iri"
 )
 
-// queryShape is what the handler needs to know about a request before the
-// parser sees it, and what the parser does not keep: the query form, and the
-// dataset clauses (the engine skips FROM and FROM NAMED).
-type queryShape struct {
-	// form is the first keyword after the prologue, upper-cased: SELECT, ASK,
-	// CONSTRUCT, DESCRIBE, or an update keyword (INSERT, DELETE, LOAD, …).
-	form      string
-	from      []string
-	fromNamed []string
-}
-
-// scanQuery reads the prologue, the query form and the dataset clauses of a
-// query lexically. It skips strings, comments and IRIs, tracks brace depth,
-// and resolves prefixed names and relative IRIs in FROM clauses with the
-// PREFIX and BASE declarations it has seen (base is the service base IRI).
+// scanForm reads the query form — the first keyword after the prologue —
+// lexically, before the parser sees the text, so that a DESCRIBE query or an
+// update sent to the query endpoint is answered with its own status instead of
+// a syntax error. The returned keyword is upper-cased: SELECT, ASK, CONSTRUCT,
+// DESCRIBE, or an update keyword (INSERT, DELETE, LOAD, …); it is "" when the
+// text has no keyword at all.
 //
-// It is not a parser. A FROM it cannot resolve (an undeclared prefix) is left
-// out, and the query then fails to parse or runs without that graph. Dataset
-// clauses only occur at brace depth 0, where no other construct uses the word
-// FROM, so a whole-word FROM there is a dataset clause.
-func scanQuery(text, base string) queryShape {
-	var sh queryShape
-	prefixes := map[string]string{}
+// It is not a parser. It skips strings, comments and IRIs so that a word
+// inside one is never mistaken for a keyword, and it steps over the prologue
+// declarations, whose operands are not words.
+func scanForm(text string) string {
 	s := scanner{src: text}
-	depth := 0
 	for {
 		tok := s.next()
-		if tok.kind == tokEOF {
-			return sh
-		}
-		switch tok.kind {
-		case tokPunct:
-			switch tok.text {
-			case "{":
-				depth++
-			case "}":
-				depth--
-			}
-			continue
-		case tokWord:
-		default:
-			continue
-		}
-		if depth != 0 {
-			continue
-		}
-		word := strings.ToUpper(tok.text)
 		switch {
-		case word == "PREFIX" && sh.form == "":
-			name := s.next()
-			ref := s.next()
-			if name.kind == tokPName && strings.HasSuffix(name.text, ":") && ref.kind == tokIRI {
-				prefixes[strings.TrimSuffix(name.text, ":")] = resolveRef(base, ref.text)
-			}
-		case word == "BASE" && sh.form == "":
-			if ref := s.next(); ref.kind == tokIRI {
-				base = resolveRef(base, ref.text)
-			}
-		case sh.form == "" && word != "VERSION":
-			sh.form = word
-		case word == "FROM":
-			named := false
-			tok := s.next()
-			if tok.kind == tokWord && strings.EqualFold(tok.text, "NAMED") {
-				named = true
-				tok = s.next()
-			}
-			var ref string
-			switch tok.kind {
-			case tokIRI:
-				ref = resolveRef(base, tok.text)
-			case tokPName:
-				p, local, _ := strings.Cut(tok.text, ":")
-				ns, ok := prefixes[p]
-				if !ok {
-					continue
-				}
-				ref = ns + local
-			default:
-				continue
-			}
-			if named {
-				sh.fromNamed = append(sh.fromNamed, ref)
-			} else {
-				sh.from = append(sh.from, ref)
-			}
+		case tok.kind == tokEOF:
+			return ""
+		case tok.kind != tokWord:
+			continue
+		}
+		switch word := strings.ToUpper(tok.text); word {
+		case "PREFIX", "BASE", "VERSION":
+			// Prologue: the operand is a prefixed name, an IRI or a string,
+			// none of which the scanner reports as a word.
+		default:
+			return word
 		}
 	}
 }

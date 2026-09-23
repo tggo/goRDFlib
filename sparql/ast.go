@@ -23,6 +23,22 @@ type ParsedQuery struct {
 	Having         Expr
 	BaseURI        string
 	NamedGraphs    map[string]*rdflibgo.Graph // graph IRI → graph data (for GRAPH clause)
+
+	// DatasetClause records the FROM and FROM NAMED declarations, in query
+	// order. Empty when the query declares no dataset. The evaluator does not
+	// act on it: it is what the query asked for, so that a caller can build
+	// the dataset itself, translate the query, or reject a clause it cannot
+	// honor. NamedGraphs, by contrast, is data the caller supplies.
+	DatasetClause []DatasetClause
+}
+
+// DatasetClause is a FROM [NAMED] <iri> clause of a query. Prefixed names are
+// stored expanded, and a relative IRI is resolved against the query's own BASE
+// when it declares one; without a BASE it is stored as written, for the caller
+// to resolve against whatever base it considers the query's.
+type DatasetClause struct {
+	IRI   string
+	Named bool
 }
 
 // ProjectExpr is a (expr AS ?var) in SELECT.

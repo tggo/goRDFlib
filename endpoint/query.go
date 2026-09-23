@@ -26,13 +26,13 @@ var updateKeywords = map[string]bool{
 func (x *exchange) query(req *protocolRequest) error {
 	h := x.h
 	base := h.baseIRI(x.r)
-	shape := scanQuery(req.text, base)
+	form := scanForm(req.text)
 	switch {
-	case shape.form == "DESCRIBE":
+	case form == "DESCRIBE":
 		return httpErr(http.StatusNotImplemented, ErrDescribeUnsupported)
-	case updateKeywords[shape.form]:
+	case updateKeywords[form]:
 		return httpErrf(http.StatusBadRequest,
-			"%s is an update operation: send it with POST as update= or as %s", shape.form, mtUpdate)
+			"%s is an update operation: send it with POST as update= or as %s", form, mtUpdate)
 	}
 
 	parsed, err := sparql.Parse(req.text)
@@ -86,7 +86,7 @@ func (x *exchange) query(req *protocolRequest) error {
 
 	ctx, cancel := withTimeout(x.r.Context(), h.cfg.queryTimeout)
 	defer cancel()
-	res, err := x.evaluate(ctx, &q, req, shape)
+	res, err := x.evaluate(ctx, &q, req, base)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (x *exchange) query(req *protocolRequest) error {
 
 // evaluate runs q against the dataset the request selects, under the read
 // lock.
-func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *protocolRequest, shape queryShape) (*sparql.Result, error) {
+func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *protocolRequest, base string) (*sparql.Result, error) {
 	h := x.h
 	if err := h.lock.rlock(ctx); err != nil {
 		return nil, evalError(ctx, err)
@@ -130,8 +130,9 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 	defaults, nameds := req.defaultGraphs, req.namedGraphs
 	if len(defaults) == 0 && len(nameds) == 0 {
 		// SPARQL 1.1 Protocol §2.1.4: without protocol parameters the dataset
-		// of the query applies. The engine skips FROM, so it is built here.
-		defaults, nameds = shape.from, shape.fromNamed
+		// of the query applies. The engine records FROM but does not act on
+		// it, so the dataset is built here.
+		defaults, nameds = datasetClauses(q, base)
 	}
 	if len(defaults) > 0 || len(nameds) > 0 {
 		var err error
@@ -153,6 +154,20 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 		return nil, httpErrf(http.StatusInternalServerError, "query evaluation returned no result")
 	}
 	return res, nil
+}
+
+// datasetClauses splits a query's FROM and FROM NAMED IRIs, resolving a
+// relative one the query's own BASE did not resolve against the service base.
+func datasetClauses(q *sparql.ParsedQuery, base string) (defaults, nameds []string) {
+	for _, dc := range q.DatasetClause {
+		ref := resolveRef(base, dc.IRI)
+		if dc.Named {
+			nameds = append(nameds, ref)
+		} else {
+			defaults = append(defaults, ref)
+		}
+	}
+	return defaults, nameds
 }
 
 // datasetFor builds the RDF dataset named by protocol parameters or FROM
