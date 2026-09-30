@@ -264,15 +264,11 @@ func validateNodeAgainstShape(ctx *evalContext, s *Shape, node Term) []Validatio
 	return validateShapeOnNode(ctx, s, node)
 }
 
-// buildClassIndex creates a map from class TermKey to instances (subjects with that rdf:type).
-func buildClassIndex(g *Graph) map[string][]Term {
-	typePred := IRI(RDFType)
-	idx := make(map[string][]Term)
-	for _, t := range g.All(nil, &typePred, nil) {
-		key := t.Object.TermKey()
-		idx[key] = append(idx[key], t.Subject)
-	}
-	return idx
+// instancesOf returns the subjects with rdf:type class, straight from the data
+// graph's POS index. Validation used to build a class -> instances map of the
+// whole graph on every run, to read a few entries of it.
+func (ctx *evalContext) instancesOf(class Term) []Term {
+	return ctx.dataGraph.Subjects(IRI(RDFType), class)
 }
 
 // subClasses returns all classes that are rdfs:subClassOf the given class (transitive).
@@ -286,12 +282,12 @@ func subClasses(g *Graph, class Term) []Term {
 		cur := queue[0]
 		queue = queue[1:]
 		// Find all ?sub where ?sub rdfs:subClassOf cur
-		for _, t := range g.All(nil, &subClassPred, &cur) {
-			k := t.Subject.TermKey()
+		for _, sub := range g.Subjects(subClassPred, cur) {
+			k := sub.TermKey()
 			if !visited[k] {
 				visited[k] = true
-				result = append(result, t.Subject)
-				queue = append(queue, t.Subject)
+				result = append(result, sub)
+				queue = append(queue, sub)
 			}
 		}
 	}
@@ -333,12 +329,12 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 			addTarget(tgt.Value)
 		case TargetClass, TargetImplicitClass:
 			// Direct instances from pre-built index
-			for _, inst := range ctx.classInstances[tgt.Value.TermKey()] {
+			for _, inst := range ctx.instancesOf(tgt.Value) {
 				addTarget(inst)
 			}
 			// Instances of subclasses
 			for _, sub := range subClasses(ctx.dataGraph, tgt.Value) {
-				for _, inst := range ctx.classInstances[sub.TermKey()] {
+				for _, inst := range ctx.instancesOf(sub) {
 					addTarget(inst)
 				}
 			}

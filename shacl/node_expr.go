@@ -25,9 +25,8 @@ type nodeExprContext struct {
 	// The remaining fields are only populated for SHACL-AF expressions, which
 	// can call functions and validate against a shape. SHACL 1.2's shnex:
 	// expressions leave them nil.
-	shapesGraph    *Graph
-	classInstances map[string][]Term
-	af             *afContext
+	shapesGraph *Graph
+	af          *afContext
 
 	// guard is the recursion guard of the validation this expression runs in;
 	// see evalContext.guard.
@@ -324,11 +323,10 @@ func (e *FilterShapeExpr) Eval(ctx *nodeExprContext) []Term {
 		return nodes // no constraints = all pass
 	}
 	eCtx := &evalContext{
-		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.shapeDefinitions(),
-		shapesMap:      ctx.shapesMap,
-		classInstances: buildClassIndex(ctx.dataGraph),
-		guard:          ctx.sharedGuard(),
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapeDefinitions(),
+		shapesMap:   ctx.shapesMap,
+		guard:       ctx.sharedGuard(),
 	}
 	var result []Term
 	for _, n := range nodes {
@@ -361,11 +359,10 @@ func (e *FindFirstExpr) Eval(ctx *nodeExprContext) []Term {
 		return []Term{nodes[0]}
 	}
 	eCtx := &evalContext{
-		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.shapeDefinitions(),
-		shapesMap:      ctx.shapesMap,
-		classInstances: buildClassIndex(ctx.dataGraph),
-		guard:          ctx.sharedGuard(),
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapeDefinitions(),
+		shapesMap:   ctx.shapesMap,
+		guard:       ctx.sharedGuard(),
 	}
 	for _, n := range nodes {
 		if len(validateNodeAgainstShape(eCtx, shape, n)) == 0 {
@@ -393,11 +390,10 @@ func (e *MatchAllExpr) Eval(ctx *nodeExprContext) []Term {
 		return []Term{Literal("true", XSD+"boolean", "")}
 	}
 	eCtx := &evalContext{
-		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.shapeDefinitions(),
-		shapesMap:      ctx.shapesMap,
-		classInstances: buildClassIndex(ctx.dataGraph),
-		guard:          ctx.sharedGuard(),
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapeDefinitions(),
+		shapesMap:   ctx.shapesMap,
+		guard:       ctx.sharedGuard(),
 	}
 	for _, n := range nodes {
 		if len(validateNodeAgainstShape(eCtx, shape, n)) > 0 {
@@ -423,11 +419,10 @@ func (e *NodesMatchingExpr) Eval(ctx *nodeExprContext) []Term {
 		return allNodes(ctx.dataGraph)
 	}
 	eCtx := &evalContext{
-		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.shapeDefinitions(),
-		shapesMap:      ctx.shapesMap,
-		classInstances: buildClassIndex(ctx.dataGraph),
-		guard:          ctx.sharedGuard(),
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapeDefinitions(),
+		shapesMap:   ctx.shapesMap,
+		guard:       ctx.sharedGuard(),
 	}
 	candidates := allNodes(ctx.dataGraph)
 	var result []Term
@@ -447,11 +442,10 @@ type InstancesOfExpr struct {
 }
 
 func (e *InstancesOfExpr) Eval(ctx *nodeExprContext) []Term {
-	classIdx := buildClassIndex(ctx.dataGraph)
 	seen := make(map[string]bool)
 	var result []Term
 	addInstances := func(cls Term) {
-		for _, inst := range classIdx[cls.TermKey()] {
+		for _, inst := range ctx.dataGraph.Subjects(IRI(RDFType), cls) {
 			key := inst.TermKey()
 			if !seen[key] {
 				seen[key] = true
@@ -527,14 +521,13 @@ func evalFlatMap(ctx *nodeExprContext, nodesExpr, mapExpr NodeExpr) []Term {
 	var result []Term
 	for _, n := range nodes {
 		subCtx := &nodeExprContext{
-			dataGraph:      ctx.dataGraph,
-			shapesMap:      ctx.shapesMap,
-			focusNode:      n,
-			vars:           ctx.vars,
-			shapesGraph:    ctx.shapesGraph,
-			classInstances: ctx.classInstances,
-			af:             ctx.af,
-			guard:          ctx.sharedGuard(),
+			dataGraph:   ctx.dataGraph,
+			shapesMap:   ctx.shapesMap,
+			focusNode:   n,
+			vars:        ctx.vars,
+			shapesGraph: ctx.shapesGraph,
+			af:          ctx.af,
+			guard:       ctx.sharedGuard(),
 		}
 		result = append(result, mapExpr.Eval(subCtx)...)
 	}
@@ -642,14 +635,13 @@ func (e *OrderByExpr) Eval(ctx *nodeExprContext) []Term {
 	entries := make([]entry, len(nodes))
 	for i, n := range nodes {
 		subCtx := &nodeExprContext{
-			dataGraph:      ctx.dataGraph,
-			shapesMap:      ctx.shapesMap,
-			focusNode:      n,
-			vars:           ctx.vars,
-			shapesGraph:    ctx.shapesGraph,
-			classInstances: ctx.classInstances,
-			af:             ctx.af,
-			guard:          ctx.sharedGuard(),
+			dataGraph:   ctx.dataGraph,
+			shapesMap:   ctx.shapesMap,
+			focusNode:   n,
+			vars:        ctx.vars,
+			shapesGraph: ctx.shapesGraph,
+			af:          ctx.af,
+			guard:       ctx.sharedGuard(),
 		}
 		entries[i] = entry{node: n, key: e.KeyExpr.Eval(subCtx)}
 	}

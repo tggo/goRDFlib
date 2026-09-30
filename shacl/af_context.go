@@ -62,12 +62,11 @@ func (ctx *afContext) evalCtx() *evalContext {
 	shapes := parseShapes(ctx.shapesGraph)
 	addAFTargets(ctx, shapes)
 	return &evalContext{
-		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.shapesGraph,
-		shapesMap:      shapes,
-		classInstances: buildClassIndex(ctx.dataGraph),
-		cfg:            ctx.cfg,
-		af:             ctx,
-		guard:          &recursionGuard{ctx: ctx.ctx},
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapesGraph,
+		shapesMap:   shapes,
+		cfg:         ctx.cfg,
+		af:          ctx,
+		guard:       &recursionGuard{ctx: ctx.ctx},
 	}
 }

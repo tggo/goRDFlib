@@ -199,13 +199,12 @@ func (ctx *afContext) applyTripleRule(eval *evalContext, rule *afRule, focusNode
 	added := 0
 	for _, fn := range focusNodes {
 		exprCtx := &nodeExprContext{
-			dataGraph:      ctx.dataGraph,
-			shapesGraph:    ctx.shapesGraph,
-			shapesMap:      eval.shapesMap,
-			classInstances: eval.classInstances,
-			focusNode:      fn,
-			af:             ctx,
-			guard:          eval.sharedGuard(),
+			dataGraph:   ctx.dataGraph,
+			shapesGraph: ctx.shapesGraph,
+			shapesMap:   eval.shapesMap,
+			focusNode:   fn,
+			af:          ctx,
+			guard:       eval.sharedGuard(),
 		}
 		subjects := rule.triple.subject.Eval(exprCtx)
 		predicates := rule.triple.predicate.Eval(exprCtx)

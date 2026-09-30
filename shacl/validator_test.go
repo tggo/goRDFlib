@@ -178,7 +178,7 @@ func TestResolveTargets(t *testing.T) {
 			sg := mustParseWithPrefixes(t, tc.shapesTTL)
 			dg := mustParseWithPrefixes(t, tc.dataTTL)
 			shapes := parseShapes(sg)
-			ctx := &evalContext{dataGraph: dg, shapesGraph: sg, shapesMap: shapes, classInstances: buildClassIndex(dg)}
+			ctx := &evalContext{dataGraph: dg, shapesGraph: sg, shapesMap: shapes}
 
 			var allTargets []Term
 			for _, s := range shapes {

@@ -53,12 +53,11 @@ func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, co
 		}
 	}
 	return &Prepared{ctx: evalContext{
-		dataGraph:      dataGraph,
-		shapesGraph:    shapesGraph,
-		shapesMap:      shapes,
-		classInstances: buildClassIndex(dataGraph),
-		cfg:            cfg,
-		af:             af,
+		dataGraph:   dataGraph,
+		shapesGraph: shapesGraph,
+		shapesMap:   shapes,
+		cfg:         cfg,
+		af:          af,
 	}}, nil
 }
 
@@ -66,13 +65,12 @@ func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, co
 // running with goctx.
 func (p *Prepared) evaluation(goctx context.Context) *evalContext {
 	return &evalContext{
-		dataGraph:      p.ctx.dataGraph,
-		shapesGraph:    p.ctx.shapesGraph,
-		shapesMap:      maps.Clone(p.ctx.shapesMap),
-		classInstances: p.ctx.classInstances,
-		cfg:            p.ctx.cfg,
-		af:             p.ctx.af,
-		guard:          &recursionGuard{ctx: goctx},
+		dataGraph:   p.ctx.dataGraph,
+		shapesGraph: p.ctx.shapesGraph,
+		shapesMap:   maps.Clone(p.ctx.shapesMap),
+		cfg:         p.ctx.cfg,
+		af:          p.ctx.af,
+		guard:       &recursionGuard{ctx: goctx},
 	}
 }
 

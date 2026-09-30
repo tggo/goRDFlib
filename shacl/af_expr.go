@@ -136,12 +136,11 @@ func (e *afFilterShapeExpr) Eval(ctx *nodeExprContext) []Term {
 	// A shape used as a filter is evaluated on its own terms: only whether the
 	// node conforms matters, so its own targets are irrelevant.
 	evalCtx := &evalContext{
-		dataGraph:      ctx.dataGraph,
-		shapesGraph:    ctx.shapesGraph,
-		shapesMap:      ctx.shapesMap,
-		classInstances: ctx.classInstances,
-		af:             ctx.af,
-		guard:          ctx.sharedGuard(),
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapesGraph,
+		shapesMap:   ctx.shapesMap,
+		af:          ctx.af,
+		guard:       ctx.sharedGuard(),
 	}
 	shape := resolveShape(evalCtx, e.Shape)
 	if shape == nil {

@@ -458,6 +458,11 @@ The `store.Store` interface (13 methods) has four implementations:
   it. A new constraint that builds results may return `quickFailure` only under
   `ctx.guard.quick`. Guards: `quick_mode_test.go` (verdict == full mode for
   every nesting; reports carry no sentinel and keep complete Details).
+- There is no per-run class index: `sh:targetClass` reads instances from the
+  data graph's POS index (`evalContext.instancesOf`, `subClasses` via
+  `Subjects`). Building a class -> instances map of the whole graph per
+  document was the cost, to read a few entries. Guard: `class_targets_test.go`
+  (subclass targets, `rdfs:subClassOf` cycles, a class that is also a node).
 
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`

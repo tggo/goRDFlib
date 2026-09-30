@@ -88,10 +88,9 @@ type Constraint interface {
 
 // evalContext provides access to graphs and shape lookup during evaluation.
 type evalContext struct {
-	dataGraph      *Graph
-	shapesGraph    *Graph
-	shapesMap      map[string]*Shape
-	classInstances map[string][]Term // class TermKey → instances with that rdf:type
+	dataGraph   *Graph
+	shapesGraph *Graph
+	shapesMap   map[string]*Shape
 
 	// cfg carries the caller's options, and with them the error handler. It is
 	// how evaluation paths that cannot return an error — target resolution —
