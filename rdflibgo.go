@@ -59,6 +59,7 @@ type (
 type (
 	Graph            = graph.Graph
 	GraphOption      = graph.GraphOption
+	SkolemOption     = graph.SkolemOption
 	Resource         = graph.Resource
 	Collection       = graph.Collection
 	ConjunctiveGraph = graph.ConjunctiveGraph
@@ -198,6 +199,13 @@ func WithBase(base string) GraphOption                 { return graph.WithBase(b
 func NewResource(g *Graph, id Subject) *Resource       { return graph.NewResource(g, id) }
 func NewCollection(g *Graph, head Subject) *Collection { return graph.NewCollection(g, head) }
 func NewEmptyCollection(g *Graph) *Collection          { return graph.NewEmptyCollection(g) }
+
+// --- Skolemization (see Graph.Skolemize) ---
+
+const DefaultSkolemBasepath = graph.DefaultSkolemBasepath
+
+func WithStableSkolemIDs() SkolemOption        { return graph.WithStableSkolemIDs() }
+func WithSkolemBasepath(p string) SkolemOption { return graph.WithSkolemBasepath(p) }
 func NewConjunctiveGraph(opts ...GraphOption) *ConjunctiveGraph {
 	return graph.NewConjunctiveGraph(opts...)
 }

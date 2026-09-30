@@ -307,6 +307,23 @@ All formats include both parser and serializer:
 
 All parsers support RDF 1.2 features: triple terms (`<<( s p o )>>`), reified triples, annotations (`{| p o |}`), directional language tags, and `rdf:parseType="Triple"` (RDF/XML).
 
+#### Skolemizing blank nodes
+
+`g.Skolemize(authority)` returns a copy of the graph with every blank node
+replaced by an IRI under `authority/.well-known/genid/` (RDF 1.1 §3.5), and
+`DeSkolemize` reverses it. By default the IRI is built from the blank node's
+label, and labels are fresh on every parse. For output that must be identical
+each time the same document is processed (checksums, diffs, idempotent loads),
+derive the IRIs from the graph's structure instead:
+
+```go
+sk := g.Skolemize("https://example.org", rdflibgo.WithStableSkolemIDs())
+```
+
+The same graph gives the same IRIs whatever its labels or statement order.
+Interchangeable blank nodes (two identical `[ ex:v "x" ]`) get numbered
+suffixes rather than being merged.
+
 #### Streaming N-Quads output
 
 `nq.Serialize` buffers and sorts a whole graph. To write statements as they are
