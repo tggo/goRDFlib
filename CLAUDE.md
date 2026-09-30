@@ -448,6 +448,16 @@ The `store.Store` interface (13 methods) has four implementations:
   `<x>`, `_:x` and `"x"` never meet, and a language-tagged literal ignores its
   datatype. A plain `Term` as key was 10% slower (it hashes three strings).
   Guards: `TestGraphIndexKeepsLookalikesApart`, `TestGraphIndexAgreesWithScan`.
+- **Quick mode** (`recursionGuard.quick`, set by `nodeConforms`) is how
+  `sh:or`/`sh:and`/`sh:not` ask "does this node conform?": validation stops at
+  the first violation and a constraint may return the shared `quickFailure`
+  instead of building a result. Its results must **never reach a report** —
+  only emptiness is read, so anything that needs the results (`sh:node`'s
+  `Details`, the top-level run) calls `validateNodeAgainstShape`. The flag lives
+  on the guard because every derived context shares it; `nodeConforms` restores
+  it. A new constraint that builds results may return `quickFailure` only under
+  `ctx.guard.quick`. Guards: `quick_mode_test.go` (verdict == full mode for
+  every nesting; reports carry no sentinel and keep complete Details).
 
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`

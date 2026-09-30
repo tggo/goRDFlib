@@ -13,6 +13,9 @@ func (c *ClassConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Ter
 	var results []ValidationResult
 	for _, vn := range valueNodes {
 		if !ctx.dataGraph.HasType(vn, c.Class) {
+			if ctx.guard != nil && ctx.guard.quick {
+				return quickFailure
+			}
 			results = append(results, makeResult(shape, focusNode, vn, c.ComponentIRI()))
 		}
 	}

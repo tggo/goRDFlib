@@ -140,14 +140,21 @@ func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []Validatio
 		}
 		defer ctx.leave(s, focusNode)
 		valueNodes := []Term{focusNode}
+		quick := ctx.guard.quick
 		for _, c := range s.Constraints {
 			results = append(results, c.Evaluate(ctx, s, focusNode, valueNodes)...)
+			if quick && len(results) > 0 {
+				return results
+			}
 		}
 		for _, ps := range s.Properties {
 			if ps.Deactivated {
 				continue
 			}
 			results = append(results, validatePropertyShape(ctx, ps, focusNode)...)
+			if quick && len(results) > 0 {
+				return results
+			}
 		}
 	}
 
@@ -163,8 +170,12 @@ func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []Validat
 	var results []ValidationResult
 	valueNodes := propertyValueNodes(ctx, s, focusNode)
 
+	quick := ctx.guard.quick
 	for _, c := range s.Constraints {
 		results = append(results, c.Evaluate(ctx, s, focusNode, valueNodes)...)
+		if quick && len(results) > 0 {
+			return results
+		}
 	}
 
 	for _, ps := range s.Properties {
@@ -173,6 +184,9 @@ func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []Validat
 		}
 		for _, vn := range valueNodes {
 			results = append(results, validatePropertyShape(ctx, ps, vn)...)
+			if quick && len(results) > 0 {
+				return results
+			}
 		}
 	}
 
@@ -224,6 +238,28 @@ func evalSPARQLValues(ctx *evalContext, v *SPARQLValues, focusNode Term) []Term 
 }
 
 // validateNodeAgainstShape validates a single node against a shape (used by logical constraints).
+// quickFailure is what a constraint returns in quick mode instead of building a
+// result nobody will read. It is shared, carries no data, and must never be
+// modified or reach a report.
+var quickFailure = []ValidationResult{{}}
+
+// nodeConforms reports whether node conforms to s. It is
+// len(validateNodeAgainstShape(ctx, s, node)) == 0 without the cost of the
+// violations: in quick mode (recursionGuard.quick, inherited by everything
+// evaluated below, since every derived context shares the guard) validation
+// returns at the first violation and a constraint may return quickFailure
+// instead of a built result. Only sh:or, sh:and and sh:not, which read nothing
+// but emptiness, call it; any caller that needs the results, sh:node for its
+// Details for one, must use validateNodeAgainstShape.
+func nodeConforms(ctx *evalContext, s *Shape, node Term) bool {
+	g := ctx.sharedGuard()
+	prev := g.quick
+	g.quick = true
+	ok := len(validateShapeOnNode(ctx, s, node)) == 0
+	g.quick = prev
+	return ok
+}
+
 func validateNodeAgainstShape(ctx *evalContext, s *Shape, node Term) []ValidationResult {
 	return validateShapeOnNode(ctx, s, node)
 }

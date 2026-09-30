@@ -146,6 +146,11 @@ type recursionGuard struct {
 	// nil means context.Background.
 	ctx context.Context
 
+	// quick is set while nodeConforms runs: the caller wants only whether a
+	// node conforms, so validation may stop at the first violation and report
+	// it without detail. The results of a quick run are never reported.
+	quick bool
+
 	stack  []guardKey
 	active map[guardKey]struct{} // mirrors stack once it grows past guardScanDepth
 }

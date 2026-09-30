@@ -17,7 +17,7 @@ func (c *AndConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term,
 			if !ok {
 				continue
 			}
-			if len(validateNodeAgainstShape(ctx, s, vn)) > 0 {
+			if !nodeConforms(ctx, s, vn) {
 				results = append(results, makeResult(shape, focusNode, vn, c.ComponentIRI()))
 				break
 			}
@@ -44,7 +44,7 @@ func (c *OrConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term, 
 			if !ok {
 				continue
 			}
-			if len(validateNodeAgainstShape(ctx, s, vn)) == 0 {
+			if nodeConforms(ctx, s, vn) {
 				anyConforms = true
 				break
 			}
@@ -72,7 +72,7 @@ func (c *NotConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term,
 	}
 	var results []ValidationResult
 	for _, vn := range valueNodes {
-		if len(validateNodeAgainstShape(ctx, s, vn)) == 0 {
+		if nodeConforms(ctx, s, vn) {
 			results = append(results, makeResult(shape, focusNode, vn, c.ComponentIRI()))
 		}
 	}
