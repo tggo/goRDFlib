@@ -316,13 +316,19 @@ func allNodes(g *Graph) []Term {
 }
 
 func resolveTargets(ctx *evalContext, s *Shape) []Term {
-	seen := make(map[string]bool)
+	// seen is allocated by the first target: most shapes of a large shapes
+	// graph, property shapes among them, select nothing, and a map per shape
+	// per document is the cost. It is keyed like the graph indexes (ikey).
+	var seen map[ikey]struct{}
 	var targets []Term
 
 	addTarget := func(t Term) {
-		key := t.TermKey()
-		if !seen[key] {
-			seen[key] = true
+		key := indexKey(t)
+		if _, dup := seen[key]; !dup {
+			if seen == nil {
+				seen = make(map[ikey]struct{}, 8)
+			}
+			seen[key] = struct{}{}
 			targets = append(targets, t)
 		}
 	}
@@ -388,8 +394,8 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 	// SHACL 1.2: sh:shape — nodes in the data graph that declare sh:shape targeting this shape
 	shapePred := IRI(SH + "shape")
 	shapeID := s.ID
-	for _, t := range ctx.dataGraph.All(nil, &shapePred, &shapeID) {
-		addTarget(t.Subject)
+	for _, sub := range ctx.dataGraph.Subjects(shapePred, shapeID) {
+		addTarget(sub)
 	}
 
 	return targets

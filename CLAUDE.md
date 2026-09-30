@@ -473,6 +473,10 @@ The `store.Store` interface (13 methods) has four implementations:
   depends on it). A per-call option that flips advanced features reparses and
   drops it (`Prepared.ordered == nil` means sort per run). Guard:
   `compiled_order_test.go`.
+- `resolveTargets` allocates its dedup set on the first target (most shapes
+  select nothing) and keys it by `ikey`, so a literal, an IRI and a language
+  tag with one lexical form stay separate focus nodes. Guard:
+  `target_dedup_test.go`.
 
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
