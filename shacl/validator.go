@@ -70,7 +70,11 @@ func (p *Prepared) ValidateContext(goctx context.Context) (ValidationReport, err
 	// Shapes are visited in the order of their keys rather than map order, so
 	// that anything reported to the error handler along the way arrives in the
 	// same sequence on every run.
-	for _, s := range shapesInOrder(ctx.shapesMap) {
+	ordered := p.ordered
+	if ordered == nil {
+		ordered = shapesInOrder(ctx.shapesMap)
+	}
+	for _, s := range ordered {
 		if s.Deactivated {
 			continue
 		}

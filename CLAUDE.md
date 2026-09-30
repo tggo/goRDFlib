@@ -468,6 +468,11 @@ The `store.Store` interface (13 methods) has four implementations:
   (`keys`/`key`); `refKey`/`refKey1` fall back to `String()` when it is empty, so
   a constraint built from its exported fields still resolves. The cached key is
   an optimisation, never a dependency. Guard: `shape_ref_key_test.go`.
+- `CompiledShapes.ordered` is `shapesInOrder(shapes)` sorted once; a run with
+  it visits shapes in key order exactly as `Validate` does (error-handler output
+  depends on it). A per-call option that flips advanced features reparses and
+  drops it (`Prepared.ordered == nil` means sort per run). Guard:
+  `compiled_order_test.go`.
 
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`

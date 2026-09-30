@@ -23,6 +23,7 @@ type CompiledShapes struct {
 	opts        []Option
 	advanced    bool
 	shapes      map[string]*Shape
+	ordered     []*Shape // shapesInOrder(shapes), sorted once instead of on every run
 }
 
 // CompileShapes parses shapesGraph with opts. The options also apply to every
@@ -51,6 +52,7 @@ func CompileShapes(shapesGraph *Graph, opts ...Option) (*CompiledShapes, error) 
 		opts:        opts,
 		advanced:    cfg.advanced,
 		shapes:      shapes,
+		ordered:     shapesInOrder(shapes),
 	}, nil
 }
 
@@ -72,11 +74,11 @@ func (c *CompiledShapes) ValidateContext(ctx context.Context, dataGraph *Graph, 
 		all = append(append(make([]Option, 0, len(c.opts)+len(opts)), c.opts...), opts...)
 	}
 	cfg := newConfig(all)
-	shapes := c.shapes
+	shapes, ordered := c.shapes, c.ordered
 	if cfg.advanced != c.advanced {
-		shapes = nil
+		shapes, ordered = nil, nil
 	}
-	p, err := prepare(ctx, dataGraph, c.shapesGraph, cfg, shapes)
+	p, err := prepare(ctx, dataGraph, c.shapesGraph, cfg, shapes, ordered)
 	if err != nil {
 		return ValidationReport{}, err
 	}

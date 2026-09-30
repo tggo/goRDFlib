@@ -12,6 +12,7 @@ type Prepared struct {
 	ctx        evalContext
 	inspection *evalContext
 	targets    map[*Shape][]Term
+	ordered    []*Shape // shapesInOrder of the parsed shapes when known up front; nil means compute it
 }
 
 // Prepare performs the same preparation as Validate, including the configured
@@ -27,14 +28,15 @@ func Prepare(dataGraph, shapesGraph *Graph, opts ...Option) *Prepared {
 // returns a nil *Prepared, because rules cut short would leave the data
 // without some of its inferred triples.
 func PrepareContext(ctx context.Context, dataGraph, shapesGraph *Graph, opts ...Option) (*Prepared, error) {
-	return prepare(ctx, dataGraph, shapesGraph, newConfig(opts), nil)
+	return prepare(ctx, dataGraph, shapesGraph, newConfig(opts), nil, nil)
 }
 
 // prepare is PrepareContext over an already built config. With compiled set,
 // its parsed shapes are used instead of parsing shapesGraph again; they must
 // have been compiled with the same advanced-features setting as cfg, because
-// addAFTargets has already been applied to them (or deliberately not).
-func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, compiled map[string]*Shape) (*Prepared, error) {
+// addAFTargets has already been applied to them (or deliberately not). ordered
+// is shapesInOrder(compiled) when the caller kept it, and nil otherwise.
+func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, compiled map[string]*Shape, ordered []*Shape) (*Prepared, error) {
 	if err := stopped(ctx); err != nil {
 		return nil, err
 	}
@@ -52,7 +54,7 @@ func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, co
 			addAFTargets(af, shapes)
 		}
 	}
-	return &Prepared{ctx: evalContext{
+	return &Prepared{ordered: ordered, ctx: evalContext{
 		dataGraph:   dataGraph,
 		shapesGraph: shapesGraph,
 		shapesMap:   shapes,
