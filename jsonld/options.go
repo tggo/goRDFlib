@@ -55,6 +55,8 @@ func WithExpanded() Option {
 }
 
 // WithDocumentLoader sets a custom document loader for remote context resolution.
+// Without one, json-gold fetches every remote @context on every call; share a
+// NewCachingDocumentLoader across calls to fetch each one once.
 func WithDocumentLoader(loader ld.DocumentLoader) Option {
 	return func(c *config) { c.documentLoader = loader }
 }

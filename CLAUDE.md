@@ -284,6 +284,12 @@ The `store.Store` interface (13 methods) has four implementations:
   rather than a wrong one. Only the **top-level** `@context` is used; scoped and
   remote contexts are not seen. `@id` aliases are collected in a separate pass
   because a context may be written after the nodes that use it.
+- `jsonld.CachingDocumentLoader` (issue #39) exists because json-gold's
+  `ld.CachingDocumentLoader` is an unguarded map. Cached `RemoteDocument`s are
+  shared across goroutines, so json-gold must not mutate them — the -race test
+  `TestCachingDocumentLoaderConcurrent` is what would notice. Failures are not
+  cached. It is opt-in, never the default: a default cache would change what a
+  long-running process sees when a remote context changes.
 - `jsonld.WithExpandContext` (issue #29) sets json-gold's `ExpandContext`. The
   processor parses it into the active context **before** the document's own
   `@context`, so the document wins term by term — it is for defaults and
