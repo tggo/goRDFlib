@@ -323,6 +323,27 @@ The `store.Store` interface (13 methods) has four implementations:
 - Context for why any of this exists: oxigraph/oxigraph#1526,
   RDFLib/pySHACL#321 (closed as impossible on RDFLib).
 
+### jsonld/ direct dataset conversion (`dataset.go`)
+- `Parse` asks json-gold for its `*ld.RDFDataset` and builds terms from it
+  (`datasetStatements`) instead of serializing to N-Quads text and parsing that
+  back: -12..19% time, -18..21% bytes on schema.org Place/Dataset documents.
+- **Fallback rule: the fast path takes only what the N-Quads parser would
+  accept unchanged.** Any relative or ill-formed IRI, non-simple blank-node
+  label, invalid or directional language tag, language on a typed literal,
+  bad datatype, or a statement that could exceed the 64 KiB line cap (unless
+  `WithUnboundedLines`) sends the **whole document** down the text path
+  (`NQuadRDFSerializer` -> `parseNQuadsInto`). That path alone owns the
+  `WithSkipHandler` lines, `WithStrictIRIs` errors and `ErrLineTooLong`, so
+  the fast path never has to reproduce them. A new check that the text path
+  makes must become an eligibility rule, not a second implementation.
+- Guards: `TestDatasetFastPathEligibility` (one case per rule, hand-built
+  datasets because json-gold drops most of them itself),
+  `TestDatasetPathsAgreeOnParse` / `...OnCorpus` (both paths, compared on
+  graph, skip calls, errors and provenance; `config.forceTextPath` forces the
+  text path). The error/skip line numbers are masked in the comparison: they
+  depend on json-gold's statement order, which varies between expansions.
+- Blank nodes go through the same `bnodes.Scope` as the text path.
+
 ### blank node scoping (internal/bnodes, PR #28)
 - Every parser gives blank node labels a **fresh scope per Parse call** (RDF 1.1
   §3.4: a label identifies a node within one document). `_:b1` in two documents

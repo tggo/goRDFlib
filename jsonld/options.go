@@ -22,6 +22,9 @@ type config struct {
 	provenance           ProvenanceHandler
 	preserveBlankNodeIDs bool
 	expandContext        any
+	// forceTextPath is set by tests to bypass the direct dataset conversion
+	// (see addDataset) so both paths can be compared.
+	forceTextPath bool
 }
 
 // Option configures JSON-LD parsing or serialization.

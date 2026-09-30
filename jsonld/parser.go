@@ -53,7 +53,6 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	// Convert to N-Quads via json-gold
 	proc := ld.NewJsonLdProcessor()
 	ldOpts := ld.NewJsonLdOptions(base)
-	ldOpts.Format = "application/n-quads"
 	if cfg.documentLoader != nil {
 		ldOpts.DocumentLoader = cfg.documentLoader
 	}
@@ -65,30 +64,50 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	ldOpts.ExpandContext, docBase = fixExpandContextVocab(cfg.expandContext, base)
 	resolveEmptyFragmentVocab(doc, docBase)
 
-	var nquads any
+	var result any
 	// json-gold is not defensive about every malformed document and can panic
 	// rather than return an error; see ErrProcessorPanic.
-	if err := guard("expansion to N-Quads", func() error {
+	if err := guard("expansion to RDF", func() error {
 		var err error
-		nquads, err = proc.ToRDF(doc, ldOpts)
+		result, err = proc.ToRDF(doc, ldOpts)
 		return err
 	}); err != nil {
 		return err
 	}
-
-	nqStr, ok := nquads.(string)
+	ds, ok := result.(*ld.RDFDataset)
 	if !ok {
-		if nquads == nil {
+		if result == nil {
 			return nil // empty result
 		}
-		return fmt.Errorf("json-ld: unexpected ToRDF result type %T", nquads)
-	}
-	if nqStr == "" {
-		return nil
+		return fmt.Errorf("json-ld: unexpected ToRDF result type %T", result)
 	}
 
-	// Parse the N-Quads into the graph
-	return parseNQuadsInto(g, nqStr, &cfg, src)
+	return addDataset(g, ds, &cfg, src)
+}
+
+// addDataset adds the RDF json-gold produced to g. It builds terms directly
+// from the dataset (datasetStatements) when every node is one the N-Quads
+// parser would accept unchanged, and otherwise serializes the dataset to
+// N-Quads and runs parseNQuadsInto, which owns all error, skip and
+// line-length behavior. cfg.forceTextPath (tests only) takes the second route
+// unconditionally.
+func addDataset(g *rdflibgo.Graph, ds *ld.RDFDataset, cfg *config, src []byte) error {
+	if !cfg.forceTextPath {
+		if stmts, ok := datasetStatements(ds, cfg.preserveBlankNodeIDs, cfg.unbounded); ok {
+			if len(stmts) == 0 {
+				return nil
+			}
+			return commit(g, stmts, cfg, src)
+		}
+	}
+	var sb strings.Builder
+	if err := (&ld.NQuadRDFSerializer{}).SerializeTo(&sb, ds); err != nil {
+		return fmt.Errorf("json-ld: serializing expanded RDF: %w", err)
+	}
+	if sb.Len() == 0 {
+		return nil
+	}
+	return parseNQuadsInto(g, sb.String(), cfg, src)
 }
 
 // parseNQuadsInto parses the expanded N-Quads into g.
@@ -125,36 +144,34 @@ func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) e
 		nqOpts = append(nqOpts, nq.WithErrorHandler(skipIllFormed))
 	}
 
-	type statement struct {
-		s rdflibgo.Subject
-		p rdflibgo.URIRef
-		o rdflibgo.Term
-	}
 	// One statement per N-Quads line.
 	stmts := make([]statement, 0, strings.Count(nqStr, "\n")+1)
-	var provLines []int // parallel to stmts; 0 when the subject has no line
-	var lines subjectLines
-	if cfg.provenance != nil {
-		// The line numbers of the intermediate N-Quads are meaningless to the
-		// caller — they belong to a document nobody wrote. What is reported is
-		// the line of the source node object that declared the subject, which
-		// is why the N-Quads line is discarded here.
-		lines = buildSubjectLines(src, cfg.base, cfg.documentLoader, cfg.expandContext)
-	}
 	collect := func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, _ rdflibgo.Term) error {
 		stmts = append(stmts, statement{s, p, o})
-		if cfg.provenance != nil {
-			provLines = append(provLines, lines[term.TermKey(s)])
-		}
 		return nil
 	}
 	if err := nq.ParseStream(strings.NewReader(nqStr), collect, nqOpts...); err != nil {
 		return err
 	}
-	for i, st := range stmts {
+	return commit(g, stmts, cfg, src)
+}
+
+// commit adds stmts to g and reports provenance for them.
+func commit(g *rdflibgo.Graph, stmts []statement, cfg *config, src []byte) error {
+	if cfg.provenance == nil {
+		for _, st := range stmts {
+			g.Add(st.s, st.p, st.o)
+		}
+		return nil
+	}
+	// The line numbers of the intermediate RDF are meaningless to the
+	// caller — they belong to a document nobody wrote. What is reported is
+	// the line of the source node object that declared the subject.
+	lines := buildSubjectLines(src, cfg.base, cfg.documentLoader, cfg.expandContext)
+	for _, st := range stmts {
 		g.Add(st.s, st.p, st.o)
-		if cfg.provenance != nil && provLines[i] > 0 {
-			cfg.provenance(st.s, st.p, st.o, provLines[i])
+		if line := lines[term.TermKey(st.s)]; line > 0 {
+			cfg.provenance(st.s, st.p, st.o, line)
 		}
 	}
 	return nil
