@@ -143,7 +143,8 @@ func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []Validatio
 			return nil // see recursionGuard
 		}
 		defer ctx.leave(s, focusNode)
-		valueNodes := []Term{focusNode}
+		valueNodes := ctx.guard.pushSingle(focusNode)
+		defer ctx.guard.popSingle()
 		quick := ctx.guard.quick
 		for _, c := range s.Constraints {
 			results = append(results, c.Evaluate(ctx, s, focusNode, valueNodes)...)

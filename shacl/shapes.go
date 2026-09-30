@@ -81,6 +81,11 @@ func (k TargetKind) String() string {
 }
 
 // Constraint is a single constraint component to evaluate.
+//
+// Evaluate must treat valueNodes as read-only and must not keep it (or a
+// sub-slice) after it returns: for a node shape the validator reuses the
+// backing array for the next focus node. Copy the terms if they are needed
+// later. Evaluate may be called concurrently from different validation runs.
 type Constraint interface {
 	Evaluate(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term) []ValidationResult
 	ComponentIRI() string
@@ -152,6 +157,10 @@ type recursionGuard struct {
 
 	stack  []guardKey
 	active map[guardKey]struct{} // mirrors stack once it grows past guardScanDepth
+
+	// values is a stack of the one-element value-node slices that node
+	// shapes pass to their constraints (see pushSingle).
+	values []Term
 }
 
 // guardScanDepth is the stack depth up to which the guard scans instead of
@@ -163,6 +172,36 @@ const guardScanDepth = 32
 // allocated on every shape entered.
 type guardKey struct {
 	shape, node Term
+}
+
+// pushSingle returns a slice holding only t, cut from a per-run stack, so a
+// node shape does not allocate one slice per focus node. Each call must be
+// paired with popSingle once the constraints have run.
+//
+// The slice is valid only until popSingle: its slot is then handed to the next
+// focus node, which is the point. A Constraint must therefore not keep its
+// valueNodes argument past the call (every built-in one copies what it needs;
+// it is documented on Constraint). The capacity is 1, so an append by a
+// constraint copies instead of writing into the neighbouring slot. Growing the
+// stack moves later slots to a new array and leaves the slices already handed
+// out on the old one, untouched. A guard belongs to one run on one goroutine,
+// so no locking is needed.
+func (g *recursionGuard) pushSingle(t Term) []Term {
+	n := len(g.values)
+	if n == cap(g.values) {
+		grown := make([]Term, n, 2*n+8)
+		copy(grown, g.values)
+		g.values = grown
+	}
+	g.values = append(g.values, t)
+	return g.values[n : n+1 : n+1]
+}
+
+// popSingle releases the slot of the latest pushSingle.
+func (g *recursionGuard) popSingle() {
+	n := len(g.values) - 1
+	g.values[n] = Term{} // do not keep the node alive
+	g.values = g.values[:n]
 }
 
 // sharedGuard returns ctx's guard, creating it on first use, so that a context
