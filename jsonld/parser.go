@@ -130,7 +130,8 @@ func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) e
 		p rdflibgo.URIRef
 		o rdflibgo.Term
 	}
-	var stmts []statement
+	// One statement per N-Quads line.
+	stmts := make([]statement, 0, strings.Count(nqStr, "\n")+1)
 	var provLines []int // parallel to stmts; 0 when the subject has no line
 	var lines subjectLines
 	if cfg.provenance != nil {
