@@ -34,30 +34,12 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 
 	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
 		var sb strings.Builder
-		s, err := ntsyntax.Term(t.Subject)
+		line, err := formatLine(&sb, t.Subject, t.Predicate, t.Object, graphSuffix)
 		if err != nil {
 			serErr = err
 			return false
 		}
-		p, err := ntsyntax.Term(t.Predicate)
-		if err != nil {
-			serErr = err
-			return false
-		}
-		o, err := ntsyntax.Term(t.Object)
-		if err != nil {
-			serErr = err
-			return false
-		}
-		sb.Grow(len(s) + len(p) + len(o) + len(graphSuffix) + 6)
-		sb.WriteString(s)
-		sb.WriteByte(' ')
-		sb.WriteString(p)
-		sb.WriteByte(' ')
-		sb.WriteString(o)
-		sb.WriteString(graphSuffix)
-		sb.WriteString(" .")
-		lines = append(lines, sb.String())
+		lines = append(lines, line)
 		return true
 	})
 	if serErr != nil {

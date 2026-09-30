@@ -307,6 +307,25 @@ All formats include both parser and serializer:
 
 All parsers support RDF 1.2 features: triple terms (`<<( s p o )>>`), reified triples, annotations (`{| p o |}`), directional language tags, and `rdf:parseType="Triple"` (RDF/XML).
 
+#### Streaming N-Quads output
+
+`nq.Serialize` buffers and sorts a whole graph. To write statements as they are
+produced, or several graphs into one file, use `nq.Writer`:
+
+```go
+w := nq.NewWriter(out)
+for _, doc := range docs {
+    g := rdflibgo.NewGraph(rdflibgo.WithIdentifier(doc.GraphIRI))
+    // ... parse into g ...
+    if err := w.WriteGraph(g); err != nil { return err }
+}
+err := w.Flush()
+```
+
+`Write(s, p, o, graph)` and `WriteQuad` write single statements. A term the
+N-Quads parser would reject is refused with its error and nothing of it is
+written.
+
 #### Blank-node identity when parsing
 
 Blank-node labels identify nodes within a document, not across documents. All six
