@@ -2,6 +2,8 @@ package shacl
 
 import (
 	"context"
+	"reflect"
+	"sync"
 	"testing"
 )
 
@@ -190,5 +192,42 @@ func TestQuickModeVerdictsOfLogicalConstraints(t *testing.T) {
 		if got := nodeConforms(ctx, s, ex(w.node)); got != w.conforms {
 			t.Errorf("nodeConforms(%s, %s) = %v, want %v", w.shape, w.node, got, w.conforms)
 		}
+	}
+}
+
+// A per-constraint sh:severity annotation wraps the constraint in
+// severityOverrideConstraint, which rewrites the severity of the results it
+// gets back. Under sh:or those results can be the shared quickFailure
+// placeholder; writing to it is a data race between concurrent validations
+// and leaves the placeholder non-zero. Run with -race.
+func TestQuickModeSeverityOverrideLeavesPlaceholderAlone(t *testing.T) {
+	shapes, err := LoadTurtleString(`
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://example.org/> .
+ex:IsC a sh:NodeShape ; sh:class ex:C {| sh:severity sh:Warning |} .
+ex:IsD a sh:NodeShape ; sh:class ex:D .
+ex:Root a sh:NodeShape ; sh:targetNode ex:n ; sh:or ( ex:IsC ex:IsD ) .
+`, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := LoadTurtleString(`@prefix ex: <http://example.org/> . ex:n a ex:E .`, "")
+	compiled, err := CompileShapes(shapes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r := compiled.Validate(data); r.Conforms || len(r.Results) != 1 {
+				t.Errorf("conforms=%v results=%d, want one sh:or violation", r.Conforms, len(r.Results))
+			}
+		}()
+	}
+	wg.Wait()
+	if !reflect.DeepEqual(quickFailure[0], ValidationResult{}) {
+		t.Fatalf("quickFailure was written to: %+v", quickFailure[0])
 	}
 }

@@ -612,6 +612,11 @@ type severityOverrideConstraint struct {
 func (c *severityOverrideConstraint) ComponentIRI() string { return c.inner.ComponentIRI() }
 func (c *severityOverrideConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term) []ValidationResult {
 	results := c.inner.Evaluate(ctx, shape, focusNode, valueNodes)
+	// In quick mode the results are only counted, and they may be the shared
+	// quickFailure placeholder, which must never be written to.
+	if ctx != nil && ctx.guard != nil && ctx.guard.quick {
+		return results
+	}
 	for i := range results {
 		results[i].ResultSeverity = c.severity
 	}
