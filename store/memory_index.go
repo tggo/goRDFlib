@@ -9,9 +9,9 @@ import "github.com/tggo/goRDFlib/term"
 // Not safe for concurrent use; MemoryStore guards it with its own lock.
 type tripleIndex struct {
 	// Keys are TermKey() strings for map-key compatibility.
-	spo map[string]map[string]map[string]term.Triple // subject → predicate → object → triple
-	pos map[string]map[string]map[string]term.Triple // predicate → object → subject → triple
-	osp map[string]map[string]map[string]term.Triple // object → subject → predicate → triple
+	spo map[string]map[string]map[string]*term.Triple // subject → predicate → object → triple
+	pos map[string]map[string]map[string]*term.Triple // predicate → object → subject → triple
+	osp map[string]map[string]map[string]*term.Triple // object → subject → predicate → triple
 
 	count int
 	// predCount holds the number of triples per predicate key, so Cardinality
@@ -21,9 +21,9 @@ type tripleIndex struct {
 
 func newTripleIndex() *tripleIndex {
 	return &tripleIndex{
-		spo:       make(map[string]map[string]map[string]term.Triple),
-		pos:       make(map[string]map[string]map[string]term.Triple),
-		osp:       make(map[string]map[string]map[string]term.Triple),
+		spo:       make(map[string]map[string]map[string]*term.Triple),
+		pos:       make(map[string]map[string]map[string]*term.Triple),
+		osp:       make(map[string]map[string]map[string]*term.Triple),
 		predCount: make(map[string]int),
 	}
 }
@@ -36,20 +36,23 @@ func (x *tripleIndex) add(t term.Triple) {
 		return
 	}
 
-	ensureInsert(x.spo, sk, pk, ok, t)
-	ensureInsert(x.pos, pk, ok, sk, t)
-	ensureInsert(x.osp, ok, sk, pk, t)
+	// One copy shared by all three indexes: a pointer slot is 8 bytes where
+	// a Triple is 48, and most inner maps hold a single entry.
+	tp := &t
+	ensureInsert(x.spo, sk, pk, ok, tp)
+	ensureInsert(x.pos, pk, ok, sk, tp)
+	ensureInsert(x.osp, ok, sk, pk, tp)
 	x.count++
 	x.predCount[pk]++
 }
 
 // ensureInsert inserts t into a 3-level nested map, creating intermediate maps as needed.
-func ensureInsert(idx map[string]map[string]map[string]term.Triple, k1, k2, k3 string, t term.Triple) {
+func ensureInsert(idx map[string]map[string]map[string]*term.Triple, k1, k2, k3 string, t *term.Triple) {
 	if idx[k1] == nil {
-		idx[k1] = make(map[string]map[string]term.Triple)
+		idx[k1] = make(map[string]map[string]*term.Triple)
 	}
 	if idx[k1][k2] == nil {
-		idx[k1][k2] = make(map[string]term.Triple)
+		idx[k1][k2] = make(map[string]*term.Triple)
 	}
 	idx[k1][k2][k3] = t
 }
@@ -133,26 +136,26 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	switch {
 	case sk != "" && pk != "" && ok != "":
 		if t, exists := x.spo[sk][pk][ok]; exists {
-			return yield(t)
+			return yield(*t)
 		}
 
 	case sk != "" && pk != "":
 		for _, t := range x.spo[sk][pk] {
-			if !yield(t) {
+			if !yield(*t) {
 				return false
 			}
 		}
 
 	case pk != "" && ok != "":
 		for _, t := range x.pos[pk][ok] {
-			if !yield(t) {
+			if !yield(*t) {
 				return false
 			}
 		}
 
 	case sk != "" && ok != "":
 		for _, t := range x.osp[ok][sk] {
-			if !yield(t) {
+			if !yield(*t) {
 				return false
 			}
 		}
@@ -160,7 +163,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	case sk != "":
 		for _, o := range x.spo[sk] {
 			for _, t := range o {
-				if !yield(t) {
+				if !yield(*t) {
 					return false
 				}
 			}
@@ -169,7 +172,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	case pk != "":
 		for _, s := range x.pos[pk] {
 			for _, t := range s {
-				if !yield(t) {
+				if !yield(*t) {
 					return false
 				}
 			}
@@ -178,7 +181,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	case ok != "":
 		for _, p := range x.osp[ok] {
 			for _, t := range p {
-				if !yield(t) {
+				if !yield(*t) {
 					return false
 				}
 			}
@@ -188,7 +191,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 		for _, po := range x.spo {
 			for _, o := range po {
 				for _, t := range o {
-					if !yield(t) {
+					if !yield(*t) {
 						return false
 					}
 				}

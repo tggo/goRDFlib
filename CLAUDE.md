@@ -492,6 +492,12 @@ The `store.Store` interface (13 methods) has four implementations:
   second key, so `(?, p, o)` scanned every object of `p`. That cost 10µs on
   `StoreLookup_FilmsByDirector_100k`, down to 77ns after the fix.
 
+- The innermost index maps hold `*term.Triple`, one copy shared by SPO, POS
+  and OSP. Most inner maps have a single entry and Go still allocates a group
+  of 8 slots for it, so a 48-byte `Triple` value per slot tripled the cost of
+  every insert: -45% memory and -13..31% time on loads. Lookups yield `*t`;
+  never hand out the pointer, the three indexes share it.
+
 ### store stress numbers (README "Store Stress Test")
 - Ingest and heap delta come from `TestStress3M` (one run). Reads come from
   `BenchmarkStress3M`, which loads each backend once per process and repeats
