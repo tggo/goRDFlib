@@ -20,6 +20,11 @@ const (
 // Parse parses RDF/XML format into the given graph. Labelled blank nodes share
 // one scope per call, unless WithPreserveBlankNodeIDs is set. Anonymous nodes
 // always receive fresh identifiers.
+//
+// An attribute or namespace that yields a string no IRI may hold (for example
+// rdf:about="urn:a|b") is an error matching term.ErrInvalidIRI, with the line
+// and column where it was read; percent-encode such characters. Statements
+// read before that point stay in g.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
@@ -46,6 +51,10 @@ type rdfxmlParser struct {
 	nsPrefixes    map[string]string // prefix → namespace URI (in-scope)
 	nsPrefixOrder []string          // insertion order of prefixes
 	rdfVersion    string            // "1.2" if rdf:version="1.2" on root (RDF 1.2)
+
+	// err is the first IRI that could not be accepted (see iri). Parsing goes
+	// on to the end of the current element, but nothing more is added.
+	err error
 }
 
 // itsContext holds the ITS (Internationalization Tag Set) directional context.
@@ -115,6 +124,9 @@ var coreRDFAttrs = map[string]bool{
 // Every triple this parser produces goes through here rather than calling
 // g.Add directly, so that a new production cannot quietly skip provenance.
 func (p *rdfxmlParser) add(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) {
+	if p.err != nil {
+		return
+	}
 	p.g.Add(s, pred, o)
 	if p.provenance == nil || p.dec == nil {
 		return
@@ -125,7 +137,34 @@ func (p *rdfxmlParser) add(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.
 	p.provenance(s, pred, o, line)
 }
 
+// iri turns s into an IRI, holding it to the same rules as every other
+// parser here (term.ValidIRI): an attribute such as rdf:about="urn:a|b" is
+// legal XML but not an IRI, and the serializers refuse to write it. The first
+// such IRI becomes the error Parse returns, with its position.
+func (p *rdfxmlParser) iri(s string) rdflibgo.URIRef {
+	u, err := rdflibgo.NewURIRef(s)
+	if err == nil {
+		return u
+	}
+	if p.err == nil {
+		line, col := 0, 0
+		if p.dec != nil {
+			line, col = p.dec.InputPos()
+		}
+		p.err = fmt.Errorf("rdf/xml: line %d, column %d: %w", line, col, err)
+	}
+	return rdflibgo.NewURIRefUnsafe(s)
+}
+
 func (p *rdfxmlParser) parse(r io.Reader) error {
+	err := p.parseDocument(r)
+	if p.err != nil {
+		return p.err
+	}
+	return err
+}
+
+func (p *rdfxmlParser) parseDocument(r io.Reader) error {
 	decoder := xml.NewDecoder(r)
 	p.dec = decoder
 	for {
@@ -228,13 +267,13 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 		switch attr.Name.Local {
 		case "about":
 			hasAbout = true
-			subj = rdflibgo.NewURIRefUnsafe(p.resolve(attr.Value))
+			subj = p.iri(p.resolve(attr.Value))
 		case "ID":
 			hasID = true
 			if err := p.checkID(attr.Value); err != nil {
 				return nil, err
 			}
-			subj = rdflibgo.NewURIRefUnsafe(p.resolve("#" + attr.Value))
+			subj = p.iri(p.resolve("#" + attr.Value))
 		case "nodeID":
 			hasNodeID = true
 			if !isValidNCName(attr.Value) {
@@ -253,7 +292,7 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 
 	// Emit rdf:type for typed nodes.
 	if elemURI != rdfNS+"Description" {
-		p.add(subj, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(elemURI))
+		p.add(subj, rdflibgo.RDF.Type, p.iri(elemURI))
 	}
 
 	// Process property attributes on node element.
@@ -266,7 +305,7 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 			case "about", "ID", "nodeID":
 				continue // already handled
 			case "type":
-				p.add(subj, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(p.resolve(attr.Value)))
+				p.add(subj, rdflibgo.RDF.Type, p.iri(p.resolve(attr.Value)))
 				continue
 			default:
 				attrURI := rdfNS + attr.Name.Local
@@ -283,7 +322,7 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 			return nil, fmt.Errorf("rdf/xml: %s not allowed as property attribute", attrURI)
 		}
 		litOpts := p.langOpts(lang, its)
-		p.add(subj, rdflibgo.NewURIRefUnsafe(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
+		p.add(subj, p.iri(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
 	}
 
 	// Parse child property elements.
@@ -321,7 +360,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 		return fmt.Errorf("rdf/xml: %s not allowed as property element name", predURI)
 	}
 
-	pred := rdflibgo.NewURIRefUnsafe(predURI)
+	pred := p.iri(predURI)
 	lang := parentLang
 
 	savedBase := p.base
@@ -433,7 +472,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 		}
 		var obj rdflibgo.Term
 		if hasResource {
-			obj = rdflibgo.NewURIRefUnsafe(p.resolve(resource))
+			obj = p.iri(p.resolve(resource))
 		} else {
 			if !isValidNCName(nodeID) {
 				return fmt.Errorf("rdf/xml: invalid rdf:nodeID %q", nodeID)
@@ -534,7 +573,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 			text := textContent.String()
 			var opts []rdflibgo.LiteralOption
 			if datatype != "" {
-				opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(p.resolve(datatype))))
+				opts = append(opts, rdflibgo.WithDatatype(p.iri(p.resolve(datatype))))
 			} else {
 				opts = p.langOpts(lang, its)
 			}
@@ -598,11 +637,11 @@ func (p *rdfxmlParser) emitPropertyAttrs(subj rdflibgo.Subject, attrs []xml.Attr
 	for _, attr := range attrs {
 		attrURI := attr.Name.Space + attr.Name.Local
 		if isRDFAttr(attr) && attr.Name.Local == "type" {
-			p.add(subj, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(p.resolve(attr.Value)))
+			p.add(subj, rdflibgo.RDF.Type, p.iri(p.resolve(attr.Value)))
 			continue
 		}
 		litOpts := p.langOpts(lang, its)
-		p.add(subj, rdflibgo.NewURIRefUnsafe(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
+		p.add(subj, p.iri(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
 	}
 }
 
@@ -678,7 +717,7 @@ func (p *rdfxmlParser) emitAnnotation(annotIRI, annotNodeID string, subj rdflibg
 	}
 	var reifier rdflibgo.Subject
 	if annotIRI != "" {
-		reifier = rdflibgo.NewURIRefUnsafe(p.resolve(annotIRI))
+		reifier = p.iri(p.resolve(annotIRI))
 	} else {
 		reifier = p.getBNode(annotNodeID)
 	}
@@ -699,7 +738,7 @@ func (p *rdfxmlParser) langOpts(lang string, its itsContext) []rdflibgo.LiteralO
 }
 
 func (p *rdfxmlParser) emitReification(id string, subj rdflibgo.Subject, pred rdflibgo.URIRef, obj rdflibgo.Term) {
-	stmt := rdflibgo.NewURIRefUnsafe(p.resolve("#" + id))
+	stmt := p.iri(p.resolve("#" + id))
 	p.add(stmt, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(rdfNS+"Statement"))
 	p.add(stmt, rdflibgo.NewURIRefUnsafe(rdfNS+"subject"), subj)
 	p.add(stmt, rdflibgo.NewURIRefUnsafe(rdfNS+"predicate"), pred)

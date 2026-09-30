@@ -563,6 +563,11 @@ The `store.Store` interface (13 methods) has four implementations:
 - Round-trip tests for multi-graph datasets: use a Badger store and flatten by
   putting the graph name into the predicate; encoding quads as triple terms
   makes the isomorphism check hang.
+- RDF/XML parser builds every IRI through `rdfxmlParser.iri`, which holds it
+  to `NewURIRef` and keeps the first failure as Parse's error. Never call
+  `NewURIRefUnsafe` on attribute or namespace text there: XML accepts
+  `urn:a|b`, IRIs do not, and the serializer refuses what the parser let in.
+  Guard: `TestParseRejectsIllegalIRIs`.
 - RDF/XML serializer renders the body before writing anything (a failed
   Serialize writes nothing) and decides prefixes while rendering; unwritable
   names are `ErrNoQName` / `ErrReservedPropertyName` / `ErrUnrepresentableChar`.
