@@ -136,3 +136,19 @@ func TestParserRelativeIRIErrorsWrapSentinel(t *testing.T) {
 		}
 	}
 }
+
+// A datatype IRI is held to IRIREF like every other IRI position. The
+// parser used to reject only spaces and controls there, so <urn:x|y> was
+// read and then refused by the serializer.
+func TestReadLiteralRejectsIllegalDatatypeIRI(t *testing.T) {
+	for _, c := range []string{"<", "\"", "{", "}", "|", "^", "`"} {
+		p := &LineParser{Line: `"v"^^<urn:x` + c + `y>`, LineNum: 1}
+		if _, err := p.ReadLiteral(); err == nil {
+			t.Errorf("datatype with %q accepted", c)
+		}
+	}
+	p := &LineParser{Line: `"v"^^<urn:x%7Cy>`, LineNum: 1}
+	if _, err := p.ReadLiteral(); err != nil {
+		t.Errorf("percent-encoded datatype rejected: %v", err)
+	}
+}

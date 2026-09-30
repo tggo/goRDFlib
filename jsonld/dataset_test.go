@@ -196,6 +196,9 @@ func TestDatasetFastPathEligibility(t *testing.T) {
 		{"empty datatype", ld.NewQuad(s, p, ld.Literal{Value: "v"}, ""), false},
 		{"relative datatype", ld.NewQuad(s, p, lit("v", "rel", ""), ""), false},
 		{"backslash in datatype", ld.NewQuad(s, p, lit("v", `http://a/d\e`, ""), ""), false},
+		{"pipe in datatype", ld.NewQuad(s, p, lit("v", "urn:x|y", ""), ""), false},
+		{"brace in datatype", ld.NewQuad(s, p, lit("v", "urn:x{y}", ""), ""), false},
+		{"quote in datatype", ld.NewQuad(s, p, lit("v", `urn:x"y`, ""), ""), false},
 		{"literal at the line cap", ld.NewQuad(s, p, lit(bigLiteral(70000), "", ""), ""), false},
 		{"IRI at the line cap", ld.NewQuad(s, p, iri("http://a/"+bigLiteral(70000)), ""), false},
 	}

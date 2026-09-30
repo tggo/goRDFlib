@@ -109,10 +109,12 @@ func datasetStatements(ds *ld.RDFDataset, preserve, unbounded bool) (stmts []sta
 				case on.Datatype == ld.XSDString:
 					o = rdflibgo.NewLiteral(on.Value)
 				default:
-					if strings.IndexByte(on.Datatype, '\\') >= 0 || !absoluteIRI(on.Datatype) {
+					// Checked like any other IRI, as the N-Quads parser does.
+					dt, good := iri(on.Datatype)
+					if !good {
 						return nil, false
 					}
-					o = rdflibgo.NewLiteral(on.Value, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(on.Datatype)))
+					o = rdflibgo.NewLiteral(on.Value, rdflibgo.WithDatatype(dt))
 				}
 			default:
 				return nil, false

@@ -372,7 +372,15 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 		if !isAbsoluteIRI(dt) {
 			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, ErrRelativeIRI)
 		}
-		opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt)))
+		// The same check as every other IRI position: IRIREF excludes
+		// <>"{}|^`\ as well as spaces and controls, and ReadIRI only rejects
+		// the latter. Without it a datatype such as <urn:x|y> was accepted
+		// here and then refused by the serializer.
+		dtIRI, verr := rdflibgo.NewURIRef(dt)
+		if verr != nil {
+			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, verr)
+		}
+		opts = append(opts, rdflibgo.WithDatatype(dtIRI))
 	}
 
 	lit := rdflibgo.NewLiteral(lexical, opts...)

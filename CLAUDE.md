@@ -567,6 +567,10 @@ The `store.Store` interface (13 methods) has four implementations:
   Serialize writes nothing) and decides prefixes while rendering; unwritable
   names are `ErrNoQName` / `ErrReservedPropertyName` / `ErrUnrepresentableChar`.
 - N-Triples/N-Quads serializers refuse any term their own parser would reject.
+  The converse holds too: a datatype IRI goes through `NewURIRef` like every
+  other IRI position. `ReadIRI` alone rejects only spaces and controls, so
+  `<urn:x|y>` as a datatype used to parse and then fail to serialize. The
+  JSON-LD fast path checks datatypes the same way, or the two paths diverge.
 - JSON-LD parsing adds to the graph only on success and drops ill-formed IRIs by
   default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
   json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.
