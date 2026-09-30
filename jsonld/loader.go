@@ -68,6 +68,16 @@ func (l *CachingDocumentLoader) AddDocument(u string, doc any) {
 	l.mu.Unlock()
 }
 
+// Preload caches doc under every URL in urls. A bundled context usually has to
+// answer to several spellings of its address (for schema.org: with and
+// without the trailing slash, http and https, the jsonldcontext.jsonld file),
+// and each spelling is a separate cache key.
+func (l *CachingDocumentLoader) Preload(doc any, urls ...string) {
+	for _, u := range urls {
+		l.AddDocument(u, doc)
+	}
+}
+
 // LoadDocument implements ld.DocumentLoader.
 func (l *CachingDocumentLoader) LoadDocument(u string) (*ld.RemoteDocument, error) {
 	l.mu.Lock()

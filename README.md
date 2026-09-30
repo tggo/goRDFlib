@@ -340,7 +340,15 @@ err := jsonld.Parse(g, r, jsonld.WithDocumentLoader(loader))
 It is safe for concurrent use, fetches each context once (concurrent first
 requests wait for one fetch), does not cache failures, and its HTTP requests
 time out after `DefaultLoaderTimeout`. `AddDocument` bundles a context with
-the program so it is never fetched. Cached documents do not expire.
+the program so it is never fetched; `Preload(doc, urls...)` registers it under
+every spelling of its address:
+
+```go
+loader.Preload(schemaOrgContext,
+    "https://schema.org/", "https://schema.org", "http://schema.org/", "http://schema.org")
+```
+
+Cached documents do not expire.
 
 #### JSON-LD: supplying a context the document does not declare
 

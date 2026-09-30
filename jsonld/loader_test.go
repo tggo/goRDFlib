@@ -107,3 +107,23 @@ type failingLoader struct{}
 func (failingLoader) LoadDocument(u string) (*ld.RemoteDocument, error) {
 	return nil, errors.New("no network in this test: " + u)
 }
+
+// Preload answers every listed spelling from the one document.
+func TestCachingDocumentLoaderPreload(t *testing.T) {
+	loader := NewCachingDocumentLoader(failingLoader{})
+	doc, err := ld.DocumentFromReader(strings.NewReader(loaderTestContext))
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := []string{"https://schema.example/", "http://schema.example", "https://schema.example/context.jsonld"}
+	loader.Preload(doc, urls...)
+	for _, u := range urls {
+		g := rdflibgo.NewGraph()
+		if err := Parse(g, strings.NewReader(loaderTestDoc(u, 0)), WithDocumentLoader(loader)); err != nil {
+			t.Fatalf("%s: %v", u, err)
+		}
+		if g.Len() != 2 {
+			t.Fatalf("%s: got %d triples, want 2", u, g.Len())
+		}
+	}
+}
