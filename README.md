@@ -339,6 +339,11 @@ for _, doc := range docs {
 err := w.Flush()
 ```
 
+A parser writes into whatever graph it is given, so parsing into a graph
+built with `WithIdentifier` is how a document lands in its own named graph;
+`WriteGraph` labels every statement with it. `ExampleWriter_namedGraphs` shows
+the full path: JSON-LD → named graph → stable Skolem IRIs → N-Quads.
+
 `Write(s, p, o, graph)` and `WriteQuad` write single statements. A term the
 N-Quads parser would reject is refused with its error and nothing of it is
 written.
