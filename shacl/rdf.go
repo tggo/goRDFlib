@@ -116,6 +116,27 @@ func (t Term) TermKey() string {
 	return ""
 }
 
+// ikey is the key of the graph indexes. It identifies a term exactly as
+// TermKey does (same kind, same lexical value, same datatype or language; a
+// language-tagged literal ignores its datatype) but costs nothing for the
+// terms looked up most: an IRI or blank node, which is every subject and
+// predicate, is a kind and one string, so a lookup hashes that string and
+// allocates nothing. A literal has three parts to tell apart and uses its
+// TermKey as the string. The kind is part of the key, so <x>, _:x and "x" never
+// meet.
+type ikey struct {
+	kind  TermKind
+	value string
+}
+
+// indexKey returns the index key of t; see ikey.
+func indexKey(t Term) ikey {
+	if t.kind == TermLiteral {
+		return ikey{TermLiteral, t.TermKey()}
+	}
+	return ikey{t.kind, t.value}
+}
+
 func (t Term) Equal(other Term) bool {
 	if t.kind != other.kind {
 		return false
@@ -388,9 +409,10 @@ func (g *Graph) InvalidateIndexes() {
 
 // graphIndexes are the lookup tables All, Objects and Subjects read.
 type graphIndexes struct {
-	spo map[string]map[string][]Term // subject → predicate → []object
-	pos map[string]map[string][]Term // predicate → object → []subject
-	p   map[string][]Triple          // predicate → []Triple
+	// Keyed by indexKey, not TermKey: a lookup builds no string.
+	spo map[ikey]map[ikey][]Term // subject → predicate → []object
+	pos map[ikey]map[ikey][]Term // predicate → object → []subject
+	p   map[ikey][]Triple        // predicate → []Triple
 }
 
 // ensureIndexes returns the indexes, building them on first use.
@@ -417,26 +439,26 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 	}
 
 	idx := &graphIndexes{
-		spo: make(map[string]map[string][]Term),
-		pos: make(map[string]map[string][]Term),
-		p:   make(map[string][]Triple),
+		spo: make(map[ikey]map[ikey][]Term),
+		pos: make(map[ikey]map[ikey][]Term),
+		p:   make(map[ikey][]Triple),
 	}
 	g.g.BindContext(ctx).Triples(nil, nil, nil)(func(t term.Triple) bool {
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
-		sk, pk, ok := s.TermKey(), p.TermKey(), o.TermKey()
+		sk, pk, ok := indexKey(s), indexKey(p), indexKey(o)
 
 		sp := idx.spo[sk]
 		if sp == nil {
-			sp = make(map[string][]Term)
+			sp = make(map[ikey][]Term)
 			idx.spo[sk] = sp
 		}
 		sp[pk] = append(sp[pk], o)
 
 		po := idx.pos[pk]
 		if po == nil {
-			po = make(map[string][]Term)
+			po = make(map[ikey][]Term)
 			idx.pos[pk] = po
 		}
 		po[ok] = append(po[ok], s)
@@ -483,16 +505,16 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 		// A fully bound pattern is an existence check. It has to compare the
 		// object rather than fall through to a wildcard scan, or Has reports
 		// every triple as present in any non-empty graph.
-		ok := o.TermKey()
-		for _, obj := range idx.spo[s.TermKey()][p.TermKey()] {
-			if obj.TermKey() == ok {
+		ok := indexKey(*o)
+		for _, obj := range idx.spo[indexKey(*s)][indexKey(*p)] {
+			if indexKey(obj) == ok {
 				return []Triple{{Subject: *s, Predicate: *p, Object: *o}}
 			}
 		}
 		return nil
 
 	case s != nil && p != nil && o == nil:
-		objs := idx.spo[s.TermKey()][p.TermKey()]
+		objs := idx.spo[indexKey(*s)][indexKey(*p)]
 		result := make([]Triple, len(objs))
 		for i, obj := range objs {
 			result[i] = Triple{Subject: *s, Predicate: *p, Object: obj}
@@ -500,7 +522,7 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 		return result
 
 	case s == nil && p != nil && o != nil:
-		subs := idx.pos[p.TermKey()][o.TermKey()]
+		subs := idx.pos[indexKey(*p)][indexKey(*o)]
 		result := make([]Triple, len(subs))
 		for i, sub := range subs {
 			result[i] = Triple{Subject: sub, Predicate: *p, Object: *o}
@@ -508,7 +530,7 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 		return result
 
 	case s == nil && p != nil && o == nil:
-		return idx.p[p.TermKey()]
+		return idx.p[indexKey(*p)]
 
 	case s != nil && p == nil:
 		// Subject-bound, with the object possibly bound too.
@@ -557,20 +579,20 @@ func (g *Graph) Has(s, p, o *Term) bool {
 
 // Objects returns all objects of triples matching (s, p, ?).
 func (g *Graph) Objects(s, p Term) []Term {
-	sp := g.ensureIndexes().spo[s.TermKey()]
+	sp := g.ensureIndexes().spo[indexKey(s)]
 	if sp == nil {
 		return nil
 	}
-	return sp[p.TermKey()]
+	return sp[indexKey(p)]
 }
 
 // Subjects returns all subjects of triples matching (?, p, o).
 func (g *Graph) Subjects(p, o Term) []Term {
-	po := g.ensureIndexes().pos[p.TermKey()]
+	po := g.ensureIndexes().pos[indexKey(p)]
 	if po == nil {
 		return nil
 	}
-	return po[o.TermKey()]
+	return po[indexKey(o)]
 }
 
 // RDFList follows an RDF list starting at head and returns all elements.

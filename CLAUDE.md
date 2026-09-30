@@ -441,6 +441,14 @@ The `store.Store` interface (13 methods) has four implementations:
   `WithErrorHandler` rather than selecting nothing. Selecting nothing is a legal
   outcome, so a discarded error here is invisible by construction.
 
+### shacl/ validation hot path (perf invariants)
+- The `Graph` indexes are keyed by `ikey` (`indexKey`), not `TermKey`: an IRI or
+  blank node is `{kind, value}`, a literal is `{literal, TermKey}`. The key must
+  identify exactly what `TermKey` identifies — the kind is part of it, so
+  `<x>`, `_:x` and `"x"` never meet, and a language-tagged literal ignores its
+  datatype. A plain `Term` as key was 10% slower (it hashes three strings).
+  Guards: `TestGraphIndexKeepsLookalikesApart`, `TestGraphIndexAgreesWithScan`.
+
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
   builds that dataset out of `NamedGraphs` (§13.2): default = merge of the
