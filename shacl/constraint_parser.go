@@ -106,20 +106,20 @@ func parseConstraints(g *Graph, s *Shape, shapes map[string]*Shape) []Constraint
 	}
 
 	for _, v := range g.Objects(id, IRI(SH+"and")) {
-		result = append(result, &AndConstraint{Shapes: g.RDFList(v)})
+		result = append(result, newAnd(g.RDFList(v)))
 	}
 	for _, v := range g.Objects(id, IRI(SH+"or")) {
-		result = append(result, &OrConstraint{Shapes: g.RDFList(v)})
+		result = append(result, newOr(g.RDFList(v)))
 	}
 	for _, v := range g.Objects(id, IRI(SH+"not")) {
-		result = append(result, &NotConstraint{ShapeRef: v})
+		result = append(result, &NotConstraint{ShapeRef: v, key: v.String()})
 	}
 	for _, v := range g.Objects(id, IRI(SH+"xone")) {
-		result = append(result, &XoneConstraint{Shapes: g.RDFList(v)})
+		result = append(result, newXone(g.RDFList(v)))
 	}
 
 	for _, v := range g.Objects(id, IRI(SH+"node")) {
-		result = append(result, &NodeConstraint{ShapeRef: v})
+		result = append(result, &NodeConstraint{ShapeRef: v, key: v.String()})
 	}
 
 	if qvs := g.Objects(id, IRI(SH+"qualifiedValueShape")); len(qvs) > 0 {
@@ -282,4 +282,14 @@ func collectClosedAllowed(g *Graph, s *Shape) []Term {
 		}
 	}
 	return allowed
+}
+
+// newAnd, newOr and newXone build the constraint the parser returns, with the
+// shapesMap keys of its shapes precomputed (see refKey).
+func newAnd(shapes []Term) *AndConstraint {
+	return &AndConstraint{Shapes: shapes, keys: refKeys(shapes)}
+}
+func newOr(shapes []Term) *OrConstraint { return &OrConstraint{Shapes: shapes, keys: refKeys(shapes)} }
+func newXone(shapes []Term) *XoneConstraint {
+	return &XoneConstraint{Shapes: shapes, keys: refKeys(shapes)}
 }

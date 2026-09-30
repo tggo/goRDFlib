@@ -463,6 +463,11 @@ The `store.Store` interface (13 methods) has four implementations:
   `Subjects`). Building a class -> instances map of the whole graph per
   document was the cost, to read a few entries. Guard: `class_targets_test.go`
   (subclass targets, `rdfs:subClassOf` cycles, a class that is also a node).
+- `shapesMap` is keyed by `Term.String()`, which allocates. The parser stores
+  the key of each `sh:and/or/xone/not/node` reference on the constraint
+  (`keys`/`key`); `refKey`/`refKey1` fall back to `String()` when it is empty, so
+  a constraint built from its exported fields still resolves. The cached key is
+  an optimisation, never a dependency. Guard: `shape_ref_key_test.go`.
 
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`

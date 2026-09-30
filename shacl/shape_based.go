@@ -3,6 +3,7 @@ package shacl
 // NodeConstraint implements sh:node.
 type NodeConstraint struct {
 	ShapeRef Term
+	key      string // shapesMap key of ShapeRef, set by the parser; see refKey1
 }
 
 func (c *NodeConstraint) ComponentIRI() string {
@@ -10,7 +11,7 @@ func (c *NodeConstraint) ComponentIRI() string {
 }
 
 func (c *NodeConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term) []ValidationResult {
-	s, ok := ctx.shapesMap[c.ShapeRef.String()]
+	s, ok := ctx.shapesMap[refKey1(c.key, c.ShapeRef)]
 	if !ok {
 		return nil
 	}
