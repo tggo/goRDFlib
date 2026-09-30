@@ -27,20 +27,30 @@ func Prepare(dataGraph, shapesGraph *Graph, opts ...Option) *Prepared {
 // returns a nil *Prepared, because rules cut short would leave the data
 // without some of its inferred triples.
 func PrepareContext(ctx context.Context, dataGraph, shapesGraph *Graph, opts ...Option) (*Prepared, error) {
+	return prepare(ctx, dataGraph, shapesGraph, newConfig(opts), nil)
+}
+
+// prepare is PrepareContext over an already built config. With compiled set,
+// its parsed shapes are used instead of parsing shapesGraph again; they must
+// have been compiled with the same advanced-features setting as cfg, because
+// addAFTargets has already been applied to them (or deliberately not).
+func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, compiled map[string]*Shape) (*Prepared, error) {
 	if err := stopped(ctx); err != nil {
 		return nil, err
 	}
 	if err := buildIndexes(ctx, dataGraph, shapesGraph); err != nil {
 		return nil, err
 	}
-	cfg := newConfig(opts)
 	af, dataGraph := prepareAdvanced(ctx, dataGraph, shapesGraph, cfg)
 	if err := stopped(ctx); err != nil {
 		return nil, err
 	}
-	shapes := parseShapes(shapesGraph)
-	if af != nil {
-		addAFTargets(af, shapes)
+	shapes := compiled
+	if shapes == nil {
+		shapes = parseShapes(shapesGraph)
+		if af != nil {
+			addAFTargets(af, shapes)
+		}
 	}
 	return &Prepared{ctx: evalContext{
 		dataGraph:      dataGraph,

@@ -439,7 +439,7 @@ Every long-running entry point has a `*Context` variant:
 |---------|-----------|
 | `sparql` | `QueryContext`, `EvalQueryContext`, `UpdateContext`, `EvalUpdateContext` |
 | `paths` | `EvalContext` |
-| `shacl` | `ValidateContext`, `PrepareContext`, `Prepared.ValidateContext`, `ApplyRulesContext` |
+| `shacl` | `ValidateContext`, `PrepareContext`, `Prepared.ValidateContext`, `CompiledShapes.ValidateContext`, `ApplyRulesContext` |
 | `reasoning` | `ExpandContext`, `ExpandCheckContext` |
 
 The context does two things. It **stops the work** once it is done: the call
@@ -662,6 +662,24 @@ still be used concurrently. The same mechanism is available directly:
 
 **Conformance:** 13/13 DASH advanced-features test cases (`testdata/dash-af/`),
 the suite both reference implementations are tested against.
+
+#### Many documents, one shapes graph
+
+`Validate` parses the shapes graph on every call. A service that checks many
+documents against the same shapes should parse them once:
+
+```go
+compiled, err := shacl.CompileShapes(shapes) // once, at startup
+// ...
+report := compiled.Validate(doc)              // per document, from any goroutine
+```
+
+`CompiledShapes` is safe for concurrent use and gives the same report as
+`Validate`. Options passed to `CompileShapes` apply to every call; per-document
+options (`WithSourceLines`, `WithErrorHandler`) go to `Validate` itself. On the
+shapes and documents from issue #39 this cut validation from ~580 µs to
+~355 µs per document; with small documents and more shapes the gap is larger
+(~20x in `BenchmarkCompiledShapes`).
 
 #### Prepared validation and inspection
 
