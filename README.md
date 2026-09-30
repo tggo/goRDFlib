@@ -326,6 +326,22 @@ use it only when the caller manages those identities. **JSON-LD exception:**
 json-gold renames source labels before the N-Quads stage. Its preserve option
 retains those expansion IDs for compatibility, not the original source labels.
 
+#### JSON-LD: remote contexts
+
+Without a document loader, every `jsonld.Parse` fetches each remote `@context`
+(e.g. `"https://schema.org/"`) over HTTP again, with no timeout. A process that
+parses many documents should share one caching loader:
+
+```go
+loader := jsonld.NewCachingDocumentLoader(nil) // once
+err := jsonld.Parse(g, r, jsonld.WithDocumentLoader(loader))
+```
+
+It is safe for concurrent use, fetches each context once (concurrent first
+requests wait for one fetch), does not cache failures, and its HTTP requests
+time out after `DefaultLoaderTimeout`. `AddDocument` bundles a context with
+the program so it is never fetched. Cached documents do not expire.
+
 #### JSON-LD: supplying a context the document does not declare
 
 `jsonld.WithExpandContext` passes a context to the processor that is applied
