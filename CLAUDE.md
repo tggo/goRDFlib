@@ -379,6 +379,18 @@ The `store.Store` interface (13 methods) has four implementations:
   from the data. Unbound placeholders stay as written so a typo is visible.
 - `sh:detail`: `sh:node` keeps the nested results in `Details` (PR #30).
 
+### shacl/ CompiledShapes (issue #39)
+- `CompileShapes` parses the shapes graph once; `CompiledShapes.Validate` is
+  safe for concurrent use. It works because parsed `*Shape`s are read-only
+  during validation — the one write, `parseAdHocShape` adding an anonymous
+  `sh:filterShape`/`sh:condition` shape to the map, lands in the per-run
+  `maps.Clone` in `Prepared.evaluation`. Never write to a `*Shape` or to the
+  compiled map during a run. Guard: `TestCompiledShapesDoNotGrow` (-race).
+- AF `sh:target`s depend on the shapes graph only, so they are attached at
+  compile time. A per-call option that flips advanced features reparses.
+- Every W3C test also validates through one `CompiledShapes` from 8
+  goroutines and must equal `Validate` (`checkCompiledShapesAgree`).
+
 ### shacl/ invariants that bit us once
 - `Graph.All` must handle the **fully bound** (s,p,o) pattern explicitly. It
   once fell through to the wildcard branch, so `Has(&s,&p,&o)` returned true for

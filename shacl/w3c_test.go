@@ -143,6 +143,7 @@ func runSingleTest(t *testing.T, testFilePath string) bool {
 	expected := ParseExpectedReport(g, results[0])
 
 	actual := Validate(dataGraph, shapesGraph)
+	checkCompiledShapesAgree(t, dataGraph, shapesGraph, actual)
 
 	// SHACL 1.2: sh:conformanceDisallows — recompute conforms using only listed severities
 	conformanceDisallows := g.Objects(results[0], IRI(SH+"conformanceDisallows"))
