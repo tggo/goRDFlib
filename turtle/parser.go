@@ -449,7 +449,7 @@ func (p *turtleParser) readIRI() (string, error) {
 			continue
 		}
 		// Reject characters not allowed in IRIs per Turtle grammar.
-		if ch <= 0x20 || ch == '{' || ch == '}' || ch == '|' || ch == '^' || ch == '`' {
+		if ch <= 0x20 || ch == '<' || ch == '"' || ch == '{' || ch == '}' || ch == '|' || ch == '^' || ch == '`' {
 			return "", p.errorf("invalid character %q in IRI", ch)
 		}
 		p.pos++
@@ -1086,7 +1086,7 @@ func isHexDigit(ch byte) bool {
 // forbidden by the Turtle grammar (space, <, >, {, }, |, ^, `, controls).
 func validateIRI(s string) error {
 	for _, r := range s {
-		if r <= 0x20 || r == '<' || r == '>' || r == '{' || r == '}' || r == '|' || r == '^' || r == '`' {
+		if r <= 0x20 || r == '<' || r == '>' || r == '"' || r == '{' || r == '}' || r == '|' || r == '^' || r == '`' || r == '\\' {
 			return fmt.Errorf("invalid character U+%04X in IRI", r)
 		}
 	}

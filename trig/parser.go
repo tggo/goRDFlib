@@ -706,7 +706,7 @@ func (p *trigParser) readIRI() (string, error) {
 			p.pos += 2
 			continue
 		}
-		if ch <= 0x20 || ch == '{' || ch == '}' || ch == '|' || ch == '^' || ch == '`' {
+		if ch <= 0x20 || ch == '<' || ch == '"' || ch == '{' || ch == '}' || ch == '|' || ch == '^' || ch == '`' {
 			return "", p.errorf("invalid character %q in IRI", ch)
 		}
 		p.pos++
@@ -1401,7 +1401,7 @@ func isHexDigit(ch byte) bool {
 
 func validateIRI(s string) error {
 	for _, r := range s {
-		if r <= 0x20 || r == '<' || r == '>' || r == '{' || r == '}' || r == '|' || r == '^' || r == '`' {
+		if r <= 0x20 || r == '<' || r == '>' || r == '"' || r == '{' || r == '}' || r == '|' || r == '^' || r == '`' || r == '\\' {
 			return fmt.Errorf("invalid character U+%04X in IRI", r)
 		}
 	}
