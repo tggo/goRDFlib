@@ -697,6 +697,27 @@ shapes and documents from issue #39 this cut validation from ~580 µs to
 ~355 µs per document; with small documents and more shapes the gap is larger
 (~20x in `BenchmarkCompiledShapes`).
 
+#### Parse once, validate, then serialize
+
+A document does not have to be parsed twice to be both validated and written
+out. Parse it into an `rdflibgo.Graph` and wrap that graph for SHACL:
+
+```go
+compiled, _ := shacl.CompileShapes(shapes)       // once
+loader := jsonld.NewCachingDocumentLoader(nil)   // once, shared
+
+g := rdflibgo.NewGraph()
+err := jsonld.Parse(g, r, jsonld.WithDocumentLoader(loader))
+report := compiled.Validate(shacl.NewGraphFromRDF(g, ""))
+if report.Conforms {
+    err = nq.Serialize(g, w)
+}
+```
+
+`NewGraphFromRDF` wraps the graph without copying it, so the report and the
+N-Quads describe exactly the same triples. Don't modify `g` while a validation
+of it is running. Runnable version: `ExampleCompiledShapes_parseOnce`.
+
 #### Prepared validation and inspection
 
 A validation report contains findings, not every shape application. To inspect
