@@ -121,6 +121,7 @@ test-fuzz:
 		"shacl:FuzzSourceLinesNeverInvent" \
 		"shacl:FuzzExpandTemplate" \
 		"shacl:FuzzNestedShapes" \
+		"term:FuzzValueEqualFastPaths" \
 	; do \
 		pkg=$$(echo "$$target" | cut -d: -f1); \
 		fn=$$(echo "$$target" | cut -d: -f2); \

@@ -21,7 +21,25 @@ import (
 //   - Datatypes without a value-space implementation here compare lexical forms.
 
 // integerRange bounds an integer-derived XSD datatype; nil means unbounded.
-type integerRange struct{ min, max *big.Int }
+// lo and hi are the same bounds clamped to int64, for smallXSDInteger; init
+// fills them in.
+type integerRange struct {
+	min, max *big.Int
+	lo, hi   int64
+}
+
+func init() {
+	for dt, r := range integerDatatypes {
+		r.lo, r.hi = math.MinInt64, math.MaxInt64
+		if r.min != nil && r.min.IsInt64() {
+			r.lo = r.min.Int64()
+		}
+		if r.max != nil && r.max.IsInt64() {
+			r.hi = r.max.Int64()
+		}
+		integerDatatypes[dt] = r
+	}
+}
 
 func bigInt(s string) *big.Int {
 	v, _ := new(big.Int).SetString(s, 10)
@@ -49,9 +67,32 @@ func (l Literal) valueEqual(other Literal) bool {
 		return false
 	}
 	a, b := l.lexical, other.lexical
-	dt := l.datatype.Value()
 
+	// Identical lexical forms of one datatype denote one value, or are both
+	// ill-typed and so equal by identity. The exceptions are the language
+	// strings, which also compare their tag and direction, and NaN, which is
+	// not equal to itself.
+	if a == b {
+		switch l.datatype {
+		case RDFLangString, RDFDirLangString:
+		case XSDDouble, XSDFloat:
+			if a != "NaN" {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+
+	dt := l.datatype.Value()
 	if r, ok := integerDatatypes[dt]; ok {
+		// Up to 18 digits a value fits an int64, so the common case is
+		// compared without allocating two big.Ints.
+		if x, okA, small := smallXSDInteger(a, r); small {
+			if y, okB, small := smallXSDInteger(b, r); small {
+				return sameValue(okA, okB, a, b, func() bool { return x == y })
+			}
+		}
 		x, okA := parseXSDInteger(a, r)
 		y, okB := parseXSDInteger(b, r)
 		return sameValue(okA, okB, a, b, func() bool { return x.Cmp(y) == 0 })
@@ -115,6 +156,31 @@ func parseXSDInteger(s string, r integerRange) (*big.Int, bool) {
 		return nil, false
 	}
 	return v, true
+}
+
+// smallXSDInteger is parseXSDInteger for lexical forms of at most 18 digits,
+// whose values all fit an int64. small is false for anything longer, which
+// the caller hands to parseXSDInteger; otherwise ok says whether s is in the
+// lexical space and in r, exactly as parseXSDInteger would.
+func smallXSDInteger(s string, r integerRange) (v int64, ok, small bool) {
+	digits := s
+	if digits != "" && (digits[0] == '+' || digits[0] == '-') {
+		digits = digits[1:]
+	}
+	if len(digits) > 18 {
+		return 0, false, false
+	}
+	if !allDigits(digits) {
+		return 0, false, true // also catches "", "+", "+-1"
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, false, true
+	}
+	if v < r.lo || v > r.hi {
+		return 0, false, true
+	}
+	return v, true, true
 }
 
 // parseXSDDecimal accepts (\+|-)?([0-9]+(\.[0-9]*)?|\.[0-9]+) and returns the

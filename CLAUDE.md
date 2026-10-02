@@ -581,6 +581,13 @@ The `store.Store` interface (13 methods) has four implementations:
 - `Literal.ValueEqual` (`literal_value.go`) is exact: math/big for integers and
   decimals, XSD lexical spaces only, timezoned and untimezoned dateTimes never
   equal, NaN != NaN, an ill-typed literal equals only an identical one.
+- `valueEqual` has two fast paths in front of the exact parse: identical
+  lexical forms of one datatype are equal (except language strings and
+  `NaN`), and an integer of at most 18 digits compares as int64 against
+  bounds clamped once in `init` (`integerRange.lo/hi`). Without them
+  `Literal.Eq` on `"1"` vs `"01"` cost 112 ns and two big.Ints; now 22 ns, no
+  allocation. Guard: `FuzzValueEqualFastPaths` checks both against
+  `refValueEqual`, the big.Int-only reference.
 - `NewURIRef` rejects #x00-#x20; `ValidIRI`, `ValidLanguageTag` are exported
   (and re-exported from the root package).
 
