@@ -2,7 +2,6 @@ package jsonld
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,14 +38,13 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		var err error
 		src, err = io.ReadAll(r)
 		if err != nil {
-			return err
+			return fmt.Errorf("jsonld: reading input: %w", err)
 		}
 		r = bytes.NewReader(src)
 	}
 
-	// Decode JSON
-	var doc any
-	if err := json.NewDecoder(r).Decode(&doc); err != nil {
+	doc, err := decodeDocument(r)
+	if err != nil {
 		return err
 	}
 

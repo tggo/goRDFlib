@@ -613,6 +613,10 @@ The `store.Store` interface (13 methods) has four implementations:
   other IRI position. `ReadIRI` alone rejects only spaces and controls, so
   `<urn:x|y>` as a datatype used to parse and then fail to serialize. The
   JSON-LD fast path checks datatypes the same way, or the two paths diverge.
+- JSON-LD input that is not JSON is `jsonld.ErrInvalidJSON` with line and
+  column (`decodeDocument`, which counts newlines as it reads instead of
+  buffering the document). It used to be encoding/json's bare message. A read
+  failure is not this error; it wraps the reader's error.
 - JSON-LD parsing adds to the graph only on success and drops ill-formed IRIs by
   default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
   json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.
