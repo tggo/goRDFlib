@@ -742,9 +742,11 @@ report := compiled.Validate(doc)              // per document, from any goroutin
 `CompiledShapes` is safe for concurrent use and gives the same report as
 `Validate`. Options passed to `CompileShapes` apply to every call; per-document
 options (`WithSourceLines`, `WithErrorHandler`) go to `Validate` itself. On the
-shapes and documents from issue #39 this cut validation from ~580 µs to
-~355 µs per document; with small documents and more shapes the gap is larger
-(~20x in `BenchmarkCompiledShapes`).
+shapes and documents from issue #39, validation per document went from
+620 µs (v0.6.0, `Validate`) to 286 µs (v0.7.1, `CompiledShapes`); with small
+documents and more shapes the gap is larger (~20x in
+`BenchmarkCompiledShapes`). See [Performance](#performance) for the whole
+parse-and-validate pipeline.
 
 #### Parse once, validate, then serialize
 
@@ -991,44 +993,62 @@ Fuzzing the provenance work turned up a crash that predated it: `jsonld.Parse` p
 
 ## Performance
 
-Benchmarked against Python rdflib 7.6.0 + pyshacl 0.31.0 on Apple M4 Max. Go figures are the median of 6 runs, Python figures the median of 3.
+Benchmarked against Python rdflib 7.6.0 + pyshacl 0.31.0 on Apple M4 Max. Go figures are the median of 6 runs (v0.7.2), Python figures the median of 3.
 
 | Benchmark | Go | Python | Speedup |
 |-----------|---:|-------:|--------:|
-| NewURIRef | 33 ns | 337 ns | **10x** |
-| NewBNode | 224 ns | 2,545 ns | **11x** |
-| NewLiteral (string) | 14 ns | 1,318 ns | **91x** |
-| NewLiteral (int) | 14 ns | 1,922 ns | **134x** |
+| NewURIRef | 36 ns | 337 ns | **9x** |
+| NewBNode | 220 ns | 2,545 ns | **12x** |
+| NewLiteral (string) | 14 ns | 1,318 ns | **92x** |
+| NewLiteral (int) | 15 ns | 1,922 ns | **132x** |
 | URIRef.N3() | 15 ns | 297 ns | **20x** |
-| Literal.N3() | 28 ns | 403 ns | **14x** |
-| Literal.Eq() | 20 ns | 335 ns | **16x** |
-| Store Add 10k | 10.8 ms | 83.0 ms | **8x** |
-| Store Lookup 1k | 5.7 us | 878 us | **153x** |
-| Parse Turtle | 5.0 us | 262 us | **52x** |
-| Serialize Turtle | 4.3 us | 96 us | **22x** |
-| SPARQL SELECT | 50 us | 1,825 us | **37x** |
-| SHACL Validate (10 nodes) | 17 us | 1,097 us | **65x** |
-| SHACL Validate (100 nodes) | 87 us | 8,202 us | **94x** |
-| SHACL Validate (complex) | 52 us | 7,849 us | **151x** |
+| Literal.N3() | 27 ns | 403 ns | **15x** |
+| Literal.Eq() | 22 ns | 335 ns | **15x** |
+| Store Add 10k | 7.3 ms | 83.0 ms | **11x** |
+| Store Lookup 1k | 5.6 us | 878 us | **157x** |
+| Parse Turtle | 4.0 us | 262 us | **65x** |
+| Serialize Turtle | 4.7 us | 96 us | **20x** |
+| SPARQL SELECT | 46 us | 1,825 us | **39x** |
+| SHACL Validate (10 nodes) | 13 us | 1,097 us | **82x** |
+| SHACL Validate (100 nodes) | 74 us | 8,202 us | **110x** |
+| SHACL Validate (complex) | 43 us | 7,849 us | **184x** |
 
 ```bash
 go test ./benchmarks/ -bench=. -benchmem -count 6
 python3 benchmarks/bench_python.py
 ```
 
+### JSON-LD + SHACL pipeline (issue #39)
+
+The pipeline is harvested schema.org documents (4 KB, 124 KB and 5 KB) parsed and
+validated against one fixed shapes graph (`geoconnex.ttl`), as in
+[internetofwater/nabu](https://github.com/internetofwater/nabu). The benchmarks
+are the ones from #39. Versions ran alternately, 8 runs each, and benchstat
+compared them. v0.6.0 calls `shacl.Validate` per document; v0.7.1 uses
+`CompileShapes` and a shared `CachingDocumentLoader`.
+
+| Per document | v0.6.0 | v0.7.1 | |
+|--------------|-------:|-------:|--:|
+| Parse JSON-LD | 8.96 ms | 1.65 ms | **5.4x** |
+| Validate | 620 us | 286 us | **2.2x** |
+| Parse + validate | 9.97 ms | 2.33 ms | **4.3x** |
+| Parse + validate, 14 goroutines | 1.60 ms | 0.54 ms | **3.0x** |
+| Memory, parse + validate | 5.35 MiB | 2.89 MiB | **-46%** |
+| Allocations, validate | 14.1k | 393 | **-97%** |
+
 ### Store Stress Test (3M triples, Apple M4 Max)
 
 | Metric | Memory | Badger | Badger Disk | SQLite | SQLite Disk |
 |--------|-------:|-------:|------------:|-------:|------------:|
-| **Ingest time** | 4.3s | 7.1s | 8.5s | 19.7s | 29.5s |
-| **Ingest rate** | 691K/s | 421K/s | 353K/s | 152K/s | 102K/s |
-| **Go heap delta** | 8.4 GB | 1.7 GB | — | outside Go heap | — |
-| **Len()** | 3.7 ns | 450ms | 434ms | 103ms | 147ms |
-| **Full scan** | 673ms | 1.76s | 1.75s | 1.91s | 3.75s |
-| **Subject lookup** | 88 ns | 2.1 us | 2.7 us | 1.8 us | 2.7 us |
-| **Predicate scan** (15K triples) | 0.93ms | 7.7ms | 8.0ms | 392ms | 1.56s |
+| **Ingest time** | 3.7s | 7.3s | 8.7s | 20.0s | 30.6s |
+| **Ingest rate** | 804K/s | 408K/s | 346K/s | 150K/s | 98K/s |
+| **Go heap delta** | 4.3 GB | 1.6 GB | — | outside Go heap | — |
+| **Len()** | 4.0 ns | 443ms | 446ms | 104ms | 106ms |
+| **Full scan** | 629ms | 956ms | 985ms | 1.47s | 1.57s |
+| **Subject lookup** | 86 ns | 2.2 us | 2.2 us | 1.8 us | 2.6 us |
+| **Predicate scan** (15K triples) | 0.92ms | 3.8ms | 3.9ms | 370ms | 412ms |
 
-Ingest and heap delta are single runs of `TestStress3M`. Reads are the median of 6 runs of `BenchmarkStress3M`, which loads each backend once and repeats every read. SQLite (modernc.org/sqlite) allocates its pages outside the Go heap, so the heap delta cannot see them.
+Measured on v0.7.2. Ingest and heap delta are single runs of `TestStress3M`. Reads are the median of 6 runs of `BenchmarkStress3M`, which loads each backend once and repeats every read. MemoryStore's heap halved (8.4 GB → 4.3 GB) when its three indexes started sharing one copy of each triple. SQLite (modernc.org/sqlite) allocates its pages outside the Go heap, so the heap delta cannot see them.
 
 ```bash
 go test ./store/ -run TestStress3M -v -count=1
