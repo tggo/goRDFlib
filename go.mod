@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/google/uuid v1.6.0
-	github.com/piprate/json-gold v0.8.0
+	github.com/piprate/json-gold v0.9.1
 	modernc.org/sqlite v1.46.1
 )
 

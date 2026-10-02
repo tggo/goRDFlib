@@ -284,6 +284,10 @@ The `store.Store` interface (13 methods) has four implementations:
   rather than a wrong one. Only the **top-level** `@context` is used; scoped and
   remote contexts are not seen. `@id` aliases are collected in a separate pass
   because a context may be written after the nodes that use it.
+- Requires json-gold >= v0.9.1: it carries piprate/json-gold#108 (IRI
+  validity remembered per ToRDF graph; `IsURL` was ~80% of parse CPU) and #109
+  (`IsKeyword` as a switch). Downgrading brings JSON-LD parsing back to ~5x
+  slower on schema.org documents with no test failing.
 - `jsonld.CachingDocumentLoader` (issue #39) exists because json-gold's
   `ld.CachingDocumentLoader` is an unguarded map. Cached `RemoteDocument`s are
   shared across goroutines, so json-gold must not mutate them — the -race test
