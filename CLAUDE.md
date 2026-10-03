@@ -409,6 +409,14 @@ The `store.Store` interface (13 methods) has four implementations:
 - The `?message` binding is used **verbatim**, never as a template — it comes
   from the data. Unbound placeholders stay as written so a typo is visible.
 - `sh:detail`: `sh:node` keeps the nested results in `Details` (PR #30).
+- `WithDefaultMessages` (issue #47, `default_message.go`) fills only results
+  whose `ResultMessages` is still empty, so every message above still wins.
+  It runs once over the finished report **after `orderResults`** (messages
+  are an ordering tie-breaker, so filling them first would reorder reports
+  between option on and off) and recurses into `Details`. Parameters are read
+  from the shapes graph by `SourceShape`, never from the constraint, so a
+  new component needs one `case`, not plumbing. Off by default: it changes
+  every report.
 
 ### shacl/ CompiledShapes (issue #39)
 - `CompileShapes` parses the shapes graph once; `CompiledShapes.Validate` is

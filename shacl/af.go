@@ -100,6 +100,7 @@ type config struct {
 	ruleIterationLimit int
 	errorHandler       func(error)
 	strictShapes       bool
+	defaultMessages    bool
 	provenance         *provenance.Index
 }
 

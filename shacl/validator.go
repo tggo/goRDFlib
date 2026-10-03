@@ -102,6 +102,7 @@ func (p *Prepared) ValidateContext(goctx context.Context) (ValidationReport, err
 	// each place a result is built, so a constraint never has to know that
 	// provenance exists. Costs nothing when WithSourceLines was not passed.
 	annotateSourceLines(allResults, ctx.cfg.provenance)
+	annotateDefaultMessages(allResults, ctx)
 
 	// SHACL 1.2: sh:Debug and sh:Trace severities don't affect sh:conforms
 	conforms := true
