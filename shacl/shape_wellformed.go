@@ -66,6 +66,13 @@ func shapeParents(g *Graph, id Term) string {
 	return fmt.Sprintf(" (the sh:property of %s)", parents[0])
 }
 
+// wantsShapeProblems is false when nobody would see an ill-formed shape: no
+// error handler and no strict mode. Validate then skips the check, which is
+// otherwise paid on every call (issue #39's workload validates millions).
+func (c *config) wantsShapeProblems() bool {
+	return c.strictShapes || c.errorHandler != nil
+}
+
 // checkShapes reports problems to the error handler and, under
 // WithStrictShapes, returns them joined.
 func (c *config) checkShapes(problems []error) error {

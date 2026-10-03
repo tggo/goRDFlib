@@ -56,8 +56,10 @@ func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, co
 		}
 	} else {
 		shapes = parseShapes(shapesGraph)
-		if err := cfg.checkShapes(illFormedShapes(shapesGraph, shapes)); err != nil {
-			return nil, err
+		if cfg.wantsShapeProblems() {
+			if err := cfg.checkShapes(illFormedShapes(shapesGraph, shapes)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	af, dataGraph := prepareAdvanced(ctx, dataGraph, shapesGraph, cfg)
