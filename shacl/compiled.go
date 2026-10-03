@@ -76,18 +76,18 @@ func (c *CompiledShapes) Validate(dataGraph *Graph, opts ...Option) ValidationRe
 // CompileShapes makes this call parse the shapes again, since the compiled
 // ones were read for the other mode.
 func (c *CompiledShapes) ValidateContext(ctx context.Context, dataGraph *Graph, opts ...Option) (ValidationReport, error) {
-	all := c.opts
-	if len(opts) > 0 {
-		all = append(append(make([]Option, 0, len(c.opts)+len(opts)), c.opts...), opts...)
-	}
-	cfg := newConfig(all)
-	compiled := c
-	if cfg.advanced != c.advanced {
-		compiled = nil
-	}
-	p, err := prepare(ctx, dataGraph, c.shapesGraph, cfg, compiled)
+	p, err := c.Prepare(ctx, dataGraph, opts...)
 	if err != nil {
 		return ValidationReport{}, err
 	}
 	return p.ValidateContext(ctx)
+}
+
+// options is the compile-time options followed by opts, without changing
+// either slice.
+func (c *CompiledShapes) options(opts []Option) []Option {
+	if len(opts) == 0 {
+		return c.opts
+	}
+	return append(append(make([]Option, 0, len(c.opts)+len(opts)), c.opts...), opts...)
 }

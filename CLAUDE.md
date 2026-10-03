@@ -460,6 +460,16 @@ The `store.Store` interface (13 methods) has four implementations:
   `WithErrorHandler` rather than selecting nothing. Selecting nothing is a legal
   outcome, so a discarded error here is invisible by construction.
 
+- `Prepared.Conforms(ctx, node, shape)` (issue #44) is `nodeConforms` with a
+  fresh `evaluation` per call — that clone is what makes concurrent calls safe
+  (`resolveShape` may add an anonymous shape). Any result fails, whatever its
+  severity: that is sh:node's notion, not report-level sh:conforms. Guard:
+  `TestConformsAgreesWithValidate` (every node × shape against a wrapper
+  `sh:targetNode`/`sh:node` shape run through Validate).
+- `validateShapeOnNode` returns nothing for a **deactivated** shape (§2.1.5).
+  It used to check only at the top level, so `sh:node ex:Off` still failed.
+  Guard: `TestNodeToDeactivatedShapeConforms`.
+
 ### shacl/ validation hot path (perf invariants)
 - The `Graph` indexes are keyed by `ikey` (`indexKey`), not `TermKey`: an IRI or
   blank node is `{kind, value}`, a literal is `{literal, TermKey}`. The key must

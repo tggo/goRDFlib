@@ -6,7 +6,8 @@ import (
 )
 
 // Prepared retains derived data and parsed shapes for validation and inspection.
-// It is not safe for concurrent use. Caller-owned data and shapes must remain
+// It is not safe for concurrent use, except that Conforms may be called from
+// several goroutines at once. Caller-owned data and shapes must remain
 // unchanged while it is in use; no mutable execution graphs are exposed.
 type Prepared struct {
 	ctx        evalContext

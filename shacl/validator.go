@@ -135,6 +135,12 @@ func shapesInOrder(shapes map[string]*Shape) []*Shape {
 }
 
 func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []ValidationResult {
+	// SHACL §2.1.5: every node conforms to a deactivated shape. Top-level
+	// validation skips them before getting here; sh:node, sh:and and the
+	// other shape-valued constraints did not.
+	if s.Deactivated {
+		return nil
+	}
 	var results []ValidationResult
 
 	if s.IsProperty && s.Path != nil {
