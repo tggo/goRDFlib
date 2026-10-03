@@ -324,6 +324,26 @@ The same graph gives the same IRIs whatever its labels or statement order.
 Interchangeable blank nodes (two identical `[ ex:v "x" ]`) get numbered
 suffixes rather than being merged.
 
+#### Streaming parse
+
+Every parser except JSON-LD's input side can hand statements to a callback
+instead of building a graph: `ParseStream(r, handler, opts...)` and
+`ParseStreamContext(ctx, r, handler, opts...)` in `nt`, `nq`, `turtle`, `trig`,
+`rdfxml` and `jsonld`. Parser options apply as they do to `Parse`; a handler
+error stops the parse and is returned, and a done context stops it with an
+error matching `ctx.Err()`.
+
+```go
+err := rdfxml.ParseStreamContext(ctx, f, func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
+    return w.Write(s, p, o) // or count, filter, index ...
+})
+```
+
+Memory: N-Triples, N-Quads and RDF/XML are bounded by parser state (100k
+RDF/XML triples: 144 MB live through a graph, under 1 MB streamed). Turtle and
+TriG still read the whole input before parsing. JSON-LD expands the whole
+document and delivers its triples only once that succeeded.
+
 #### Streaming N-Quads output
 
 `nq.Serialize` buffers and sorts a whole graph. To write statements as they are
@@ -602,6 +622,14 @@ Full W3C SHACL Core validation engine -- **98/98 W3C tests pass (100%)**.
 - Custom messages via `sh:message`
 - Shape deactivation via `sh:deactivated`
 - Recursive shape validation
+- `Prepared.Conforms(ctx, node, shape)`: does one node conform to one shape,
+  ignoring its targets — what `sh:node` asks, safe for concurrent calls
+- Ill-formed shapes (a property shape without exactly one `sh:path`) are
+  reported as `ErrIllFormedShape` through `WithErrorHandler`, or returned under
+  `WithStrictShapes`
+- `WithDefaultMessages()`: a generated `sh:resultMessage` per constraint
+  component ("Less than 1 values on ex:p1->ex:title") for results the shapes
+  give none
 
 ### Source Lines in Validation Results
 
@@ -1024,17 +1052,20 @@ The pipeline is harvested schema.org documents (4 KB, 124 KB and 5 KB) parsed an
 validated against one fixed shapes graph (`geoconnex.ttl`), as in
 [internetofwater/nabu](https://github.com/internetofwater/nabu). The benchmarks
 are the ones from #39. Versions ran alternately, 8 runs each, and benchstat
-compared them. v0.6.0 calls `shacl.Validate` per document; v0.7.1 uses
-`CompileShapes` and a shared `CachingDocumentLoader`.
+compared them. v0.6.0 calls `shacl.Validate` per document; v0.7.1 and v0.8.0
+use `CompileShapes` and a shared `CachingDocumentLoader`. v0.8.0 was measured
+against v0.7.2 in a separate run (1.61 / 2.20 / 0.52 ms there); its gain is
+`shacl.LoadJsonLD` indexing the triples directly instead of through a
+MemoryStore (#48).
 
-| Per document | v0.6.0 | v0.7.1 | |
-|--------------|-------:|-------:|--:|
-| Parse JSON-LD | 8.96 ms | 1.65 ms | **5.4x** |
-| Validate | 620 us | 286 us | **2.2x** |
-| Parse + validate | 9.97 ms | 2.33 ms | **4.3x** |
-| Parse + validate, 14 goroutines | 1.60 ms | 0.54 ms | **3.0x** |
-| Memory, parse + validate | 5.35 MiB | 2.89 MiB | **-46%** |
-| Allocations, validate | 14.1k | 393 | **-97%** |
+| Per document | v0.6.0 | v0.7.1 | v0.8.0 | v0.6.0 → v0.8.0 |
+|--------------|-------:|-------:|-------:|--:|
+| Parse JSON-LD | 8.96 ms | 1.65 ms | 1.15 ms | **7.8x** |
+| Validate | 620 us | 286 us | 273 us | **2.3x** |
+| Parse + validate | 9.97 ms | 2.33 ms | 1.77 ms | **5.6x** |
+| Parse + validate, 14 goroutines | 1.60 ms | 0.54 ms | 0.42 ms | **3.8x** |
+| Memory, parse + validate | 5.35 MiB | 2.89 MiB | 2.24 MiB | **-58%** |
+| Allocations, validate | 14.1k | 393 | 392 | **-97%** |
 
 ### Store Stress Test (3M triples, Apple M4 Max)
 
