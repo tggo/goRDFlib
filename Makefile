@@ -28,38 +28,9 @@ test-w3c:
 	@echo "  rdflibgo — W3C Conformance Tests"
 	@echo "================================================"
 	@echo ""
-	@total_pass=0; total_fail=0; \
-	for suite in \
-		"SPARQL 1.1 Query:sparql:TestW3C$$" \
-		"SPARQL 1.2:sparql:TestW3CSPARQL12" \
-		"SPARQL Update:sparql:TestW3CUpdate" \
-		"N-Triples:nt:TestW3C" \
-		"N-Quads:nq:TestW3C" \
-		"Turtle:turtle:TestW3C" \
-		"TriG:trig:TestW3C" \
-		"RDF/XML:rdfxml:TestW3C" \
-		"SHACL:shacl:TestW3C" \
-		"Reasoning:reasoning:TestW3C" \
-	; do \
-		name=$$(echo "$$suite" | cut -d: -f1); \
-		pkg=$$(echo "$$suite" | cut -d: -f2); \
-		pattern=$$(echo "$$suite" | cut -d: -f3); \
-		output=$$(go test ./$$pkg/ -run "$$pattern" -v -count=1 -timeout 120s 2>&1); \
-		pass=$$(echo "$$output" | grep -cF -- '--- PASS' || true); \
-		fail=$$(echo "$$output" | grep -cF -- '--- FAIL' || true); \
-		total_pass=$$((total_pass + pass)); \
-		total_fail=$$((total_fail + fail)); \
-		if [ "$$fail" = "0" ]; then \
-			printf "  %-22s %4d / %d  ✓\n" "$$name" "$$pass" "$$pass"; \
-		else \
-			printf "  %-22s %4d / %d  ✗ (%d FAILED)\n" "$$name" "$$pass" "$$((pass + fail))" "$$fail"; \
-		fi; \
-	done; \
-	echo ""; \
-	echo "------------------------------------------------"; \
-	printf "  %-22s %4d / %d\n" "TOTAL" "$$total_pass" "$$((total_pass + total_fail))"; \
-	echo "------------------------------------------------"; \
-	if [ "$$total_fail" != "0" ]; then exit 1; fi
+	@# Leaf subtests only; see internal/w3cstat for why parents are not counted.
+	@go test ./sparql/ ./sparql/results/ ./endpoint/ ./nt/ ./nq/ ./turtle/ ./trig/ ./rdfxml/ ./shacl/ ./reasoning/ \
+		-run 'TestW3C' -json -count=1 -timeout 600s | go run ./internal/w3cstat
 
 # Run everything: race tests + W3C conformance + benchmarks
 test-all:
