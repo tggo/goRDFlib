@@ -441,6 +441,13 @@ The `store.Store` interface (13 methods) has four implementations:
   rules only: the rule ran zero times, `applyRule` returned `(0, nil)`, and the
   same shape validated correctly — so the shape looked right and derived
   nothing. Guard: `shacl/af_target_test.go`.
+- Ill-formed shapes (issue #46, `shape_wellformed.go`): a property shape
+  without exactly one non-literal `sh:path` is `ErrIllFormedShape`, reported
+  through `WithErrorHandler` on **every run** (handlers are often per-call, so
+  `CompiledShapes` keeps the list and re-reports it) and returned as an error
+  under `WithStrictShapes`. `Validate`, `Prepare` and `CompiledShapes.Validate`
+  have no error result, so there strict degrades to reporting — never a nil
+  `*Prepared` or an empty report. The W3C suites contain no such shape.
 - A target that cannot be run reports `ErrMalformedTarget` through
   `WithErrorHandler` rather than selecting nothing. Selecting nothing is a legal
   outcome, so a discarded error here is invisible by construction.

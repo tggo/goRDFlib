@@ -99,6 +99,7 @@ type config struct {
 	ruleIteration      bool
 	ruleIterationLimit int
 	errorHandler       func(error)
+	strictShapes       bool
 	provenance         *provenance.Index
 }
 
