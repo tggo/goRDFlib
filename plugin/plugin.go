@@ -108,7 +108,8 @@ var mimeToFormat = map[string]string{
 	"application/rdf+xml":   "xml",
 	"application/ld+json":   "json-ld",
 	"text/n3":               "turtle",
-	"text/plain":            "nt",
+	// text/plain is deliberately absent: servers routinely send Turtle and
+	// JSON-LD as text/plain, so it names no format and detection falls through to FormatFromContent.
 }
 
 var extToFormat = map[string]string{
@@ -134,53 +135,19 @@ func FormatFromFilename(filename string) (string, bool) {
 	return f, ok
 }
 
-// FormatFromMIME detects the RDF format from a MIME content-type.
-// Ported from: rdflib.plugin — format detection by MIME type
-func FormatFromMIME(contentType string) (string, bool) {
-	// Strip parameters (e.g., "text/turtle; charset=utf-8")
+// MediaType returns contentType lower-cased and without parameters.
+func MediaType(contentType string) string {
 	ct := strings.TrimSpace(contentType)
 	if i := strings.Index(ct, ";"); i >= 0 {
 		ct = strings.TrimSpace(ct[:i])
 	}
-	f, ok := mimeToFormat[strings.ToLower(ct)]
-	return f, ok
+	return strings.ToLower(ct)
 }
 
-// FormatFromContent detects the RDF format by sniffing the first bytes.
-// Ported from: rdflib.plugin — content-based detection
-func FormatFromContent(data []byte) (string, bool) {
-	if len(data) == 0 {
-		return "", false
-	}
-	n := len(data)
-	if n > 500 {
-		n = 500
-	}
-	s := string(data[:n])
-	// Strip UTF-8 BOM if present
-	s = strings.TrimPrefix(s, "\xEF\xBB\xBF")
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "<?xml") || strings.HasPrefix(s, "<rdf:RDF") {
-		return "xml", true
-	}
-	if strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") {
-		return "json-ld", true
-	}
-	if strings.HasPrefix(s, "@prefix") || strings.HasPrefix(s, "@base") || strings.HasPrefix(s, "PREFIX") || strings.HasPrefix(s, "BASE") {
-		return "turtle", true
-	}
-	// N-Triples: lines starting with < or _:
-	if strings.HasPrefix(s, "<") || strings.HasPrefix(s, "_:") {
-		// Could be NT or NQ — check for 4th element
-		firstLine := s
-		if i := strings.Index(s, "\n"); i >= 0 {
-			firstLine = s[:i]
-		}
-		parts := strings.Fields(firstLine)
-		if len(parts) >= 5 && parts[len(parts)-1] == "." {
-			return "nquads", true
-		}
-		return "nt", true
-	}
-	return "", false
+// FormatFromMIME detects the RDF format from a MIME content-type.
+// Ported from: rdflib.plugin — format detection by MIME type
+func FormatFromMIME(contentType string) (string, bool) {
+	// Parameters (e.g. "text/turtle; charset=utf-8") are ignored.
+	f, ok := mimeToFormat[MediaType(contentType)]
+	return f, ok
 }

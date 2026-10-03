@@ -123,8 +123,8 @@ func (l *defaultLoader) loadFile(g *graph.Graph, path string) error {
 
 	format, ok := plugin.FormatFromFilename(path)
 	if !ok {
-		buf := make([]byte, 512)
-		n, _ := f.Read(buf)
+		buf := make([]byte, 4096)
+		n, _ := io.ReadFull(f, buf)
 		if n == 0 {
 			return fmt.Errorf("rdfloader: empty file %q", path)
 		}
@@ -169,13 +169,19 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 		return l.parseFormat(g, resp.Body, format)
 	}
 
-	// Content sniffing: buffer prefix, detect, then replay with remaining body
-	buf := make([]byte, 512)
-	n, _ := io.ReadAtLeast(resp.Body, buf, 1)
+	// Content sniffing: buffer prefix, detect, then replay with remaining body.
+	// A generic Content-Type (text/plain, octet-stream) ends up here too.
+	buf := make([]byte, 4096)
+	n, _ := io.ReadFull(resp.Body, buf)
 	if n == 0 {
 		return fmt.Errorf("rdfloader: empty response from %q", uri)
 	}
 	format, ok := plugin.FormatFromContent(buf[:n])
+	if !ok && plugin.MediaType(ct) == "text/plain" {
+		// text/plain is N-Triples' registered type; use it only when the
+		// content gave no answer of its own.
+		format, ok = "nt", true
+	}
 	if !ok {
 		return fmt.Errorf("rdfloader: unable to detect format from %q", uri)
 	}
