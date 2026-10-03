@@ -4,4 +4,6 @@
 // including RDF-star features (triple terms, reified triples, annotations).
 //
 // Note: The parser reads the entire input into memory via io.ReadAll.
+// ParseStream avoids building a dataset, but not that buffer; N-Quads
+// (package nq) streams line by line.
 package trig

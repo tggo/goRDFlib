@@ -11,6 +11,8 @@ import (
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	iriref "github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/internal/stream"
+	"github.com/tggo/goRDFlib/store"
 )
 
 // Parse reads TriG from r and adds all triples (from all graphs) into g.
@@ -18,94 +20,89 @@ import (
 // Blank node labels share one fresh scope across the document's graphs, unless
 // WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
-	cfg := &config{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	ds := graph.NewDataset()
-	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		ds.Bind(prefix, ns)
-		return true
-	})
+	cfg := newConfig(opts)
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
-	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
-	p.bnodes = bnodes.New(cfg.preserveBlankNodeIDs)
-	p.maxDepth = cfg.maxDepth()
-	if err := p.parse(); err != nil {
-		return err
-	}
-	// Copy all triples from all graphs into g, and copy prefixes
-	for gr := range ds.Graphs() {
-		gr.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-			g.Add(t.Subject, t.Predicate, t.Object)
-			return true
-		})
-	}
-	for prefix, ns := range p.prefixes {
-		g.Bind(prefix, rdflibgo.NewURIRefUnsafe(ns))
-	}
-	return nil
+	p := newTrigParser(cfg, string(data), store.DefaultGraph, func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term, _ rdflibgo.Term) error {
+		g.Add(s, pred, o)
+		return nil
+	})
+	p.bind = func(prefix, iri string) { g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri)) }
+	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
+		p.prefixes[prefix] = ns.Value()
+		return true
+	})
+	return p.parse()
 }
 
 // ParseDataset reads TriG from r and populates ds with named graphs.
 // Blank node labels, including graph names, share one fresh scope per call,
 // unless WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
 func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
-	cfg := &config{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+	cfg := newConfig(opts)
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
-	p := newTrigParser(ds, string(data), cfg.base, cfg.provenance)
-	p.bnodes = bnodes.New(cfg.preserveBlankNodeIDs)
-	p.maxDepth = cfg.maxDepth()
-	return p.parse()
-}
-
-func newTrigParser(ds *graph.Dataset, input, base string, provenance ProvenanceHandler) *trigParser {
-	p := &trigParser{
-		ds:         ds,
-		input:      input,
-		base:       base,
-		prefixes:   make(map[string]string),
-		provenance: provenance,
-	}
-	p.currentGraph = ds.DefaultContext()
+	def := ds.DefaultContext()
+	p := newTrigParser(cfg, string(data), def.Identifier(), func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term, g rdflibgo.Term) error {
+		if g == nil {
+			def.Add(s, pred, o)
+		} else {
+			ds.Graph(g).Add(s, pred, o)
+		}
+		return nil
+	})
+	// An empty GRAPH block still names a graph of the dataset.
+	p.openGraph = func(g rdflibgo.Term) { ds.Graph(g) }
+	p.bind = func(prefix, iri string) { ds.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri)) }
 	ds.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		p.prefixes[prefix] = ns.Value()
 		return true
 	})
-	return p
+	return p.parse()
 }
 
 type trigParser struct {
-	ds           *graph.Dataset
-	currentGraph *graph.Graph // active graph for Add()
-	input        string
-	pos          int
-	line         int
-	col          int
-	base         string
-	prefixes     map[string]string // prefix -> namespace URI
-	provenance   ProvenanceHandler
-	bnodes       bnodes.Scope
-	depth        int // current nesting of [ ( << {| ; see enter
-	maxDepth     int
+	sink       QuadHandler              // receives every quad
+	graphID    rdflibgo.Term            // active graph; nil is the default graph
+	defaultID  rdflibgo.Term            // reported to provenance for the default graph
+	openGraph  func(rdflibgo.Term)      // optional: a GRAPH block was opened
+	bind       func(prefix, iri string) // optional: records a prefix declaration
+	stop       *stream.Stopper          // set by a streaming parse; nil otherwise
+	input      string
+	pos        int
+	line       int
+	col        int
+	base       string
+	prefixes   map[string]string // prefix -> namespace URI
+	provenance ProvenanceHandler
+	bnodes     bnodes.Scope
+	depth      int // current nesting of [ ( << {| ; see enter
+	maxDepth   int
 }
 
-// emit adds a triple to the active graph and, when provenance tracking is
-// enabled, reports it with the active graph identifier and the current line.
+// emit hands a triple of the active graph to the sink and, when provenance
+// tracking is enabled, reports it with the graph identifier and the current
+// line. Once the parse has a reason to stop, nothing more is emitted.
 func (p *trigParser) emit(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) {
-	p.currentGraph.Add(s, pred, o)
-	if p.provenance != nil {
-		p.provenance(s, pred, o, p.currentGraph.Identifier(), p.line)
+	if p.stop.Err() != nil {
+		return
 	}
+	if err := p.sink(s, pred, o, p.graphID); err != nil {
+		p.stop.Fail(err)
+		return
+	}
+	if p.provenance != nil {
+		g := p.graphID
+		if g == nil {
+			g = p.defaultID
+		}
+		p.provenance(s, pred, o, g, p.line)
+	}
+	p.stop.Tick()
 }
 
 // parse is the main entry point.
@@ -118,7 +115,13 @@ func (p *trigParser) parse() error {
 			break
 		}
 		if err := p.statement(); err != nil {
+			if stopErr := p.stop.Err(); stopErr != nil {
+				return stopErr
+			}
 			return err
+		}
+		if err := p.stop.Err(); err != nil {
+			return fmt.Errorf("trig: line %d: %w", p.line, err)
 		}
 	}
 	return nil
@@ -183,8 +186,11 @@ func (p *trigParser) wrappedGraphBlock(graphID rdflibgo.Term) error {
 		return p.errorf("expected '{' to start graph block")
 	}
 
-	prevGraph := p.currentGraph
-	p.currentGraph = p.ds.Graph(graphID)
+	prevGraph := p.graphID
+	p.graphID = graphID
+	if graphID != nil && p.openGraph != nil {
+		p.openGraph(graphID)
+	}
 
 	for {
 		p.skipWS()
@@ -200,7 +206,7 @@ func (p *trigParser) wrappedGraphBlock(graphID rdflibgo.Term) error {
 		}
 	}
 
-	p.currentGraph = prevGraph
+	p.graphID = prevGraph
 	return nil
 }
 
@@ -1106,7 +1112,9 @@ func (p *trigParser) directive() error {
 		}
 		iri = p.resolveIRI(iri)
 		p.prefixes[prefix] = iri
-		p.ds.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri))
+		if p.bind != nil {
+			p.bind(prefix, iri)
+		}
 		p.skipWS()
 		if !p.expect('.') {
 			return p.errorf("expected '.' after @prefix")
@@ -1156,7 +1164,9 @@ func (p *trigParser) sparqlPrefix() error {
 	}
 	iri = p.resolveIRI(iri)
 	p.prefixes[prefix] = iri
-	p.ds.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri))
+	if p.bind != nil {
+		p.bind(prefix, iri)
+	}
 	return nil
 }
 

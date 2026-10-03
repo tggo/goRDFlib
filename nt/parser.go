@@ -1,6 +1,7 @@
 package nt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
+	"github.com/tggo/goRDFlib/internal/stream"
 )
 
 // ErrLineTooLong is reported (wrapped, with the line number) when a line exceeds
@@ -23,7 +25,7 @@ type TripleHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) 
 
 // Parse parses N-Triples format RDF into the given graph.
 func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
-	return parseLines(r, opts, func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
+	return parseLines(context.Background(), r, opts, func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
 		g.Add(s, p, o)
 		return nil
 	})
@@ -34,14 +36,24 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 // where holding the full graph in memory is not feasible. Returning an error
 // from the handler aborts the parse.
 func ParseStream(r io.Reader, h TripleHandler, opts ...Option) error {
+	return ParseStreamContext(context.Background(), r, h, opts...)
+}
+
+// ParseStreamContext is ParseStream that also stops, with an error matching
+// ctx.Err(), once ctx is done. Memory stays bounded by the longest line.
+func ParseStreamContext(ctx context.Context, r io.Reader, h TripleHandler, opts ...Option) error {
 	if h == nil {
 		return fmt.Errorf("nt.ParseStream: handler must not be nil")
 	}
-	return parseLines(r, opts, h)
+	return parseLines(ctx, r, opts, h)
 }
 
 // parseLines is the shared scanner loop used by Parse and ParseStream.
-func parseLines(r io.Reader, opts []Option, h TripleHandler) error {
+func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler) error {
+	stop := stream.New(ctx)
+	if err := stop.Poll(); err != nil {
+		return err
+	}
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
@@ -59,6 +71,9 @@ func parseLines(r io.Reader, opts []Option, h TripleHandler) error {
 				return fmt.Errorf("line %d: %w", lineNum+1, err)
 			}
 			return err
+		}
+		if err := stop.Tick(); err != nil {
+			return fmt.Errorf("line %d: %w", lineNum+1, err)
 		}
 		lineNum++
 		line := strings.TrimSpace(raw)

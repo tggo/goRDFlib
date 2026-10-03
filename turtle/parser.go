@@ -10,6 +10,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	iriref "github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/internal/stream"
 )
 
 // Parse reads Turtle from r and adds triples to g.
@@ -24,15 +25,11 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	parser := &turtleParser{
-		g:          g,
-		input:      string(data),
-		base:       cfg.base,
-		prefixes:   make(map[string]string),
-		provenance: cfg.provenance,
-		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
-		maxDepth:   cfg.maxDepth(),
-	}
+	parser := newParser(cfg, string(data), func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
+		g.Add(s, p, o)
+		return nil
+	})
+	parser.bind = func(prefix, iri string) { g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri)) }
 	// Copy graph namespace bindings as initial prefixes
 	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
 		parser.prefixes[prefix] = ns.Value()
@@ -41,8 +38,22 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	return parser.parse()
 }
 
+func newParser(cfg *config, input string, sink TripleHandler) *turtleParser {
+	return &turtleParser{
+		sink:       sink,
+		input:      input,
+		base:       cfg.base,
+		prefixes:   make(map[string]string),
+		provenance: cfg.provenance,
+		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
+		maxDepth:   cfg.maxDepth(),
+	}
+}
+
 type turtleParser struct {
-	g          *rdflibgo.Graph
+	sink       TripleHandler            // receives every triple
+	bind       func(prefix, iri string) // optional: records a prefix declaration
+	stop       *stream.Stopper          // set by a streaming parse; nil otherwise
 	input      string
 	pos        int
 	line       int
@@ -55,13 +66,22 @@ type turtleParser struct {
 	maxDepth   int
 }
 
-// emit adds a triple to the graph and, when provenance tracking is enabled,
-// reports it with the current source line.
+// emit hands a triple to the sink and, when provenance tracking is enabled,
+// reports it with the current source line. Once the parse has a reason to
+// stop, nothing more is emitted; parse returns that reason after the current
+// statement.
 func (p *turtleParser) emit(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) {
-	p.g.Add(s, pred, o)
+	if p.stop.Err() != nil {
+		return
+	}
+	if err := p.sink(s, pred, o); err != nil {
+		p.stop.Fail(err)
+		return
+	}
 	if p.provenance != nil {
 		p.provenance(s, pred, o, p.line)
 	}
+	p.stop.Tick()
 }
 
 // parse is the main entry point.
@@ -74,7 +94,13 @@ func (p *turtleParser) parse() error {
 			break
 		}
 		if err := p.statement(); err != nil {
+			if stopErr := p.stop.Err(); stopErr != nil {
+				return stopErr
+			}
 			return err
+		}
+		if err := p.stop.Err(); err != nil {
+			return fmt.Errorf("turtle: line %d: %w", p.line, err)
 		}
 	}
 	return nil
@@ -128,7 +154,9 @@ func (p *turtleParser) directive() error {
 		}
 		iri = p.resolveIRI(iri)
 		p.prefixes[prefix] = iri
-		p.g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri))
+		if p.bind != nil {
+			p.bind(prefix, iri)
+		}
 		p.skipWS()
 		if !p.expect('.') {
 			return p.errorf("expected '.' after @prefix")
@@ -178,7 +206,9 @@ func (p *turtleParser) sparqlPrefix() error {
 	}
 	iri = p.resolveIRI(iri)
 	p.prefixes[prefix] = iri
-	p.g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri))
+	if p.bind != nil {
+		p.bind(prefix, iri)
+	}
 	return nil
 }
 

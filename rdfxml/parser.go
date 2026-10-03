@@ -9,6 +9,8 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/internal/stream"
+	"github.com/tggo/goRDFlib/term"
 )
 
 const (
@@ -30,19 +32,27 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	p := &rdfxmlParser{
-		g:          g,
+	p := newParser(&cfg, func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) error {
+		g.Add(s, pred, o)
+		return nil
+	})
+	return p.parse(r)
+}
+
+func newParser(cfg *config, sink TripleHandler) *rdfxmlParser {
+	return &rdfxmlParser{
+		sink:       sink,
 		base:       cfg.base,
 		provenance: cfg.provenance,
 		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
 		usedIDs:    make(map[string]bool),
 		nsPrefixes: make(map[string]string),
 	}
-	return p.parse(r)
 }
 
 type rdfxmlParser struct {
-	g             *rdflibgo.Graph
+	sink          TripleHandler   // receives every triple
+	stop          *stream.Stopper // set by a streaming parse; nil otherwise
 	base          string
 	provenance    ProvenanceHandler
 	dec           *xml.Decoder // the decoder currently being read, for source positions
@@ -127,7 +137,13 @@ func (p *rdfxmlParser) add(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.
 	if p.err != nil {
 		return
 	}
-	p.g.Add(s, pred, o)
+	if err := p.sink(s, pred, o); err != nil {
+		p.fail(err)
+		return
+	}
+	if err := p.stop.Tick(); err != nil {
+		p.fail(err)
+	}
 	if p.provenance == nil || p.dec == nil {
 		return
 	}
@@ -135,6 +151,20 @@ func (p *rdfxmlParser) add(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.
 	// triple, which for an element-form triple is its end tag.
 	line, _ := p.dec.InputPos()
 	p.provenance(s, pred, o, line)
+}
+
+// fail stops the parse with err, reported with the position reached. Like an
+// illegal IRI, it ends the triples; the decoder stops at its next read.
+func (p *rdfxmlParser) fail(err error) {
+	if p.err != nil {
+		return
+	}
+	line, col := 0, 0
+	if p.dec != nil {
+		line, col = p.dec.InputPos()
+	}
+	p.err = fmt.Errorf("rdf/xml: line %d, column %d: %w", line, col, err)
+	p.stop.Fail(p.err)
 }
 
 // iri turns s into an IRI, holding it to the same rules as every other
@@ -656,15 +686,25 @@ func (p *rdfxmlParser) parseTripleParseType(decoder *xml.Decoder, subj rdflibgo.
 		return nil
 	}
 
-	// Use a temporary graph to capture the inner triple.
-	tempG := rdflibgo.NewGraph()
-	savedG, savedProvenance := p.g, p.provenance
-	p.g = tempG
+	// Capture the inner triple instead of emitting it. A repeated triple
+	// counts once, as it would in a graph.
+	var triples []rdflibgo.Triple
+	savedSink, savedProvenance := p.sink, p.provenance
+	p.sink = func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) error {
+		t := rdflibgo.Triple{Subject: s, Predicate: pred, Object: o}
+		for _, have := range triples {
+			if term.TermKey(have.Subject) == term.TermKey(s) && have.Predicate == pred && term.TermKey(have.Object) == term.TermKey(o) {
+				return nil
+			}
+		}
+		triples = append(triples, t)
+		return nil
+	}
 	// Captured triples are components of a triple term, not assertions in the
 	// caller's graph. Only the outer assertion has output provenance.
 	p.provenance = nil
 	defer func() {
-		p.g, p.provenance = savedG, savedProvenance
+		p.sink, p.provenance = savedSink, savedProvenance
 	}()
 
 	var found bool
@@ -687,18 +727,12 @@ func (p *rdfxmlParser) parseTripleParseType(decoder *xml.Decoder, subj rdflibgo.
 			if !found {
 				return fmt.Errorf("rdf/xml: parseType='Triple' must contain exactly one node element")
 			}
-			// Extract the single triple from tempG
-			var triples []rdflibgo.Triple
-			tempG.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-				triples = append(triples, t)
-				return true
-			})
 			if len(triples) != 1 {
 				return fmt.Errorf("rdf/xml: parseType='Triple' node must produce exactly 1 triple, got %d", len(triples))
 			}
 			innerT := triples[0]
 			tt := rdflibgo.NewTripleTerm(innerT.Subject, innerT.Predicate, innerT.Object)
-			p.g = savedG // restore before adding to real graph; defer is a safety net
+			p.sink = savedSink // restore before emitting the outer triple; defer is a safety net
 			p.provenance = savedProvenance
 			p.add(subj, pred, tt)
 			if reifyID != "" {

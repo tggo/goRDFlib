@@ -348,6 +348,25 @@ The `store.Store` interface (13 methods) has four implementations:
   depend on json-gold's statement order, which varies between expansions.
 - Blank nodes go through the same `bnodes.Scope` as the text path.
 
+### streaming parse (issue #45, `internal/stream`)
+- nt, nq, turtle, trig and rdfxml have `ParseStream(r, h, opts...)` and
+  `ParseStreamContext(ctx, r, h, opts...)`; every parser option applies. JSON-LD
+  has none (the algorithm needs the whole document).
+- The parsers emit through a **sink**, never a graph: `Parse` is a sink that
+  calls `g.Add`, prefix declarations go through an optional `bind` hook, and
+  TriG's `openGraph` hook keeps an empty `GRAPH` block creating its graph in
+  `ParseDataset`. A new production must call `emit`/`add`, as before.
+- A handler error or a done context is recorded on the `stream.Stopper`; after
+  that nothing is emitted, the statement loop returns it, and rdfxml's reader
+  wrapper fails the decoder's next read so the rest of the input is not read.
+  Contexts are polled every 1024 statements and once at the start.
+- Memory: nt/nq/rdfxml are bounded by parser state; turtle/trig still
+  `io.ReadAll` the input (bounded by input size, not triple count).
+  `BenchmarkStreamPeakHeap`: 100k RDF/XML triples, graph 144 MB live, stream
+  under 1 MB.
+- Guard: `TestStreamMatchesParseOnW3CCorpus` (every W3C file of the five
+  formats: same statements, same success/failure as Parse).
+
 ### blank node scoping (internal/bnodes, PR #28)
 - Every parser gives blank node labels a **fresh scope per Parse call** (RDF 1.1
   §3.4: a label identifies a node within one document). `_:b1` in two documents

@@ -22,5 +22,6 @@
 // bare label and its statement is emitted at the top level instead.
 //
 // Note: The parser reads the entire input into memory via io.ReadAll.
-// For very large Turtle files this may be problematic.
+// ParseStream avoids building a graph, which is most of the memory a large
+// file costs, but not that buffer; N-Triples (package nt) streams line by line.
 package turtle

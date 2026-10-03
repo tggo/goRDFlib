@@ -1,6 +1,7 @@
 package nq
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
+	"github.com/tggo/goRDFlib/internal/stream"
 )
 
 // ErrLineTooLong is reported (wrapped, with the line number) when a line exceeds
@@ -45,7 +47,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		g.Add(s, p, o)
 		return nil
 	}
-	return parseLines(r, opts, quadHandler, true)
+	return parseLines(context.Background(), r, opts, quadHandler, true)
 }
 
 // ParseStream parses N-Quads format RDF and dispatches each parsed quad to the
@@ -54,16 +56,26 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 // the full graph in memory is not feasible. Returning an error from the handler
 // aborts the parse.
 func ParseStream(r io.Reader, h StreamHandler, opts ...Option) error {
+	return ParseStreamContext(context.Background(), r, h, opts...)
+}
+
+// ParseStreamContext is ParseStream that also stops, with an error matching
+// ctx.Err(), once ctx is done. Memory stays bounded by the longest line.
+func ParseStreamContext(ctx context.Context, r io.Reader, h StreamHandler, opts ...Option) error {
 	if h == nil {
 		return fmt.Errorf("nq.ParseStream: handler must not be nil")
 	}
-	return parseLines(r, opts, h, false)
+	return parseLines(ctx, r, opts, h, false)
 }
 
 // parseLines is the shared scanner loop used by Parse and ParseStream.
 // dispatchQuadHandler controls whether cfg.quadHandler (set via WithQuadHandler)
 // is also invoked: Parse honors it for back-compat, ParseStream uses only `h`.
-func parseLines(r io.Reader, opts []Option, h StreamHandler, dispatchQuadHandler bool) error {
+func parseLines(ctx context.Context, r io.Reader, opts []Option, h StreamHandler, dispatchQuadHandler bool) error {
+	stop := stream.New(ctx)
+	if err := stop.Poll(); err != nil {
+		return err
+	}
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
@@ -81,6 +93,9 @@ func parseLines(r io.Reader, opts []Option, h StreamHandler, dispatchQuadHandler
 				return fmt.Errorf("line %d: %w", lineNum+1, err)
 			}
 			return err
+		}
+		if err := stop.Tick(); err != nil {
+			return fmt.Errorf("line %d: %w", lineNum+1, err)
 		}
 		lineNum++
 		line := strings.TrimSpace(raw)
