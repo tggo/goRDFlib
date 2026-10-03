@@ -189,10 +189,10 @@ func newNamer(graphs ...*Graph) namer {
 		}
 	}
 	for _, g := range graphs {
-		if g == nil || g.g == nil {
+		if g == nil {
 			continue
 		}
-		for prefix, ns := range g.g.Namespaces() {
+		for prefix, ns := range g.namespaces() {
 			add(prefix, ns.Value())
 		}
 	}

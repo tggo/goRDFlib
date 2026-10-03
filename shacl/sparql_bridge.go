@@ -61,7 +61,7 @@ func executeSPARQL(ctx context.Context, g *Graph, query string, initBindings map
 	}
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
-	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
+	result, err := sparql.EvalQueryContext(ctx, g.rdf(), pq, initBindings)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings 
 	}
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
-	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
+	result, err := sparql.EvalQueryContext(ctx, g.rdf(), pq, initBindings)
 	if err != nil {
 		return false, err
 	}
@@ -153,7 +153,7 @@ func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBin
 	}
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
-	result, err := sparql.EvalQueryContext(ctx, g.g, pq, initBindings)
+	result, err := sparql.EvalQueryContext(ctx, g.rdf(), pq, initBindings)
 	if err != nil {
 		return nil, err
 	}
@@ -203,12 +203,12 @@ func firstOrNone(terms []Term) Term {
 // writeGraphPrefixes emits the prefix bindings the graph's source document
 // declared, in a stable order.
 func writeGraphPrefixes(g *Graph, sb *strings.Builder) {
-	if g == nil || g.g == nil {
+	if g == nil {
 		return
 	}
 	type binding struct{ prefix, ns string }
 	var bindings []binding
-	for prefix, ns := range g.g.Namespaces() {
+	for prefix, ns := range g.namespaces() {
 		if prefix == "" {
 			// The empty prefix is legal in SPARQL, but a shapes file that
 			// declares one rarely uses it in a query; emitting it risks

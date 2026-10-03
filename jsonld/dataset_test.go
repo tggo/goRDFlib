@@ -230,7 +230,7 @@ func runDataset(ds *ld.RDFDataset, cfg *config) outcome {
 	c.skipHandler = func(stmt string, err error) {
 		out.skips = append(out.skips, strings.TrimSpace(stmt)+" | "+err.Error())
 	}
-	if err := addDataset(out.g, ds, &c, []byte(`{}`)); err != nil {
+	if err := addDataset(graphSink(out.g), ds, &c, []byte(`{}`)); err != nil {
 		out.err = lineNum.ReplaceAllString(err.Error(), "line N:")
 	}
 	for i, s := range out.skips {

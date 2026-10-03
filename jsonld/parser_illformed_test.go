@@ -56,7 +56,7 @@ func TestParseNQuadsFailureIsAtomic(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var provenance int
 	cfg := config{provenance: func(rdflibgo.Subject, rdflibgo.URIRef, rdflibgo.Term, int) { provenance++ }}
-	if err := parseNQuadsInto(g, partial, &cfg, []byte(`{}`)); err == nil {
+	if err := parseNQuadsInto(graphSink(g), partial, &cfg, []byte(`{}`)); err == nil {
 		t.Fatal("expected a syntax error")
 	}
 	if g.Len() != 0 || provenance != 0 {

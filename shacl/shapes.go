@@ -588,7 +588,7 @@ func extractAnnotatedTriple(g *Graph, reifier, expectedSubject Term) *tripleAnno
 	}
 
 	var result *tripleAnnotation
-	g.g.Triples(reifierSubj, &reifiesPredURI, nil)(func(t term.Triple) bool {
+	g.rdf().Triples(reifierSubj, &reifiesPredURI, nil)(func(t term.Triple) bool {
 		tt, ok := t.Object.(term.TripleTerm)
 		if !ok {
 			return true

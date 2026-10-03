@@ -49,9 +49,9 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 
 	// Provide shapes graph as a named graph for GRAPH ?shapesGraph { ... }
 	var namedGraphs map[string]*graph.Graph
-	if ctx.shapesGraph != nil && ctx.shapesGraph.g != nil && ctx.shapesGraph.baseURI != "" {
+	if ctx.shapesGraph != nil && ctx.shapesGraph.baseURI != "" {
 		namedGraphs = map[string]*graph.Graph{
-			ctx.shapesGraph.baseURI: ctx.shapesGraph.g,
+			ctx.shapesGraph.baseURI: ctx.shapesGraph.rdf(),
 		}
 	}
 

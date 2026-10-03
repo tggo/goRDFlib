@@ -28,6 +28,24 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	for _, o := range opts {
 		o(&cfg)
 	}
+	return parse(r, &cfg, graphSink(g))
+}
+
+// sink receives the statements of a successful parse, in order. An error
+// stops the delivery and is returned by the parse.
+type sink func(statement) error
+
+// graphSink adds each statement to g.
+func graphSink(g *rdflibgo.Graph) sink {
+	return func(st statement) error {
+		g.Add(st.s, st.p, st.o)
+		return nil
+	}
+}
+
+// parse expands r and hands its statements to out, only once the whole
+// document has been converted.
+func parse(r io.Reader, cfg *config, out sink) error {
 	base := cfg.base
 
 	// Provenance needs the source twice: once to expand it into RDF, and once
@@ -80,7 +98,7 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		return fmt.Errorf("json-ld: unexpected ToRDF result type %T", result)
 	}
 
-	return addDataset(g, ds, &cfg, src)
+	return addDataset(out, ds, cfg, src)
 }
 
 // addDataset adds the RDF json-gold produced to g. It builds terms directly
@@ -89,13 +107,13 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 // N-Quads and runs parseNQuadsInto, which owns all error, skip and
 // line-length behavior. cfg.forceTextPath (tests only) takes the second route
 // unconditionally.
-func addDataset(g *rdflibgo.Graph, ds *ld.RDFDataset, cfg *config, src []byte) error {
+func addDataset(out sink, ds *ld.RDFDataset, cfg *config, src []byte) error {
 	if !cfg.forceTextPath {
 		if stmts, ok := datasetStatements(ds, cfg.preserveBlankNodeIDs, cfg.unbounded); ok {
 			if len(stmts) == 0 {
 				return nil
 			}
-			return commit(g, stmts, cfg, src)
+			return commit(out, stmts, cfg, src)
 		}
 	}
 	var sb strings.Builder
@@ -105,7 +123,7 @@ func addDataset(g *rdflibgo.Graph, ds *ld.RDFDataset, cfg *config, src []byte) e
 	if sb.Len() == 0 {
 		return nil
 	}
-	return parseNQuadsInto(g, sb.String(), cfg, src)
+	return parseNQuadsInto(out, sb.String(), cfg, src)
 }
 
 // parseNQuadsInto parses the expanded N-Quads into g.
@@ -119,7 +137,7 @@ func addDataset(g *rdflibgo.Graph, ds *ld.RDFDataset, cfg *config, src []byte) e
 // Statements are collected first and added to g only once the whole document
 // has been read, so a failed parse leaves g as it was. Provenance is reported
 // for the same statements after they are added.
-func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) error {
+func parseNQuadsInto(out sink, nqStr string, cfg *config, src []byte) error {
 	nqOpts := make([]nq.Option, 0, 4)
 	if cfg.preserveBlankNodeIDs {
 		nqOpts = append(nqOpts, nq.WithPreserveBlankNodeIDs())
@@ -151,14 +169,16 @@ func parseNQuadsInto(g *rdflibgo.Graph, nqStr string, cfg *config, src []byte) e
 	if err := nq.ParseStream(strings.NewReader(nqStr), collect, nqOpts...); err != nil {
 		return err
 	}
-	return commit(g, stmts, cfg, src)
+	return commit(out, stmts, cfg, src)
 }
 
-// commit adds stmts to g and reports provenance for them.
-func commit(g *rdflibgo.Graph, stmts []statement, cfg *config, src []byte) error {
+// commit hands stmts to out and reports provenance for them.
+func commit(out sink, stmts []statement, cfg *config, src []byte) error {
 	if cfg.provenance == nil {
 		for _, st := range stmts {
-			g.Add(st.s, st.p, st.o)
+			if err := out(st); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -167,7 +187,9 @@ func commit(g *rdflibgo.Graph, stmts []statement, cfg *config, src []byte) error
 	// the line of the source node object that declared the subject.
 	lines := buildSubjectLines(src, cfg.base, cfg.documentLoader, cfg.expandContext)
 	for _, st := range stmts {
-		g.Add(st.s, st.p, st.o)
+		if err := out(st); err != nil {
+			return err
+		}
 		if line := lines[term.TermKey(st.s)]; line > 0 {
 			cfg.provenance(st.s, st.p, st.o, line)
 		}

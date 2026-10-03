@@ -266,7 +266,13 @@ func toTerm(t Term) term.Term {
 // while another goroutine is calling Add or Merge — those invalidate the
 // indexes, and the underlying graph is not itself synchronised.
 type Graph struct {
-	g       *graph.Graph
+	// rg is the rdflib graph behind this one. A graph loaded from a stream
+	// (LoadJsonLD) has none until something needs it — SPARQL, Add, Merge,
+	// AF rules — and keeps its triples in src instead: validation reads only
+	// the indexes, which are built from src directly (issue #48). Use rdf().
+	rg      atomic.Pointer[graph.Graph]
+	rgMu    sync.Mutex // serialises building rg from src
+	src     []term.Triple
 	baseURI string
 
 	// idx holds the lazily built lookup indexes. It is replaced wholesale
@@ -277,7 +283,58 @@ type Graph struct {
 
 // NewGraph creates an empty graph with no base URI.
 func NewGraph() *Graph {
-	return &Graph{g: graph.NewGraph()}
+	return wrap(graph.NewGraph(), "")
+}
+
+// wrap returns a Graph over an existing rdflib graph.
+func wrap(g *graph.Graph, baseURI string) *Graph {
+	out := &Graph{baseURI: baseURI}
+	out.rg.Store(g)
+	return out
+}
+
+// rdf returns the rdflib graph, building it from src on first use. Safe for
+// concurrent use, like the indexes.
+func (g *Graph) rdf() *graph.Graph {
+	if rg := g.rg.Load(); rg != nil {
+		return rg
+	}
+	g.rgMu.Lock()
+	defer g.rgMu.Unlock()
+	if rg := g.rg.Load(); rg != nil {
+		return rg
+	}
+	rg := graph.NewGraph(graph.WithBase(g.baseURI))
+	for _, t := range g.src {
+		rg.Add(t.Subject, t.Predicate, t.Object)
+	}
+	g.rg.Store(rg)
+	return rg
+}
+
+// defaultNamespaces are the bindings every new rdflib graph starts with,
+// reported for a streamed graph without building one.
+var defaultNamespaces = sync.OnceValue(func() map[string]term.URIRef {
+	m := make(map[string]term.URIRef)
+	for prefix, ns := range graph.NewGraph().Namespaces() {
+		m[prefix] = ns
+	}
+	return m
+})
+
+// namespaces iterates the prefix bindings, without building the rdflib graph
+// of a streamed one (its parser binds none).
+func (g *Graph) namespaces() func(func(string, term.URIRef) bool) {
+	if rg := g.rg.Load(); rg != nil {
+		return rg.Namespaces()
+	}
+	return func(yield func(string, term.URIRef) bool) {
+		for prefix, ns := range defaultNamespaces() {
+			if !yield(prefix, ns) {
+				return
+			}
+		}
+	}
 }
 
 // LoadTurtleFile loads a Turtle file from disk.
@@ -294,7 +351,7 @@ func LoadTurtleFile(path string, opts ...turtle.Option) (*Graph, error) {
 	if err := turtle.Parse(g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	return &Graph{g: g, baseURI: base}, nil
+	return wrap(g, base), nil
 }
 
 // LoadTurtle parses Turtle data from a reader.
@@ -305,7 +362,7 @@ func LoadTurtle(r io.Reader, base string, opts ...turtle.Option) (*Graph, error)
 	if err := turtle.Parse(g, r, parseOpts...); err != nil {
 		return nil, err
 	}
-	return &Graph{g: g, baseURI: base}, nil
+	return wrap(g, base), nil
 }
 
 // LoadTurtleString parses Turtle data from a string.
@@ -327,18 +384,25 @@ func LoadJsonLDFile(path string, opts ...jsonld.Option) (*Graph, error) {
 	if err := jsonld.Parse(g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	return &Graph{g: g, baseURI: base}, nil
+	return wrap(g, base), nil
 }
 
 // LoadJsonLD parses JSON-LD data from a reader.
+//
+// The triples are kept as parsed and indexed directly for validation; the
+// rdflib graph a SPARQL constraint or Add needs is built only then (issue #48).
 func LoadJsonLD(r io.Reader, base string, opts ...jsonld.Option) (*Graph, error) {
-	g := graph.NewGraph(graph.WithBase(base))
 	parseOpts := append([]jsonld.Option{}, opts...)
 	parseOpts = append(parseOpts, jsonld.WithBase(base))
-	if err := jsonld.Parse(g, r, parseOpts...); err != nil {
+	var src []term.Triple
+	err := jsonld.ParseStream(r, func(s term.Subject, p term.URIRef, o term.Term) error {
+		src = append(src, term.Triple{Subject: s, Predicate: p, Object: o})
+		return nil
+	}, parseOpts...)
+	if err != nil {
 		return nil, err
 	}
-	return &Graph{g: g, baseURI: base}, nil
+	return &Graph{src: src, baseURI: base}, nil
 }
 
 // LoadJsonLDString parses JSON-LD data from a string.
@@ -360,7 +424,7 @@ func LoadNQuadsFile(path string, opts ...nq.Option) (*Graph, error) {
 	if err := nq.Parse(g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	return &Graph{g: g, baseURI: base}, nil
+	return wrap(g, base), nil
 }
 
 // LoadNQuads parses N-Quads data from a reader.
@@ -371,7 +435,7 @@ func LoadNQuads(r io.Reader, base string, opts ...nq.Option) (*Graph, error) {
 	if err := nq.Parse(g, r, parseOpts...); err != nil {
 		return nil, err
 	}
-	return &Graph{g: g, baseURI: base}, nil
+	return wrap(g, base), nil
 }
 
 // LoadNQuadsString parses N-Quads data from a string.
@@ -396,7 +460,7 @@ func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
 // time — wrapping a graph backed by a large persistent store will hold its
 // full triple set in memory during validation.
 func NewGraphFromRDF(g *graph.Graph, baseURI string) *Graph {
-	return &Graph{g: g, baseURI: baseURI}
+	return wrap(g, baseURI)
 }
 
 // InvalidateIndexes discards the lazily built SPO/POS indexes, forcing the
@@ -413,6 +477,7 @@ type graphIndexes struct {
 	spo map[ikey]map[ikey][]Term // subject → predicate → []object
 	pos map[ikey]map[ikey][]Term // predicate → object → []subject
 	p   map[ikey][]Triple        // predicate → []Triple
+	n   int                      // number of distinct triples
 }
 
 // ensureIndexes returns the indexes, building them on first use.
@@ -443,7 +508,9 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 		pos: make(map[ikey]map[ikey][]Term),
 		p:   make(map[ikey][]Triple),
 	}
-	g.g.BindContext(ctx).Triples(nil, nil, nil)(func(t term.Triple) bool {
+	// A streamed source may repeat a triple; a graph holds it once.
+	dedup := g.rg.Load() == nil
+	add := func(t term.Triple) bool {
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
@@ -454,7 +521,15 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 			sp = make(map[ikey][]Term)
 			idx.spo[sk] = sp
 		}
+		if dedup {
+			for _, have := range sp[pk] {
+				if indexKey(have) == ok {
+					return true
+				}
+			}
+		}
 		sp[pk] = append(sp[pk], o)
+		idx.n++
 
 		po := idx.pos[pk]
 		if po == nil {
@@ -465,7 +540,14 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 
 		idx.p[pk] = append(idx.p[pk], Triple{Subject: s, Predicate: p, Object: o})
 		return true
-	})
+	}
+	if rg := g.rg.Load(); rg != nil {
+		rg.BindContext(ctx).Triples(nil, nil, nil)(add)
+	} else {
+		for _, t := range g.src {
+			add(t)
+		}
+	}
 
 	if ctx != nil && ctx.Err() != nil {
 		return idx
@@ -481,7 +563,15 @@ func (g *Graph) invalidateIndexes() {
 // Triples returns all triples in the graph.
 func (g *Graph) Triples() []Triple {
 	var result []Triple
-	g.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	if g.rg.Load() == nil {
+		idx := g.ensureIndexes()
+		result = make([]Triple, 0, idx.n)
+		for _, ts := range idx.p {
+			result = append(result, ts...)
+		}
+		return result
+	}
+	g.rdf().Triples(nil, nil, nil)(func(t term.Triple) bool {
 		result = append(result, Triple{
 			Subject:   fromRDFLib(t.Subject),
 			Predicate: fromRDFLib(t.Predicate),
@@ -534,19 +624,22 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 
 	case s != nil && p == nil:
 		// Subject-bound, with the object possibly bound too.
+		// Answered from the SPO index, so a streamed graph never has to
+		// build its rdflib graph for it. Predicates are always IRIs, which
+		// is what makes the key enough to rebuild one.
 		var result []Triple
-		sub := toSubject(*s)
-		g.g.Triples(sub, nil, nil)(func(t term.Triple) bool {
-			triple := Triple{
-				Subject:   fromRDFLib(t.Subject),
-				Predicate: fromRDFLib(t.Predicate),
-				Object:    fromRDFLib(t.Object),
+		var objKey ikey
+		if o != nil {
+			objKey = indexKey(*o)
+		}
+		for pk, objs := range idx.spo[indexKey(*s)] {
+			pred := IRI(pk.value)
+			for _, obj := range objs {
+				if o == nil || indexKey(obj) == objKey {
+					result = append(result, Triple{Subject: *s, Predicate: pred, Object: obj})
+				}
 			}
-			if o == nil || triple.Object.TermKey() == o.TermKey() {
-				result = append(result, triple)
-			}
-			return true
-		})
+		}
 		return result
 
 	case s == nil && p == nil && o != nil:
@@ -628,7 +721,10 @@ func (g *Graph) RDFList(head Term) []Term {
 
 // Len returns the number of triples in the graph.
 func (g *Graph) Len() int {
-	return g.g.Len()
+	if g.rg.Load() == nil {
+		return g.ensureIndexes().n
+	}
+	return g.rdf().Len()
 }
 
 // Add inserts a triple into the graph.
@@ -637,14 +733,15 @@ func (g *Graph) Add(s, p, o Term) {
 	sub := toSubject(s)
 	pred := toURIRef(p)
 	obj := toTerm(o)
-	g.g.Add(sub, pred, obj)
+	g.rdf().Add(sub, pred, obj)
 }
 
 // Merge adds all triples from other into this graph.
 func (g *Graph) Merge(other *Graph) {
 	g.invalidateIndexes()
-	other.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
-		g.g.Add(t.Subject.(term.Subject), t.Predicate, t.Object)
+	dst := g.rdf()
+	other.rdf().Triples(nil, nil, nil)(func(t term.Triple) bool {
+		dst.Add(t.Subject.(term.Subject), t.Predicate, t.Object)
 		return true
 	})
 }

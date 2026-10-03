@@ -425,7 +425,7 @@ func findReifiers(g *Graph, subject, predicate, object Term) []Term {
 	expectedTT := term.NewTripleTerm(subjAsSubject, predURI, obj)
 
 	var reifiers []Term
-	g.g.Triples(nil, &reifiesPred, nil)(func(t term.Triple) bool {
+	g.rdf().Triples(nil, &reifiesPred, nil)(func(t term.Triple) bool {
 		if tt, ok := t.Object.(term.TripleTerm); ok {
 			if tt.Equal(expectedTT) {
 				reifiers = append(reifiers, fromRDFLib(t.Subject))

@@ -490,6 +490,15 @@ The `store.Store` interface (13 methods) has four implementations:
   Guard: `TestNodeToDeactivatedShapeConforms`.
 
 ### shacl/ validation hot path (perf invariants)
+- `shacl.LoadJsonLD` (issue #48) keeps the triples from `jsonld.ParseStream`
+  in `Graph.src` and builds the indexes from them; the rdflib graph is built
+  only by `rdf()` — SPARQL, Add, Merge, AF copies, reifier lookups. Never
+  read `rg` directly: it is nil for a streamed graph. `All(s, nil, …)` answers
+  from the SPO index for that reason (predicate keys are IRIs, so the key
+  rebuilds the term). `src` may repeat a triple; the index build dedups it
+  only on that path. -19.7% parse+validate on the #39 benchmarks. Guards:
+  `streamed_graph_test.go` (every `All` pattern and every report equal to a
+  `NewGraphFromRDF` graph; no rdflib graph built without SPARQL; -race).
 - The `Graph` indexes are keyed by `ikey` (`indexKey`), not `TermKey`: an IRI or
   blank node is `{kind, value}`, a literal is `{literal, TermKey}`. The key must
   identify exactly what `TermKey` identifies — the kind is part of it, so
