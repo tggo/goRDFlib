@@ -631,9 +631,9 @@ func TestEvalGraphPatternNoNamedGraphs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// With no named graphs, GRAPH clause should still evaluate against default graph
-	if len(r.Bindings) != 3 {
-		t.Errorf("expected 3, got %d", len(r.Bindings))
+	// No named graphs: GRAPH ?g ranges over nothing (issue #50).
+	if len(r.Bindings) != 0 {
+		t.Errorf("expected 0, got %d: %v", len(r.Bindings), r.Bindings)
 	}
 }
 
@@ -5702,10 +5702,10 @@ func TestEvalGraphPatternNoNamedGraphsCov(t *testing.T) {
 		Name:    "<http://example.org/g>",
 		Pattern: &BGP{Triples: []Triple{{Subject: "?s", Predicate: "?p", Object: "?o"}}},
 	}
-	// No named graphs available - evaluate against default graph
+	// No named graphs: the default graph is not <http://example.org/g> (issue #50).
 	result := evalGraphPattern(nil, g, gp, nil, nil)
-	if len(result) == 0 {
-		t.Error("expected results from default graph")
+	if len(result) != 0 {
+		t.Errorf("expected no results, got %v", result)
 	}
 }
 

@@ -815,11 +815,11 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 }
 
 func evalGraphPattern(ec *evalCtx, g *rdflibgo.Graph, gp *GraphPattern, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
-	if namedGraphs == nil {
-		// No named graphs available — evaluate against default graph
-		return evalPattern(ec, g, gp.Pattern, prefixes, namedGraphs)
-	}
-
+	// With no NamedGraphs the dataset has no named graphs, and GRAPH ranges
+	// over named graphs only (SPARQL 1.1 §13.3): it matches nothing. It used
+	// to fall back to the default graph, which answered GRAPH <any> from it and
+	// returned rows with ?g unbound (issue #50). A nil map ranges over nothing
+	// and has no entries, so the code below already does that.
 	graphName := gp.Name // e.g., "?g" or "<http://...>"
 	isVar := strings.HasPrefix(graphName, "?")
 
