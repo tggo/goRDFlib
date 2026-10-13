@@ -381,6 +381,15 @@ func (h *Handler) baseIRI(r *http.Request) string {
 }
 
 // withTimeout derives the evaluation context.
+// evalContext is withTimeout for a query or update evaluation, carrying the
+// WithMaxSolutions budget.
+func (c *config) evalContext(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if c.maxSolutions > 0 {
+		ctx = sparql.WithMaxSolutions(ctx, c.maxSolutions)
+	}
+	return withTimeout(ctx, d)
+}
+
 func withTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	if d <= 0 {
 		return context.WithCancel(ctx)

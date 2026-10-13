@@ -65,7 +65,7 @@ func evalQuery(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[
 			solutions[i] = ns
 		}
 	} else {
-		solutions = evalPattern(ec, g, q.Where, q.Prefixes, q.NamedGraphs)
+		solutions = evalPatternUpTo(ec, g, q.Where, q.Prefixes, q.NamedGraphs, pushdownLimit(q))
 	}
 	if ec.poll() {
 		return nil, nil
@@ -682,6 +682,9 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 			right := evalPatternWithBindings(ec, g, p.Right, lb, prefixes, namedGraphs)
 			for _, rb := range right {
 				result = append(result, mergeBindings(lb, rb))
+				if ec.produced(1) {
+					return nil
+				}
 			}
 		}
 		return result
@@ -697,9 +700,15 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 			if len(opt) > 0 {
 				for _, ob := range opt {
 					result = append(result, mergeBindings(mb, ob))
+					if ec.produced(1) {
+						return nil
+					}
 				}
 			} else {
 				result = append(result, mb)
+				if ec.produced(1) {
+					return nil
+				}
 			}
 		}
 		return result
@@ -839,6 +848,9 @@ func evalGraphPattern(ec *evalCtx, g *rdflibgo.Graph, gp *GraphPattern, prefixes
 				nb := copyBindings(b)
 				nb[varName] = graphURI
 				results = append(results, nb)
+				if ec.produced(1) {
+					return nil
+				}
 			}
 		}
 		return results
@@ -945,6 +957,9 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 			for _, rb := range right {
 				if isCompatible(lb, rb) {
 					result = append(result, mergeBindings(lb, rb))
+					if ec.produced(1) {
+						return nil
+					}
 				}
 			}
 		}
@@ -961,9 +976,15 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 			if len(opt) > 0 {
 				for _, ob := range opt {
 					result = append(result, mergeBindings(mb, ob))
+					if ec.produced(1) {
+						return nil
+					}
 				}
 			} else {
 				result = append(result, mb)
+				if ec.produced(1) {
+					return nil
+				}
 			}
 		}
 		return result
@@ -1040,22 +1061,44 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 // evalBGP evaluates a basic graph pattern, choosing the join order first (see
 // orderBGP).
 func evalBGP(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
-	return evalBGPInOrder(ec, g, orderBGP(g, triples, bindings, prefixes), bindings, prefixes)
+	return evalBGPUpTo(ec, g, triples, bindings, prefixes, 0)
+}
+
+// evalBGPUpTo is evalBGP returning at most limit solutions; limit <= 0 means
+// all of them.
+func evalBGPUpTo(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
+	return evalBGPInOrder(ec, g, orderBGP(g, triples, bindings, prefixes), bindings, prefixes, limit)
 }
 
 // evalBGPInOrder evaluates the triple patterns as nested loops in the order
-// given. The recursion stays in here so a BGP is planned once, not once per
-// partial solution.
-func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
+// given and collects at most limit solutions (limit <= 0: all of them).
+func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
+	var results []map[string]rdflibgo.Term
+	eachBGPSolution(ec, g, triples, bindings, prefixes, func(b map[string]rdflibgo.Term) bool {
+		results = append(results, b)
+		return limit <= 0 || len(results) < limit
+	})
+	return results
+}
+
+// eachBGPSolution passes the solutions of the triple patterns, joined as
+// nested loops in the order given, to yield, and reports false once yield or
+// ec has stopped it. The recursion stays in here so a BGP is planned once, not
+// once per partial solution, and so that a caller that has enough solutions
+// stops the loops at every depth.
+func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, yield func(map[string]rdflibgo.Term) bool) bool {
 	if len(triples) == 0 {
-		return []map[string]rdflibgo.Term{bindings}
+		if ec.produced(1) {
+			return false
+		}
+		return yield(bindings)
 	}
 
 	tp := triples[0]
 	rest := triples[1:]
 
 	if tp.PredicatePath != nil {
-		return evalPathTriple(ec, g, tp, rest, bindings, prefixes)
+		return eachPathSolution(ec, g, tp, rest, bindings, prefixes, yield)
 	}
 
 	// Check for triple term patterns with variables in subject/object
@@ -1075,7 +1118,7 @@ func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings m
 			// position, such as a literal. No triple can ever match, so the
 			// pattern has no solutions. Leaving subj nil here would turn the
 			// bound term into a wildcard and produce bogus matches.
-			return nil
+			return true
 		}
 		subj = s
 	}
@@ -1085,7 +1128,7 @@ func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings m
 		u, ok := pVal.(rdflibgo.URIRef)
 		if !ok {
 			// Bound to a non-IRI: unmatchable in the predicate position.
-			return nil
+			return true
 		}
 		pred = &u
 	}
@@ -1093,11 +1136,12 @@ func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings m
 	oVal := resolvePatternTerm(tp.Object, bindings, prefixes)
 	obj = oVal
 
-	var results []map[string]rdflibgo.Term
+	cont := true
 	g.Triples(subj, pred, obj)(func(t rdflibgo.Triple) bool {
 		// Checked per matched triple, not per solution: a pattern whose
 		// matches all fail a later pattern produces no rows but still works.
 		if ec.stop() {
+			cont = false
 			return false
 		}
 		nb := copyBindings(bindings)
@@ -1143,15 +1187,14 @@ func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings m
 			}
 		}
 
-		subResults := evalBGPInOrder(ec, g, rest, nb, prefixes)
-		results = append(results, subResults...)
-		return true
+		cont = eachBGPSolution(ec, g, rest, nb, prefixes, yield)
+		return cont
 	})
 
-	return results
+	return cont
 }
 
-func evalPathTriple(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []map[string]rdflibgo.Term {
+func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, yield func(map[string]rdflibgo.Term) bool) bool {
 	gg := (*graph.Graph)(g)
 
 	var subj term.Subject
@@ -1160,7 +1203,7 @@ func evalPathTriple(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bi
 		s, ok := sVal.(term.Subject)
 		if !ok {
 			// Bound to a literal: unmatchable in the subject position (see evalBGP).
-			return nil
+			return true
 		}
 		subj = s
 	}
@@ -1175,9 +1218,10 @@ func evalPathTriple(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bi
 	} else {
 		pairs = tp.PredicatePath.Eval(gg, subj, obj)
 	}
-	var results []map[string]rdflibgo.Term
+	cont := true
 	pairs(func(s, o term.Term) bool {
 		if ec.stop() {
+			cont = false
 			return false
 		}
 		nb := copyBindings(bindings)
@@ -1195,9 +1239,8 @@ func evalPathTriple(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bi
 			}
 		}
 
-		subResults := evalBGPInOrder(ec, g, rest, nb, prefixes)
-		results = append(results, subResults...)
-		return true
+		cont = eachBGPSolution(ec, g, rest, nb, prefixes, yield)
+		return cont
 	})
 	// The path iterator stops without saying so; ask the context whether the
 	// pairs were complete (see paths.EvalContext).
@@ -1205,7 +1248,7 @@ func evalPathTriple(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bi
 		ec.err = ec.ctx.Err()
 	}
 
-	return results
+	return cont
 }
 
 func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {

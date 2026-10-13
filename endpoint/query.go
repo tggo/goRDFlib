@@ -84,7 +84,7 @@ func (x *exchange) query(req *protocolRequest) error {
 		q.Limit = maxRows + 1
 	}
 
-	ctx, cancel := withTimeout(x.r.Context(), h.cfg.queryTimeout)
+	ctx, cancel := h.cfg.evalContext(x.r.Context(), h.cfg.queryTimeout)
 	defer cancel()
 	res, err := x.evaluate(ctx, &q, req, base)
 	if err != nil {
@@ -153,6 +153,9 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 	if err != nil {
 		if errors.Is(err, sparql.ErrQueryCancelled) {
 			return nil, evalError(ctx, err)
+		}
+		if errors.Is(err, sparql.ErrTooManySolutions) {
+			return nil, tooManySolutions(err)
 		}
 		return nil, httpErrf(http.StatusInternalServerError, "query evaluation failed: %v", err)
 	}
@@ -277,6 +280,11 @@ func tooManyRows(limit int, what string) error {
 	return httpErr(http.StatusUnprocessableEntity,
 		fmt.Errorf("%w: the result has more than %d %s; add a LIMIT or narrow the query (the limit is set with WithMaxResultRows)",
 			ErrTooManyRows, limit, what))
+}
+
+func tooManySolutions(err error) error {
+	return httpErr(http.StatusUnprocessableEntity,
+		fmt.Errorf("%w; narrow the query (the limit is set with WithMaxSolutions)", err))
 }
 
 func mediaTypesOf(fs []results.Format) []string {

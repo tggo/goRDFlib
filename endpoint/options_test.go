@@ -234,6 +234,28 @@ func TestMaxResultRows(t *testing.T) {
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {`ASK { ?s ?p ?o }`}}), http.StatusOK)
 }
 
+func TestMaxSolutions(t *testing.T) {
+	ds := fixture()
+	for i := range 30 {
+		ds.Default.Add(iri(fmt.Sprintf("%sr%d", ex, i)), iri(ex+"q"), term.NewLiteral(i))
+	}
+	ts, _ := serve(t, ds, endpoint.WithMaxSolutions(1000))
+	// A sort over a cross product builds every solution before the first row.
+	r := get(t, ts.URL, url.Values{"query": {`SELECT * WHERE { ?a ?b ?c . ?d ?e ?f . ?g ?h ?i } ORDER BY ?a LIMIT 1`}})
+	wantStatus(t, r, http.StatusUnprocessableEntity)
+	if !strings.Contains(r.body, "WithMaxSolutions") {
+		t.Errorf("body: %s", r.body)
+	}
+	// Without the sort, LIMIT stops evaluation well inside the budget.
+	wantStatus(t, get(t, ts.URL, url.Values{"query": {`SELECT * WHERE { ?a ?b ?c . ?d ?e ?f . ?g ?h ?i } LIMIT 1`}}), http.StatusOK)
+	wantStatus(t, get(t, ts.URL, url.Values{"query": {`SELECT * WHERE { ?s <http://example.org/q> ?o }`}}), http.StatusOK)
+	r = postForm(t, ts.URL, url.Values{"update": {`INSERT { ?a <http://example.org/x> ?f } WHERE { ?a ?b ?c . ?d ?e ?f . ?g ?h ?i }`}})
+	wantStatus(t, r, http.StatusUnprocessableEntity)
+	if n := ds.Default.Len(); n > 100 {
+		t.Errorf("update over the budget wrote: %d triples", n)
+	}
+}
+
 func TestPanicIsRecovered(t *testing.T) {
 	var logs bytes.Buffer
 	var mu sync.Mutex

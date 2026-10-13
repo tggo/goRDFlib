@@ -55,7 +55,7 @@ func (x *exchange) update(req *protocolRequest) error {
 		}
 	}
 
-	ctx, cancel := withTimeout(x.r.Context(), h.cfg.updateTimeout)
+	ctx, cancel := h.cfg.evalContext(x.r.Context(), h.cfg.updateTimeout)
 	defer cancel()
 	if err := h.lock.lock(ctx); err != nil {
 		return evalError(ctx, err)
@@ -71,6 +71,9 @@ func (x *exchange) update(req *protocolRequest) error {
 	if err != nil {
 		if errors.Is(err, sparql.ErrQueryCancelled) {
 			return evalError(ctx, err)
+		}
+		if errors.Is(err, sparql.ErrTooManySolutions) {
+			return tooManySolutions(err)
 		}
 		return httpErrf(http.StatusBadRequest, "update failed: %v", err)
 	}

@@ -516,6 +516,21 @@ context is a `sparql.ContextFunction`, registered with `RegisterContextFunction`
 (or bound per query with `ParsedQuery.BindContextFunctions`); it receives the
 `ctx` passed to `QueryContext`.
 
+#### Bounding untrusted queries
+
+A context deadline bounds time, not memory: a cross product over a few hundred
+triples can take gigabytes before the deadline arrives. `LIMIT` (without ORDER
+BY, DISTINCT or grouping) and `ASK` stop evaluation as soon as they have enough
+solutions. For everything else, put a budget on the context:
+
+```go
+ctx = sparql.WithMaxSolutions(ctx, 1_000_000)
+res, err := sparql.QueryContext(ctx, g, untrusted)
+if errors.Is(err, sparql.ErrTooManySolutions) { /* refuse */ }
+```
+
+`endpoint.WithMaxSolutions(n)` does the same per request and answers 422.
+
 #### Contexts: tracing, deadlines, cancellation
 
 Every long-running entry point has a `*Context` variant:

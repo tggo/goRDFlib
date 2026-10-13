@@ -536,6 +536,27 @@ The `store.Store` interface (13 methods) has four implementations:
   tag with one lexical form stay separate focus nodes. Guard:
   `target_dedup_test.go`.
 
+### sparql/ LIMIT pushdown and the solution budget (issue #51)
+- `evalPatternUpTo` collects from `eachSolution`, which **streams** BGP, join,
+  OPTIONAL, UNION and FILTER through callbacks, so a consumer that has enough
+  stops the loops at every depth. The BGP nested loops live in
+  `eachBGPSolution` (callback core); `evalBGPInOrder` is a collector over it.
+  A BGP right side of a join/OPTIONAL is streamed with the left row as
+  bindings; other right sides are evaluated per left row, as `evalPattern` does.
+- `pushdownLimit`: SELECT/CONSTRUCT with LIMIT > 0 and no ORDER BY, DISTINCT,
+  GROUP BY, aggregates or HAVING want OFFSET+LIMIT solutions; ASK wants one.
+  Initial bindings take the `evalPatternPreBound` path and are not pushed down.
+- `sparql.WithMaxSolutions(ctx, n)` puts a budget on `evalCtx`; `produced(1)`
+  is called wherever a solution is built (BGP leaf, join/OPTIONAL merge,
+  `GRAPH ?g` row). Over budget sets `ec.err` to `ErrTooManySolutions`, so every
+  loop unwinds through `stop()` like a cancellation, but `failure()` returns it
+  unwrapped — it is not `ErrQueryCancelled`. `stop`/`poll` must check `e.err`
+  before the `done == nil` shortcut, or a budget without a context never stops.
+- endpoint: `WithMaxSolutions(n)` → 422. A sort over a cross product is the
+  case LIMIT pushdown cannot help and only the budget bounds.
+- Guards: `TestLimitStopsCrossProduct` (allocation bound, not timing),
+  `TestLimitPushdownRowsAreSolutions`, `TestMaxSolutions` (sparql and endpoint).
+
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
   builds that dataset out of `NamedGraphs` (§13.2): default = merge of the

@@ -88,6 +88,7 @@ type config struct {
 	maxRequestBytes int64
 	maxGraphBytes   int64
 	maxResultRows   int
+	maxSolutions    int
 	logger          *slog.Logger
 	authorize       Authorizer
 	hook            RequestHook
@@ -147,10 +148,18 @@ func WithMaxGraphBytes(n int64) Option { return func(c *config) { c.maxGraphByte
 // indistinguishable from a complete one. n <= 0 (the default) means no limit.
 //
 // For SELECT and CONSTRUCT the limit is pushed into the query as LIMIT n+1
-// when the query has no smaller LIMIT, so projection and template
-// instantiation stop early; the WHERE clause is still evaluated in full,
-// because the engine materializes solutions.
+// when the query has no smaller LIMIT. Without ORDER BY, DISTINCT or grouping
+// the engine then stops evaluating the WHERE clause after n+1 solutions; with
+// them it still evaluates it in full, which is what WithMaxSolutions bounds.
 func WithMaxResultRows(n int) Option { return func(c *config) { c.maxResultRows = n } }
+
+// WithMaxSolutions bounds the work of every query and update to n
+// intermediate solutions (see sparql.WithMaxSolutions); one over it fails with
+// 422. Where WithMaxResultRows limits what is sent, this limits what is built:
+// a cross product, or a sort over one, can take gigabytes before it has a
+// single row to send, and a time limit does not bound memory. n <= 0 (the
+// default) means no limit.
+func WithMaxSolutions(n int) Option { return func(c *config) { c.maxSolutions = n } }
 
 // WithLogger sets the logger. Server errors and recovered panics are logged at
 // Error, timeouts at Warn, client errors and disconnects at Debug. The default

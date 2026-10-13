@@ -68,7 +68,7 @@
 //	406  no acceptable representation (the body lists the available ones)
 //	413  body over WithMaxRequestBytes or WithMaxGraphBytes
 //	415  unsupported Content-Type, or a charset other than UTF-8
-//	422  result over WithMaxResultRows
+//	422  result over WithMaxResultRows, evaluation over WithMaxSolutions
 //	500  panic (the value is logged, not sent), result that cannot be encoded in the negotiated format
 //	501  DESCRIBE, which the engine does not implement
 //	503  query or update exceeded its time limit, including time spent waiting for the lock

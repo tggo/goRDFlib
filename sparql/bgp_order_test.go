@@ -272,7 +272,7 @@ func testSameSolutionsForEveryPermutation(t *testing.T, g *rdflibgo.Graph) {
 	film2 := rdflibgo.NewURIRefUnsafe(ob + "film/2")
 	for name, bgp := range bgps {
 		for _, pre := range []map[string]rdflibgo.Term{{}, {"film": film2}} {
-			want := canonicalSolutions(evalBGPInOrder(nil, g, bgp, pre, nil))
+			want := canonicalSolutions(evalBGPInOrder(nil, g, bgp, pre, nil, 0))
 			if name != "literalObject" && len(pre) == 0 && len(want) == 0 {
 				t.Fatalf("%s: fixture produces no solutions, the test would prove nothing", name)
 			}

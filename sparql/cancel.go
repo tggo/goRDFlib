@@ -50,22 +50,28 @@ type evalCtx struct {
 	err error
 	// bound caches graphs with ctx bound to their store; see bind.
 	bound map[*rdflibgo.Graph]*rdflibgo.Graph
+	// budget is the WithMaxSolutions bound (0: none) and built the solutions
+	// counted against it so far; see produced.
+	budget, built int
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return &evalCtx{ctx: ctx, done: ctx.Done()}
+	return &evalCtx{ctx: ctx, done: ctx.Done(), budget: maxSolutionsFrom(ctx)}
 }
 
 // stop counts one unit of work and reports whether evaluation must end.
 func (e *evalCtx) stop() bool {
-	if e == nil || e.done == nil {
+	if e == nil {
 		return false
 	}
 	if e.err != nil {
 		return true
+	}
+	if e.done == nil {
+		return false
 	}
 	e.n++
 	if e.n%cancelCheckInterval != 0 {
@@ -76,11 +82,14 @@ func (e *evalCtx) stop() bool {
 
 // poll checks the context now, without counting.
 func (e *evalCtx) poll() bool {
-	if e == nil || e.done == nil {
+	if e == nil {
 		return false
 	}
 	if e.err != nil {
 		return true
+	}
+	if e.done == nil {
+		return false
 	}
 	select {
 	case <-e.done:
@@ -99,6 +108,9 @@ func (e *evalCtx) cancellable() bool { return e != nil && e.done != nil }
 func (e *evalCtx) failure() error {
 	if e == nil || e.err == nil {
 		return nil
+	}
+	if errors.Is(e.err, ErrTooManySolutions) {
+		return e.err
 	}
 	return fmt.Errorf("%w: %w", ErrQueryCancelled, e.err)
 }
