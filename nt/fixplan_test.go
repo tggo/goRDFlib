@@ -27,21 +27,21 @@ func TestP6_NTriplesRoundTrip(t *testing.T) {
 	}
 
 	for _, obj := range cases {
-		g.Add(s, p, obj)
+		g.Add(t.Context(), s, p, obj)
 	}
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatalf("P6: re-parse failed: %v\nOutput:\n%s", err, buf.String())
 	}
 
-	if g.Len() != g2.Len() {
-		t.Errorf("P6: round-trip lost triples: %d → %d", g.Len(), g2.Len())
+	if mustV(g.Len(t.Context())) != mustV(g2.Len(t.Context())) {
+		t.Errorf("P6: round-trip lost triples: %d → %d", mustV(g.Len(t.Context())), mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -50,10 +50,10 @@ func TestR9_TrailingNewline(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -70,12 +70,12 @@ func TestSchemeOnlyURI(t *testing.T) {
 	input := `<a:> <b:> <c:> .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("#920: scheme-only URI parse failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("#920: expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("#920: expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -84,12 +84,12 @@ func TestBnodeLabelWithUnderscore(t *testing.T) {
 	input := `_:node_a <urn:p> "lit" .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("#888: bnode with underscore parse failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("#888: expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("#888: expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -99,13 +99,13 @@ func TestR10_NTriplesDeterministic(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		s := rdflibgo.NewURIRefUnsafe("http://example.org/s" + string(rune('A'+i)))
 		p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-		g.Add(s, p, rdflibgo.NewLiteral(i))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral(i))
 	}
 
 	var first string
 	for i := 0; i < 50; i++ {
 		var buf bytes.Buffer
-		if err := Serialize(g, &buf); err != nil {
+		if err := Serialize(t.Context(), g, &buf); err != nil {
 			t.Fatal(err)
 		}
 		if i == 0 {

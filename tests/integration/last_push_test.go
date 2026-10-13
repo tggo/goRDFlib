@@ -32,9 +32,9 @@ func TestRDFXMLParserXMLBaseOnRoot(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -48,7 +48,7 @@ func TestRDFXMLParserNoWrapper(t *testing.T) {
   <ex:p>v</ex:p>
 </ex:Thing>`
 	g := NewGraph()
-	err := rdfxml.Parse(g, strings.NewReader(input))
+	err := rdfxml.Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +58,12 @@ func TestRDFXMLParserNoWrapper(t *testing.T) {
 
 func TestTurtleParserLocalNameWithBackslash(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p ex:hello\.world .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -71,7 +71,7 @@ func TestTurtleParserLocalNameWithBackslash(t *testing.T) {
 
 func TestTurtleParserShortInput(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader("@prefix e: <http://e.o/> . e:s e:p e:o ."))
+	err := turtle.Parse(t.Context(), g, strings.NewReader("@prefix e: <http://e.o/> . e:s e:p e:o ."))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,12 +81,12 @@ func TestTurtleParserShortInput(t *testing.T) {
 
 func TestTurtleParserFragmentIRI(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@base <http://example.org/doc> .
 		<#section> <#p> "v" .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -94,13 +94,13 @@ func TestTurtleParserFragmentIRI(t *testing.T) {
 
 func TestTurtleSerializerWithBase(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("v"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf, turtle.WithBase("http://example.org/"))
+	turtle.Serialize(t.Context(), g, &buf, turtle.WithBase("http://example.org/"))
 	if !strings.Contains(buf.String(), "@base") {
 		t.Errorf("expected @base, got:\n%s", buf.String())
 	}
@@ -110,15 +110,15 @@ func TestTurtleSerializerWithBase(t *testing.T) {
 
 func TestTurtleSerializerMultipleObjectsSameSubjectPred(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("a"))
-	g.Add(s, p, NewLiteral("b"))
-	g.Add(s, p, NewLiteral("c"))
+	g.Add(t.Context(), s, p, NewLiteral("a"))
+	g.Add(t.Context(), s, p, NewLiteral("b"))
+	g.Add(t.Context(), s, p, NewLiteral("c"))
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	if strings.Count(out, ",") < 2 {
 		t.Errorf("expected commas for multiple objects, got:\n%s", out)
@@ -129,15 +129,15 @@ func TestTurtleSerializerMultipleObjectsSameSubjectPred(t *testing.T) {
 
 func TestTurtleSerializerRDFSLabelOrder(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Bind("rdfs", NewURIRefUnsafe(RDFSNamespace))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdfs", NewURIRefUnsafe(RDFSNamespace))
 	s, _ := NewURIRef("http://example.org/s")
 	other, _ := NewURIRef("http://example.org/zzz")
-	g.Add(s, RDFS.Label, NewLiteral("My Label"))
-	g.Add(s, other, NewLiteral("zzz"))
+	g.Add(t.Context(), s, RDFS.Label, NewLiteral("My Label"))
+	g.Add(t.Context(), s, other, NewLiteral("zzz"))
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	labelIdx := strings.Index(out, "rdfs:label")
 	otherIdx := strings.Index(out, "ex:zzz")

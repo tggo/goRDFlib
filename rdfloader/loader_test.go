@@ -29,8 +29,8 @@ ex:s ex:p ex:o .
 		t.Fatalf("Load file:// failed: %v", err)
 	}
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -49,8 +49,8 @@ func TestLoadFileNoScheme(t *testing.T) {
 		t.Fatalf("Load without scheme failed: %v", err)
 	}
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -71,8 +71,8 @@ ex:d ex:e ex:f .
 		t.Fatalf("Load HTTP failed: %v", err)
 	}
 
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -91,8 +91,8 @@ func TestLoadHTTPExtensionFallback(t *testing.T) {
 		t.Fatalf("Load HTTP extension fallback failed: %v", err)
 	}
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -112,8 +112,8 @@ func TestLoadHTTPContentSniffing(t *testing.T) {
 		t.Fatalf("Load HTTP content sniffing failed: %v", err)
 	}
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -156,7 +156,7 @@ func TestLoadFileContentSniffing(t *testing.T) {
 		t.Fatalf("Load file with content sniffing failed: %v", err)
 	}
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }

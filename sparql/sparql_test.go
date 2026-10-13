@@ -12,7 +12,7 @@ import (
 func makeSPARQLGraph(t *testing.T) *rdflibgo.Graph {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
 	bob, _ := rdflibgo.NewURIRef("http://example.org/Bob")
 	charlie, _ := rdflibgo.NewURIRef("http://example.org/Charlie")
@@ -21,19 +21,19 @@ func makeSPARQLGraph(t *testing.T) *rdflibgo.Graph {
 	knows, _ := rdflibgo.NewURIRef("http://example.org/knows")
 	person, _ := rdflibgo.NewURIRef("http://example.org/Person")
 
-	g.Add(alice, rdflibgo.RDF.Type, person)
-	g.Add(alice, name, rdflibgo.NewLiteral("Alice"))
-	g.Add(alice, age, rdflibgo.NewLiteral(30))
-	g.Add(alice, knows, bob)
+	g.Add(t.Context(), alice, rdflibgo.RDF.Type, person)
+	g.Add(t.Context(), alice, name, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), alice, age, rdflibgo.NewLiteral(30))
+	g.Add(t.Context(), alice, knows, bob)
 
-	g.Add(bob, rdflibgo.RDF.Type, person)
-	g.Add(bob, name, rdflibgo.NewLiteral("Bob"))
-	g.Add(bob, age, rdflibgo.NewLiteral(25))
-	g.Add(bob, knows, charlie)
+	g.Add(t.Context(), bob, rdflibgo.RDF.Type, person)
+	g.Add(t.Context(), bob, name, rdflibgo.NewLiteral("Bob"))
+	g.Add(t.Context(), bob, age, rdflibgo.NewLiteral(25))
+	g.Add(t.Context(), bob, knows, charlie)
 
-	g.Add(charlie, rdflibgo.RDF.Type, person)
-	g.Add(charlie, name, rdflibgo.NewLiteral("Charlie"))
-	g.Add(charlie, age, rdflibgo.NewLiteral(35))
+	g.Add(t.Context(), charlie, rdflibgo.RDF.Type, person)
+	g.Add(t.Context(), charlie, name, rdflibgo.NewLiteral("Charlie"))
+	g.Add(t.Context(), charlie, age, rdflibgo.NewLiteral(35))
 	return g
 }
 
@@ -161,8 +161,8 @@ func TestSPARQLConstruct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() != 3 {
-		t.Errorf("expected 3, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 3 {
+		t.Errorf("expected 3, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -580,7 +580,7 @@ func TestSPARQLStrlenUnicode(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
 	// "cafe\u0301" is 5 runes but 6 bytes; "日本語" is 3 runes but 9 bytes
-	g.Add(s, p, rdflibgo.NewLiteral("日本語"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("日本語"))
 
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -604,7 +604,7 @@ func TestSPARQLSubstrUnicode(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
-	g.Add(s, p, rdflibgo.NewLiteral("日本語"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("日本語"))
 
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -626,10 +626,10 @@ func TestSPARQLSubstrUnicode(t *testing.T) {
 
 func TestSPARQLNestedExpressionAS(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/name")
-	g.Add(s, p, rdflibgo.NewLiteral("Hello World"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("Hello World"))
 
 	// Test (STRLEN(?name) AS ?len) — nested function call in SELECT expression
 	r, err := Query(g, `
@@ -646,10 +646,10 @@ func TestSPARQLNestedExpressionAS(t *testing.T) {
 
 func TestSPARQLValueEquality(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
-	g.Add(s, p, rdflibgo.NewLiteral(1))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(1))
 
 	// Test that integer 1 equals string "1" comparison via value equality:
 	// "1"^^xsd:integer should equal itself regardless of N3 form
@@ -670,7 +670,7 @@ func TestSPARQLValueEqualityNumericCrossType(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
 	// Add integer 1
-	g.Add(s, p, rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	// 1 (integer) = 1.0 (decimal) should be true
 	r, err := Query(g, `
@@ -687,10 +687,10 @@ func TestSPARQLValueEqualityNumericCrossType(t *testing.T) {
 
 func TestSPARQLValueEqualityStringLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/name")
-	g.Add(s, p, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("Alice"))
 
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -708,11 +708,11 @@ func TestSPARQLValueEqualityStringLiteral(t *testing.T) {
 
 func BenchmarkSPARQLSelectAll(b *testing.B) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(b.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	for i := 0; i < 100; i++ {
 		s := rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
 		p, _ := rdflibgo.NewURIRef("http://example.org/name")
-		g.Add(s, p, rdflibgo.NewLiteral(fmt.Sprintf("name%d", i)))
+		g.Add(b.Context(), s, p, rdflibgo.NewLiteral(fmt.Sprintf("name%d", i)))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -722,11 +722,11 @@ func BenchmarkSPARQLSelectAll(b *testing.B) {
 
 func BenchmarkSPARQLFilter(b *testing.B) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(b.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
 	for i := 0; i < 100; i++ {
 		s := rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(s, p, rdflibgo.NewLiteral(i))
+		g.Add(b.Context(), s, p, rdflibgo.NewLiteral(i))
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -26,8 +26,8 @@ func TestLoadFileByExtension(t *testing.T) {
 	if err := l.Load(context.Background(), g, "file://"+path); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -108,8 +108,8 @@ func TestLoadHTTPWithContentType(t *testing.T) {
 	if err := l.Load(context.Background(), g, srv.URL+"/data.ttl"); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -230,7 +230,7 @@ func TestWithTimeout(t *testing.T) {
 // TestParseFormatUnsupported covers the unsupported format error path.
 func TestParseFormatUnsupported(t *testing.T) {
 	g := graph.NewGraph()
-	err := (&defaultLoader{}).parseFormat(g, nil, "unknown-format")
+	err := (&defaultLoader{}).parseFormat(t.Context(), g, nil, "unknown-format")
 	if err == nil {
 		t.Error("expected error for unsupported format")
 	}
@@ -240,11 +240,11 @@ func TestParseFormatUnsupported(t *testing.T) {
 func TestParseFormatNT(t *testing.T) {
 	g := graph.NewGraph()
 	r := readerFromString(`<http://example.org/s> <http://example.org/p> "hello" .` + "\n")
-	if err := (&defaultLoader{}).parseFormat(g, r, "nt"); err != nil {
+	if err := (&defaultLoader{}).parseFormat(t.Context(), g, r, "nt"); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -252,7 +252,7 @@ func TestParseFormatNT(t *testing.T) {
 func TestParseFormatNQuads(t *testing.T) {
 	g := graph.NewGraph()
 	r := readerFromString(`<http://example.org/s> <http://example.org/p> "hello" .` + "\n")
-	if err := (&defaultLoader{}).parseFormat(g, r, "nquads"); err != nil {
+	if err := (&defaultLoader{}).parseFormat(t.Context(), g, r, "nquads"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -261,7 +261,7 @@ func TestParseFormatNQuads(t *testing.T) {
 func TestParseFormatTrig(t *testing.T) {
 	g := graph.NewGraph()
 	r := readerFromString(`@prefix ex: <http://example.org/> . ex:s ex:p "v" .`)
-	if err := (&defaultLoader{}).parseFormat(g, r, "trig"); err != nil {
+	if err := (&defaultLoader{}).parseFormat(t.Context(), g, r, "trig"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -277,7 +277,7 @@ func TestParseFormatXML(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	r := readerFromString(content)
-	if err := (&defaultLoader{}).parseFormat(g, r, "xml"); err != nil {
+	if err := (&defaultLoader{}).parseFormat(t.Context(), g, r, "xml"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -287,7 +287,7 @@ func TestParseFormatJSONLD(t *testing.T) {
 	g := graph.NewGraph()
 	content := `{"@id": "http://example.org/s", "http://example.org/p": "hello"}`
 	r := readerFromString(content)
-	if err := (&defaultLoader{}).parseFormat(g, r, "json-ld"); err != nil {
+	if err := (&defaultLoader{}).parseFormat(t.Context(), g, r, "json-ld"); err != nil {
 		t.Fatal(err)
 	}
 }

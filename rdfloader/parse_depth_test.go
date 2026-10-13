@@ -19,11 +19,11 @@ func TestWithMaxParseDepthIsForwarded(t *testing.T) {
 
 	cases := map[string]error{"turtle": turtle.ErrNestingTooDeep, "trig": trig.ErrNestingTooDeep}
 	for format, want := range cases {
-		err := l.parseFormat(graph.NewGraph(), strings.NewReader(nested), format)
+		err := l.parseFormat(t.Context(), graph.NewGraph(), strings.NewReader(nested), format)
 		if !errors.Is(err, want) {
 			t.Errorf("%s with depth 3: err = %v, want %v", format, err, want)
 		}
-		if err := (&defaultLoader{}).parseFormat(graph.NewGraph(), strings.NewReader(nested), format); err != nil {
+		if err := (&defaultLoader{}).parseFormat(t.Context(), graph.NewGraph(), strings.NewReader(nested), format); err != nil {
 			t.Errorf("%s with the default depth: %v", format, err)
 		}
 	}

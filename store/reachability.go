@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 
 	"github.com/tggo/goRDFlib/term"
@@ -77,7 +78,7 @@ type ReachabilityStore interface {
 	//     yielded stream cannot be un-yielded.
 	//   - Any error means "compute this yourself". Wrap or return
 	//     ErrReachabilityUnsupported for the expected case of declining.
-	Reachable(q ReachabilityQuery) ([]term.Term, error)
+	Reachable(ctx context.Context, q ReachabilityQuery) ([]term.Term, error)
 }
 
 // Reachable implements ReachabilityStore with a breadth-first traversal over the
@@ -87,7 +88,10 @@ type ReachabilityStore interface {
 // storetest has a reference implementation to check other backends against.
 //
 // Safe for concurrent use.
-func (m *MemoryStore) Reachable(q ReachabilityQuery) ([]term.Term, error) {
+func (m *MemoryStore) Reachable(ctx context.Context, q ReachabilityQuery) ([]term.Term, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if q.Start == nil {
 		return nil, ErrReachabilityUnsupported
 	}

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"sync"
 
 	"github.com/tggo/goRDFlib/term"
@@ -52,22 +53,26 @@ func (ds *Dataset) AddGraph(g *Graph) {
 	ds.graphs[term.TermKey(g.identifier)] = g
 }
 
-// RemoveGraph removes a named graph from the dataset.
+// RemoveGraph removes a named graph and its triples from the dataset. The
+// graph stays registered when removing its triples fails.
 // Ported from: rdflib.graph.Dataset.remove_graph
-func (ds *Dataset) RemoveGraph(id term.Term) {
+func (ds *Dataset) RemoveGraph(ctx context.Context, id term.Term) error {
 	if id == nil {
-		return
+		return nil
 	}
 	k := term.TermKey(id)
 	if k == term.TermKey(ds.defaultContext.identifier) {
-		return
+		return nil
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	if g, ok := ds.graphs[k]; ok {
-		ds.store.Remove(term.TriplePattern{}, g.identifier)
+		if err := ds.store.Remove(ctx, term.TriplePattern{}, g.identifier); err != nil {
+			return err
+		}
 		delete(ds.graphs, k)
 	}
+	return nil
 }
 
 // Graphs returns all named graphs in the dataset.

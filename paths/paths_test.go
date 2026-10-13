@@ -1,10 +1,12 @@
 package paths_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/paths"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -17,16 +19,17 @@ func makePathGraph(t *testing.T) *graph.Graph {
 	d, _ := term.NewURIRef("http://example.org/d")
 	p, _ := term.NewURIRef("http://example.org/p")
 	q, _ := term.NewURIRef("http://example.org/q")
-	g.Add(a, p, b)
-	g.Add(b, p, c)
-	g.Add(c, p, d)
-	g.Add(a, q, c)
+	g.Add(t.Context(), a, p, b)
+	g.Add(t.Context(), b, p, c)
+	g.Add(t.Context(), c, p, d)
+	g.Add(t.Context(), a, q, c)
 	return g
 }
 
 func collectPairs(g *graph.Graph, path paths.Path, subj term.Subject, obj term.Term) [][2]string {
 	var result [][2]string
-	path.Eval(g, subj, obj)(func(s, o term.Term) bool {
+	path.Eval(context.Background(), g, subj, obj)(func(pair_ store.TermPair, _ error) bool {
+		s, o := pair_.First, pair_.Second
 		result = append(result, [2]string{s.N3(), o.N3()})
 		return true
 	})
@@ -145,8 +148,8 @@ func TestPathCycleDetection(t *testing.T) {
 	a, _ := term.NewURIRef("http://example.org/a")
 	b, _ := term.NewURIRef("http://example.org/b")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(a, p, b)
-	g.Add(b, p, a)
+	g.Add(t.Context(), a, p, b)
+	g.Add(t.Context(), b, p, a)
 
 	path := paths.ZeroOrMore(paths.AsPath(p))
 	pairs := collectPairs(g, path, a, nil)
@@ -166,14 +169,14 @@ func TestSequencePathEarlyTermination(t *testing.T) {
 	e, _ := term.NewURIRef("http://example.org/e")
 	p, _ := term.NewURIRef("http://example.org/p")
 	q, _ := term.NewURIRef("http://example.org/q")
-	g.Add(a, p, b)
-	g.Add(a, p, c)
-	g.Add(b, q, d)
-	g.Add(c, q, e)
+	g.Add(t.Context(), a, p, b)
+	g.Add(t.Context(), a, p, c)
+	g.Add(t.Context(), b, q, d)
+	g.Add(t.Context(), c, q, e)
 
 	path := paths.Sequence(paths.AsPath(p), paths.AsPath(q))
 	count := 0
-	path.Eval(g, a, nil)(func(s, o term.Term) bool {
+	path.Eval(t.Context(), g, a, nil)(func(pair_ store.TermPair, _ error) bool {
 		count++
 		return false
 	})

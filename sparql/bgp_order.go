@@ -99,7 +99,7 @@ type bgpCandidate struct {
 // pattern contains a triple term with variables: those bind variables through
 // matchTripleTermPattern rather than by position, which the cost model does
 // not track.
-func orderBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []Triple {
+func orderBGP(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string) []Triple {
 	if len(triples) < 2 {
 		return triples
 	}
@@ -111,7 +111,7 @@ func orderBGP(g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.
 		}
 		cands[i] = newBGPCandidate(tp, bindings, prefixes)
 	}
-	probeCandidates(g, cands)
+	probeCandidates(ec, g, cands)
 
 	ordered := make([]Triple, 0, len(triples))
 	bound := make(map[string]struct{}, 2*len(triples))
@@ -192,11 +192,19 @@ func newBGPCandidate(tp Triple, bindings map[string]rdflibgo.Term, prefixes map[
 // probeCandidates fills in count and capped for every candidate that needs
 // one: exactly from a CardinalityStore, otherwise by probing in the rounds
 // described at the top of the file.
-func probeCandidates(g *rdflibgo.Graph, cands []bgpCandidate) {
+//
+// A store error is recorded on ec and leaves the counts it could not get at
+// zero: the plan no longer matters, because evaluation stops on the error.
+func probeCandidates(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 	if cs, ok := g.Store().(store.CardinalityStore); ok {
 		for i := range cands {
 			if c := &cands[i]; !c.probed {
-				c.count = cs.Cardinality(rdflibgo.TriplePattern{Subject: c.s, Predicate: c.p, Object: c.o}, g.Identifier())
+				n, err := cs.Cardinality(ec.context(), rdflibgo.TriplePattern{Subject: c.s, Predicate: c.p, Object: c.o}, g.Identifier())
+				if err != nil {
+					ec.fail(err)
+					return
+				}
+				c.count = n
 				c.probed = true
 			}
 		}
@@ -224,7 +232,7 @@ func probeCandidates(g *rdflibgo.Graph, cands []bgpCandidate) {
 			if c.probed && !c.capped {
 				continue // exact from the first round
 			}
-			c.count = probeCount(g, c.s, c.p, c.o, limit)
+			c.count = probeCount(ec, g, c.s, c.p, c.o, limit)
 			c.probed = true
 			c.capped = c.count >= limit
 			if !c.capped {
@@ -304,18 +312,23 @@ func (c *bgpCandidate) pathPenalty() int { return 2 - c.fixed }
 // probeCount counts matches up to limit. A QueryableStore gets the limit
 // pushed down, which matters for SQL and remote backends where an abandoned
 // iteration may still have fetched the whole result.
-func probeCount(g *rdflibgo.Graph, s rdflibgo.Subject, p *rdflibgo.URIRef, o rdflibgo.Term, limit int) int {
-	n := 0
-	count := func(rdflibgo.Triple) bool {
-		n++
-		return n < limit
-	}
+func probeCount(ec *evalCtx, g *rdflibgo.Graph, s rdflibgo.Subject, p *rdflibgo.URIRef, o rdflibgo.Term, limit int) int {
+	ctx := ec.context()
+	seq := g.Triples(ctx, s, p, o)
 	if qs, ok := g.Store().(store.QueryableStore); ok {
-		pat := rdflibgo.TriplePattern{Subject: s, Predicate: p, Object: o}
-		qs.TriplesWithLimit(pat, g.Identifier(), limit, 0)(count)
-		return n
+		seq = qs.TriplesWithLimit(ctx, rdflibgo.TriplePattern{Subject: s, Predicate: p, Object: o}, g.Identifier(), limit, 0)
 	}
-	g.Triples(s, p, o)(count)
+	n := 0
+	for _, err := range seq {
+		if err != nil {
+			ec.fail(err)
+			return n
+		}
+		n++
+		if n >= limit {
+			break
+		}
+	}
 	return n
 }
 

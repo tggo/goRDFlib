@@ -6,7 +6,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -55,22 +57,29 @@ func point(t rdf.Term) (x, y float64, err error) {
 }
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	// Register once — typically from an init function in the extension package.
 	sparql.MustRegisterFunction(geoNS+"distance", distance)
 
 	g := rdf.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(`
+	if err := turtle.Parse(ctx, g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 
 		ex:office ex:at "0,0" .
 		ex:cafe   ex:at "3,4" .
 		ex:depot  ex:at "30,40" .
 	`)); err != nil {
-		panic(err)
+		return err
 	}
 
 	// Call through a prefixed name, in both SELECT and FILTER position.
-	res, err := sparql.Query(g, `
+	res, err := sparql.QueryContext(ctx, g, `
 		PREFIX ex:  <http://example.org/>
 		PREFIX geo: <http://example.org/geo#>
 
@@ -84,7 +93,7 @@ func main() {
 		ORDER BY ?dist
 	`)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	fmt.Println("Places within 100 units of the office:")
@@ -93,7 +102,7 @@ func main() {
 	}
 
 	// The same function called by its full IRI.
-	res, err = sparql.Query(g, `
+	res, err = sparql.QueryContext(ctx, g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?d WHERE {
 			ex:office ex:at ?a .
@@ -102,14 +111,14 @@ func main() {
 		}
 	`)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Printf("\nOffice to depot: %s\n", res.Bindings[0]["d"])
 
 	// An extension function that returns an error produces a SPARQL expression
 	// error: the value is unbound and the enclosing FILTER rejects the row.
 	// The query itself still succeeds.
-	res, err = sparql.Query(g, `
+	res, err = sparql.QueryContext(ctx, g, `
 		PREFIX ex:  <http://example.org/>
 		PREFIX geo: <http://example.org/geo#>
 		SELECT ?place WHERE {
@@ -118,9 +127,10 @@ func main() {
 		}
 	`)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Printf("\nRows surviving a failing extension call: %d\n", len(res.Bindings))
 
 	fmt.Printf("\nRegistered extension functions: %v\n", sparql.RegisteredFunctions())
+	return nil
 }

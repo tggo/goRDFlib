@@ -2,7 +2,9 @@ package jsonld
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 
@@ -20,7 +22,9 @@ import (
 // some IRI in the graph uses; see compactionContext. It is compacted even when
 // no binding applies.
 // Options: WithBase, WithForm/WithExpanded, WithDocumentLoader.
-func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+// The graph is read completely and the document built before the first byte is
+// written, so a store failure fails Serialize with nothing written.
+func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
@@ -29,7 +33,7 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 
 	// Serialize to N-Quads (not N-Triples) to preserve graph context
 	var nqBuf bytes.Buffer
-	if err := nq.Serialize(g, &nqBuf); err != nil {
+	if err := nq.Serialize(ctx, g, &nqBuf); err != nil {
 		return err
 	}
 
@@ -56,7 +60,10 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 
 	// Apply compaction unless expanded form is requested
 	if cfg.form != FormExpanded {
-		context := compactionContext(g)
+		context, err := compactionContext(ctx, g)
+		if err != nil {
+			return err
+		}
 		// Compacted even when no prefix applies: the form should not flip to
 		// expanded just because the graph's bindings are unused.
 		var compacted any
@@ -86,19 +93,22 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 //     Term Definition steps 4-5 and 14).
 //   - prefixes no IRI in the graph uses, so the output carries only what it
 //     needs.
-func compactionContext(g *rdflibgo.Graph) map[string]any {
+func compactionContext(ctx context.Context, g *rdflibgo.Graph) (map[string]any, error) {
 	type binding struct{ prefix, ns string }
 	var candidates []binding
-	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("jsonld: reading namespaces: %w", err)
+		}
+		prefix, ns := b.Prefix, b.Namespace
 		if prefix == "" || strings.HasPrefix(prefix, "@") || strings.Contains(prefix, ":") || ns.Value() == "" {
-			return true
+			continue
 		}
 		candidates = append(candidates, binding{prefix, ns.Value()})
-		return true
-	})
+	}
 	context := make(map[string]any, len(candidates))
 	if len(candidates) == 0 {
-		return context
+		return context, nil
 	}
 	used := func(iri string) {
 		for _, c := range candidates {
@@ -124,7 +134,10 @@ func compactionContext(g *rdflibgo.Graph) map[string]any {
 		}
 	}
 	visit(g.Identifier()) // nq.Serialize writes a URIRef identifier as the graph name
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("jsonld: reading triples: %w", err)
+		}
 		visit(t.Subject)
 		// FromRDF turns rdf:type with an IRI or blank node object into @type
 		// (useRdfType is off), so that predicate never appears in the output.
@@ -132,7 +145,6 @@ func compactionContext(g *rdflibgo.Graph) map[string]any {
 			visit(t.Predicate)
 		}
 		visit(t.Object)
-		return true
-	})
-	return context
+	}
+	return context, nil
 }

@@ -24,121 +24,121 @@ var (
 
 func TestRDFSClosure_SubClassOf(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exB, namespace.RDFS.SubClassOf, exC)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exB, namespace.RDFS.SubClassOf, exC)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
-	n := RDFSClosure(g)
+	n, _ := RDFSClosure(t.Context(), g)
 	if n < 2 {
 		t.Fatalf("expected at least 2 inferred triples, got %d", n)
 	}
 
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B")
 	}
-	if !g.Contains(exX, namespace.RDF.Type, exC) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exC)) {
 		t.Error("expected x rdf:type C")
 	}
 }
 
 func TestRDFSClosure_SubPropertyOf(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDFS.SubPropertyOf, exQ)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDFS.SubPropertyOf, exQ)
+	g.Add(t.Context(), exX, exP, exY)
 
-	n := RDFSClosure(g)
+	n, _ := RDFSClosure(t.Context(), g)
 	if n < 1 {
 		t.Fatalf("expected at least 1 inferred triple, got %d", n)
 	}
 
-	if !g.Contains(exX, exQ, exY) {
+	if !mustV(g.Contains(t.Context(), exX, exQ, exY)) {
 		t.Error("expected x q y")
 	}
 }
 
 func TestRDFSClosure_Domain(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDFS.Domain, exC)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDFS.Domain, exC)
+	g.Add(t.Context(), exX, exP, exY)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exC) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exC)) {
 		t.Error("expected x rdf:type C")
 	}
 }
 
 func TestRDFSClosure_Range(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDFS.Range, exC)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDFS.Range, exC)
+	g.Add(t.Context(), exX, exP, exY)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exY, namespace.RDF.Type, exC) {
+	if !mustV(g.Contains(t.Context(), exY, namespace.RDF.Type, exC)) {
 		t.Error("expected y rdf:type C")
 	}
 }
 
 func TestRDFSClosure_SubClassOfTransitive(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exB, namespace.RDFS.SubClassOf, exC)
-	g.Add(exC, namespace.RDFS.SubClassOf, exD)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exB, namespace.RDFS.SubClassOf, exC)
+	g.Add(t.Context(), exC, namespace.RDFS.SubClassOf, exD)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exD) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exD)) {
 		t.Error("expected x rdf:type D through transitive subClassOf")
 	}
 }
 
 func TestRDFSClosure_SubPropertyOfTransitive(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDFS.SubPropertyOf, exQ)
-	g.Add(exQ, namespace.RDFS.SubPropertyOf, exR)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDFS.SubPropertyOf, exQ)
+	g.Add(t.Context(), exQ, namespace.RDFS.SubPropertyOf, exR)
+	g.Add(t.Context(), exX, exP, exY)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, exQ, exY) {
+	if !mustV(g.Contains(t.Context(), exX, exQ, exY)) {
 		t.Error("expected x q y")
 	}
-	if !g.Contains(exX, exR, exY) {
+	if !mustV(g.Contains(t.Context(), exX, exR, exY)) {
 		t.Error("expected x r y")
 	}
 }
 
 func TestRDFSClosure_DomainWithSubClass(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDFS.Domain, exA)
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDFS.Domain, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exX, exP, exY)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exA) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exA)) {
 		t.Error("expected x rdf:type A from domain")
 	}
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B from domain + subClassOf")
 	}
 }
 
 func TestRDFSClosure_CyclicSubClass(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exB, namespace.RDFS.SubClassOf, exA)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exB, namespace.RDFS.SubClassOf, exA)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
 	// Must terminate
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B")
 	}
-	if !g.Contains(exX, namespace.RDF.Type, exA) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exA)) {
 		t.Error("expected x rdf:type A (still present)")
 	}
 }
@@ -146,21 +146,21 @@ func TestRDFSClosure_CyclicSubClass(t *testing.T) {
 func TestRDFSClosure_LiteralObject(t *testing.T) {
 	g := graph.NewGraph()
 	lit := term.NewLiteral("hello")
-	g.Add(exP, namespace.RDFS.Range, exC)
-	g.Add(exX, exP, lit)
+	g.Add(t.Context(), exP, namespace.RDFS.Range, exC)
+	g.Add(t.Context(), exX, exP, lit)
 
-	before := g.Len()
-	RDFSClosure(g)
+	before, _ := g.Len(t.Context())
+	RDFSClosure(t.Context(), g)
 
 	// Range rule should NOT add "hello" rdf:type C since literals can't be subjects
-	if g.Len() != before {
+	if mustV(g.Len(t.Context())) != before {
 		t.Error("expected no new triples when object is a literal (range rule)")
 	}
 }
 
 func TestRDFSClosure_EmptyGraph(t *testing.T) {
 	g := graph.NewGraph()
-	n := RDFSClosure(g)
+	n, _ := RDFSClosure(t.Context(), g)
 	if n != 0 {
 		t.Errorf("expected 0 triples added for empty graph, got %d", n)
 	}
@@ -168,14 +168,14 @@ func TestRDFSClosure_EmptyGraph(t *testing.T) {
 
 func TestRDFSClosure_Idempotent(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
-	n1 := RDFSClosure(g)
-	count1 := g.Len()
+	n1, _ := RDFSClosure(t.Context(), g)
+	count1, _ := g.Len(t.Context())
 
-	n2 := RDFSClosure(g)
-	count2 := g.Len()
+	n2, _ := RDFSClosure(t.Context(), g)
+	count2, _ := g.Len(t.Context())
 
 	if n1 == 0 {
 		t.Error("first closure should add triples")
@@ -190,8 +190,8 @@ func TestRDFSClosure_Idempotent(t *testing.T) {
 
 func TestRDFSClosure_SPARQLIntegration(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
 	// Before closure: query for ?s a ex:B should return nothing
 	results1, err := sparql.Query(g, `SELECT ?s WHERE { ?s a <http://example.org/B> }`)
@@ -202,7 +202,7 @@ func TestRDFSClosure_SPARQLIntegration(t *testing.T) {
 		t.Error("expected 0 results before closure")
 	}
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
 	// After closure: query should find x
 	results2, err := sparql.Query(g, `SELECT ?s WHERE { ?s a <http://example.org/B> }`)
@@ -216,8 +216,8 @@ func TestRDFSClosure_SPARQLIntegration(t *testing.T) {
 
 func TestExpand_RDFS(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
 	n, err := Expand(g, RDFS)
 	if err != nil {
@@ -226,7 +226,7 @@ func TestExpand_RDFS(t *testing.T) {
 	if n == 0 {
 		t.Error("expected triples to be added")
 	}
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B")
 	}
 }

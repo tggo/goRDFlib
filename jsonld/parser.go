@@ -2,6 +2,7 @@ package jsonld
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -22,13 +23,19 @@ import (
 // Statements with ill-formed IRIs are dropped (JSON-LD 1.1 API §8.1); see
 // WithSkipHandler. The graph is changed only when Parse succeeds. Blank nodes share
 // one scope per Parse call by default, including anonymous nodes generated
-// during expansion.
-func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+// during expansion. The triples are added only after the whole document has
+// converted; a store failure while adding them stops Parse and is returned
+// (wrapped), leaving the triples added so far in the graph. ctx is checked
+// before the conversion, which cannot be interrupted, and while adding.
+func Parse(ctx context.Context, g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
 	}
-	return parse(r, &cfg, graphSink(g))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return parse(r, &cfg, graphSink(ctx, g))
 }
 
 // sink receives the statements of a successful parse, in order. An error
@@ -36,9 +43,11 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 type sink func(statement) error
 
 // graphSink adds each statement to g.
-func graphSink(g *rdflibgo.Graph) sink {
+func graphSink(ctx context.Context, g *rdflibgo.Graph) sink {
 	return func(st statement) error {
-		g.Add(st.s, st.p, st.o)
+		if err := g.Add(ctx, st.s, st.p, st.o); err != nil {
+			return fmt.Errorf("jsonld: adding to graph: %w", err)
+		}
 		return nil
 	}
 }

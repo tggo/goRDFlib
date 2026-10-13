@@ -1,6 +1,7 @@
 package sparqlstore
 
 import (
+	"context"
 	"io"
 	"net/http"
 
@@ -71,6 +72,6 @@ func (s *Server) Handler() http.Handler {
 
 // WriteNTriples serializes a graph to an io.Writer in N-Triples format.
 // Exposed for test utilities that need to compare graph contents.
-func WriteNTriples(g *rdflibgo.Graph, w io.Writer) error {
-	return nt.Serialize(g, w)
+func WriteNTriples(ctx context.Context, g *rdflibgo.Graph, w io.Writer) error {
+	return nt.Serialize(ctx, g, w)
 }

@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 
@@ -16,9 +17,9 @@ type countingSnapshotStore struct {
 	taken, released atomic.Int64
 }
 
-func (s *countingSnapshotStore) ReadSnapshot() (store.Store, func()) {
+func (s *countingSnapshotStore) ReadSnapshot(context.Context) (store.Store, func(), error) {
 	s.taken.Add(1)
-	return s.MemoryStore, func() { s.released.Add(1) }
+	return s.MemoryStore, func() { s.released.Add(1) }, nil
 }
 
 // A query takes one snapshot per store, shared by the default and the named
@@ -28,9 +29,9 @@ func TestEvalQuery_OneSnapshotPerStore(t *testing.T) {
 	ds := graph.NewDataset(graph.WithStore(st))
 	s := rdflibgo.NewURIRefUnsafe("urn:s")
 	p := rdflibgo.NewURIRefUnsafe("urn:p")
-	ds.DefaultContext().Add(s, p, rdflibgo.NewLiteral("d"))
+	ds.DefaultContext().Add(t.Context(), s, p, rdflibgo.NewLiteral("d"))
 	named := ds.GetContext(rdflibgo.NewURIRefUnsafe("urn:g"))
-	named.Add(s, p, rdflibgo.NewLiteral("n"))
+	named.Add(t.Context(), s, p, rdflibgo.NewLiteral("n"))
 
 	q, err := Parse(`SELECT ?d ?n WHERE { <urn:s> <urn:p> ?d GRAPH <urn:g> { <urn:s> <urn:p> ?n } }`)
 	if err != nil {

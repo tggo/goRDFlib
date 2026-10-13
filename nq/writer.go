@@ -2,6 +2,8 @@ package nq
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -71,15 +73,20 @@ func (w *Writer) WriteQuad(q rdflibgo.Quad) error {
 }
 
 // WriteGraph writes every triple of g in g's graph (its Identifier), in the
-// store's iteration order. It stops at the first error.
-func (w *Writer) WriteGraph(g *rdflibgo.Graph) error {
+// store's iteration order. It stops at the first error, including a store
+// failure: statements already written stay in the buffer, so a caller that
+// gets an error must discard the output rather than Flush it as a document.
+func (w *Writer) WriteGraph(ctx context.Context, g *rdflibgo.Graph) error {
 	id := g.Identifier()
-	var err error
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-		err = w.Write(t.Subject, t.Predicate, t.Object, id)
-		return err == nil
-	})
-	return err
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return fmt.Errorf("nq: write graph: %w", err)
+		}
+		if err := w.Write(t.Subject, t.Predicate, t.Object, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Flush writes any buffered output to the underlying writer.

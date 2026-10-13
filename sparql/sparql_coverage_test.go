@@ -116,11 +116,11 @@ func TestSPARQLNegativeUnary(t *testing.T) {
 
 func TestSPARQLLangFunction(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/label")
-	g.Add(s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
-	g.Add(s, p, rdflibgo.NewLiteral("hallo", rdflibgo.WithLang("de")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hallo", rdflibgo.WithLang("de")))
 
 	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT ?l WHERE { ex:s ex:label ?l . FILTER(LANG(?l) = "en") }`)
 	if err != nil {
@@ -245,10 +245,10 @@ func TestSPARQLHashFunctions(t *testing.T) {
 
 func TestSPARQLRoundCeilFloor(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
-	g.Add(s, p, rdflibgo.NewLiteral(3.7))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(3.7))
 
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?r ?c ?f WHERE { ?s ex:val ?v . BIND(ROUND(?v) AS ?r) BIND(CEIL(?v) AS ?c) BIND(FLOOR(?v) AS ?f) }`)
 	if len(r.Bindings) != 1 {
@@ -278,12 +278,12 @@ func TestSPARQLRegexCaseInsensitive(t *testing.T) {
 
 func TestSPARQLEffectiveBooleanValue(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/val")
-	g.Add(s, p, rdflibgo.NewLiteral(""))
-	g.Add(s, p, rdflibgo.NewLiteral("nonempty"))
-	g.Add(s, p, rdflibgo.NewLiteral(0))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(""))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("nonempty"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(0))
 
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:val ?v . FILTER(?v) }`)
 	// "" is falsy, 0 is falsy, "nonempty" is truthy

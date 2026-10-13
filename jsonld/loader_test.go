@@ -49,11 +49,11 @@ func TestCachingDocumentLoaderConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			g := rdflibgo.NewGraph()
-			if err := Parse(g, strings.NewReader(loaderTestDoc(srv.URL, i)), WithDocumentLoader(loader)); err != nil {
+			if err := Parse(t.Context(), g, strings.NewReader(loaderTestDoc(srv.URL, i)), WithDocumentLoader(loader)); err != nil {
 				errs <- err
 				return
 			}
-			if g.Len() != 2 {
+			if mustV(g.Len(t.Context())) != 2 {
 				errs <- errors.New("expected 2 triples")
 			}
 		}()
@@ -73,11 +73,11 @@ func TestCachingDocumentLoaderDoesNotCacheErrors(t *testing.T) {
 	srv, hits := contextServer(t, 1)
 	loader := NewCachingDocumentLoader(nil)
 
-	if err := Parse(rdflibgo.NewGraph(), strings.NewReader(loaderTestDoc(srv.URL, 0)), WithDocumentLoader(loader)); err == nil {
+	if err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(loaderTestDoc(srv.URL, 0)), WithDocumentLoader(loader)); err == nil {
 		t.Fatal("first parse succeeded against a failing server")
 	}
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(loaderTestDoc(srv.URL, 0)), WithDocumentLoader(loader)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(loaderTestDoc(srv.URL, 0)), WithDocumentLoader(loader)); err != nil {
 		t.Fatalf("second parse: %v", err)
 	}
 	if n := hits.Load(); n != 2 {
@@ -94,11 +94,11 @@ func TestCachingDocumentLoaderAddDocument(t *testing.T) {
 	}
 	loader.AddDocument("https://schema.example/", doc)
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(loaderTestDoc("https://schema.example/", 0)), WithDocumentLoader(loader)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(loaderTestDoc("https://schema.example/", 0)), WithDocumentLoader(loader)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 2 {
-		t.Fatalf("got %d triples, want 2", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Fatalf("got %d triples, want 2", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -119,11 +119,11 @@ func TestCachingDocumentLoaderPreload(t *testing.T) {
 	loader.Preload(doc, urls...)
 	for _, u := range urls {
 		g := rdflibgo.NewGraph()
-		if err := Parse(g, strings.NewReader(loaderTestDoc(u, 0)), WithDocumentLoader(loader)); err != nil {
+		if err := Parse(t.Context(), g, strings.NewReader(loaderTestDoc(u, 0)), WithDocumentLoader(loader)); err != nil {
 			t.Fatalf("%s: %v", u, err)
 		}
-		if g.Len() != 2 {
-			t.Fatalf("%s: got %d triples, want 2", u, g.Len())
+		if mustV(g.Len(t.Context())) != 2 {
+			t.Fatalf("%s: got %d triples, want 2", u, mustV(g.Len(t.Context())))
 		}
 	}
 }

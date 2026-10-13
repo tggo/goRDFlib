@@ -58,7 +58,7 @@ func TestW3CCSVTSV(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer f.Close()
-			if err := turtle.Parse(g, f, turtle.WithBase("file://"+dataPath)); err != nil {
+			if err := turtle.Parse(t.Context(), g, f, turtle.WithBase("file://"+dataPath)); err != nil {
 				t.Fatal(err)
 			}
 			q, err := os.ReadFile(filepath.Join(dir, tc.query))

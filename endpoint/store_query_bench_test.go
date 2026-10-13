@@ -47,8 +47,8 @@ func BenchmarkStoreBackendQuery(b *testing.B) {
 			def := ds.DefaultContext()
 			for i := range 10_000 {
 				p := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/p%d", i))
-				def.Add(p, name, term.NewLiteral(fmt.Sprintf("Person %d", i)))
-				def.Add(p, age, term.NewLiteral(i%90))
+				def.Add(b.Context(), p, name, term.NewLiteral(fmt.Sprintf("Person %d", i)))
+				def.Add(b.Context(), p, age, term.NewLiteral(i%90))
 			}
 			h := NewForStore(ds)
 			b.ResetTimer()

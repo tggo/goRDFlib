@@ -21,7 +21,6 @@ type spanKey struct{}
 // simulate a caller giving up halfway.
 type spanStore struct {
 	store.Store
-	ctx   context.Context
 	state *spanState
 }
 
@@ -32,16 +31,10 @@ type spanState struct {
 	cancel   context.CancelFunc
 }
 
-func (s *spanStore) BindContext(ctx context.Context) store.Store {
-	c := *s
-	c.ctx = ctx
-	return &c
-}
-
-func (s *spanStore) Triples(p term.TriplePattern, g term.Term) store.TripleIterator {
+func (s *spanStore) Triples(ctx context.Context, p term.TriplePattern, g term.Term) store.TripleIterator {
 	span := ""
-	if s.ctx != nil {
-		span, _ = s.ctx.Value(spanKey{}).(string)
+	if ctx != nil {
+		span, _ = ctx.Value(spanKey{}).(string)
 	}
 	st := s.state
 	st.mu.Lock()
@@ -50,7 +43,7 @@ func (s *spanStore) Triples(p term.TriplePattern, g term.Term) store.TripleItera
 		st.cancel()
 	}
 	st.mu.Unlock()
-	return s.Store.Triples(p, g)
+	return s.Store.Triples(ctx, p, g)
 }
 
 func (st *spanState) reset() {
@@ -107,7 +100,7 @@ func spanGraphs(t *testing.T, shapesText ...string) (*shacl.Graph, *shacl.Graph,
 	t.Helper()
 	st := &spanState{}
 	g := graph.NewGraph(graph.WithStore(&spanStore{Store: store.NewMemoryStore(), state: st}))
-	if err := turtle.Parse(g, strings.NewReader(contextData)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(contextData)); err != nil {
 		t.Fatal(err)
 	}
 	text := contextShapes
@@ -118,8 +111,11 @@ func spanGraphs(t *testing.T, shapesText ...string) (*shacl.Graph, *shacl.Graph,
 	if err != nil {
 		t.Fatal(err)
 	}
+	// NewGraphFromRDF reads the store once, with the context it is given; what
+	// the tests count is what validation reads after that.
+	data := mustV(shacl.NewGraphFromRDF(t.Context(), g, ""))
 	st.reset()
-	return shacl.NewGraphFromRDF(g, ""), shapes, st
+	return data, shapes, st
 }
 
 func TestValidateContextReachesStore(t *testing.T) {
@@ -134,10 +130,10 @@ func TestValidateContextReachesStore(t *testing.T) {
 		t.Fatalf("report = %+v; want one result for ex:alice", report)
 	}
 	spans := st.all()
-	// One read builds the index; the rest are the constraint's query and the
-	// function's query, once per person.
-	if len(spans) < 5 {
-		t.Fatalf("store reads = %d, want the index build plus the queries", len(spans))
+	// The index was built by NewGraphFromRDF; these are the constraint's query
+	// and the function's query, once per person.
+	if len(spans) < 3 {
+		t.Fatalf("store reads = %d, want the constraint's and the function's queries", len(spans))
 	}
 	for i, s := range spans {
 		if s != "span-1" {

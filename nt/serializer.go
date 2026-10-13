@@ -1,6 +1,7 @@
 package nt
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -22,26 +23,29 @@ var (
 )
 
 // Serialize writes the graph in N-Triples format. It fails, writing nothing,
-// when a term cannot be expressed in N-Triples: see ErrRelativeIRI,
-// ErrInvalidUTF8 and ErrInvalidIRI.
-func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+// when a term cannot be expressed in N-Triples (see ErrRelativeIRI,
+// ErrInvalidUTF8 and ErrInvalidIRI) or when the store fails while the graph is
+// read: the whole graph is read and sorted before the first byte is written, so
+// a store error never leaves a truncated document behind.
+func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
 	}
-	lines := make([]string, 0, g.Len())
-	var serErr error
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+	n, err := g.Len(ctx)
+	if err != nil {
+		return fmt.Errorf("nt: serialize: %w", err)
+	}
+	lines := make([]string, 0, n)
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return fmt.Errorf("nt: serialize: %w", err)
+		}
 		line, err := ntTriple(t)
 		if err != nil {
-			serErr = err
-			return false
+			return err
 		}
 		lines = append(lines, line)
-		return true
-	})
-	if serErr != nil {
-		return serErr
 	}
 	slices.Sort(lines)
 	for _, line := range lines {

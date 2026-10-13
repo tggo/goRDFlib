@@ -53,8 +53,8 @@ func TestSPARQLConstructEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() != 0 {
-		t.Errorf("expected empty graph, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 0 {
+		t.Errorf("expected empty graph, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -74,9 +74,9 @@ func TestRDFXMLExtractSubjectID(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() < 2 {
-		t.Errorf("expected >=2, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) < 2 {
+		t.Errorf("expected >=2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -93,9 +93,9 @@ func TestRDFXMLExtractSubjectNodeID(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() < 2 {
-		t.Errorf("expected >=2, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) < 2 {
+		t.Errorf("expected >=2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -105,10 +105,10 @@ func TestTurtleSerializerInvalidLocalName(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/has?param")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, NewLiteral("v"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	if strings.Contains(out, "ex:has?param") {
 		t.Errorf("should not abbreviate URI with ?, got:\n%s", out)
@@ -119,10 +119,10 @@ func TestTurtleSerializerInvalidLocalName(t *testing.T) {
 
 func TestSPARQLBooleanLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/active")
-	g.Add(s, p, NewLiteral(true))
+	g.Add(t.Context(), s, p, NewLiteral(true))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:active true }`)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestSPARQLIRIInExpression(t *testing.T) {
 
 func TestTurtleParserKeywordAtEOF(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader(`BASE <http://example.org/>
+	err := turtle.Parse(t.Context(), g, strings.NewReader(`BASE <http://example.org/>
 <s> <p> "v" .`))
 	if err != nil {
 		t.Fatal(err)
@@ -180,12 +180,12 @@ func TestTurtleParserKeywordAtEOF(t *testing.T) {
 
 func TestTurtleParserIRIUnicodeEscape8(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		<http://example.org/\U00000042> ex:p "v" .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -213,11 +213,11 @@ func TestSPARQLNestedGroup(t *testing.T) {
 
 func TestSPARQLObjectList(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("a"))
-	g.Add(s, p, NewLiteral("b"))
+	g.Add(t.Context(), s, p, NewLiteral("a"))
+	g.Add(t.Context(), s, p, NewLiteral("b"))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?o WHERE { ex:s ex:p ?o }`)
 	if err != nil {

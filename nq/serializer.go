@@ -1,6 +1,7 @@
 package nq
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -11,14 +12,19 @@ import (
 	"github.com/tggo/goRDFlib/store"
 )
 
-// Serialize writes the graph in N-Quads format.
-func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+// Serialize writes the graph in N-Quads format. The whole graph is read and
+// sorted before the first byte is written, so a term N-Quads cannot express or
+// a store failure fails Serialize with nothing written.
+func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
 	}
-	lines := make([]string, 0, g.Len())
-	var serErr error
+	n, err := g.Len(ctx)
+	if err != nil {
+		return fmt.Errorf("nq: serialize: %w", err)
+	}
+	lines := make([]string, 0, n)
 
 	// Determine graph context once. Every identifier except the default graph's
 	// is a graph name, a blank node included (N-Quads graphLabel ::= IRIREF |
@@ -32,18 +38,16 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		graphSuffix = " " + term
 	}
 
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-		var sb strings.Builder
+	var sb strings.Builder
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return fmt.Errorf("nq: serialize: %w", err)
+		}
 		line, err := formatLine(&sb, t.Subject, t.Predicate, t.Object, graphSuffix)
 		if err != nil {
-			serErr = err
-			return false
+			return err
 		}
 		lines = append(lines, line)
-		return true
-	})
-	if serErr != nil {
-		return serErr
 	}
 	slices.Sort(lines)
 	for _, line := range lines {

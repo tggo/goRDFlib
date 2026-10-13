@@ -13,14 +13,14 @@ import (
 
 func TestOWLRL_SymmetricProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
+	g.Add(t.Context(), exX, exP, exY)
 
-	n := OWLRLClosure(g)
+	n, _ := OWLRLClosure(t.Context(), g)
 	if n == 0 {
 		t.Fatal("expected inferred triples")
 	}
-	if !g.Contains(exY, exP, exX) {
+	if !mustV(g.Contains(t.Context(), exY, exP, exX)) {
 		t.Error("expected y p x (symmetric)")
 	}
 }
@@ -29,50 +29,50 @@ func TestOWLRL_SymmetricProperty(t *testing.T) {
 
 func TestOWLRL_TransitiveProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
-	g.Add(exX, exP, exY)
-	g.Add(exY, exP, ex.Term("z"))
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(t.Context(), exX, exP, exY)
+	g.Add(t.Context(), exY, exP, ex.Term("z"))
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, exP, ex.Term("z")) {
+	if !mustV(g.Contains(t.Context(), exX, exP, ex.Term("z"))) {
 		t.Error("expected x p z (transitive)")
 	}
 }
 
 func TestOWLRL_TransitivePropertyChain(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
-	g.Add(exA, exP, exB)
-	g.Add(exB, exP, exC)
-	g.Add(exC, exP, exD)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exB, exP, exC)
+	g.Add(t.Context(), exC, exP, exD)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exA, exP, exC) {
+	if !mustV(g.Contains(t.Context(), exA, exP, exC)) {
 		t.Error("expected A p C")
 	}
-	if !g.Contains(exA, exP, exD) {
+	if !mustV(g.Contains(t.Context(), exA, exP, exD)) {
 		t.Error("expected A p D")
 	}
-	if !g.Contains(exB, exP, exD) {
+	if !mustV(g.Contains(t.Context(), exB, exP, exD)) {
 		t.Error("expected B p D")
 	}
 }
 
 func TestOWLRL_TransitivePropertyCycle(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
-	g.Add(exA, exP, exB)
-	g.Add(exB, exP, exA) // cycle
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exB, exP, exA) // cycle
 
 	// Must terminate
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exA, exP, exA) {
+	if !mustV(g.Contains(t.Context(), exA, exP, exA)) {
 		t.Error("expected A p A (reflexive from cycle)")
 	}
-	if !g.Contains(exB, exP, exB) {
+	if !mustV(g.Contains(t.Context(), exB, exP, exB)) {
 		t.Error("expected B p B (reflexive from cycle)")
 	}
 }
@@ -81,24 +81,24 @@ func TestOWLRL_TransitivePropertyCycle(t *testing.T) {
 
 func TestOWLRL_InverseOf(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.OWL.InverseOf, exQ)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.OWL.InverseOf, exQ)
+	g.Add(t.Context(), exX, exP, exY)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exY, exQ, exX) {
+	if !mustV(g.Contains(t.Context(), exY, exQ, exX)) {
 		t.Error("expected y q x (inverse)")
 	}
 }
 
 func TestOWLRL_InverseOfBidirectional(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.OWL.InverseOf, exQ)
-	g.Add(exY, exQ, exX)
+	g.Add(t.Context(), exP, namespace.OWL.InverseOf, exQ)
+	g.Add(t.Context(), exY, exQ, exX)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, exP, exY) {
+	if !mustV(g.Contains(t.Context(), exX, exP, exY)) {
 		t.Error("expected x p y (inverse of q)")
 	}
 }
@@ -107,24 +107,24 @@ func TestOWLRL_InverseOfBidirectional(t *testing.T) {
 
 func TestOWLRL_EquivalentProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.OWL.EquivalentProperty, exQ)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.OWL.EquivalentProperty, exQ)
+	g.Add(t.Context(), exX, exP, exY)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, exQ, exY) {
+	if !mustV(g.Contains(t.Context(), exX, exQ, exY)) {
 		t.Error("expected x q y (equivalent property)")
 	}
 }
 
 func TestOWLRL_EquivalentPropertyBidirectional(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.OWL.EquivalentProperty, exQ)
-	g.Add(exX, exQ, exY)
+	g.Add(t.Context(), exP, namespace.OWL.EquivalentProperty, exQ)
+	g.Add(t.Context(), exX, exQ, exY)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, exP, exY) {
+	if !mustV(g.Contains(t.Context(), exX, exP, exY)) {
 		t.Error("expected x p y (equivalent property reverse)")
 	}
 }
@@ -133,24 +133,24 @@ func TestOWLRL_EquivalentPropertyBidirectional(t *testing.T) {
 
 func TestOWLRL_EquivalentClass(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.OWL.EquivalentClass, exB)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.OWL.EquivalentClass, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B (equivalent class)")
 	}
 }
 
 func TestOWLRL_EquivalentClassBidirectional(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.OWL.EquivalentClass, exB)
-	g.Add(exX, namespace.RDF.Type, exB)
+	g.Add(t.Context(), exA, namespace.OWL.EquivalentClass, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exB)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exA) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exA)) {
 		t.Error("expected x rdf:type A (equivalent class reverse)")
 	}
 }
@@ -159,14 +159,14 @@ func TestOWLRL_EquivalentClassBidirectional(t *testing.T) {
 
 func TestOWLRL_FunctionalProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.FunctionalProperty)
-	g.Add(exX, exP, exA)
-	g.Add(exX, exP, exB)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.FunctionalProperty)
+	g.Add(t.Context(), exX, exP, exA)
+	g.Add(t.Context(), exX, exP, exB)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if !hasSameAs {
 		t.Error("expected A owl:sameAs B (functional property)")
 	}
@@ -176,14 +176,14 @@ func TestOWLRL_FunctionalProperty(t *testing.T) {
 
 func TestOWLRL_InverseFunctionalProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.InverseFunctionalProperty)
-	g.Add(exA, exP, exX)
-	g.Add(exB, exP, exX)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.InverseFunctionalProperty)
+	g.Add(t.Context(), exA, exP, exX)
+	g.Add(t.Context(), exB, exP, exX)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if !hasSameAs {
 		t.Error("expected A owl:sameAs B (inverse functional property)")
 	}
@@ -193,11 +193,11 @@ func TestOWLRL_InverseFunctionalProperty(t *testing.T) {
 
 func TestOWLRL_SameAsSymmetric(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exX, namespace.OWL.SameAs, exY)
+	g.Add(t.Context(), exX, namespace.OWL.SameAs, exY)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exY, namespace.OWL.SameAs, exX) {
+	if !mustV(g.Contains(t.Context(), exY, namespace.OWL.SameAs, exX)) {
 		t.Error("expected y owl:sameAs x (symmetric)")
 	}
 }
@@ -207,12 +207,12 @@ func TestOWLRL_SameAsSymmetric(t *testing.T) {
 func TestOWLRL_SameAsTransitive(t *testing.T) {
 	g := graph.NewGraph()
 	z := ex.Term("z")
-	g.Add(exX, namespace.OWL.SameAs, exY)
-	g.Add(exY, namespace.OWL.SameAs, z)
+	g.Add(t.Context(), exX, namespace.OWL.SameAs, exY)
+	g.Add(t.Context(), exY, namespace.OWL.SameAs, z)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.OWL.SameAs, z) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.OWL.SameAs, z)) {
 		t.Error("expected x owl:sameAs z (transitive)")
 	}
 }
@@ -221,24 +221,24 @@ func TestOWLRL_SameAsTransitive(t *testing.T) {
 
 func TestOWLRL_SameAsReplacement(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exX, namespace.OWL.SameAs, exY)
-	g.Add(exX, exP, exA)
+	g.Add(t.Context(), exX, namespace.OWL.SameAs, exY)
+	g.Add(t.Context(), exX, exP, exA)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exY, exP, exA) {
+	if !mustV(g.Contains(t.Context(), exY, exP, exA)) {
 		t.Error("expected y p A (sameAs replacement in subject)")
 	}
 }
 
 func TestOWLRL_SameAsReplacementObject(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.OWL.SameAs, exB)
-	g.Add(exX, exP, exA)
+	g.Add(t.Context(), exA, namespace.OWL.SameAs, exB)
+	g.Add(t.Context(), exX, exP, exA)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, exP, exB) {
+	if !mustV(g.Contains(t.Context(), exX, exP, exB)) {
 		t.Error("expected x p B (sameAs replacement in object)")
 	}
 }
@@ -247,25 +247,25 @@ func TestOWLRL_SameAsReplacementObject(t *testing.T) {
 
 func TestOWLRL_SymmetricAndTransitive(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
-	g.Add(exA, exP, exB)
-	g.Add(exB, exP, exC)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exB, exP, exC)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
 	// Transitive: A→C
-	if !g.Contains(exA, exP, exC) {
+	if !mustV(g.Contains(t.Context(), exA, exP, exC)) {
 		t.Error("expected A p C (transitive)")
 	}
 	// Symmetric: B→A, C→B, C→A
-	if !g.Contains(exB, exP, exA) {
+	if !mustV(g.Contains(t.Context(), exB, exP, exA)) {
 		t.Error("expected B p A (symmetric)")
 	}
-	if !g.Contains(exC, exP, exB) {
+	if !mustV(g.Contains(t.Context(), exC, exP, exB)) {
 		t.Error("expected C p B (symmetric)")
 	}
-	if !g.Contains(exC, exP, exA) {
+	if !mustV(g.Contains(t.Context(), exC, exP, exA)) {
 		t.Error("expected C p A (symmetric + transitive)")
 	}
 }
@@ -274,14 +274,14 @@ func TestOWLRL_SymmetricAndTransitive(t *testing.T) {
 
 func TestOWLRL_Idempotent(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
+	g.Add(t.Context(), exX, exP, exY)
 
-	n1 := OWLRLClosure(g)
-	count1 := g.Len()
+	n1, _ := OWLRLClosure(t.Context(), g)
+	count1, _ := g.Len(t.Context())
 
-	n2 := OWLRLClosure(g)
-	count2 := g.Len()
+	n2, _ := OWLRLClosure(t.Context(), g)
+	count2, _ := g.Len(t.Context())
 
 	if n1 == 0 {
 		t.Error("first closure should add triples")
@@ -298,7 +298,7 @@ func TestOWLRL_Idempotent(t *testing.T) {
 
 func TestOWLRL_EmptyGraph(t *testing.T) {
 	g := graph.NewGraph()
-	n := OWLRLClosure(g)
+	n, _ := OWLRLClosure(t.Context(), g)
 	if n != 0 {
 		t.Errorf("expected 0 triples added for empty graph, got %d", n)
 	}
@@ -308,8 +308,8 @@ func TestOWLRL_EmptyGraph(t *testing.T) {
 
 func TestExpand_OWLRL(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
+	g.Add(t.Context(), exX, exP, exY)
 
 	n, err := Expand(g, OWLRL)
 	if err != nil {
@@ -318,7 +318,7 @@ func TestExpand_OWLRL(t *testing.T) {
 	if n == 0 {
 		t.Error("expected triples to be added")
 	}
-	if !g.Contains(exY, exP, exX) {
+	if !mustV(g.Contains(t.Context(), exY, exP, exX)) {
 		t.Error("expected y p x")
 	}
 }
@@ -326,11 +326,11 @@ func TestExpand_OWLRL(t *testing.T) {
 func TestExpand_CombinedRegimes(t *testing.T) {
 	g := graph.NewGraph()
 	// RDFS: subClassOf
-	g.Add(exA, namespace.RDFS.SubClassOf, exB)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 	// OWL: symmetric property
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.SymmetricProperty)
+	g.Add(t.Context(), exX, exP, exY)
 
 	n, err := Expand(g, RDFS|OWLRL)
 	if err != nil {
@@ -340,11 +340,11 @@ func TestExpand_CombinedRegimes(t *testing.T) {
 		t.Error("expected triples to be added")
 	}
 	// RDFS inference
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B (RDFS)")
 	}
 	// OWL inference
-	if !g.Contains(exY, exP, exX) {
+	if !mustV(g.Contains(t.Context(), exY, exP, exX)) {
 		t.Error("expected y p x (OWL symmetric)")
 	}
 }
@@ -353,9 +353,9 @@ func TestExpand_CombinedRegimes(t *testing.T) {
 
 func TestOWLRL_SPARQLIntegration(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
-	g.Add(exA, exP, exB)
-	g.Add(exB, exP, exC)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exB, exP, exC)
 
 	// Before closure
 	results1, err := sparql.Query(g, `SELECT ?o WHERE { <http://example.org/A> <http://example.org/p> ?o }`)
@@ -366,7 +366,7 @@ func TestOWLRL_SPARQLIntegration(t *testing.T) {
 		t.Errorf("expected 1 result before closure, got %d", len(results1.Bindings))
 	}
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
 	// After closure
 	results2, err := sparql.Query(g, `SELECT ?o WHERE { <http://example.org/A> <http://example.org/p> ?o }`)
@@ -385,30 +385,30 @@ func TestOWLRL_IssueUseCase(t *testing.T) {
 
 	g := graph.NewGraph()
 	// Symmetric property
-	g.Add(code.Term("sharedTypeWith"), namespace.RDF.Type, namespace.OWL.SymmetricProperty)
-	g.Add(code.Term("A"), code.Term("sharedTypeWith"), code.Term("B"))
+	g.Add(t.Context(), code.Term("sharedTypeWith"), namespace.RDF.Type, namespace.OWL.SymmetricProperty)
+	g.Add(t.Context(), code.Term("A"), code.Term("sharedTypeWith"), code.Term("B"))
 
 	// Transitive property
-	g.Add(code.Term("inherits"), namespace.RDF.Type, namespace.OWL.TransitiveProperty)
-	g.Add(code.Term("C"), code.Term("inherits"), code.Term("D"))
-	g.Add(code.Term("D"), code.Term("inherits"), code.Term("E"))
+	g.Add(t.Context(), code.Term("inherits"), namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(t.Context(), code.Term("C"), code.Term("inherits"), code.Term("D"))
+	g.Add(t.Context(), code.Term("D"), code.Term("inherits"), code.Term("E"))
 
 	// InverseOf
-	g.Add(code.Term("containsRepo"), namespace.OWL.InverseOf, code.Term("belongsToGroup"))
-	g.Add(code.Term("repo1"), code.Term("belongsToGroup"), code.Term("group1"))
+	g.Add(t.Context(), code.Term("containsRepo"), namespace.OWL.InverseOf, code.Term("belongsToGroup"))
+	g.Add(t.Context(), code.Term("repo1"), code.Term("belongsToGroup"), code.Term("group1"))
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
 	// Symmetric: B sharedTypeWith A
-	if !g.Contains(code.Term("B"), code.Term("sharedTypeWith"), code.Term("A")) {
+	if !mustV(g.Contains(t.Context(), code.Term("B"), code.Term("sharedTypeWith"), code.Term("A"))) {
 		t.Error("expected B sharedTypeWith A")
 	}
 	// Transitive: C inherits E
-	if !g.Contains(code.Term("C"), code.Term("inherits"), code.Term("E")) {
+	if !mustV(g.Contains(t.Context(), code.Term("C"), code.Term("inherits"), code.Term("E"))) {
 		t.Error("expected C inherits E")
 	}
 	// Inverse: group1 containsRepo repo1
-	if !g.Contains(code.Term("group1"), code.Term("containsRepo"), code.Term("repo1")) {
+	if !mustV(g.Contains(t.Context(), code.Term("group1"), code.Term("containsRepo"), code.Term("repo1"))) {
 		t.Error("expected group1 containsRepo repo1")
 	}
 }

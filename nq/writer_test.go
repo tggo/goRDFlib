@@ -64,12 +64,12 @@ func TestWriterWriteGraph(t *testing.T) {
 	g := rdflibgo.NewGraph(rdflibgo.WithIdentifier(id))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("x"))
-	g.Add(s, p, rdflibgo.NewLiteral("y"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("y"))
 
 	var buf bytes.Buffer
 	w := NewWriter(&buf)
-	if err := w.WriteGraph(g); err != nil {
+	if err := w.WriteGraph(t.Context(), g); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.Flush(); err != nil {

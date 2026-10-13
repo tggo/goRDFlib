@@ -79,7 +79,9 @@ func BenchmarkStoreAdd_10k(b *testing.B) {
 		s := store.NewMemoryStore()
 		for j := 0; j < 10000; j++ {
 			sub := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", j))
-			s.Add(term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral(j)}, nil)
+			if err := s.Add(b.Context(), term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral(j)}, nil); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }
@@ -91,13 +93,18 @@ func BenchmarkStoreTriples_1k(b *testing.B) {
 	sub, _ := term.NewURIRef("http://example.org/s")
 	pred, _ := term.NewURIRef("http://example.org/p")
 	for i := 0; i < 1000; i++ {
-		s.Add(term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral(i)}, nil)
+		if err := s.Add(b.Context(), term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral(i)}, nil); err != nil {
+			b.Fatal(err)
+		}
 	}
+	ctx := b.Context()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.Triples(term.TriplePattern{Subject: sub, Predicate: &pred}, nil)(func(term.Triple) bool {
-			return true
-		})
+		for _, err := range s.Triples(ctx, term.TriplePattern{Subject: sub, Predicate: &pred}, nil) {
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
 	}
 }
 
@@ -118,7 +125,9 @@ ex:Bob a ex:Person ;
 func BenchmarkParseTurtle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		g := graph.NewGraph()
-		turtle.Parse(g, strings.NewReader(turtleData))
+		if err := turtle.Parse(b.Context(), g, strings.NewReader(turtleData)); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -126,11 +135,15 @@ func BenchmarkParseTurtle(b *testing.B) {
 
 func BenchmarkSerializeTurtle(b *testing.B) {
 	g := graph.NewGraph()
-	turtle.Parse(g, strings.NewReader(turtleData))
+	if err := turtle.Parse(b.Context(), g, strings.NewReader(turtleData)); err != nil {
+		b.Fatal(err)
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		turtle.Serialize(g, &buf)
+		if err := turtle.Serialize(b.Context(), g, &buf); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -259,8 +272,12 @@ func BenchmarkSPARQLSelect(b *testing.B) {
 	valPred, _ := term.NewURIRef("http://example.org/value")
 	for i := 0; i < 100; i++ {
 		s := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(s, rdfType, thing)
-		g.Add(s, valPred, term.NewLiteral(i))
+		if err := g.Add(b.Context(), s, rdfType, thing); err != nil {
+			b.Fatal(err)
+		}
+		if err := g.Add(b.Context(), s, valPred, term.NewLiteral(i)); err != nil {
+			b.Fatal(err)
+		}
 	}
 	query := "SELECT ?s ?v WHERE { ?s a <http://example.org/Thing> ; <http://example.org/value> ?v } LIMIT 50"
 	b.ResetTimer()

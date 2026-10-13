@@ -15,15 +15,15 @@ import (
 func TestOWLRL_HasValue_TypeToProperty(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.HasValue, exA)
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.HasValue, exA)
 
-	g.Add(exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, exP, exA) {
+	if !mustV(g.Contains(t.Context(), exX, exP, exA)) {
 		t.Error("expected x p A (cls-hv1: hasValue + type)")
 	}
 }
@@ -33,15 +33,15 @@ func TestOWLRL_HasValue_TypeToProperty(t *testing.T) {
 func TestOWLRL_HasValue_PropertyToType(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.HasValue, exA)
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.HasValue, exA)
 
-	g.Add(exX, exP, exA)
+	g.Add(t.Context(), exX, exP, exA)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, restr) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, restr)) {
 		t.Error("expected x rdf:type restriction (cls-hv2: hasValue + property)")
 	}
 }
@@ -51,16 +51,16 @@ func TestOWLRL_HasValue_PropertyToType(t *testing.T) {
 func TestOWLRL_SomeValuesFrom(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.SomeValuesFrom, exA)
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.SomeValuesFrom, exA)
 
-	g.Add(exX, exP, exY)
-	g.Add(exY, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exX, exP, exY)
+	g.Add(t.Context(), exY, namespace.RDF.Type, exA)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, restr) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, restr)) {
 		t.Error("expected x rdf:type restriction (cls-svf1)")
 	}
 }
@@ -70,15 +70,15 @@ func TestOWLRL_SomeValuesFrom(t *testing.T) {
 func TestOWLRL_SomeValuesFromThing(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.SomeValuesFrom, namespace.OWL.Thing)
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.SomeValuesFrom, namespace.OWL.Thing)
 
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exX, exP, exY)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, restr) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, restr)) {
 		t.Error("expected x rdf:type restriction (cls-svf2: someValuesFrom owl:Thing)")
 	}
 }
@@ -88,16 +88,16 @@ func TestOWLRL_SomeValuesFromThing(t *testing.T) {
 func TestOWLRL_AllValuesFrom(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.AllValuesFrom, exA)
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.AllValuesFrom, exA)
 
-	g.Add(exX, namespace.RDF.Type, restr)
-	g.Add(exX, exP, exY)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, exP, exY)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exY, namespace.RDF.Type, exA) {
+	if !mustV(g.Contains(t.Context(), exY, namespace.RDF.Type, exA)) {
 		t.Error("expected y rdf:type A (cls-avf: allValuesFrom)")
 	}
 }
@@ -107,19 +107,19 @@ func TestOWLRL_AllValuesFrom(t *testing.T) {
 func TestOWLRL_MaxCardinality1(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.MaxCardinality, term.NewLiteral("1",
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.MaxCardinality, term.NewLiteral("1",
 		term.WithDatatype(term.XSDInteger)))
 
-	g.Add(exX, namespace.RDF.Type, restr)
-	g.Add(exX, exP, exA)
-	g.Add(exX, exP, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, exP, exA)
+	g.Add(t.Context(), exX, exP, exB)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if !hasSameAs {
 		t.Error("expected A owl:sameAs B (cls-maxc2: maxCardinality 1)")
 	}
@@ -130,15 +130,15 @@ func TestOWLRL_MaxCardinality1(t *testing.T) {
 func TestOWLRL_MaxCardinality0(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.MaxCardinality, term.NewLiteral("0",
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.MaxCardinality, term.NewLiteral("0",
 		term.WithDatatype(term.XSDInteger)))
 
-	g.Add(exX, namespace.RDF.Type, restr)
-	g.Add(exX, exP, exA)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, exP, exA)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -157,22 +157,22 @@ func TestOWLRL_MaxCardinality0(t *testing.T) {
 func TestOWLRL_MaxQualifiedCardinality1(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.MaxQualifiedCardinality, term.NewLiteral("1",
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.MaxQualifiedCardinality, term.NewLiteral("1",
 		term.WithDatatype(term.XSDInteger)))
-	g.Add(restr, namespace.OWL.OnClass, exC)
+	g.Add(t.Context(), restr, namespace.OWL.OnClass, exC)
 
-	g.Add(exX, namespace.RDF.Type, restr)
-	g.Add(exX, exP, exA)
-	g.Add(exA, namespace.RDF.Type, exC)
-	g.Add(exX, exP, exB)
-	g.Add(exB, namespace.RDF.Type, exC)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, exP, exA)
+	g.Add(t.Context(), exA, namespace.RDF.Type, exC)
+	g.Add(t.Context(), exX, exP, exB)
+	g.Add(t.Context(), exB, namespace.RDF.Type, exC)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if !hasSameAs {
 		t.Error("expected A owl:sameAs B (cls-maxqc3)")
 	}
@@ -183,20 +183,20 @@ func TestOWLRL_MaxQualifiedCardinality1(t *testing.T) {
 func TestOWLRL_MaxQualifiedCardinality1Thing(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.MaxQualifiedCardinality, term.NewLiteral("1",
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.MaxQualifiedCardinality, term.NewLiteral("1",
 		term.WithDatatype(term.XSDInteger)))
-	g.Add(restr, namespace.OWL.OnClass, namespace.OWL.Thing)
+	g.Add(t.Context(), restr, namespace.OWL.OnClass, namespace.OWL.Thing)
 
-	g.Add(exX, namespace.RDF.Type, restr)
-	g.Add(exX, exP, exA)
-	g.Add(exX, exP, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, exP, exA)
+	g.Add(t.Context(), exX, exP, exB)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if !hasSameAs {
 		t.Error("expected A owl:sameAs B (cls-maxqc4: onClass owl:Thing)")
 	}
@@ -207,17 +207,17 @@ func TestOWLRL_MaxQualifiedCardinality1Thing(t *testing.T) {
 func TestOWLRL_MaxQualifiedCardinality0(t *testing.T) {
 	g := graph.NewGraph()
 	restr := term.NewBNode("")
-	g.Add(restr, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(restr, namespace.OWL.OnProperty, exP)
-	g.Add(restr, namespace.OWL.MaxQualifiedCardinality, term.NewLiteral("0",
+	g.Add(t.Context(), restr, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), restr, namespace.OWL.OnProperty, exP)
+	g.Add(t.Context(), restr, namespace.OWL.MaxQualifiedCardinality, term.NewLiteral("0",
 		term.WithDatatype(term.XSDInteger)))
-	g.Add(restr, namespace.OWL.OnClass, exC)
+	g.Add(t.Context(), restr, namespace.OWL.OnClass, exC)
 
-	g.Add(exX, namespace.RDF.Type, restr)
-	g.Add(exX, exP, exA)
-	g.Add(exA, namespace.RDF.Type, exC)
+	g.Add(t.Context(), exX, namespace.RDF.Type, restr)
+	g.Add(t.Context(), exX, exP, exA)
+	g.Add(t.Context(), exA, namespace.RDF.Type, exC)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -237,14 +237,14 @@ func TestOWLRL_IntersectionOf_MemberToClass(t *testing.T) {
 	g := graph.NewGraph()
 	intClass := term.NewBNode("")
 	members := buildRDFList(g, []term.Term{exA, exB})
-	g.Add(intClass, namespace.OWL.IntersectionOf, members)
+	g.Add(t.Context(), intClass, namespace.OWL.IntersectionOf, members)
 
-	g.Add(exX, namespace.RDF.Type, exA)
-	g.Add(exX, namespace.RDF.Type, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exB)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, intClass) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, intClass)) {
 		t.Error("expected x rdf:type intersection (cls-int1)")
 	}
 }
@@ -253,13 +253,13 @@ func TestOWLRL_IntersectionOf_Partial(t *testing.T) {
 	g := graph.NewGraph()
 	intClass := term.NewBNode("")
 	members := buildRDFList(g, []term.Term{exA, exB})
-	g.Add(intClass, namespace.OWL.IntersectionOf, members)
+	g.Add(t.Context(), intClass, namespace.OWL.IntersectionOf, members)
 
-	g.Add(exX, namespace.RDF.Type, exA) // only one member type
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA) // only one member type
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if g.Contains(exX, namespace.RDF.Type, intClass) {
+	if mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, intClass)) {
 		t.Error("should NOT be typed as intersection (missing type B)")
 	}
 }
@@ -270,16 +270,16 @@ func TestOWLRL_IntersectionOf_ClassToMembers(t *testing.T) {
 	g := graph.NewGraph()
 	intClass := term.NewBNode("")
 	members := buildRDFList(g, []term.Term{exA, exB})
-	g.Add(intClass, namespace.OWL.IntersectionOf, members)
+	g.Add(t.Context(), intClass, namespace.OWL.IntersectionOf, members)
 
-	g.Add(exX, namespace.RDF.Type, intClass)
+	g.Add(t.Context(), exX, namespace.RDF.Type, intClass)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exA) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exA)) {
 		t.Error("expected x rdf:type A (cls-int2)")
 	}
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("expected x rdf:type B (cls-int2)")
 	}
 }
@@ -290,13 +290,13 @@ func TestOWLRL_UnionOf(t *testing.T) {
 	g := graph.NewGraph()
 	unionClass := term.NewBNode("")
 	members := buildRDFList(g, []term.Term{exA, exB})
-	g.Add(unionClass, namespace.OWL.UnionOf, members)
+	g.Add(t.Context(), unionClass, namespace.OWL.UnionOf, members)
 
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, unionClass) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, unionClass)) {
 		t.Error("expected x rdf:type union (cls-uni)")
 	}
 }
@@ -305,13 +305,13 @@ func TestOWLRL_UnionOfSecondMember(t *testing.T) {
 	g := graph.NewGraph()
 	unionClass := term.NewBNode("")
 	members := buildRDFList(g, []term.Term{exA, exB})
-	g.Add(unionClass, namespace.OWL.UnionOf, members)
+	g.Add(t.Context(), unionClass, namespace.OWL.UnionOf, members)
 
-	g.Add(exX, namespace.RDF.Type, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exB)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, unionClass) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, unionClass)) {
 		t.Error("expected x rdf:type union via second member (cls-uni)")
 	}
 }
@@ -322,17 +322,17 @@ func TestOWLRL_OneOf(t *testing.T) {
 	g := graph.NewGraph()
 	enumClass := term.NewBNode("")
 	members := buildRDFList(g, []term.Term{exA, exB, exC})
-	g.Add(enumClass, namespace.OWL.OneOf, members)
+	g.Add(t.Context(), enumClass, namespace.OWL.OneOf, members)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exA, namespace.RDF.Type, enumClass) {
+	if !mustV(g.Contains(t.Context(), exA, namespace.RDF.Type, enumClass)) {
 		t.Error("expected A rdf:type enumClass (cls-oo)")
 	}
-	if !g.Contains(exB, namespace.RDF.Type, enumClass) {
+	if !mustV(g.Contains(t.Context(), exB, namespace.RDF.Type, enumClass)) {
 		t.Error("expected B rdf:type enumClass (cls-oo)")
 	}
-	if !g.Contains(exC, namespace.RDF.Type, enumClass) {
+	if !mustV(g.Contains(t.Context(), exC, namespace.RDF.Type, enumClass)) {
 		t.Error("expected C rdf:type enumClass (cls-oo)")
 	}
 }
@@ -341,11 +341,11 @@ func TestOWLRL_OneOf(t *testing.T) {
 
 func TestOWLRL_ComplementOf(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.OWL.ComplementOf, exB)
-	g.Add(exX, namespace.RDF.Type, exA)
-	g.Add(exX, namespace.RDF.Type, exB)
+	g.Add(t.Context(), exA, namespace.OWL.ComplementOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exB)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -361,10 +361,10 @@ func TestOWLRL_ComplementOf(t *testing.T) {
 
 func TestOWLRL_ComplementOfNoViolation(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.OWL.ComplementOf, exB)
-	g.Add(exX, namespace.RDF.Type, exA) // only one class
+	g.Add(t.Context(), exA, namespace.OWL.ComplementOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA) // only one class
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	for _, i := range incon {
 		if i.Rule == "cls-com" {

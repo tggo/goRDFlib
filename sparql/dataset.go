@@ -54,11 +54,14 @@ func applyDatasetClause(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery) (*rdflib
 			continue
 		}
 		merged[name] = true
-		for t := range ng.Triples(nil, nil, nil) {
+		for t, err := range ng.Triples(ec.context(), nil, nil, nil) {
+			if err == nil {
+				err = def.Add(ec.context(), t.Subject, t.Predicate, t.Object)
+			}
+			ec.fail(err)
 			if ec.stop() {
 				return nil, nil, ec.failure()
 			}
-			def.Add(t.Subject, t.Predicate, t.Object)
 		}
 	}
 

@@ -1,6 +1,7 @@
 package jsonld
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,7 +54,7 @@ func runParse(doc string, forceText bool, opts ...Option) outcome {
 		}),
 		func(c *config) { c.forceTextPath = forceText },
 	)
-	if err := Parse(out.g, strings.NewReader(doc), opts...); err != nil {
+	if err := Parse(context.Background(), out.g, strings.NewReader(doc), opts...); err != nil {
 		out.err = lineNum.ReplaceAllString(err.Error(), "line N:")
 	}
 	for i, s := range out.skips {
@@ -146,14 +147,14 @@ func TestDatasetPathLineCapIsReported(t *testing.T) {
 	if !strings.Contains(out.err, "line N: line exceeds maximum length") || !strings.Contains(out.err, "WithUnboundedLines") {
 		t.Fatalf("want the actionable line-length error, got %q", out.err)
 	}
-	if err := Parse(rdflibgo.NewGraph(), strings.NewReader(doc)); !errors.Is(err, nq.ErrLineTooLong) {
+	if err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(doc)); !errors.Is(err, nq.ErrLineTooLong) {
 		t.Errorf("error does not wrap ErrLineTooLong: %v", err)
 	}
-	if out.g.Len() != 0 {
-		t.Errorf("failed parse left %d triples", out.g.Len())
+	if mustV(out.g.Len(t.Context())) != 0 {
+		t.Errorf("failed parse left %d triples", mustV(out.g.Len(t.Context())))
 	}
-	if ok := runParse(doc, false, WithUnboundedLines()); ok.err != "" || ok.g.Len() != 1 {
-		t.Errorf("unbounded: err=%q len=%d", ok.err, ok.g.Len())
+	if ok := runParse(doc, false, WithUnboundedLines()); ok.err != "" || mustV(ok.g.Len(t.Context())) != 1 {
+		t.Errorf("unbounded: err=%q len=%d", ok.err, mustV(ok.g.Len(t.Context())))
 	}
 }
 
@@ -230,7 +231,7 @@ func runDataset(ds *ld.RDFDataset, cfg *config) outcome {
 	c.skipHandler = func(stmt string, err error) {
 		out.skips = append(out.skips, strings.TrimSpace(stmt)+" | "+err.Error())
 	}
-	if err := addDataset(graphSink(out.g), ds, &c, []byte(`{}`)); err != nil {
+	if err := addDataset(graphSink(context.Background(), out.g), ds, &c, []byte(`{}`)); err != nil {
 		out.err = lineNum.ReplaceAllString(err.Error(), "line N:")
 	}
 	for i, s := range out.skips {
@@ -303,11 +304,11 @@ func TestDatasetPathBlankNodeScopePerParse(t *testing.T) {
 	const doc = `{"@id":"http://e/s","http://e/p":{"http://e/q":"v"}}`
 	g := rdflibgo.NewGraph()
 	for range 2 {
-		if err := Parse(g, strings.NewReader(doc)); err != nil {
+		if err := Parse(t.Context(), g, strings.NewReader(doc)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if g.Len() != 4 {
-		t.Errorf("two parses of one document must give two blank nodes: %d triples", g.Len())
+	if mustV(g.Len(t.Context())) != 4 {
+		t.Errorf("two parses of one document must give two blank nodes: %d triples", mustV(g.Len(t.Context())))
 	}
 }

@@ -81,7 +81,7 @@ func TestGraphOne(t *testing.T) {
 	s := IRI(ex + "s")
 	p := IRI(ex + "p")
 	o := IRI(ex + "o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
 	tr, ok := g.One(&s, &p, nil)
 	if !ok {
@@ -104,7 +104,7 @@ func TestGraphLen(t *testing.T) {
 	if g.Len() != 0 {
 		t.Error("expected 0")
 	}
-	g.Add(IRI(ex+"s"), IRI(ex+"p"), IRI(ex+"o"))
+	g.Add(t.Context(), IRI(ex+"s"), IRI(ex+"p"), IRI(ex+"o"))
 	if g.Len() != 1 {
 		t.Error("expected 1")
 	}
@@ -112,10 +112,10 @@ func TestGraphLen(t *testing.T) {
 
 func TestGraphMerge(t *testing.T) {
 	g1 := NewGraph()
-	g1.Add(IRI(ex+"s"), IRI(ex+"p"), IRI(ex+"o"))
+	g1.Add(t.Context(), IRI(ex+"s"), IRI(ex+"p"), IRI(ex+"o"))
 	g2 := NewGraph()
-	g2.Add(IRI(ex+"s2"), IRI(ex+"p2"), IRI(ex+"o2"))
-	g1.Merge(g2)
+	g2.Add(t.Context(), IRI(ex+"s2"), IRI(ex+"p2"), IRI(ex+"o2"))
+	g1.Merge(t.Context(), g2)
 	if g1.Len() != 2 {
 		t.Errorf("expected 2 triples, got %d", g1.Len())
 	}
@@ -126,7 +126,7 @@ func TestGraphSubjects(t *testing.T) {
 	s := IRI(ex + "s")
 	p := IRI(ex + "p")
 	o := IRI(ex + "o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
 	subs := g.Subjects(p, o)
 	if len(subs) != 1 || !subs[0].Equal(s) {
@@ -198,8 +198,8 @@ func TestRDFListCycle(t *testing.T) {
 	node := BlankNode("cyc")
 	first := IRI(RDFFirst)
 	rest := IRI(RDFRest)
-	g.Add(node, first, Literal("a", XSD+"string", ""))
-	g.Add(node, rest, node) // cycle
+	g.Add(t.Context(), node, first, Literal("a", XSD+"string", ""))
+	g.Add(t.Context(), node, rest, node) // cycle
 	result := g.RDFList(node)
 	if len(result) != 1 {
 		t.Errorf("expected 1 element (cycle broken), got %d", len(result))
@@ -864,7 +864,7 @@ func TestExpressionConstraintTruthy(t *testing.T) {
 	node := IRI(ex + "expr1")
 	// sh:path points to a constant expression — use a constant node
 	constTrue := Literal("true", XSD+"boolean", "")
-	sg.Add(node, IRI(SH+"path"), constTrue)
+	sg.Add(t.Context(), node, IRI(SH+"path"), constTrue)
 
 	ctx := &evalContext{
 		dataGraph:   NewGraph(),
@@ -1338,7 +1338,7 @@ func TestParseSRLBlankNode(t *testing.T) {
 
 func TestEvalRuleSetBasic(t *testing.T) {
 	dataG := NewGraph()
-	dataG.Add(IRI(ex+"a"), IRI(ex+"type"), IRI(ex+"Thing"))
+	dataG.Add(t.Context(), IRI(ex+"a"), IRI(ex+"type"), IRI(ex+"Thing"))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3205,7 +3205,7 @@ world""" .
 
 func TestSRLEvalFilterSimple(t *testing.T) {
 	g := NewGraph()
-	g.Add(IRI("http://example.org/s"), IRI("http://example.org/value"), IRI("http://example.org/v"))
+	g.Add(t.Context(), IRI("http://example.org/s"), IRI("http://example.org/value"), IRI("http://example.org/v"))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3231,7 +3231,7 @@ func TestSRLEvalFilterSimple(t *testing.T) {
 
 func TestSRLEvalFilterFalseInRule(t *testing.T) {
 	g := NewGraph()
-	g.Add(IRI("http://example.org/s"), IRI("http://example.org/value"), IRI("http://example.org/v"))
+	g.Add(t.Context(), IRI("http://example.org/s"), IRI("http://example.org/value"), IRI("http://example.org/v"))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3257,7 +3257,7 @@ func TestSRLEvalFilterFalseInRule(t *testing.T) {
 
 func TestSRLEvalFilterMatch(t *testing.T) {
 	g := NewGraph()
-	g.Add(IRI("http://example.org/s"), IRI("http://example.org/value"), Literal("15", XSD+"integer", ""))
+	g.Add(t.Context(), IRI("http://example.org/s"), IRI("http://example.org/value"), Literal("15", XSD+"integer", ""))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3282,7 +3282,7 @@ func TestSRLEvalFilterMatch(t *testing.T) {
 
 func TestSRLEvalWithNOTBlock(t *testing.T) {
 	g := NewGraph()
-	g.Add(IRI("http://example.org/a"), IRI("http://example.org/p"), IRI("http://example.org/b"))
+	g.Add(t.Context(), IRI("http://example.org/a"), IRI("http://example.org/p"), IRI("http://example.org/b"))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3704,7 +3704,7 @@ func TestInstantiateTermNonVariable(t *testing.T) {
 
 func TestSRLEvalMultipleStrata(t *testing.T) {
 	g := NewGraph()
-	g.Add(IRI("http://example.org/a"), IRI("http://example.org/p"), IRI("http://example.org/b"))
+	g.Add(t.Context(), IRI("http://example.org/a"), IRI("http://example.org/p"), IRI("http://example.org/b"))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3734,7 +3734,7 @@ func TestSRLEvalMultipleStrata(t *testing.T) {
 
 func TestSRLEvalWithBIND(t *testing.T) {
 	g := NewGraph()
-	g.Add(IRI("http://example.org/s"), IRI("http://example.org/value"), Literal("10", XSD+"integer", ""))
+	g.Add(t.Context(), IRI("http://example.org/s"), IRI("http://example.org/value"), Literal("10", XSD+"integer", ""))
 
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
@@ -3857,8 +3857,8 @@ func TestEvalPathZeroOrMore(t *testing.T) {
 	m := IRI("http://example.org/m")
 	o := IRI("http://example.org/o")
 	p := IRI("http://example.org/p")
-	g.Add(s, p, m)
-	g.Add(m, p, o)
+	g.Add(t.Context(), s, p, m)
+	g.Add(t.Context(), m, p, o)
 	path := &PropertyPath{
 		Kind: PathZeroOrMore,
 		Sub:  &PropertyPath{Kind: PathPredicate, Pred: p},
@@ -3875,8 +3875,8 @@ func TestEvalPathOneOrMore(t *testing.T) {
 	m := IRI("http://example.org/m")
 	o := IRI("http://example.org/o")
 	p := IRI("http://example.org/p")
-	g.Add(s, p, m)
-	g.Add(m, p, o)
+	g.Add(t.Context(), s, p, m)
+	g.Add(t.Context(), m, p, o)
 	path := &PropertyPath{
 		Kind: PathOneOrMore,
 		Sub:  &PropertyPath{Kind: PathPredicate, Pred: p},
@@ -3892,7 +3892,7 @@ func TestEvalPathZeroOrOne(t *testing.T) {
 	s := IRI("http://example.org/s")
 	o := IRI("http://example.org/o")
 	p := IRI("http://example.org/p")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	path := &PropertyPath{
 		Kind: PathZeroOrOne,
 		Sub:  &PropertyPath{Kind: PathPredicate, Pred: p},
@@ -4470,7 +4470,7 @@ RULE {
 	g := NewGraph()
 	for _, block := range rs.DataBlocks {
 		for _, d := range block {
-			g.Add(srlTermToTerm(d.Subject), srlTermToTerm(d.Predicate), srlTermToTerm(d.Object))
+			g.Add(t.Context(), srlTermToTerm(d.Subject), srlTermToTerm(d.Predicate), srlTermToTerm(d.Object))
 		}
 	}
 	inferred, err := EvalRuleSet(rs, g)
@@ -4492,10 +4492,10 @@ func TestIsWellFormedList(t *testing.T) {
 
 	node1 := BlankNode("list1")
 	node2 := BlankNode("list2")
-	g.Add(node1, rdfFirst, Literal("a", XSD+"string", ""))
-	g.Add(node1, rdfRest, node2)
-	g.Add(node2, rdfFirst, Literal("b", XSD+"string", ""))
-	g.Add(node2, rdfRest, rdfNil)
+	g.Add(t.Context(), node1, rdfFirst, Literal("a", XSD+"string", ""))
+	g.Add(t.Context(), node1, rdfRest, node2)
+	g.Add(t.Context(), node2, rdfFirst, Literal("b", XSD+"string", ""))
+	g.Add(t.Context(), node2, rdfRest, rdfNil)
 
 	list := g.RDFList(node1)
 	if len(list) != 2 {

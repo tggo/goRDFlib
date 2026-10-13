@@ -17,44 +17,44 @@ func makeTestGraph(t *testing.T) (*graph.Graph, term.URIRef, term.URIRef, term.L
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o := term.NewLiteral("hello")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	return g, s, p, o
 }
 
 func TestGraphAddAndLen(t *testing.T) {
 	g, _, _, _ := makeTestGraph(t)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestGraphContains(t *testing.T) {
 	g, s, p, o := makeTestGraph(t)
-	if !g.Contains(s, p, o) {
+	if !mustV(g.Contains(t.Context(), s, p, o)) {
 		t.Error("should contain the triple")
 	}
 	p2, _ := term.NewURIRef("http://example.org/other")
-	if g.Contains(s, p2, o) {
+	if mustV(g.Contains(t.Context(), s, p2, o)) {
 		t.Error("should not contain different predicate")
 	}
 }
 
 func TestGraphRemove(t *testing.T) {
 	g, s, p, o := makeTestGraph(t)
-	g.Remove(s, &p, o)
-	if g.Len() != 0 {
-		t.Errorf("expected 0 after remove, got %d", g.Len())
+	g.Remove(t.Context(), s, &p, o)
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 after remove, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestGraphSet(t *testing.T) {
 	g, s, p, _ := makeTestGraph(t)
 	newObj := term.NewLiteral("world")
-	g.Set(s, p, newObj)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 after set, got %d", g.Len())
+	g.Set(t.Context(), s, p, newObj)
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 after set, got %d", mustV(g.Len(t.Context())))
 	}
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected a value")
 	}
@@ -66,10 +66,10 @@ func TestGraphSet(t *testing.T) {
 func TestGraphTriples(t *testing.T) {
 	g, s, _, _ := makeTestGraph(t)
 	p2, _ := term.NewURIRef("http://example.org/p2")
-	g.Add(s, p2, term.NewLiteral("world"))
+	g.Add(t.Context(), s, p2, term.NewLiteral("world"))
 
 	count := 0
-	g.Triples(s, nil, nil)(func(term.Triple) bool {
+	g.Triples(t.Context(), s, nil, nil)(func(term.Triple, error) bool {
 		count++
 		return true
 	})
@@ -84,11 +84,11 @@ func TestGraphSubjects(t *testing.T) {
 	s2, _ := term.NewURIRef("http://example.org/s2")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o := term.NewLiteral("v")
-	g.Add(s1, p, o)
-	g.Add(s2, p, o)
+	g.Add(t.Context(), s1, p, o)
+	g.Add(t.Context(), s2, p, o)
 
 	var subjects []term.Term
-	g.Subjects(&p, o)(func(t term.Term) bool {
+	g.Subjects(t.Context(), &p, o)(func(t term.Term, _ error) bool {
 		subjects = append(subjects, t)
 		return true
 	})
@@ -101,11 +101,11 @@ func TestGraphObjects(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("a"))
-	g.Add(s, p, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p, term.NewLiteral("b"))
 
 	var objects []term.Term
-	g.Objects(s, &p)(func(t term.Term) bool {
+	g.Objects(t.Context(), s, &p)(func(t term.Term, _ error) bool {
 		objects = append(objects, t)
 		return true
 	})
@@ -116,27 +116,32 @@ func TestGraphObjects(t *testing.T) {
 
 func TestGraphValue(t *testing.T) {
 	g, s, p, o := makeTestGraph(t)
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok || val.N3() != o.N3() {
 		t.Errorf("expected %q, got %v", o.N3(), val)
 	}
 }
 
-func TestGraphFluent(t *testing.T) {
+func TestGraphAddTwice(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p1, _ := term.NewURIRef("http://example.org/p1")
 	p2, _ := term.NewURIRef("http://example.org/p2")
-	g.Add(s, p1, term.NewLiteral("a")).Add(s, p2, term.NewLiteral("b"))
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if err := g.Add(t.Context(), s, p1, term.NewLiteral("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Add(t.Context(), s, p2, term.NewLiteral("b")); err != nil {
+		t.Fatal(err)
+	}
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestGraphDefaultNamespaces(t *testing.T) {
 	g := graph.NewGraph()
 	count := 0
-	g.Namespaces()(func(prefix string, ns term.URIRef) bool {
+	g.Namespaces(t.Context())(func(pair_ store.NamespaceBinding, _ error) bool {
 		count++
 		return true
 	})
@@ -147,7 +152,7 @@ func TestGraphDefaultNamespaces(t *testing.T) {
 
 func TestGraphQName(t *testing.T) {
 	g := graph.NewGraph()
-	got := g.QName("http://www.w3.org/2001/XMLSchema#string")
+	got, _ := g.QName(t.Context(), "http://www.w3.org/2001/XMLSchema#string")
 	if got != "xsd:string" {
 		t.Errorf("expected xsd:string, got %q", got)
 	}
@@ -156,8 +161,8 @@ func TestGraphQName(t *testing.T) {
 func TestGraphBind(t *testing.T) {
 	g := graph.NewGraph()
 	ns, _ := term.NewURIRef("http://example.org/ns#")
-	g.Bind("ex", ns)
-	got := g.QName("http://example.org/ns#Thing")
+	g.Bind(t.Context(), "ex", ns)
+	got, _ := g.QName(t.Context(), "http://example.org/ns#Thing")
 	if got != "ex:Thing" {
 		t.Errorf("expected ex:Thing, got %q", got)
 	}
@@ -168,12 +173,12 @@ func TestGraphUnion(t *testing.T) {
 	g2 := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g1.Add(s, p, term.NewLiteral("a"))
-	g2.Add(s, p, term.NewLiteral("b"))
+	g1.Add(t.Context(), s, p, term.NewLiteral("a"))
+	g2.Add(t.Context(), s, p, term.NewLiteral("b"))
 
-	u := g1.Union(g2)
-	if u.Len() != 2 {
-		t.Errorf("expected 2, got %d", u.Len())
+	u, _ := g1.Union(t.Context(), g2)
+	if mustV(u.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(u.Len(t.Context())))
 	}
 }
 
@@ -183,14 +188,14 @@ func TestGraphIntersection(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	shared := term.NewLiteral("shared")
-	g1.Add(s, p, shared)
-	g1.Add(s, p, term.NewLiteral("only1"))
-	g2.Add(s, p, shared)
-	g2.Add(s, p, term.NewLiteral("only2"))
+	g1.Add(t.Context(), s, p, shared)
+	g1.Add(t.Context(), s, p, term.NewLiteral("only1"))
+	g2.Add(t.Context(), s, p, shared)
+	g2.Add(t.Context(), s, p, term.NewLiteral("only2"))
 
-	inter := g1.Intersection(g2)
-	if inter.Len() != 1 {
-		t.Errorf("expected 1, got %d", inter.Len())
+	inter, _ := g1.Intersection(t.Context(), g2)
+	if mustV(inter.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(inter.Len(t.Context())))
 	}
 }
 
@@ -200,13 +205,13 @@ func TestGraphDifference(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	shared := term.NewLiteral("shared")
-	g1.Add(s, p, shared)
-	g1.Add(s, p, term.NewLiteral("only1"))
-	g2.Add(s, p, shared)
+	g1.Add(t.Context(), s, p, shared)
+	g1.Add(t.Context(), s, p, term.NewLiteral("only1"))
+	g2.Add(t.Context(), s, p, shared)
 
-	diff := g1.Difference(g2)
-	if diff.Len() != 1 {
-		t.Errorf("expected 1, got %d", diff.Len())
+	diff, _ := g1.Difference(t.Context(), g2)
+	if mustV(diff.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(diff.Len(t.Context())))
 	}
 }
 
@@ -215,18 +220,18 @@ func TestGraphConnected(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o, _ := term.NewURIRef("http://example.org/o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
-	if !g.Connected() {
+	if !mustV(g.Connected(t.Context())) {
 		t.Error("single-edge graph should be connected")
 	}
 
 	g2 := graph.NewGraph()
 	s2, _ := term.NewURIRef("http://example.org/s2")
 	o2, _ := term.NewURIRef("http://example.org/o2")
-	g2.Add(s, p, o)
-	g2.Add(s2, p, o2)
-	if g2.Connected() {
+	g2.Add(t.Context(), s, p, o)
+	g2.Add(t.Context(), s2, p, o2)
+	if mustV(g2.Connected(t.Context())) {
 		t.Error("disconnected graph should not be connected")
 	}
 }
@@ -236,9 +241,9 @@ func TestGraphAllNodes(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o, _ := term.NewURIRef("http://example.org/o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
-	nodes := g.AllNodes()
+	nodes, _ := g.AllNodes(t.Context())
 	if len(nodes) != 2 {
 		t.Errorf("expected 2 nodes (s and o, not p), got %d", len(nodes))
 	}
@@ -272,11 +277,11 @@ func TestGraphPredicates(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p1, _ := term.NewURIRef("http://example.org/p1")
 	p2, _ := term.NewURIRef("http://example.org/p2")
-	g.Add(s, p1, term.NewLiteral("a"))
-	g.Add(s, p2, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p1, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p2, term.NewLiteral("b"))
 
 	count := 0
-	g.Predicates(s, nil)(func(term.Term) bool { count++; return true })
+	g.Predicates(t.Context(), s, nil)(func(term.Term, error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2 predicates, got %d", count)
 	}
@@ -288,11 +293,11 @@ func TestGraphSubjectPredicates(t *testing.T) {
 	s2, _ := term.NewURIRef("http://example.org/s2")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o, _ := term.NewURIRef("http://example.org/o")
-	g.Add(s1, p, o)
-	g.Add(s2, p, o)
+	g.Add(t.Context(), s1, p, o)
+	g.Add(t.Context(), s2, p, o)
 
 	count := 0
-	g.SubjectPredicates(o)(func(term.Term, term.Term) bool { count++; return true })
+	g.SubjectPredicates(t.Context(), o)(func(pair_ store.TermPair, _ error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -302,11 +307,11 @@ func TestGraphSubjectObjects(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("a"))
-	g.Add(s, p, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p, term.NewLiteral("b"))
 
 	count := 0
-	g.SubjectObjects(&p)(func(term.Term, term.Term) bool { count++; return true })
+	g.SubjectObjects(t.Context(), &p)(func(pair_ store.TermPair, _ error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -316,9 +321,9 @@ func TestGraphValuePredicate(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("v"))
+	g.Add(t.Context(), s, p, term.NewLiteral("v"))
 
-	val, ok := g.Value(s, nil, term.NewLiteral("v"))
+	val, ok, _ := g.Value(t.Context(), s, nil, term.NewLiteral("v"))
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -331,9 +336,9 @@ func TestGraphValueSubject(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("v"))
+	g.Add(t.Context(), s, p, term.NewLiteral("v"))
 
-	val, ok := g.Value(nil, &p, term.NewLiteral("v"))
+	val, ok, _ := g.Value(t.Context(), nil, &p, term.NewLiteral("v"))
 	if !ok {
 		t.Fatal("expected subject")
 	}
@@ -345,7 +350,7 @@ func TestGraphValueSubject(t *testing.T) {
 func TestGraphValueNotFound(t *testing.T) {
 	g := graph.NewGraph()
 	p, _ := term.NewURIRef("http://example.org/p")
-	_, ok := g.Value(nil, &p, term.NewLiteral("nope"))
+	_, ok, _ := g.Value(t.Context(), nil, &p, term.NewLiteral("nope"))
 	if ok {
 		t.Error("expected not found")
 	}
@@ -353,7 +358,7 @@ func TestGraphValueNotFound(t *testing.T) {
 
 func TestGraphQNameNoMatch(t *testing.T) {
 	g := graph.NewGraph()
-	got := g.QName("http://unknown.org/Thing")
+	got, _ := g.QName(t.Context(), "http://unknown.org/Thing")
 	if got != "http://unknown.org/Thing" {
 		t.Errorf("expected raw URI, got %q", got)
 	}
@@ -361,7 +366,7 @@ func TestGraphQNameNoMatch(t *testing.T) {
 
 func TestGraphConnectedEmpty(t *testing.T) {
 	g := graph.NewGraph()
-	if !g.Connected() {
+	if !mustV(g.Connected(t.Context())) {
 		t.Error("empty graph should be connected")
 	}
 }
@@ -370,8 +375,8 @@ func TestGraphConnectedSingleNode(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("v"))
-	if !g.Connected() {
+	g.Add(t.Context(), s, p, term.NewLiteral("v"))
+	if !mustV(g.Connected(t.Context())) {
 		t.Error("single-subject graph should be connected")
 	}
 }
@@ -388,23 +393,23 @@ func TestGraphStoreAccessor(t *testing.T) {
 func TestNewCollectionExisting(t *testing.T) {
 	g := graph.NewGraph()
 	head := term.NewBNode("list")
-	g.Add(head, namespace.RDF.First, term.NewLiteral("a"))
-	g.Add(head, namespace.RDF.Rest, namespace.RDF.Nil)
+	g.Add(t.Context(), head, namespace.RDF.First, term.NewLiteral("a"))
+	g.Add(t.Context(), head, namespace.RDF.Rest, namespace.RDF.Nil)
 
 	col := graph.NewCollection(g, head)
 	if col.Head() != head {
 		t.Error("wrong head")
 	}
-	if col.Len() != 1 {
-		t.Errorf("expected 1, got %d", col.Len())
+	if mustV(col.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(col.Len(t.Context())))
 	}
 }
 
 func TestCollectionGetOutOfBounds(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
-	col.Append(term.NewLiteral("a"))
-	_, ok := col.Get(5)
+	col.Append(t.Context(), term.NewLiteral("a"))
+	_, ok, _ := col.Get(t.Context(), 5)
 	if ok {
 		t.Error("expected out of bounds")
 	}
@@ -413,12 +418,12 @@ func TestCollectionGetOutOfBounds(t *testing.T) {
 func TestCollectionIterEarlyStop(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
-	col.Append(term.NewLiteral("a"))
-	col.Append(term.NewLiteral("b"))
-	col.Append(term.NewLiteral("c"))
+	col.Append(t.Context(), term.NewLiteral("a"))
+	col.Append(t.Context(), term.NewLiteral("b"))
+	col.Append(t.Context(), term.NewLiteral("c"))
 
 	count := 0
-	col.Iter()(func(term.Term) bool {
+	col.Iter(t.Context())(func(term.Term, error) bool {
 		count++
 		return count < 2
 	})
@@ -439,9 +444,9 @@ func TestConjunctiveGraphStore(t *testing.T) {
 func TestConjunctiveGraphBind(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	ns, _ := term.NewURIRef("http://example.org/")
-	cg.Bind("ex", ns)
+	cg.Bind(t.Context(), "ex", ns)
 	count := 0
-	cg.Namespaces()(func(string, term.URIRef) bool { count++; return true })
+	cg.Namespaces(t.Context())(func(pair_ store.NamespaceBinding, _ error) bool { count++; return true })
 	if count < 5 {
 		t.Errorf("expected >=5, got %d", count)
 	}
@@ -451,11 +456,11 @@ func TestConjunctiveGraphTriples(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	cg.Add(s, p, term.NewLiteral("a"), nil)
-	cg.Add(s, p, term.NewLiteral("b"), nil)
+	cg.Add(t.Context(), s, p, term.NewLiteral("a"), nil)
+	cg.Add(t.Context(), s, p, term.NewLiteral("b"), nil)
 
 	count := 0
-	cg.Triples(nil, nil, nil)(func(term.Triple) bool { count++; return true })
+	cg.Triples(t.Context(), nil, nil, nil)(func(term.Triple, error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -465,10 +470,10 @@ func TestConjunctiveGraphQuads(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	cg.Add(s, p, term.NewLiteral("hello"), nil)
+	cg.Add(t.Context(), s, p, term.NewLiteral("hello"), nil)
 
 	count := 0
-	cg.Quads(nil, nil, nil)(func(term.Quad) bool { count++; return true })
+	cg.Quads(t.Context(), nil, nil, nil)(func(term.Quad, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1, got %d", count)
 	}
@@ -478,9 +483,9 @@ func TestConjunctiveGraphQuadsHaveGraphContext(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	cg.Add(s, p, term.NewLiteral("hello"), nil)
+	cg.Add(t.Context(), s, p, term.NewLiteral("hello"), nil)
 
-	cg.Quads(nil, nil, nil)(func(q term.Quad) bool {
+	cg.Quads(t.Context(), nil, nil, nil)(func(q term.Quad, _ error) bool {
 		if q.Graph == nil {
 			t.Error("Quad.Graph should not be nil")
 		}
@@ -492,17 +497,17 @@ func TestConjunctiveGraphRemove(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	cg.Add(s, p, term.NewLiteral("a"), nil)
-	cg.Remove(s, &p, nil, nil)
-	if cg.Len() != 0 {
-		t.Errorf("expected 0, got %d", cg.Len())
+	cg.Add(t.Context(), s, p, term.NewLiteral("a"), nil)
+	cg.Remove(t.Context(), s, &p, nil, nil)
+	if mustV(cg.Len(t.Context())) != 0 {
+		t.Errorf("expected 0, got %d", mustV(cg.Len(t.Context())))
 	}
 }
 
 func TestConjunctiveGraphContexts(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	count := 0
-	cg.Contexts(nil)(func(term.Term) bool { count++; return true })
+	cg.Contexts(t.Context(), nil)(func(term.Term, error) bool { count++; return true })
 	if count != 0 {
 		t.Errorf("expected 0, got %d", count)
 	}
@@ -513,9 +518,9 @@ func TestConjunctiveGraphAddQuad(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	g, _ := term.NewURIRef("http://example.org/g")
-	cg.AddQuad(term.Quad{Triple: term.Triple{Subject: s, Predicate: p, Object: term.NewLiteral("v")}, Graph: g})
-	if cg.Len() != 1 {
-		t.Errorf("expected 1, got %d", cg.Len())
+	cg.AddQuad(t.Context(), term.Quad{Triple: term.Triple{Subject: s, Predicate: p, Object: term.NewLiteral("v")}, Graph: g})
+	if mustV(cg.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(cg.Len(t.Context())))
 	}
 }
 
@@ -523,9 +528,9 @@ func TestConjunctiveGraphAddQuadNilGraph(t *testing.T) {
 	cg := graph.NewConjunctiveGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	cg.AddQuad(term.Quad{Triple: term.Triple{Subject: s, Predicate: p, Object: term.NewLiteral("v")}})
-	if cg.Len() != 1 {
-		t.Errorf("expected 1, got %d", cg.Len())
+	cg.AddQuad(t.Context(), term.Quad{Triple: term.Triple{Subject: s, Predicate: p, Object: term.NewLiteral("v")}})
+	if mustV(cg.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(cg.Len(t.Context())))
 	}
 }
 
@@ -569,7 +574,7 @@ func TestDatasetGraphExisting(t *testing.T) {
 
 func TestDatasetRemoveDefaultGraph(t *testing.T) {
 	ds := graph.NewDataset()
-	ds.RemoveGraph(ds.DefaultContext().Identifier())
+	ds.RemoveGraph(t.Context(), ds.DefaultContext().Identifier())
 	count := 0
 	ds.Graphs()(func(*graph.Graph) bool { count++; return true })
 	if count != 1 {

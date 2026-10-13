@@ -1,6 +1,7 @@
 package namespace
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -105,16 +106,21 @@ func NewNSManager(s store.Store) *NSManager {
 // The entire check-then-act sequence is protected by the mutex to prevent
 // TOCTOU races when override=false.
 // Ported from: rdflib.namespace.NamespaceManager.bind
-func (m *NSManager) Bind(prefix string, namespace term.URIRef, override bool) {
+func (m *NSManager) Bind(ctx context.Context, prefix string, namespace term.URIRef, override bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if override {
-		m.store.Bind(prefix, namespace)
-	} else {
-		if _, ok := m.store.Namespace(prefix); !ok {
-			m.store.Bind(prefix, namespace)
+	if !override {
+		_, ok, err := m.store.Namespace(ctx, prefix)
+		if err != nil {
+			return err
 		}
+		if ok {
+			return nil
+		}
+	}
+	if err := m.store.Bind(ctx, prefix, namespace); err != nil {
+		return err
 	}
 	// Selectively invalidate cache entries whose namespace matches the newly bound one.
 	nsStr := namespace.Value()
@@ -123,11 +129,14 @@ func (m *NSManager) Bind(prefix string, namespace term.URIRef, override bool) {
 			delete(m.cache, uri)
 		}
 	}
+	return nil
 }
 
-// Prefix implements NamespaceManager interface for use with Term.N3().
+// Prefix implements the term.NamespaceManager interface for Term.N3. That
+// interface has no context and no error, so the store is asked with
+// context.Background() and a failed lookup reads as "no prefix".
 func (m *NSManager) Prefix(uri string) (string, bool) {
-	qn, err := m.QName(uri)
+	qn, err := m.QName(context.Background(), uri)
 	if err != nil {
 		return "", false
 	}
@@ -136,8 +145,8 @@ func (m *NSManager) Prefix(uri string) (string, bool) {
 
 // QName returns the prefixed form of a URI (e.g. "foaf:Person").
 // Ported from: rdflib.namespace.NamespaceManager.qname
-func (m *NSManager) QName(uri string) (string, error) {
-	prefix, _, local, err := m.ComputeQName(uri)
+func (m *NSManager) QName(ctx context.Context, uri string) (string, error) {
+	prefix, _, local, err := m.ComputeQName(ctx, uri)
 	if err != nil {
 		return "", err
 	}
@@ -148,7 +157,7 @@ func (m *NSManager) QName(uri string) (string, error) {
 // If no prefix exists for the namespace, one is auto-generated (ns1, ns2, ...).
 // Thread-safe: the generate-and-bind sequence is atomic.
 // Ported from: rdflib.namespace.NamespaceManager.compute_qname
-func (m *NSManager) ComputeQName(uri string) (prefix, ns, local string, err error) {
+func (m *NSManager) ComputeQName(ctx context.Context, uri string) (prefix, ns, local string, err error) {
 	m.mu.RLock()
 	if cached, ok := m.cache[uri]; ok {
 		m.mu.RUnlock()
@@ -165,25 +174,14 @@ func (m *NSManager) ComputeQName(uri string) (prefix, ns, local string, err erro
 	nsRef := term.NewURIRefUnsafe(nsStr)
 
 	// Look up existing prefix
-	if p, ok := m.store.Prefix(nsRef); ok {
+	p, ok, err := m.store.Prefix(ctx, nsRef)
+	if err != nil {
+		return "", "", "", err
+	}
+	if ok {
 		prefix = p
-	} else {
-		// Auto-generate prefix — atomic: hold lock through generate + bind
-		m.mu.Lock()
-		// Double-check after acquiring write lock
-		if p, ok := m.store.Prefix(nsRef); ok {
-			prefix = p
-		} else {
-			for {
-				m.genID++
-				prefix = fmt.Sprintf("ns%d", m.genID)
-				if _, exists := m.store.Namespace(prefix); !exists {
-					break
-				}
-			}
-			m.store.Bind(prefix, nsRef)
-		}
-		m.mu.Unlock()
+	} else if prefix, err = m.generatePrefix(ctx, nsRef); err != nil {
+		return "", "", "", err
 	}
 
 	m.mu.Lock()
@@ -193,31 +191,60 @@ func (m *NSManager) ComputeQName(uri string) (prefix, ns, local string, err erro
 	return prefix, nsStr, localName, nil
 }
 
+// generatePrefix binds nsRef to the first free nsN prefix, unless another
+// caller bound it meanwhile. The generate-and-bind sequence runs under the
+// write lock so two callers cannot pick the same prefix.
+func (m *NSManager) generatePrefix(ctx context.Context, nsRef term.URIRef) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok, err := m.store.Prefix(ctx, nsRef); err != nil || ok {
+		return p, err
+	}
+	for {
+		m.genID++
+		prefix := fmt.Sprintf("ns%d", m.genID)
+		_, exists, err := m.store.Namespace(ctx, prefix)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return prefix, m.store.Bind(ctx, prefix, nsRef)
+		}
+	}
+}
+
 // Absolutize resolves a URI against the store's known namespace bindings.
 // If the URI is already absolute, it is returned as-is. If it looks like a
 // CURIE (contains a colon with a bound prefix), it is expanded.
 // Ported from: rdflib.namespace.NamespaceManager.absolutize
-func (m *NSManager) Absolutize(uri string) term.URIRef {
+func (m *NSManager) Absolutize(ctx context.Context, uri string) (term.URIRef, error) {
 	// If it looks like it could be a CURIE, try expanding it.
 	if parts := strings.SplitN(uri, ":", 2); len(parts) == 2 {
-		if ns, ok := m.store.Namespace(parts[0]); ok {
-			return term.NewURIRefUnsafe(ns.Value() + parts[1])
+		ns, ok, err := m.store.Namespace(ctx, parts[0])
+		if err != nil {
+			return term.URIRef{}, err
+		}
+		if ok {
+			return term.NewURIRefUnsafe(ns.Value() + parts[1]), nil
 		}
 	}
 	// Already absolute or no matching prefix — return as-is.
-	return term.NewURIRefUnsafe(uri)
+	return term.NewURIRefUnsafe(uri), nil
 }
 
 // ExpandCURIE expands a prefixed name (e.g. "foaf:Person") to a full URIRef.
 // An empty prefix is valid and represents the default namespace binding
 // (i.e., ":localname" looks up the "" prefix in the store).
 // Ported from: rdflib.namespace.NamespaceManager.expand_curie
-func (m *NSManager) ExpandCURIE(curie string) (term.URIRef, error) {
+func (m *NSManager) ExpandCURIE(ctx context.Context, curie string) (term.URIRef, error) {
 	parts := strings.SplitN(curie, ":", 2)
 	if len(parts) != 2 {
 		return term.URIRef{}, fmt.Errorf("%w: %q", term.ErrInvalidCURIE, curie)
 	}
-	ns, ok := m.store.Namespace(parts[0])
+	ns, ok, err := m.store.Namespace(ctx, parts[0])
+	if err != nil {
+		return term.URIRef{}, err
+	}
 	if !ok {
 		return term.URIRef{}, fmt.Errorf("%w: %q", term.ErrPrefixNotBound, parts[0])
 	}
@@ -226,8 +253,8 @@ func (m *NSManager) ExpandCURIE(curie string) (term.URIRef, error) {
 
 // Namespaces returns all prefix→namespace bindings.
 // Ported from: rdflib.namespace.NamespaceManager.namespaces
-func (m *NSManager) Namespaces() store.NamespaceIterator {
-	return m.store.Namespaces()
+func (m *NSManager) Namespaces(ctx context.Context) store.NamespaceIterator {
+	return m.store.Namespaces(ctx)
 }
 
 // SplitURI splits a URI into namespace and local name at the last '#' or '/'.

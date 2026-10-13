@@ -16,12 +16,14 @@ func TestSerializeRelativeIRIFails(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://e/s")
 	p := rdflibgo.NewURIRefUnsafe("http://e/p")
 	cases := map[string]func(g *rdflibgo.Graph){
-		"subject":   func(g *rdflibgo.Graph) { g.Add(rel, p, rdflibgo.NewLiteral("v")) },
-		"predicate": func(g *rdflibgo.Graph) { g.Add(s, rel, rdflibgo.NewLiteral("v")) },
-		"object":    func(g *rdflibgo.Graph) { g.Add(s, p, rel) },
-		"datatype":  func(g *rdflibgo.Graph) { g.Add(s, p, rdflibgo.NewLiteral("v", rdflibgo.WithDatatype(rel))) },
+		"subject":   func(g *rdflibgo.Graph) { g.Add(t.Context(), rel, p, rdflibgo.NewLiteral("v")) },
+		"predicate": func(g *rdflibgo.Graph) { g.Add(t.Context(), s, rel, rdflibgo.NewLiteral("v")) },
+		"object":    func(g *rdflibgo.Graph) { g.Add(t.Context(), s, p, rel) },
+		"datatype": func(g *rdflibgo.Graph) {
+			g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v", rdflibgo.WithDatatype(rel)))
+		},
 		"triple term": func(g *rdflibgo.Graph) {
-			g.Add(s, p, rdflibgo.NewTripleTerm(s, p, rel))
+			g.Add(t.Context(), s, p, rdflibgo.NewTripleTerm(s, p, rel))
 		},
 	}
 	for name, build := range cases {
@@ -29,7 +31,7 @@ func TestSerializeRelativeIRIFails(t *testing.T) {
 			g := rdflibgo.NewGraph()
 			build(g)
 			var buf bytes.Buffer
-			err := Serialize(g, &buf)
+			err := Serialize(t.Context(), g, &buf)
 			if !errors.Is(err, ErrRelativeIRI) {
 				t.Fatalf("want ErrRelativeIRI, got %v\n%s", err, buf.String())
 			}
@@ -53,9 +55,9 @@ func TestSerializeInvalidUTF8Fails(t *testing.T) {
 		"IRI":                         rdflibgo.NewURIRefUnsafe("http://e/\xff"),
 	} {
 		g := rdflibgo.NewGraph()
-		g.Add(s, p, o)
+		g.Add(t.Context(), s, p, o)
 		var buf bytes.Buffer
-		if err := Serialize(g, &buf); !errors.Is(err, ErrInvalidUTF8) {
+		if err := Serialize(t.Context(), g, &buf); !errors.Is(err, ErrInvalidUTF8) {
 			t.Errorf("%s: want ErrInvalidUTF8, got %v (%q)", name, err, buf.String())
 		}
 	}
@@ -64,8 +66,8 @@ func TestSerializeInvalidUTF8Fails(t *testing.T) {
 func TestSerializeInvalidIRICharFails(t *testing.T) {
 	for _, bad := range []string{"http://e/a b", "http://e/{x}", "http://e/a|b", "http://e/a^b", "http://e/a`b", `http://e/a\b`, `http://e/"`} {
 		g := rdflibgo.NewGraph()
-		g.Add(rdflibgo.NewURIRefUnsafe("http://e/s"), rdflibgo.NewURIRefUnsafe("http://e/p"), rdflibgo.NewURIRefUnsafe(bad))
-		if err := Serialize(g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
+		g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://e/s"), rdflibgo.NewURIRefUnsafe("http://e/p"), rdflibgo.NewURIRefUnsafe(bad))
+		if err := Serialize(t.Context(), g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
 			t.Errorf("%q: want ErrInvalidIRI, got %v", bad, err)
 		}
 	}
@@ -76,18 +78,18 @@ func TestSerializeOutputReparses(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("urn:x:s")
 	p := rdflibgo.NewURIRefUnsafe("http://e/p")
-	g.Add(s, p, rdflibgo.NewLiteral("tab\t\x01 \"q\" \\ \U0001F600 é"))
-	g.Add(s, p, rdflibgo.NewURIRefUnsafe("http://e/é\U0001F600?q=1#f"))
-	g.Add(s, p, rdflibgo.NewLiteral("x", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("tab\t\x01 \"q\" \\ \U0001F600 é"))
+	g.Add(t.Context(), s, p, rdflibgo.NewURIRefUnsafe("http://e/é\U0001F600?q=1#f"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("x", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatalf("%v\n%s", err, buf.String())
 	}
-	if g2.Len() != g.Len() {
-		t.Errorf("got %d triples, want %d\n%s", g2.Len(), g.Len(), buf.String())
+	if mustV(g2.Len(t.Context())) != mustV(g.Len(t.Context())) {
+		t.Errorf("got %d triples, want %d\n%s", mustV(g2.Len(t.Context())), mustV(g.Len(t.Context())), buf.String())
 	}
 }

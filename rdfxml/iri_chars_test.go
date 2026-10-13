@@ -26,7 +26,7 @@ func TestParseRejectsIllegalIRIs(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := Parse(rdflibgo.NewGraph(), strings.NewReader(head+body+`</rdf:RDF>`))
+			err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(head+body+`</rdf:RDF>`))
 			if !errors.Is(err, term.ErrInvalidIRI) {
 				t.Fatalf("err = %v, want ErrInvalidIRI", err)
 			}
@@ -39,7 +39,7 @@ func TestParseRejectsIllegalIRIs(t *testing.T) {
 	// Percent-encoded, the same IRIs are fine.
 	ok := head + `<rdf:Description rdf:about="urn:a%7Cb"><ex:p rdf:datatype="urn:d%5Et">v</ex:p></rdf:Description></rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(ok)); err != nil || g.Len() != 1 {
-		t.Fatalf("percent-encoded IRIs: err=%v len=%d", err, g.Len())
+	if err := Parse(t.Context(), g, strings.NewReader(ok)); err != nil || mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("percent-encoded IRIs: err=%v len=%d", err, mustV(g.Len(t.Context())))
 	}
 }

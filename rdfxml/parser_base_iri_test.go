@@ -24,11 +24,11 @@ func TestParserBaseIRIResolution(t *testing.T) {
 		src := `<rdf:RDF xmlns:rdf="` + rdfNS + `" xmlns:ex="http://e/"><rdf:Description rdf:about="` +
 			tc.ref + `"><ex:p>v</ex:p></rdf:Description></rdf:RDF>`
 		g := rdflibgo.NewGraph()
-		if err := Parse(g, strings.NewReader(src), WithBase(tc.base)); err != nil {
+		if err := Parse(t.Context(), g, strings.NewReader(src), WithBase(tc.base)); err != nil {
 			t.Fatalf("base %q ref %q: %v", tc.base, tc.ref, err)
 		}
 		var got string
-		g.Triples(nil, nil, nil)(func(tr rdflibgo.Triple) bool {
+		g.Triples(t.Context(), nil, nil, nil)(func(tr rdflibgo.Triple, _ error) bool {
 			got = tr.Subject.String()
 			return false
 		})

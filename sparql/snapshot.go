@@ -1,6 +1,8 @@
 package sparql
 
 import (
+	"context"
+
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/store"
@@ -13,13 +15,20 @@ import (
 //
 // The caller's query is not changed: when a named graph is redirected, the
 // query is copied with a new NamedGraphs map. Graphs on stores without
-// snapshots are used as they are.
-func snapshotQueryGraphs(g *rdflibgo.Graph, q *ParsedQuery) (*rdflibgo.Graph, *ParsedQuery, func()) {
+// snapshots are used as they are. When a snapshot cannot be opened, the ones
+// already open are released and the error is returned.
+func snapshotQueryGraphs(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery) (*rdflibgo.Graph, *ParsedQuery, func(), error) {
 	snaps := make(map[store.Store]store.Store)
 	var releases []func()
+	releaseAll := func() {
+		for _, r := range releases {
+			r()
+		}
+	}
+	var openErr error
 	redirect := func(gr *rdflibgo.Graph) *rdflibgo.Graph {
-		if gr == nil {
-			return nil
+		if gr == nil || openErr != nil {
+			return gr
 		}
 		st := gr.Store()
 		ss, ok := st.(store.SnapshotStore)
@@ -29,7 +38,12 @@ func snapshotQueryGraphs(g *rdflibgo.Graph, q *ParsedQuery) (*rdflibgo.Graph, *P
 		snap, seen := snaps[st]
 		if !seen {
 			var release func()
-			snap, release = ss.ReadSnapshot()
+			var err error
+			snap, release, err = ss.ReadSnapshot(ctx)
+			if err != nil {
+				openErr = err
+				return gr
+			}
 			snaps[st] = snap
 			releases = append(releases, release)
 		}
@@ -46,11 +60,11 @@ func snapshotQueryGraphs(g *rdflibgo.Graph, q *ParsedQuery) (*rdflibgo.Graph, *P
 		qc.NamedGraphs = named
 		q = &qc
 	}
-	return g, q, func() {
-		for _, r := range releases {
-			r()
-		}
+	if openErr != nil {
+		releaseAll()
+		return nil, nil, func() {}, openErr
 	}
+	return g, q, releaseAll, nil
 }
 
 func anySnapshot(graphs map[string]*rdflibgo.Graph) bool {

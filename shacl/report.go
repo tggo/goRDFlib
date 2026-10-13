@@ -4,6 +4,20 @@ package shacl
 type ValidationReport struct {
 	Conforms bool
 	Results  []ValidationResult
+
+	// Err is set only by the entry points that have no error result (Validate,
+	// Prepared.Validate, CompiledShapes.Validate), when the run failed: the
+	// data or shapes graph could not be read from its store, or a query
+	// failed. Such a report has Conforms false and no Results, and says
+	// nothing about the data; check Err before trusting it. The same error
+	// goes to WithErrorHandler. The *Context variants return it as their
+	// error instead and leave Err nil.
+	Err error
+}
+
+// failedReport is the report a no-error entry point returns for a failed run.
+func failedReport(err error) ValidationReport {
+	return ValidationReport{Err: err}
 }
 
 // ValidationResult represents a single validation result (sh:ValidationResult).

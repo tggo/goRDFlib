@@ -32,19 +32,19 @@ func FuzzSourceLines(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dataSrc string) {
 		dataGraph := graph.NewGraph()
 		idx := provenance.NewIndex()
-		if err := turtle.Parse(dataGraph, strings.NewReader(dataSrc),
+		if err := turtle.Parse(t.Context(), dataGraph, strings.NewReader(dataSrc),
 			turtle.WithProvenance(idx.Triple)); err != nil {
 			return // a document that does not parse has nothing to validate
 		}
 
 		shapesGraph := graph.NewGraph()
-		if err := turtle.Parse(shapesGraph, strings.NewReader(shapesSrc)); err != nil {
+		if err := turtle.Parse(t.Context(), shapesGraph, strings.NewReader(shapesSrc)); err != nil {
 			t.Fatalf("the fixed shapes stopped parsing: %v", err)
 		}
 
 		report := shacl.Validate(
-			shacl.NewGraphFromRDF(dataGraph, ""),
-			shacl.NewGraphFromRDF(shapesGraph, ""),
+			mustV(shacl.NewGraphFromRDF(t.Context(), dataGraph, "")),
+			mustV(shacl.NewGraphFromRDF(t.Context(), shapesGraph, "")),
 			shacl.WithSourceLines(idx),
 		)
 
@@ -82,19 +82,19 @@ func FuzzSourceLinesNeverInvent(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dataSrc string) {
 		dataGraph := graph.NewGraph()
 		idx := provenance.NewIndex()
-		if err := turtle.Parse(dataGraph, strings.NewReader(dataSrc),
+		if err := turtle.Parse(t.Context(), dataGraph, strings.NewReader(dataSrc),
 			turtle.WithProvenance(idx.Triple)); err != nil {
 			return
 		}
 
 		shapesGraph := graph.NewGraph()
-		if err := turtle.Parse(shapesGraph, strings.NewReader(sourceLineShapes)); err != nil {
+		if err := turtle.Parse(t.Context(), shapesGraph, strings.NewReader(sourceLineShapes)); err != nil {
 			t.Fatal(err)
 		}
 
 		report := shacl.Validate(
-			shacl.NewGraphFromRDF(dataGraph, ""),
-			shacl.NewGraphFromRDF(shapesGraph, ""),
+			mustV(shacl.NewGraphFromRDF(t.Context(), dataGraph, "")),
+			mustV(shacl.NewGraphFromRDF(t.Context(), shapesGraph, "")),
 			shacl.WithSourceLines(idx),
 		)
 

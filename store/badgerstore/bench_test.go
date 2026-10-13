@@ -63,7 +63,7 @@ func BenchmarkBadgerAdd1K(b *testing.B) {
 	for b.Loop() {
 		s, cleanup := newBenchBadger(b)
 		for _, t := range triples {
-			s.Add(t, nil)
+			s.Add(b.Context(), t, nil)
 		}
 		cleanup()
 	}
@@ -73,7 +73,7 @@ func BenchmarkBadgerAddN1K(b *testing.B) {
 	quads := genQuads(1000)
 	for b.Loop() {
 		s, cleanup := newBenchBadger(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -82,7 +82,7 @@ func BenchmarkBadgerAddN10K(b *testing.B) {
 	quads := genQuads(10000)
 	for b.Loop() {
 		s, cleanup := newBenchBadger(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -91,7 +91,7 @@ func BenchmarkBadgerAddN100K(b *testing.B) {
 	quads := genQuads(100000)
 	for b.Loop() {
 		s, cleanup := newBenchBadger(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -100,7 +100,7 @@ func BenchmarkBadgerDiskAddN10K(b *testing.B) {
 	quads := genQuads(10000)
 	for b.Loop() {
 		s, cleanup := newBenchBadgerDisk(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -110,7 +110,7 @@ func BenchmarkMemoryAdd1K(b *testing.B) {
 	for b.Loop() {
 		s := store.NewMemoryStore()
 		for _, t := range triples {
-			s.Add(t, nil)
+			s.Add(b.Context(), t, nil)
 		}
 	}
 }
@@ -119,7 +119,7 @@ func BenchmarkMemoryAddN1K(b *testing.B) {
 	quads := genQuads(1000)
 	for b.Loop() {
 		s := store.NewMemoryStore()
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 	}
 }
 
@@ -127,7 +127,7 @@ func BenchmarkMemoryAddN10K(b *testing.B) {
 	quads := genQuads(10000)
 	for b.Loop() {
 		s := store.NewMemoryStore()
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 	}
 }
 
@@ -135,7 +135,7 @@ func BenchmarkMemoryAddN100K(b *testing.B) {
 	quads := genQuads(100000)
 	for b.Loop() {
 		s := store.NewMemoryStore()
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 	}
 }
 
@@ -144,12 +144,12 @@ func BenchmarkMemoryAddN100K(b *testing.B) {
 func BenchmarkBadgerTriplesScan10K(b *testing.B) {
 	s, cleanup := newBenchBadger(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		for range s.Triples(term.TriplePattern{}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{}, nil) {
 			count++
 		}
 	}
@@ -157,12 +157,12 @@ func BenchmarkBadgerTriplesScan10K(b *testing.B) {
 
 func BenchmarkMemoryTriplesScan10K(b *testing.B) {
 	s := store.NewMemoryStore()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		for range s.Triples(term.TriplePattern{}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{}, nil) {
 			count++
 		}
 	}
@@ -171,24 +171,24 @@ func BenchmarkMemoryTriplesScan10K(b *testing.B) {
 func BenchmarkBadgerTriplesSubject10K(b *testing.B) {
 	s, cleanup := newBenchBadger(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	subj := term.NewURIRefUnsafe("http://example.org/s42")
 
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Subject: subj}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Subject: subj}, nil) {
 		}
 	}
 }
 
 func BenchmarkMemoryTriplesSubject10K(b *testing.B) {
 	s := store.NewMemoryStore()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	subj := term.NewURIRefUnsafe("http://example.org/s42")
 
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Subject: subj}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Subject: subj}, nil) {
 		}
 	}
 }
@@ -196,24 +196,24 @@ func BenchmarkMemoryTriplesSubject10K(b *testing.B) {
 func BenchmarkBadgerTriplesPredicate10K(b *testing.B) {
 	s, cleanup := newBenchBadger(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	pred := term.NewURIRefUnsafe("http://example.org/p42")
 
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Predicate: &pred}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Predicate: &pred}, nil) {
 		}
 	}
 }
 
 func BenchmarkMemoryTriplesPredicate10K(b *testing.B) {
 	s := store.NewMemoryStore()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	pred := term.NewURIRefUnsafe("http://example.org/p42")
 
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Predicate: &pred}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Predicate: &pred}, nil) {
 		}
 	}
 }
@@ -221,49 +221,49 @@ func BenchmarkMemoryTriplesPredicate10K(b *testing.B) {
 func BenchmarkBadgerLen10K(b *testing.B) {
 	s, cleanup := newBenchBadger(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 
 	b.ResetTimer()
 	for b.Loop() {
-		s.Len(nil)
+		s.Len(b.Context(), nil)
 	}
 }
 
 func BenchmarkMemoryLen10K(b *testing.B) {
 	s := store.NewMemoryStore()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 
 	b.ResetTimer()
 	for b.Loop() {
-		s.Len(nil)
+		s.Len(b.Context(), nil)
 	}
 }
 
 func BenchmarkBadgerExactLookup10K(b *testing.B) {
 	s, cleanup := newBenchBadger(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	subj := term.NewURIRefUnsafe("http://example.org/s5000")
 	pred := term.NewURIRefUnsafe("http://example.org/p0")
 	obj := term.NewLiteral("value_5000")
 
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Subject: subj, Predicate: &pred, Object: obj}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Subject: subj, Predicate: &pred, Object: obj}, nil) {
 		}
 	}
 }
 
 func BenchmarkMemoryExactLookup10K(b *testing.B) {
 	s := store.NewMemoryStore()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	subj := term.NewURIRefUnsafe("http://example.org/s5000")
 	pred := term.NewURIRefUnsafe("http://example.org/p0")
 	obj := term.NewLiteral("value_5000")
 
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Subject: subj, Predicate: &pred, Object: obj}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Subject: subj, Predicate: &pred, Object: obj}, nil) {
 		}
 	}
 }

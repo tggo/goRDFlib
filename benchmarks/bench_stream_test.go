@@ -45,7 +45,7 @@ func BenchmarkStreamParse(b *testing.B) {
 	b.Run("rdfxml/graph", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			if err := rdfxml.Parse(rdflibgo.NewGraph(), bytes.NewReader(xml)); err != nil {
+			if err := rdfxml.Parse(b.Context(), rdflibgo.NewGraph(), bytes.NewReader(xml)); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -61,7 +61,7 @@ func BenchmarkStreamParse(b *testing.B) {
 	b.Run("nt/graph", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			if err := nt.Parse(rdflibgo.NewGraph(), bytes.NewReader(ntData)); err != nil {
+			if err := nt.Parse(b.Context(), rdflibgo.NewGraph(), bytes.NewReader(ntData)); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -77,7 +77,7 @@ func BenchmarkStreamParse(b *testing.B) {
 	b.Run("turtle/graph", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			if err := turtle.Parse(rdflibgo.NewGraph(), bytes.NewReader(ntData)); err != nil {
+			if err := turtle.Parse(b.Context(), rdflibgo.NewGraph(), bytes.NewReader(ntData)); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -104,7 +104,7 @@ func BenchmarkStreamPeakHeap(b *testing.B) {
 			var peak heapPeak
 			peak.start()
 			g := rdflibgo.NewGraph()
-			if err := rdfxml.Parse(g, bytes.NewReader(xml)); err != nil {
+			if err := rdfxml.Parse(b.Context(), g, bytes.NewReader(xml)); err != nil {
 				b.Fatal(err)
 			}
 			peak.sample()

@@ -1,7 +1,9 @@
 package graph
 
 import (
-	"github.com/tggo/goRDFlib/namespace"
+	"context"
+	"iter"
+
 	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -14,7 +16,8 @@ type ConjunctiveGraph struct {
 	defaultContext *Graph
 }
 
-// NewConjunctiveGraph creates a new ConjunctiveGraph.
+// NewConjunctiveGraph creates a new ConjunctiveGraph. Like NewGraph, it binds
+// the default prefixes only over a MemoryStore; see Graph.BindDefaults.
 // Ported from: rdflib.graph.ConjunctiveGraph.__init__
 func NewConjunctiveGraph(opts ...GraphOption) *ConjunctiveGraph {
 	g := &Graph{}
@@ -28,11 +31,9 @@ func NewConjunctiveGraph(opts ...GraphOption) *ConjunctiveGraph {
 		g.identifier = store.DefaultGraph
 	}
 	defaultCtx := &Graph{store: g.store, identifier: g.identifier}
-	defaultCtx.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))
-	defaultCtx.Bind("rdfs", term.NewURIRefUnsafe(namespace.RDFSNamespace))
-	defaultCtx.Bind("xsd", term.NewURIRefUnsafe(term.XSDNamespace))
-	defaultCtx.Bind("owl", term.NewURIRefUnsafe(namespace.OWLNamespace))
-
+	if _, ok := g.store.(*store.MemoryStore); ok {
+		_ = defaultCtx.BindDefaults(context.Background())
+	}
 	return &ConjunctiveGraph{
 		store:          g.store,
 		defaultContext: defaultCtx,
@@ -50,7 +51,6 @@ func (cg *ConjunctiveGraph) Store() store.Store {
 }
 
 // GetContext returns a Graph for the given identifier, sharing the same store.
-// Ported from: rdflib.graph.ConjunctiveGraph.get_context
 func (cg *ConjunctiveGraph) GetContext(id term.Term) *Graph {
 	if id == nil {
 		return cg.defaultContext
@@ -58,78 +58,85 @@ func (cg *ConjunctiveGraph) GetContext(id term.Term) *Graph {
 	return &Graph{store: cg.store, identifier: id}
 }
 
-// Add adds a triple to the specified context (nil = default graph).
-// Ported from: rdflib.graph.ConjunctiveGraph.add
-func (cg *ConjunctiveGraph) Add(s term.Subject, p term.URIRef, o term.Term, ctx term.Term) {
-	if ctx == nil {
-		ctx = cg.defaultContext.identifier
+// Add adds a triple to the graph named graph (nil = default graph).
+func (cg *ConjunctiveGraph) Add(ctx context.Context, s term.Subject, p term.URIRef, o term.Term, graph term.Term) error {
+	if graph == nil {
+		graph = cg.defaultContext.identifier
 	}
-	cg.store.Add(term.Triple{Subject: s, Predicate: p, Object: o}, ctx)
+	return cg.store.Add(ctx, term.Triple{Subject: s, Predicate: p, Object: o}, graph)
 }
 
 // AddQuad adds a quad to the graph.
-func (cg *ConjunctiveGraph) AddQuad(q term.Quad) {
-	ctx := term.Term(cg.defaultContext.identifier)
+func (cg *ConjunctiveGraph) AddQuad(ctx context.Context, q term.Quad) error {
+	graph := term.Term(cg.defaultContext.identifier)
 	if q.Graph != nil {
-		ctx = q.Graph
+		graph = q.Graph
 	}
-	cg.store.Add(q.Triple, ctx)
+	return cg.store.Add(ctx, q.Triple, graph)
 }
 
-// Remove removes matching triples from ctx, or from the default graph and
-// every named graph when ctx is nil.
-// Ported from: rdflib.graph.ConjunctiveGraph.remove
-func (cg *ConjunctiveGraph) Remove(s term.Subject, p *term.URIRef, o term.Term, ctx term.Term) {
+// Remove removes matching triples from graph, or from the default graph and
+// every named graph when graph is nil.
+func (cg *ConjunctiveGraph) Remove(ctx context.Context, s term.Subject, p *term.URIRef, o term.Term, graph term.Term) error {
 	pat := term.TriplePattern{Subject: s, Predicate: p, Object: o}
-	if ctx != nil {
-		cg.store.Remove(pat, ctx)
-		return
+	if graph != nil {
+		return cg.store.Remove(ctx, pat, graph)
 	}
-	for _, c := range cg.allContexts() {
-		cg.store.Remove(pat, c)
+	graphs, err := cg.allContexts(ctx)
+	if err != nil {
+		return err
 	}
+	for _, c := range graphs {
+		if err := cg.store.Remove(ctx, pat, c); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // allContexts lists the default graph (as nil) followed by every named graph.
 // The list is materialized first so that no store read lock is held while the
 // caller goes on to read or write each graph.
-func (cg *ConjunctiveGraph) allContexts() []term.Term {
-	ctxs := []term.Term{nil}
-	cg.store.Contexts(nil)(func(c term.Term) bool {
-		ctxs = append(ctxs, c)
-		return true
-	})
-	return ctxs
+func (cg *ConjunctiveGraph) allContexts(ctx context.Context) ([]term.Term, error) {
+	graphs := []term.Term{nil}
+	for c, err := range cg.store.Contexts(ctx, nil) {
+		if err != nil {
+			return nil, err
+		}
+		graphs = append(graphs, c)
+	}
+	return graphs, nil
 }
 
 // Triples iterates over matching triples across all contexts (union view). A
 // triple present in several graphs is yielded once.
-// Ported from: rdflib.graph.ConjunctiveGraph.triples
-func (cg *ConjunctiveGraph) Triples(s term.Subject, p *term.URIRef, o term.Term) store.TripleIterator {
+func (cg *ConjunctiveGraph) Triples(ctx context.Context, s term.Subject, p *term.URIRef, o term.Term) store.TripleIterator {
 	pat := term.TriplePattern{Subject: s, Predicate: p, Object: o}
-	return func(yield func(term.Triple) bool) {
-		ctxs := cg.allContexts()
-		if len(ctxs) == 1 {
-			cg.store.Triples(pat, nil)(yield)
+	return func(yield func(term.Triple, error) bool) {
+		graphs, err := cg.allContexts(ctx)
+		if err != nil {
+			yield(term.Triple{}, err)
+			return
+		}
+		if len(graphs) == 1 {
+			cg.store.Triples(ctx, pat, nil)(yield)
 			return
 		}
 		seen := make(map[string]struct{})
-		for _, c := range ctxs {
-			stopped := false
-			cg.store.Triples(pat, c)(func(t term.Triple) bool {
+		for _, c := range graphs {
+			for t, err := range cg.store.Triples(ctx, pat, c) {
+				if err != nil {
+					yield(term.Triple{}, err)
+					return
+				}
 				k := term.TermKey(t.Subject) + "\x00" + term.TermKey(t.Predicate) + "\x00" + term.TermKey(t.Object)
 				if _, dup := seen[k]; dup {
-					return true
+					continue
 				}
 				seen[k] = struct{}{}
-				if !yield(t) {
-					stopped = true
-					return false
+				if !yield(t, nil) {
+					return
 				}
-				return true
-			})
-			if stopped {
-				return
 			}
 		}
 	}
@@ -137,57 +144,63 @@ func (cg *ConjunctiveGraph) Triples(s term.Subject, p *term.URIRef, o term.Term)
 
 // Quads iterates over matching quads across all contexts. A triple in the
 // default graph carries the default context's identifier.
-// Ported from: rdflib.graph.ConjunctiveGraph.quads
-func (cg *ConjunctiveGraph) Quads(s term.Subject, p *term.URIRef, o term.Term) func(yield func(term.Quad) bool) {
+func (cg *ConjunctiveGraph) Quads(ctx context.Context, s term.Subject, p *term.URIRef, o term.Term) iter.Seq2[term.Quad, error] {
 	pat := term.TriplePattern{Subject: s, Predicate: p, Object: o}
-	return func(yield func(term.Quad) bool) {
+	return func(yield func(term.Quad, error) bool) {
+		graphs, err := cg.allContexts(ctx)
+		if err != nil {
+			yield(term.Quad{}, err)
+			return
+		}
 		defaultID, _ := cg.defaultContext.identifier.(term.Subject)
-		for _, c := range cg.allContexts() {
+		for _, c := range graphs {
 			graphID := defaultID
 			if c != nil {
 				graphID, _ = c.(term.Subject)
 			}
-			stopped := false
-			cg.store.Triples(pat, c)(func(t term.Triple) bool {
-				if !yield(term.Quad{Triple: t, Graph: graphID}) {
-					stopped = true
-					return false
+			for t, err := range cg.store.Triples(ctx, pat, c) {
+				if err != nil {
+					yield(term.Quad{}, err)
+					return
 				}
-				return true
-			})
-			if stopped {
-				return
+				if !yield(term.Quad{Triple: t, Graph: graphID}, nil) {
+					return
+				}
 			}
 		}
 	}
 }
 
 // Contexts returns all contexts (named graphs).
-// Ported from: rdflib.graph.ConjunctiveGraph.contexts
-func (cg *ConjunctiveGraph) Contexts(triple *term.Triple) store.TermIterator {
-	return cg.store.Contexts(triple)
+func (cg *ConjunctiveGraph) Contexts(ctx context.Context, triple *term.Triple) store.TermIterator {
+	return cg.store.Contexts(ctx, triple)
 }
 
 // Len returns the number of distinct triples across all contexts.
-func (cg *ConjunctiveGraph) Len() int {
-	ctxs := cg.allContexts()
-	if len(ctxs) == 1 {
-		return cg.store.Len(nil)
+func (cg *ConjunctiveGraph) Len(ctx context.Context) (int, error) {
+	graphs, err := cg.allContexts(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(graphs) == 1 {
+		return cg.store.Len(ctx, nil)
 	}
 	n := 0
-	cg.Triples(nil, nil, nil)(func(term.Triple) bool {
+	for _, err := range cg.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return 0, err
+		}
 		n++
-		return true
-	})
-	return n
+	}
+	return n, nil
 }
 
 // Bind associates a prefix with a namespace.
-func (cg *ConjunctiveGraph) Bind(prefix string, ns term.URIRef) {
-	cg.store.Bind(prefix, ns)
+func (cg *ConjunctiveGraph) Bind(ctx context.Context, prefix string, ns term.URIRef) error {
+	return cg.store.Bind(ctx, prefix, ns)
 }
 
 // Namespaces returns all namespace bindings.
-func (cg *ConjunctiveGraph) Namespaces() store.NamespaceIterator {
-	return cg.store.Namespaces()
+func (cg *ConjunctiveGraph) Namespaces(ctx context.Context) store.NamespaceIterator {
+	return cg.store.Namespaces(ctx)
 }

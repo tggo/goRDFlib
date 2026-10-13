@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -65,22 +66,27 @@ ex:PersonShape a sh:NodeShape ;
 func main() {
 	// Parse the data, recording where every triple came from. Without the
 	// option the parse is identical and the index simply stays empty.
+	ctx := context.Background()
 	dataGraph := graph.NewGraph()
 	lines := provenance.NewIndex()
-	if err := turtle.Parse(dataGraph, strings.NewReader(data), turtle.WithProvenance(lines.Triple)); err != nil {
+	if err := turtle.Parse(ctx, dataGraph, strings.NewReader(data), turtle.WithProvenance(lines.Triple)); err != nil {
 		log.Fatal(err)
 	}
 
 	shapesGraph := graph.NewGraph()
-	if err := turtle.Parse(shapesGraph, strings.NewReader(shapes)); err != nil {
+	if err := turtle.Parse(ctx, shapesGraph, strings.NewReader(shapes)); err != nil {
 		log.Fatal(err)
 	}
 
-	report := shacl.Validate(
-		shacl.NewGraphFromRDF(dataGraph, ""),
-		shacl.NewGraphFromRDF(shapesGraph, ""),
-		shacl.WithSourceLines(lines),
-	)
+	dataSG, err := shacl.NewGraphFromRDF(ctx, dataGraph, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	shapesSG, err := shacl.NewGraphFromRDF(ctx, shapesGraph, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	report := shacl.Validate(dataSG, shapesSG, shacl.WithSourceLines(lines))
 
 	fmt.Printf("conforms: %v\n", report.Conforms)
 	fmt.Printf("%d violations, %d triples with a known source line\n\n",

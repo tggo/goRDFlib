@@ -1,9 +1,11 @@
 package paths
 
 import (
+	"context"
 	"strings"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -11,8 +13,9 @@ import (
 // Ported from: rdflib.paths.Path
 type Path interface {
 	// Eval returns matching (subject, object) pairs.
-	Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool)
-	// eval is Eval with a stopper; a nil stopper never stops. See EvalContext.
+	Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator
+	// eval is Eval with a stopper, which carries the context and records a
+	// failure; see cancel.go.
 	eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool)
 	pathString() string
 }
@@ -30,8 +33,8 @@ func Inv(p Path) *InvPath {
 
 func (p *InvPath) pathString() string { return "^(" + p.Arg.pathString() + ")" }
 
-func (p *InvPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	return p.eval(nil, g, subj, obj)
+func (p *InvPath) Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return run(ctx, p, g, subj, obj)
 }
 
 func (p *InvPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -71,8 +74,8 @@ func (p *SequencePath) pathString() string {
 	return sb.String()
 }
 
-func (p *SequencePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	return p.eval(nil, g, subj, obj)
+func (p *SequencePath) Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return run(ctx, p, g, subj, obj)
 }
 
 func (p *SequencePath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -129,8 +132,8 @@ func (p *AlternativePath) pathString() string {
 	return sb.String()
 }
 
-func (p *AlternativePath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	return p.eval(nil, g, subj, obj)
+func (p *AlternativePath) Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return run(ctx, p, g, subj, obj)
 }
 
 func (p *AlternativePath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -188,8 +191,8 @@ func (p *MulPath) pathString() string {
 	return "(" + p.Path.pathString() + ")" + mod
 }
 
-func (p *MulPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	return p.eval(nil, g, subj, obj)
+func (p *MulPath) Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return run(ctx, p, g, subj, obj)
 }
 
 func (p *MulPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -219,7 +222,7 @@ func (p *MulPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.
 			}
 			// A backend that can compute reachability itself answers the
 			// transitive part in one round trip; otherwise traverse locally.
-			if p.evalViaStore(g, subj, obj, emit) {
+			if p.evalViaStore(st, g, subj, obj, emit) {
 				return
 			}
 			seen := make(map[string]bool)
@@ -233,14 +236,18 @@ func (p *MulPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.
 					return
 				}
 			}
-			if p.evalViaStore(g, nil, obj, emit) {
+			if p.evalViaStore(st, g, nil, obj, emit) {
 				return
 			}
 			seen := make(map[string]bool)
 			p.bwdTo(st, g, obj, obj, seen, emit)
 		} else {
 			// No constraints: evaluate from all nodes
-			nodes := g.AllNodes()
+			nodes, err := g.AllNodes(st.ctx)
+			if err != nil {
+				st.fail(err)
+				return
+			}
 			if p.Zero {
 				for _, n := range nodes {
 					if !emit(n, n) {
@@ -353,8 +360,8 @@ func (p *NegatedPath) pathString() string {
 	return sb.String()
 }
 
-func (p *NegatedPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	return p.eval(nil, g, subj, obj)
+func (p *NegatedPath) Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return run(ctx, p, g, subj, obj)
 }
 
 func (p *NegatedPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
@@ -364,10 +371,7 @@ func (p *NegatedPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj t
 	}
 
 	return func(yield func(term.Term, term.Term) bool) {
-		g.Triples(subj, nil, obj)(func(t term.Triple) bool {
-			if st.stop() {
-				return false
-			}
+		st.triples(g, subj, nil, obj, func(t term.Triple) bool {
 			if !excluded[term.TermKey(t.Predicate)] {
 				return yield(t.Subject, t.Object)
 			}
@@ -385,17 +389,14 @@ type URIRefPath struct {
 
 func (p URIRefPath) pathString() string { return p.URI.N3() }
 
-func (p URIRefPath) Eval(g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	return p.eval(nil, g, subj, obj)
+func (p URIRefPath) Eval(ctx context.Context, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return run(ctx, p, g, subj, obj)
 }
 
 func (p URIRefPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
 	u := p.URI
 	return func(yield func(term.Term, term.Term) bool) {
-		g.Triples(subj, &u, obj)(func(t term.Triple) bool {
-			if st.stop() {
-				return false
-			}
+		st.triples(g, subj, &u, obj, func(t term.Triple) bool {
 			return yield(t.Subject, t.Object)
 		})
 	}

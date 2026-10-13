@@ -26,8 +26,8 @@ func slowGraph(n int) *graph.Graph {
 	g := graph.NewGraph()
 	for i := range n {
 		s := iri(fmt.Sprintf("%ss%d", ex, i))
-		g.Add(s, iri(ex+"p"), term.NewLiteral(fmt.Sprintf("v%d", i)))
-		g.Add(s, iri(ex+"q"), term.NewLiteral(fmt.Sprintf("w%d", i)))
+		g.Add(context.Background(), s, iri(ex+"p"), term.NewLiteral(fmt.Sprintf("v%d", i)))
+		g.Add(context.Background(), s, iri(ex+"q"), term.NewLiteral(fmt.Sprintf("w%d", i)))
 	}
 	return g
 }
@@ -125,7 +125,7 @@ func TestTimeoutWhileWaitingForTheLock(t *testing.T) {
 	}
 	close(release)
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {"ASK {}"}}), http.StatusOK)
-	if ds.Default.Len() != 20_000 {
+	if mustV(ds.Default.Len(t.Context())) != 20_000 {
 		t.Fatal("a timed-out update was applied")
 	}
 }
@@ -137,7 +137,7 @@ func TestConcurrentQueriesAndUpdatesAreIsolated(t *testing.T) {
 	const accounts = 20
 	def := graph.NewGraph()
 	for i := range accounts {
-		def.Add(iri(fmt.Sprintf("%sacct%d", ex, i)), iri(ex+"balance"), term.NewLiteral(100))
+		def.Add(t.Context(), iri(fmt.Sprintf("%sacct%d", ex, i)), iri(ex+"balance"), term.NewLiteral(100))
 	}
 	ds := &sparql.Dataset{Default: def}
 	ts, _ := serve(t, ds)

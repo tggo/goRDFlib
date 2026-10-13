@@ -1,6 +1,7 @@
 package paths_test
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"testing"
@@ -19,7 +20,7 @@ type decliningStore struct {
 	calls int
 }
 
-func (d *decliningStore) Reachable(store.ReachabilityQuery) ([]term.Term, error) {
+func (d *decliningStore) Reachable(context.Context, store.ReachabilityQuery) ([]term.Term, error) {
 	d.calls++
 	return nil, store.ErrReachabilityUnsupported
 }
@@ -32,9 +33,9 @@ type countingStore struct {
 	calls int
 }
 
-func (c *countingStore) Reachable(q store.ReachabilityQuery) ([]term.Term, error) {
+func (c *countingStore) Reachable(ctx context.Context, q store.ReachabilityQuery) ([]term.Term, error) {
 	c.calls++
-	return c.MemoryStore.Reachable(q)
+	return c.MemoryStore.Reachable(ctx, q)
 }
 
 func uri(s string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + s) }
@@ -49,18 +50,19 @@ func uri(s string) term.URIRef { return term.NewURIRefUnsafe("http://example.org
 //	c --p--> "leaf"
 func reachGraph(s store.Store) *graph.Graph {
 	g := graph.NewGraph(graph.WithStore(s))
-	g.Add(uri("a"), uri("p"), uri("b"))
-	g.Add(uri("b"), uri("p"), uri("c"))
-	g.Add(uri("c"), uri("p"), uri("a"))
-	g.Add(uri("b"), uri("p"), uri("d"))
-	g.Add(uri("d"), uri("q"), uri("e"))
-	g.Add(uri("c"), uri("p"), term.NewLiteral("leaf"))
+	g.Add(context.Background(), uri("a"), uri("p"), uri("b"))
+	g.Add(context.Background(), uri("b"), uri("p"), uri("c"))
+	g.Add(context.Background(), uri("c"), uri("p"), uri("a"))
+	g.Add(context.Background(), uri("b"), uri("p"), uri("d"))
+	g.Add(context.Background(), uri("d"), uri("q"), uri("e"))
+	g.Add(context.Background(), uri("c"), uri("p"), term.NewLiteral("leaf"))
 	return g
 }
 
 func pairs(g *graph.Graph, p paths.Path, subj term.Subject, obj term.Term) []string {
 	var out []string
-	p.Eval(g, subj, obj)(func(s, o term.Term) bool {
+	p.Eval(context.Background(), g, subj, obj)(func(pair_ store.TermPair, _ error) bool {
+		s, o := pair_.First, pair_.Second
 		out = append(out, s.N3()+" -> "+o.N3())
 		return true
 	})
@@ -234,6 +236,9 @@ type brokenStore struct {
 	*store.MemoryStore
 }
 
-func (b *brokenStore) Reachable(store.ReachabilityQuery) ([]term.Term, error) {
+// A spy with a stale signature would compile and simply not be detected.
+var _ store.ReachabilityStore = (*brokenStore)(nil)
+
+func (b *brokenStore) Reachable(context.Context, store.ReachabilityQuery) ([]term.Term, error) {
 	return nil, errors.New("connection reset")
 }

@@ -33,8 +33,8 @@ func TestLoadHTTPTextPlain(t *testing.T) {
 			if err := rdfloader.DefaultLoader().Load(context.Background(), g, srv.URL+"/data"); err != nil {
 				t.Fatalf("Load: %v", err)
 			}
-			if g.Len() != tt.want {
-				t.Errorf("got %d triples, want %d", g.Len(), tt.want)
+			if mustV(g.Len(t.Context())) != tt.want {
+				t.Errorf("got %d triples, want %d", mustV(g.Len(t.Context())), tt.want)
 			}
 		})
 	}

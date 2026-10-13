@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -10,14 +11,16 @@ import (
 	"github.com/tggo/goRDFlib/store"
 )
 
-// Parser reads RDF data from a reader into a graph.
+// Parser reads RDF data from a reader into a graph. A store error while
+// adding is Parse's error.
 type Parser interface {
-	Parse(g *graph.Graph, r io.Reader) error
+	Parse(ctx context.Context, g *graph.Graph, r io.Reader) error
 }
 
-// Serializer writes RDF data from a graph to a writer.
+// Serializer writes RDF data from a graph to a writer. A store error while
+// reading is Serialize's error; it never produces a truncated document.
 type Serializer interface {
-	Serialize(g *graph.Graph, w io.Writer) error
+	Serialize(ctx context.Context, g *graph.Graph, w io.Writer) error
 }
 
 // --- Plugin Registry ---

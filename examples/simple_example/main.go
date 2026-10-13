@@ -3,7 +3,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 
 	rdf "github.com/tggo/goRDFlib"
@@ -11,12 +13,25 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	g := rdf.NewGraph()
 
 	// Bind namespace prefixes
-	g.Bind("dc", rdf.NewURIRefUnsafe("http://purl.org/dc/elements/1.1/"))
-	g.Bind("foaf", rdf.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
-	g.Bind("ex", rdf.NewURIRefUnsafe("http://example.org/"))
+	for prefix, ns := range map[string]string{
+		"dc":   "http://purl.org/dc/elements/1.1/",
+		"foaf": "http://xmlns.com/foaf/0.1/",
+		"ex":   "http://example.org/",
+	} {
+		if err := g.Bind(ctx, prefix, rdf.NewURIRefUnsafe(ns)); err != nil {
+			return err
+		}
+	}
 
 	// Create terms
 	donna, _ := rdf.NewURIRef("http://example.org/Donna")
@@ -27,17 +42,31 @@ func main() {
 	bob, _ := rdf.NewURIRef("http://example.org/Bob")
 
 	// Add triples
-	g.Add(donna, rdf.RDF.Type, person)
-	g.Add(donna, name, rdf.NewLiteral("Donna Fales"))
-	g.Add(donna, knows, bob)
-	g.Add(bob, rdf.RDF.Type, person)
-	g.Add(bob, name, rdf.NewLiteral("Bob"))
-	g.Add(bob, title, rdf.NewLiteral("The Builder", rdf.WithLang("en")))
+	for _, t := range []struct {
+		s rdf.Subject
+		p rdf.URIRef
+		o rdf.Term
+	}{
+		{donna, rdf.RDF.Type, person},
+		{donna, name, rdf.NewLiteral("Donna Fales")},
+		{donna, knows, bob},
+		{bob, rdf.RDF.Type, person},
+		{bob, name, rdf.NewLiteral("Bob")},
+		{bob, title, rdf.NewLiteral("The Builder", rdf.WithLang("en"))},
+	} {
+		if err := g.Add(ctx, t.s, t.p, t.o); err != nil {
+			return err
+		}
+	}
 
 	// Print triple count
-	fmt.Printf("Graph has %d triples\n\n", g.Len())
+	n, err := g.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Graph has %d triples\n\n", n)
 
 	// Serialize to Turtle (deterministic output)
 	fmt.Println("Turtle output:")
-	turtle.Serialize(g, os.Stdout)
+	return turtle.Serialize(ctx, g, os.Stdout)
 }

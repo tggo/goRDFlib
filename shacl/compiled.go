@@ -30,11 +30,20 @@ type CompiledShapes struct {
 // CompileShapes parses shapesGraph with opts. The options also apply to every
 // validation made with the result; see CompiledShapes.ValidateContext for
 // options given per call.
+//
+// It uses context.Background; see CompileShapesContext.
 func CompileShapes(shapesGraph *Graph, opts ...Option) (*CompiledShapes, error) {
+	return CompileShapesContext(context.Background(), shapesGraph, opts...)
+}
+
+// CompileShapesContext is CompileShapes reading shapesGraph with ctx: a store
+// error or a done context is returned instead of shapes parsed from part of
+// the graph.
+func CompileShapesContext(ctx context.Context, shapesGraph *Graph, opts ...Option) (*CompiledShapes, error) {
 	if shapesGraph == nil {
 		return nil, ErrNilShapesGraph
 	}
-	if err := buildIndexes(context.Background(), shapesGraph); err != nil {
+	if err := buildIndexes(ctx, shapesGraph); err != nil {
 		return nil, err
 	}
 	opts = append([]Option(nil), opts...)
@@ -62,10 +71,16 @@ func CompileShapes(shapesGraph *Graph, opts ...Option) (*CompiledShapes, error) 
 	}, nil
 }
 
-// Validate is the package-level Validate against the compiled shapes.
+// Validate is the package-level Validate against the compiled shapes. When the
+// data graph cannot be read the run fails as Validate's does: the error goes to
+// WithErrorHandler and the report has Err set (see ValidationReport.Err).
 func (c *CompiledShapes) Validate(dataGraph *Graph, opts ...Option) ValidationReport {
 	opts = append(opts[:len(opts):len(opts)], lenientShapes)
-	report, _ := c.ValidateContext(context.Background(), dataGraph, opts...)
+	report, err := c.ValidateContext(context.Background(), dataGraph, opts...)
+	if err != nil {
+		newConfig(c.options(opts)).report(err)
+		return failedReport(err)
+	}
 	return report
 }
 

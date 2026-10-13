@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,15 +15,15 @@ import (
 func AssertGraphEqual(t *testing.T, expected, actual *graph.Graph) {
 	t.Helper()
 
-	if expected.Len() != actual.Len() {
-		t.Errorf("graph triple count: expected %d, got %d", expected.Len(), actual.Len())
+	expTriples := collectTriples(t, expected)
+	actTriples := collectTriples(t, actual)
+	if len(expTriples) != len(actTriples) {
+		t.Errorf("graph triple count: expected %d, got %d", len(expTriples), len(actTriples))
 		reportDiff(t, expected, actual)
 		return
 	}
 
 	// Fast path: if no blank nodes, exact string comparison suffices.
-	expTriples := collectTriples(expected)
-	actTriples := collectTriples(actual)
 
 	if !hasBNodes(expTriples) && !hasBNodes(actTriples) {
 		expSet := tripleSet(expTriples)
@@ -43,12 +44,26 @@ type triple struct {
 	s, p, o term.Term
 }
 
-func collectTriples(g *graph.Graph) []triple {
+// testContext is t.Context(), or Background for a T that is not running a
+// test (a zero testing.T has no context).
+func testContext(t *testing.T) context.Context {
+	if ctx := t.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+// collectTriples reads every triple of g, failing the test if the store
+// cannot be read.
+func collectTriples(t *testing.T, g *graph.Graph) []triple {
+	t.Helper()
 	var ts []triple
-	g.Triples(nil, nil, nil)(func(t term.Triple) bool {
-		ts = append(ts, triple{t.Subject, t.Predicate, t.Object})
-		return true
-	})
+	for tr, err := range g.Triples(testContext(t), nil, nil, nil) {
+		if err != nil {
+			t.Fatalf("reading graph: %v", err)
+		}
+		ts = append(ts, triple{tr.Subject, tr.Predicate, tr.Object})
+	}
 	return ts
 }
 
@@ -326,8 +341,8 @@ func mapsEqual(a, b map[string]bool) bool {
 
 func reportDiff(t *testing.T, expected, actual *graph.Graph) {
 	t.Helper()
-	expTriples := graphTripleStrings(expected)
-	actTriples := graphTripleStrings(actual)
+	expTriples := graphTripleStrings(t, expected)
+	actTriples := graphTripleStrings(t, actual)
 
 	expSet := make(map[string]bool, len(expTriples))
 	for _, s := range expTriples {
@@ -368,20 +383,23 @@ func reportDiff(t *testing.T, expected, actual *graph.Graph) {
 	}
 }
 
-func graphTripleStrings(g *graph.Graph) []string {
+func graphTripleStrings(t *testing.T, g *graph.Graph) []string {
+	t.Helper()
 	var result []string
-	g.Triples(nil, nil, nil)(func(t term.Triple) bool {
-		s := fmt.Sprintf("%s %s %s", t.Subject.N3(), t.Predicate.N3(), t.Object.N3())
-		result = append(result, s)
-		return true
-	})
+	for _, tr := range collectTriples(t, g) {
+		result = append(result, fmt.Sprintf("%s %s %s", tr.s.N3(), tr.p.N3(), tr.o.N3()))
+	}
 	return result
 }
 
 // AssertGraphContains checks that the graph contains a specific triple.
 func AssertGraphContains(t *testing.T, g *graph.Graph, s term.Subject, p term.URIRef, o term.Term) {
 	t.Helper()
-	if !g.Contains(s, p, o) {
+	ok, err := g.Contains(testContext(t), s, p, o)
+	if err != nil {
+		t.Fatalf("reading graph: %v", err)
+	}
+	if !ok {
 		t.Errorf("graph does not contain: %s %s %s", s.N3(), p.N3(), o.N3())
 	}
 }
@@ -389,7 +407,11 @@ func AssertGraphContains(t *testing.T, g *graph.Graph, s term.Subject, p term.UR
 // AssertGraphLen checks the number of triples in a graph.
 func AssertGraphLen(t *testing.T, g *graph.Graph, expected int) {
 	t.Helper()
-	if g.Len() != expected {
-		t.Errorf("expected %d triples, got %d", expected, g.Len())
+	n, err := g.Len(testContext(t))
+	if err != nil {
+		t.Fatalf("reading graph: %v", err)
+	}
+	if n != expected {
+		t.Errorf("expected %d triples, got %d", expected, n)
 	}
 }

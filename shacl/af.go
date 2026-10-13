@@ -210,5 +210,9 @@ func ApplyRulesContext(goctx context.Context, dataGraph, shapesGraph *Graph, opt
 		return 0, err
 	}
 	ctx.ctx = goctx
-	return ctx.applyRules()
+	n, err := ctx.applyRules()
+	if err == nil {
+		err = ctx.failure()
+	}
+	return n, err
 }

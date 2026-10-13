@@ -15,7 +15,7 @@ func newGraph() *rdflibgo.Graph { return rdflibgo.NewGraph() }
 func mustParse(t *testing.T, data string, opts ...Option) *rdflibgo.Graph {
 	t.Helper()
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data), opts...); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data), opts...); err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
 	return g
@@ -24,7 +24,7 @@ func mustParse(t *testing.T, data string, opts ...Option) *rdflibgo.Graph {
 func mustParseDS(t *testing.T, data string, opts ...Option) *graph.Dataset {
 	t.Helper()
 	ds := graph.NewDataset()
-	if err := ParseDataset(ds, strings.NewReader(data), opts...); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(data), opts...); err != nil {
 		t.Fatalf("parseDataset error: %v", err)
 	}
 	return ds
@@ -33,7 +33,7 @@ func mustParseDS(t *testing.T, data string, opts ...Option) *graph.Dataset {
 func mustSerialize(t *testing.T, g *rdflibgo.Graph, opts ...Option) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf, opts...); err != nil {
+	if err := Serialize(t.Context(), g, &buf, opts...); err != nil {
 		t.Fatalf("serialize error: %v", err)
 	}
 	return buf.String()
@@ -42,7 +42,7 @@ func mustSerialize(t *testing.T, g *rdflibgo.Graph, opts ...Option) string {
 func mustSerializeDS(t *testing.T, ds *graph.Dataset, opts ...Option) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := SerializeDataset(ds, &buf, opts...); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &buf, opts...); err != nil {
 		t.Fatalf("serializeDataset error: %v", err)
 	}
 	return buf.String()
@@ -54,8 +54,8 @@ func roundtrip(t *testing.T, data string, opts ...Option) string {
 	g := mustParse(t, data, opts...)
 	out := mustSerialize(t, g, opts...)
 	g2 := mustParse(t, out, opts...)
-	if g.Len() != g2.Len() {
-		t.Errorf("roundtrip triple count mismatch: got %d want %d\noutput:\n%s", g2.Len(), g.Len(), out)
+	if mustV(g.Len(t.Context())) != mustV(g2.Len(t.Context())) {
+		t.Errorf("roundtrip triple count mismatch: got %d want %d\noutput:\n%s", mustV(g2.Len(t.Context())), mustV(g.Len(t.Context())), out)
 	}
 	return out
 }
@@ -76,7 +76,7 @@ func TestSerialize_SimpleTriple(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, "http://example.org/s") {
 		t.Errorf("expected subject IRI in output:\n%s", out)
@@ -87,11 +87,11 @@ func TestSerialize_SimpleTriple(t *testing.T) {
 func TestSerialize_WithPrefix(t *testing.T) {
 	g := newGraph()
 	ex := rdflibgo.NewURIRefUnsafe("http://example.org/")
-	g.Bind("ex", ex)
+	g.Bind(t.Context(), "ex", ex)
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/subject")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/predicate")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/object")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, "@prefix ex:") {
 		t.Errorf("expected prefix declaration in output:\n%s", out)
@@ -107,7 +107,7 @@ func TestSerialize_RDFType(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.RDF.Type
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/Cls")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, " a ") {
 		t.Errorf("expected 'a' shorthand in output:\n%s", out)
@@ -120,11 +120,11 @@ func TestSerialize_Literal(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	// plain string literal
-	g.Add(s, p, rdflibgo.NewLiteral("hello"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
 	// integer literal
-	g.Add(s, p, rdflibgo.NewLiteral(int64(42)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(int64(42)))
 	// lang-tagged literal
-	g.Add(s, p, rdflibgo.NewLiteral("bonjour", rdflibgo.WithLang("fr")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("bonjour", rdflibgo.WithLang("fr")))
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, "hello") {
 		t.Errorf("expected string literal in output:\n%s", out)
@@ -141,12 +141,12 @@ func TestSerialize_Literal(t *testing.T) {
 func TestSerialize_LiteralWithTypedQName(t *testing.T) {
 	g := newGraph()
 	xsd := rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#")
-	g.Bind("xsd", xsd)
+	g.Bind(t.Context(), "xsd", xsd)
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	dt := rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#integer")
 	lit := rdflibgo.NewLiteral("99", rdflibgo.WithDatatype(dt))
-	g.Add(s, p, lit)
+	g.Add(t.Context(), s, p, lit)
 	out := mustSerialize(t, g)
 	// Should use xsd:integer shorthand if xsd prefix is detected
 	_ = out
@@ -193,8 +193,8 @@ func TestSerialize_MultiplePredicates(t *testing.T) {
 	p2 := rdflibgo.NewURIRefUnsafe("http://example.org/p2")
 	o1 := rdflibgo.NewURIRefUnsafe("http://example.org/o1")
 	o2 := rdflibgo.NewURIRefUnsafe("http://example.org/o2")
-	g.Add(s, p1, o1)
-	g.Add(s, p2, o2)
+	g.Add(t.Context(), s, p1, o1)
+	g.Add(t.Context(), s, p2, o2)
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, ";") {
 		t.Errorf("expected semicolon for multiple predicates:\n%s", out)
@@ -208,8 +208,8 @@ func TestSerialize_MultipleObjects(t *testing.T) {
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o1 := rdflibgo.NewURIRefUnsafe("http://example.org/o1")
 	o2 := rdflibgo.NewURIRefUnsafe("http://example.org/o2")
-	g.Add(s, p, o1)
-	g.Add(s, p, o2)
+	g.Add(t.Context(), s, p, o1)
+	g.Add(t.Context(), s, p, o2)
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, ",") {
 		t.Errorf("expected comma for multiple objects:\n%s", out)
@@ -222,7 +222,7 @@ func TestSerialize_WithBase(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	out := mustSerialize(t, g, WithBase("http://example.org/"))
 	if !strings.Contains(out, "@base") {
 		t.Errorf("expected @base in output:\n%s", out)
@@ -233,11 +233,11 @@ func TestSerialize_WithBase(t *testing.T) {
 func TestSerialize_Dataset(t *testing.T) {
 	ds := graph.NewDataset()
 	ex := rdflibgo.NewURIRefUnsafe("http://example.org/")
-	ds.Bind("ex", ex)
+	ds.Bind(t.Context(), "ex", ex)
 
 	// default graph
 	def := ds.DefaultContext()
-	def.Add(
+	def.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://example.org/s"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/o"),
@@ -246,7 +246,7 @@ func TestSerialize_Dataset(t *testing.T) {
 	// named graph
 	ng := rdflibgo.NewURIRefUnsafe("http://example.org/graph1")
 	named := ds.Graph(ng)
-	named.Add(
+	named.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://example.org/s2"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/p2"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/o2"),
@@ -277,7 +277,7 @@ func TestSerialize_DatasetRoundtrip(t *testing.T) {
 
 	cnt := 0
 	for g := range ds2.Graphs() {
-		cnt += g.Len()
+		cnt += mustV(g.Len(t.Context()))
 	}
 	// Original has 2 triples (1 default + 1 named). After roundtrip graphs may merge.
 	if cnt == 0 {
@@ -300,8 +300,8 @@ func TestSerialize_TripleTerm(t *testing.T) {
 func TestSerialize_RDFSLabel(t *testing.T) {
 	g := newGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("Name", rdflibgo.WithLang("en")))
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Cls"))
+	g.Add(t.Context(), s, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("Name", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Cls"))
 	out := mustSerialize(t, g)
 	// rdf:type should come before rdfs:label
 	typeIdx := strings.Index(out, " a ")
@@ -317,7 +317,7 @@ func TestSerialize_RDFSLabel(t *testing.T) {
 func TestSerialize_ClassSubject(t *testing.T) {
 	g := newGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/MyClass")
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
 	out := mustSerialize(t, g)
 	if !strings.Contains(out, "MyClass") {
 		t.Errorf("expected class subject in output:\n%s", out)
@@ -411,7 +411,7 @@ func TestSerialize_qnameOrFull_InvalidLocal(t *testing.T) {
 func TestSerialize_trackNSForTerm_TripleTerm(t *testing.T) {
 	ds := graph.NewDataset()
 	ex := rdflibgo.NewURIRefUnsafe("http://example.org/")
-	ds.Bind("ex", ex)
+	ds.Bind(t.Context(), "ex", ex)
 
 	def := ds.DefaultContext()
 	subj := rdflibgo.NewURIRefUnsafe("http://example.org/s")
@@ -421,7 +421,7 @@ func TestSerialize_trackNSForTerm_TripleTerm(t *testing.T) {
 
 	outerS := rdflibgo.NewURIRefUnsafe("http://example.org/outer")
 	outerP := rdflibgo.NewURIRefUnsafe("http://example.org/outerP")
-	def.Add(outerS, outerP, tt)
+	def.Add(t.Context(), outerS, outerP, tt)
 
 	out := mustSerializeDS(t, ds)
 	if !strings.Contains(out, "<<(") {
@@ -438,11 +438,11 @@ GRAPH <http://example.org/g1> {
 }
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -452,8 +452,8 @@ func TestParse_WithBase(t *testing.T) {
 { <s> <p> <o> . }
 `
 	g := mustParse(t, data, WithBase("http://example.org/"))
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -464,8 +464,8 @@ func TestParse_VERSION(t *testing.T) {
 { ex:s ex:p ex:o . }
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -473,7 +473,7 @@ func TestParse_VERSION(t *testing.T) {
 func TestParse_VERSION_Error(t *testing.T) {
 	const data = `VERSION 1.2`
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for invalid version string")
 	}
 }
@@ -485,8 +485,8 @@ func TestParse_TripleStatement(t *testing.T) {
 ex:s ex:p ex:o .
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -499,7 +499,7 @@ func TestParse_AnnotationBlock(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from annotation block")
 	}
 }
@@ -513,7 +513,7 @@ func TestParse_ReifiedTriple(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from reified triple")
 	}
 }
@@ -527,7 +527,7 @@ func TestParse_ReifierSyntax(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from reifier syntax")
 	}
 }
@@ -541,7 +541,7 @@ func TestParse_EmptyBNodeInReified(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples")
 	}
 }
@@ -556,7 +556,7 @@ func TestParse_ReadVersionString_Errors(t *testing.T) {
 	}
 	for _, c := range cases {
 		g := newGraph()
-		if err := Parse(g, strings.NewReader(c)); err == nil {
+		if err := Parse(t.Context(), g, strings.NewReader(c)); err == nil {
 			t.Errorf("expected error for input %q", c)
 		}
 	}
@@ -571,7 +571,7 @@ func TestParse_ReifiedInnerObject_Collection(t *testing.T) {
 }
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for collection in reified triple object")
 	}
 }
@@ -591,7 +591,7 @@ func TestParse_ReadReifiedInnerObject_Literals(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := mustParse(t, tc.data)
-			if g.Len() == 0 {
+			if mustV(g.Len(t.Context())) == 0 {
 				t.Errorf("expected triples for %s", tc.name)
 			}
 		})
@@ -607,7 +607,7 @@ func TestParse_ReifiedTripleSubject_Nested(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from nested reified triple")
 	}
 }
@@ -621,8 +621,8 @@ func TestParse_TripleTermSubject_BNode(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -635,7 +635,7 @@ func TestParse_ReadReifierID_IRI(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from IRI reifier")
 	}
 }
@@ -649,7 +649,7 @@ func TestParse_ReadReifierID_BNode(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from bnode reifier")
 	}
 }
@@ -663,7 +663,7 @@ func TestParse_EmptyAnnotation(t *testing.T) {
 }
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for empty annotation block")
 	}
 }
@@ -706,7 +706,7 @@ func TestParse_ReadAnnotationAfterTilde_WithIRI(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples")
 	}
 }
@@ -720,7 +720,7 @@ func TestParse_AnonymousReifier(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from anonymous reifier")
 	}
 }
@@ -734,7 +734,7 @@ func TestParse_AnonymousAnnotation(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from anonymous annotation")
 	}
 }
@@ -746,7 +746,7 @@ func TestParse_TopLevelCollection(t *testing.T) {
 ( ex:a ex:b ) ex:p ex:o .
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from top-level collection subject")
 	}
 }
@@ -758,7 +758,7 @@ func TestParse_TopLevelBracketSubject(t *testing.T) {
 [ ex:p ex:o ] ex:q ex:r .
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from top-level bnode property list subject")
 	}
 }
@@ -770,8 +770,8 @@ func TestParse_TopLevelEmptyBracketSubject(t *testing.T) {
 [] ex:p ex:o .
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -786,7 +786,7 @@ func TestParse_TopLevelEmptyBracketGraph(t *testing.T) {
 	ds := mustParseDS(t, data)
 	cnt := 0
 	for g := range ds.Graphs() {
-		cnt += g.Len()
+		cnt += mustV(g.Len(t.Context()))
 	}
 	if cnt == 0 {
 		t.Error("expected triples in anonymous named graph")
@@ -810,7 +810,7 @@ func TestParse_TopLevelReifiedStatement(t *testing.T) {
 << ex:s ex:p ex:o >> ex:confidence "high" .
 `
 	g := mustParse(t, data)
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Error("expected triples from top-level reified triple statement")
 	}
 }
@@ -831,12 +831,12 @@ func TestSerialize_LiteralStr_TypedWithQName(t *testing.T) {
 	// Build a graph with a custom datatype that has a prefix mapping.
 	g := newGraph()
 	myNS := rdflibgo.NewURIRefUnsafe("http://myns.example/")
-	g.Bind("my", myNS)
+	g.Bind(t.Context(), "my", myNS)
 	s := rdflibgo.NewURIRefUnsafe("http://myns.example/s")
 	p := rdflibgo.NewURIRefUnsafe("http://myns.example/p")
 	dt := rdflibgo.NewURIRefUnsafe("http://myns.example/myType")
 	lit := rdflibgo.NewLiteral("val", rdflibgo.WithDatatype(dt))
-	g.Add(s, p, lit)
+	g.Add(t.Context(), s, p, lit)
 	out := mustSerialize(t, g)
 	// Datatype should be abbreviated as my:myType
 	if !strings.Contains(out, "my:myType") {
@@ -850,12 +850,12 @@ func TestSerialize_InvalidListCycle(t *testing.T) {
 	// We do this by adding triples directly without using the collection helper.
 	g := newGraph()
 	b1 := rdflibgo.NewBNode("b1")
-	g.Add(b1, rdflibgo.RDF.First, rdflibgo.NewURIRefUnsafe("http://example.org/item"))
+	g.Add(t.Context(), b1, rdflibgo.RDF.First, rdflibgo.NewURIRefUnsafe("http://example.org/item"))
 	// rest points back to itself - cycle
-	g.Add(b1, rdflibgo.RDF.Rest, b1)
+	g.Add(t.Context(), b1, rdflibgo.RDF.Rest, b1)
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, b1)
+	g.Add(t.Context(), s, p, b1)
 	// Should not panic, just serialize as regular bnodes
 	out := mustSerialize(t, g)
 	_ = out
@@ -865,13 +865,13 @@ func TestSerialize_InvalidListCycle(t *testing.T) {
 func TestSerialize_InvalidListExtraPredicates(t *testing.T) {
 	g := newGraph()
 	b1 := rdflibgo.NewBNode("listb1")
-	g.Add(b1, rdflibgo.RDF.First, rdflibgo.NewURIRefUnsafe("http://example.org/item"))
-	g.Add(b1, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), b1, rdflibgo.RDF.First, rdflibgo.NewURIRefUnsafe("http://example.org/item"))
+	g.Add(t.Context(), b1, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 	// extra predicate - invalidates list
-	g.Add(b1, rdflibgo.NewURIRefUnsafe("http://example.org/extra"), rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), b1, rdflibgo.NewURIRefUnsafe("http://example.org/extra"), rdflibgo.NewLiteral("x"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, b1)
+	g.Add(t.Context(), s, p, b1)
 	out := mustSerialize(t, g)
 	_ = out
 }
@@ -894,8 +894,8 @@ func TestParse_SPARQLPrefix(t *testing.T) {
 { ex:s ex:p ex:o . }
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -905,8 +905,8 @@ func TestParse_SPARQLBase(t *testing.T) {
 { <s> <p> <o> . }
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -917,8 +917,8 @@ func TestParse_AtBase(t *testing.T) {
 { ex:s ex:p ex:o . }
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -931,7 +931,7 @@ func TestParse_CollectionError_StandaloneInBlock(t *testing.T) {
 }
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for standalone collection in block")
 	}
 }
@@ -945,7 +945,7 @@ func TestParse_BracketPropertyListNotGraphLabel(t *testing.T) {
 }
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for bnode property list as graph label")
 	}
 }
@@ -957,7 +957,7 @@ func TestParse_TopLevelCollectionError_Standalone(t *testing.T) {
 ( ex:a ex:b ) .
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for standalone top-level collection")
 	}
 }
@@ -971,8 +971,8 @@ func TestParse_TripleTermSubject_Prefixed(t *testing.T) {
 }
 `
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -980,8 +980,8 @@ func TestParse_TripleTermSubject_Prefixed(t *testing.T) {
 func TestParse_ReadVersionSingleQuote(t *testing.T) {
 	const data = "VERSION '1.2'\n{ <http://example.org/s> <http://example.org/p> <http://example.org/o> . }"
 	g := mustParse(t, data)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -995,7 +995,7 @@ func TestParse_ReifiedInnerObject_BNode_properlist(t *testing.T) {
 }
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for non-empty bnode in reified triple object")
 	}
 }
@@ -1008,7 +1008,7 @@ func TestParse_TopLevelTripleAsSubjectErr(t *testing.T) {
 << <<( ex:s ex:p ex:o )>> ex:p ex:o >> ex:q ex:r .
 `
 	g := newGraph()
-	if err := Parse(g, strings.NewReader(data)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(data)); err == nil {
 		t.Error("expected error for triple term as subject in reified triple")
 	}
 }

@@ -32,15 +32,15 @@ func TestConstructNestedBlankNodePropertyList(t *testing.T) {
 	//   _:b1 a ex:Contact .
 	//   _:b2 ex:name ?name .
 	//   _:b2 a ex:Name .
-	if r.Graph.Len() != 15 {
-		t.Errorf("expected 15 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 15 {
+		t.Errorf("expected 15 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 
 	// Verify Alice has an ex:details link to something
 	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
 	details, _ := rdflibgo.NewURIRef("http://example.org/details")
 	found := false
-	r.Graph.Triples(alice, &details, nil)(func(_ rdflibgo.Triple) bool {
+	r.Graph.Triples(t.Context(), alice, &details, nil)(func(_ rdflibgo.Triple, _ error) bool {
 		found = true
 		return false
 	})
@@ -63,8 +63,8 @@ func TestConstructEmptyBnodePropertyList(t *testing.T) {
 		t.Fatal("expected graph")
 	}
 	// 1 triple per person: ?s ex:ref _:b
-	if r.Graph.Len() != 3 {
-		t.Errorf("expected 3 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 3 {
+		t.Errorf("expected 3 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -91,8 +91,8 @@ func TestConstructDeeplyNestedBnodes(t *testing.T) {
 	//   _:b1 ex:b _:b2 .
 	//   _:b2 ex:c _:b3 .
 	//   _:b3 ex:d ?name .
-	if r.Graph.Len() != 12 {
-		t.Errorf("expected 12 triples (4 * 3 people), got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 12 {
+		t.Errorf("expected 12 triples (4 * 3 people), got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -117,8 +117,8 @@ func TestConstructBnodeAsSubject(t *testing.T) {
 	//   _:b ex:who ?s .
 	//   _:b ex:label ?name .
 	//   _:b ex:type "record" .
-	if r.Graph.Len() != 9 {
-		t.Errorf("expected 9 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 9 {
+		t.Errorf("expected 9 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -140,8 +140,8 @@ func TestConstructBnodeWithCommaObjects(t *testing.T) {
 		t.Fatal("expected graph")
 	}
 	// Per person: ?s ex:info _:b . _:b ex:val "a" . _:b ex:val "b" = 3 triples
-	if r.Graph.Len() != 9 {
-		t.Errorf("expected 9 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 9 {
+		t.Errorf("expected 9 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -168,8 +168,8 @@ func TestConstructCollectionInsideBnode(t *testing.T) {
 	//   _:list1 rdf:first 1 . _:list1 rdf:rest _:list2 .
 	//   _:list2 rdf:first 2 . _:list2 rdf:rest rdf:nil .
 	// = 6 triples per person = 18
-	if r.Graph.Len() != 18 {
-		t.Errorf("expected 18 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 18 {
+		t.Errorf("expected 18 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -196,8 +196,8 @@ func TestConstructAnnotationWithBnode(t *testing.T) {
 	//   _:reifier ex:meta _:b .                  (1)
 	//   _:b ex:src "test" .                      (1)
 	// = 4 per person = 12
-	if r.Graph.Len() != 12 {
-		t.Errorf("expected 12 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 12 {
+		t.Errorf("expected 12 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -227,8 +227,8 @@ func TestConstructAnnotationWithCollection(t *testing.T) {
 	//   _:list2 rdf:first "b" .                  (1)
 	//   _:list2 rdf:rest rdf:nil .               (1)
 	// = 7 per person = 21
-	if r.Graph.Len() != 21 {
-		t.Errorf("expected 21 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 21 {
+		t.Errorf("expected 21 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -268,7 +268,7 @@ func TestConstructCollectionAsObject(t *testing.T) {
 		t.Fatal("expected graph")
 	}
 	// Per person: ?s ex:nums _:h . plus 3 rdf:first + 3 rdf:rest = 7
-	if r.Graph.Len() != 21 {
-		t.Errorf("expected 21 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 21 {
+		t.Errorf("expected 21 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }

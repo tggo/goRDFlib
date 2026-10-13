@@ -64,10 +64,10 @@ func TestLoadBlankNodeScope(t *testing.T) {
 							if mode.preserve {
 								want = 1
 							}
-							if g.Len() != want {
-								t.Fatalf("repeated load: got %d triples, want %d", g.Len(), want)
+							if mustV(g.Len(t.Context())) != want {
+								t.Fatalf("repeated load: got %d triples, want %d", mustV(g.Len(t.Context())), want)
 							}
-							for triple := range g.Triples(nil, nil, nil) {
+							for triple := range g.Triples(t.Context(), nil, nil, nil) {
 								bn, ok := triple.Subject.(term.BNode)
 								if !ok || !triple.Subject.Equal(triple.Object) {
 									t.Fatalf("blank-node identity within document lost: %v", triple)
@@ -115,8 +115,8 @@ func TestLoadHTTP_UnboundedLines(t *testing.T) {
 	if err := rdfloader.DefaultLoader(rdfloader.WithUnboundedLines()).Load(context.Background(), g2, srv.URL); err != nil {
 		t.Fatalf("unexpected error with WithUnboundedLines: %v", err)
 	}
-	if g2.Len() != 1 {
-		t.Fatalf("expected 1 triple, got %d", g2.Len())
+	if mustV(g2.Len(t.Context())) != 1 {
+		t.Fatalf("expected 1 triple, got %d", mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -133,7 +133,7 @@ func TestLoadHTTP_MaxLineLength(t *testing.T) {
 	if err := loader.Load(context.Background(), g, srv.URL); err != nil {
 		t.Fatalf("unexpected error with WithMaxLineLength(1MB): %v", err)
 	}
-	if g.Len() != 1 {
-		t.Fatalf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }

@@ -29,27 +29,27 @@ func makeFixPlanGraph(t *testing.T) *rdflibgo.Graph {
 	typeA := rdflibgo.NewURIRefUnsafe(ex + "A")
 	typeB := rdflibgo.NewURIRefUnsafe(ex + "B")
 
-	g.Add(alice, p, rdflibgo.NewLiteral("a1"))
-	g.Add(alice, q, rdflibgo.NewLiteral("a2"))
-	g.Add(alice, r, rdflibgo.NewLiteral("a2")) // r matches q value
-	g.Add(alice, typ, person)
-	g.Add(alice, name, rdflibgo.NewLiteral("Alice"))
-	g.Add(alice, label, rdflibgo.NewLiteral("alice-label"))
-	g.Add(alice, typ, typeA)
+	g.Add(t.Context(), alice, p, rdflibgo.NewLiteral("a1"))
+	g.Add(t.Context(), alice, q, rdflibgo.NewLiteral("a2"))
+	g.Add(t.Context(), alice, r, rdflibgo.NewLiteral("a2")) // r matches q value
+	g.Add(t.Context(), alice, typ, person)
+	g.Add(t.Context(), alice, name, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), alice, label, rdflibgo.NewLiteral("alice-label"))
+	g.Add(t.Context(), alice, typ, typeA)
 
-	g.Add(bob, p, rdflibgo.NewLiteral("b1"))
-	g.Add(bob, q, rdflibgo.NewLiteral("b2"))
+	g.Add(t.Context(), bob, p, rdflibgo.NewLiteral("b1"))
+	g.Add(t.Context(), bob, q, rdflibgo.NewLiteral("b2"))
 	// bob has NO r triple — so NOT EXISTS { ?s :r ?o2 } is true for bob
-	g.Add(bob, typ, person)
-	g.Add(bob, name, rdflibgo.NewLiteral("Bob"))
+	g.Add(t.Context(), bob, typ, person)
+	g.Add(t.Context(), bob, name, rdflibgo.NewLiteral("Bob"))
 	// bob has no label
-	g.Add(bob, typ, typeB)
+	g.Add(t.Context(), bob, typ, typeB)
 
-	g.Add(charlie, p, rdflibgo.NewLiteral("c1"))
+	g.Add(t.Context(), charlie, p, rdflibgo.NewLiteral("c1"))
 	// charlie has NO q triple
-	g.Add(charlie, typ, person)
-	g.Add(charlie, name, rdflibgo.NewLiteral("Charlie"))
-	g.Add(charlie, typ, thing)
+	g.Add(t.Context(), charlie, typ, person)
+	g.Add(t.Context(), charlie, name, rdflibgo.NewLiteral("Charlie"))
+	g.Add(t.Context(), charlie, typ, thing)
 
 	return g
 }
@@ -207,9 +207,9 @@ func TestS6_GroupConcatEmptySeparator(t *testing.T) {
 	ex := "http://example.org/"
 	s := rdflibgo.NewURIRefUnsafe(ex + "s")
 	p := rdflibgo.NewURIRefUnsafe(ex + "p")
-	g.Add(s, p, rdflibgo.NewLiteral("a"))
-	g.Add(s, p, rdflibgo.NewLiteral("b"))
-	g.Add(s, p, rdflibgo.NewLiteral("c"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("c"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -341,7 +341,7 @@ func TestS12_BaseRelativeURIResolution(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe(base + "relative")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("val")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
 	r, err := Query(g, `
 		BASE <http://example.org/base/>
@@ -359,7 +359,7 @@ func TestS12_BaseRelativeURIWithDotDot(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/c")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 
 	r, err := Query(g, `
 		BASE <http://example.org/a/b>
@@ -377,7 +377,7 @@ func TestS12_BaseRelativeURIWithDotDot(t *testing.T) {
 func TestS11_NowTimezone(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
 
 	r, err := Query(g, `SELECT (NOW() AS ?now) WHERE { ?s ?p ?o }`)
 	if err != nil {
@@ -412,7 +412,7 @@ func TestS14_PercentEncodingInIRIs(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/a%20b")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 
 	r, err := Query(g, `SELECT * WHERE { <http://example.org/a%20b> <http://example.org/p> ?o }`)
 	if err != nil {
@@ -427,7 +427,7 @@ func TestS14_PercentEncodingInIRIs(t *testing.T) {
 func TestT1_BooleanInvalidLexical(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"),
 		rdflibgo.NewLiteral("yes", rdflibgo.WithDatatype(rdflibgo.XSDBoolean)))
 
 	r, err := Query(g, `
@@ -447,7 +447,7 @@ func TestT1_BooleanInvalidLexical(t *testing.T) {
 func TestT2_NumericCastBoolean(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral(true))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral(true))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -473,7 +473,7 @@ func TestT2_NumericCastBoolean(t *testing.T) {
 func TestT3_DecimalPrecision(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -492,7 +492,7 @@ func TestT3_DecimalPrecision(t *testing.T) {
 func TestEncodeForURI(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("hello world/foo"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("hello world/foo"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -521,9 +521,9 @@ func TestDateTimeComparison(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
 	s := rdflibgo.NewURIRefUnsafe(ex + "event")
-	g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"start"),
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe(ex+"start"),
 		rdflibgo.NewLiteral("2023-01-15T10:00:00", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
-	g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"end"),
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe(ex+"end"),
 		rdflibgo.NewLiteral("2023-06-20T15:00:00", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
 
 	r, err := Query(g, `
@@ -548,7 +548,7 @@ func TestDateComparison(t *testing.T) {
 	ex := "http://example.org/"
 	for i, date := range []string{"2004-06-15", "2004-06-20", "2004-06-25"} {
 		s := rdflibgo.NewURIRefUnsafe(ex + "item" + string(rune('A'+i)))
-		g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"date"),
+		g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe(ex+"date"),
 			rdflibgo.NewLiteral(date, rdflibgo.WithDatatype(rdflibgo.XSDDate)))
 	}
 
@@ -627,7 +627,7 @@ func TestInitBindingsInProjectExpr(t *testing.T) {
 func TestSTRDT_PreservesLexical(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("<body>"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("<body>"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -679,11 +679,11 @@ func TestComplexBnodePropertyList(t *testing.T) {
 	hasId := rdflibgo.NewURIRefUnsafe(ex + "id")
 	hasVal := rdflibgo.NewURIRefUnsafe(ex + "has-value")
 
-	g.Add(alice, rdflibgo.RDF.Type, person)
+	g.Add(t.Context(), alice, rdflibgo.RDF.Type, person)
 	bn := rdflibgo.NewBNode("")
-	g.Add(alice, hasId, bn)
-	g.Add(bn, rdflibgo.RDF.Type, idType)
-	g.Add(bn, hasVal, rdflibgo.NewLiteral("ID-001"))
+	g.Add(t.Context(), alice, hasId, bn)
+	g.Add(t.Context(), bn, rdflibgo.RDF.Type, idType)
+	g.Add(t.Context(), bn, hasVal, rdflibgo.NewLiteral("ID-001"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -711,7 +711,7 @@ func TestDeleteInsertWithOptionalUnbound(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe(ex + "s")
 	p := rdflibgo.NewURIRefUnsafe(ex + "p")
 	_ = rdflibgo.NewURIRefUnsafe(ex + "q")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 	// s has no :q triple — so ?opt will be unbound
 
 	ds := Dataset{Default: g}
@@ -728,8 +728,8 @@ func TestDeleteInsertWithOptionalUnbound(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Should not crash; :new triple should be inserted
-	if g.Len() != 2 { // original :p triple + new :new triple
-		t.Errorf("expected 2 triples after update, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 { // original :p triple + new :new triple
+		t.Errorf("expected 2 triples after update, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -738,9 +738,9 @@ func TestDateTimeTimezoneComparison(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
 	s := rdflibgo.NewURIRefUnsafe(ex + "e")
-	g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"a"),
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe(ex+"a"),
 		rdflibgo.NewLiteral("2023-01-15T10:00:00Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
-	g.Add(s, rdflibgo.NewURIRefUnsafe(ex+"b"),
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe(ex+"b"),
 		rdflibgo.NewLiteral("2023-01-15T12:00:00+02:00", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
 
 	r, err := Query(g, `
@@ -762,7 +762,7 @@ func TestDateTimeTimezoneComparison(t *testing.T) {
 // RDFLib #554 — SELECT with empty WHERE
 func TestSelectEmptyWhere(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("x"))
 
 	// Per SPARQL spec, empty WHERE = 1 solution (empty mapping)
@@ -780,7 +780,7 @@ func TestSelectEmptyWhere(t *testing.T) {
 func TestStrdtPreservesUnknownDatatype(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("test"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("test"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -815,8 +815,8 @@ func TestPropertyPathPlus(t *testing.T) {
 	p := rdflibgo.NewURIRefUnsafe(ex + "p")
 
 	// Chain: A -p-> B -p-> C
-	g.Add(a, p, b)
-	g.Add(b, p, c)
+	g.Add(t.Context(), a, p, b)
+	g.Add(t.Context(), b, p, c)
 
 	// A p+ C should be true (A→B→C)
 	r, err := Query(g, `
@@ -856,9 +856,9 @@ func TestPropertyPathPlusNoSpurious(t *testing.T) {
 	isa := rdflibgo.NewURIRefUnsafe(ex + "isa")
 
 	// A isa X, A isa Y, B isa X (but B does NOT isa Y directly or transitively)
-	g.Add(a, isa, x)
-	g.Add(a, isa, y)
-	g.Add(b, isa, x)
+	g.Add(t.Context(), a, isa, x)
+	g.Add(t.Context(), a, isa, y)
+	g.Add(t.Context(), b, isa, x)
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -880,8 +880,8 @@ func TestBnodePlusPropertyPath(t *testing.T) {
 	p := rdflibgo.NewURIRefUnsafe(ex + "p")
 	q := rdflibgo.NewURIRefUnsafe(ex + "q")
 	bn := rdflibgo.NewBNode("")
-	g.Add(a, p, bn)
-	g.Add(bn, q, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), a, p, bn)
+	g.Add(t.Context(), bn, q, rdflibgo.NewLiteral("val"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -916,7 +916,7 @@ func TestLexicalFormPreservation(t *testing.T) {
 func TestUnionIdenticalBranches(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("x"))
 
 	r, err := Query(g, `SELECT * { { BIND("a" AS ?a) } UNION { BIND("a" AS ?a) } }`)
 	if err != nil {
@@ -930,7 +930,7 @@ func TestUnionIdenticalBranches(t *testing.T) {
 // RDFLib #3381 — ASK { FILTER(false) } must return false
 func TestAskFilterFalse(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("x"))
 
 	r, err := Query(g, `ASK { FILTER(false) }`)
@@ -968,9 +968,9 @@ func TestHavingVariableComparison(t *testing.T) {
 	p1 := rdflibgo.NewURIRefUnsafe(ex + "p1")
 	p2 := rdflibgo.NewURIRefUnsafe(ex + "p2")
 	excluded := rdflibgo.NewURIRefUnsafe(ex + "excluded")
-	g.Add(s, p1, rdflibgo.NewLiteral("a"))
-	g.Add(s, p2, rdflibgo.NewLiteral("b"))
-	g.Add(s, excluded, rdflibgo.NewLiteral("c"))
+	g.Add(t.Context(), s, p1, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), s, p2, rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), s, excluded, rdflibgo.NewLiteral("c"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -995,7 +995,7 @@ func TestPropertyPathLongList(t *testing.T) {
 	for i := 0; i < 499; i++ {
 		from := rdflibgo.NewURIRefUnsafe(ex + "n" + strconv.Itoa(i))
 		to := rdflibgo.NewURIRefUnsafe(ex + "n" + strconv.Itoa(i+1))
-		g.Add(from, p, to)
+		g.Add(t.Context(), from, p, to)
 	}
 
 	r, err := Query(g, `
@@ -1023,10 +1023,10 @@ func TestCommaSeparatedBnodeObjects(t *testing.T) {
 	name := rdflibgo.NewURIRefUnsafe(ex + "name")
 	bn1 := rdflibgo.NewBNode("")
 	bn2 := rdflibgo.NewBNode("")
-	g.Add(s, p, bn1)
-	g.Add(s, p, bn2)
-	g.Add(bn1, name, rdflibgo.NewLiteral("field1"))
-	g.Add(bn2, name, rdflibgo.NewLiteral("field2"))
+	g.Add(t.Context(), s, p, bn1)
+	g.Add(t.Context(), s, p, bn2)
+	g.Add(t.Context(), bn1, name, rdflibgo.NewLiteral("field1"))
+	g.Add(t.Context(), bn2, name, rdflibgo.NewLiteral("field2"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -1046,7 +1046,7 @@ func TestCommaSeparatedBnodeObjects(t *testing.T) {
 func TestDuplicatePrefixes(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.com#"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"A"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"A"), rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral("val"))
 
 	r, err := Query(g, `
 		PREFIX foo: <http://example.com#>
@@ -1065,7 +1065,7 @@ func TestDuplicatePrefixes(t *testing.T) {
 func TestDateTimeZSelfEquality(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"e"), rdflibgo.NewURIRefUnsafe(ex+"date"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"e"), rdflibgo.NewURIRefUnsafe(ex+"date"),
 		rdflibgo.NewLiteral("2008-12-01T18:02:00Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
 
 	r, err := Query(g, `
@@ -1083,7 +1083,7 @@ func TestDateTimeZSelfEquality(t *testing.T) {
 // RDFLib #737 — COALESCE with ill-formed literal
 func TestCoalesceIllFormedLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("x"))
 
 	// "999"^^xsd:byte overflows, so 999 > 0 should error → COALESCE falls back to "OK"
@@ -1111,7 +1111,7 @@ func TestCoalesceIllFormedLiteral(t *testing.T) {
 func TestFilterMixedDatatypes(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"val"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"val"),
 		rdflibgo.NewLiteral("hello"))
 
 	// Compare xsd:string to plain literal — should be equal
@@ -1136,9 +1136,9 @@ func TestOrderByMixedTypes(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
 	p := rdflibgo.NewURIRefUnsafe(ex + "val")
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"a"), p, rdflibgo.NewLiteral(3))
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"b"), p, rdflibgo.NewLiteral(1))
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"c"), p, rdflibgo.NewLiteral(2))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"a"), p, rdflibgo.NewLiteral(3))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"b"), p, rdflibgo.NewLiteral(1))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"c"), p, rdflibgo.NewLiteral(2))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -1165,9 +1165,9 @@ func TestOrderByDescMixed(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
 	p := rdflibgo.NewURIRefUnsafe(ex + "name")
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"a"), p, rdflibgo.NewLiteral("Charlie"))
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"b"), p, rdflibgo.NewLiteral("Alice"))
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"c"), p, rdflibgo.NewLiteral("Bob"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"a"), p, rdflibgo.NewLiteral("Charlie"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"b"), p, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"c"), p, rdflibgo.NewLiteral("Bob"))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -1190,7 +1190,7 @@ func TestConstructWhereLimit(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
 	for i := 0; i < 10; i++ {
-		g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"+strconv.Itoa(i)),
+		g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"+strconv.Itoa(i)),
 			rdflibgo.NewURIRefUnsafe(ex+"p"), rdflibgo.NewLiteral(i))
 	}
 
@@ -1204,8 +1204,8 @@ func TestConstructWhereLimit(t *testing.T) {
 	if r.Graph == nil {
 		t.Fatal("CONSTRUCT WHERE LIMIT: no graph returned")
 	}
-	if r.Graph.Len() != 3 {
-		t.Errorf("CONSTRUCT WHERE LIMIT 3: expected 3 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 3 {
+		t.Errorf("CONSTRUCT WHERE LIMIT 3: expected 3 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -1260,8 +1260,8 @@ func TestNestedOptional(t *testing.T) {
 func TestIfFunction(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"a"), rdflibgo.NewURIRefUnsafe(ex+"val"), rdflibgo.NewLiteral(10))
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"b"), rdflibgo.NewURIRefUnsafe(ex+"val"), rdflibgo.NewLiteral(3))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"a"), rdflibgo.NewURIRefUnsafe(ex+"val"), rdflibgo.NewLiteral(10))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"b"), rdflibgo.NewURIRefUnsafe(ex+"val"), rdflibgo.NewLiteral(3))
 
 	r, err := Query(g, `
 		PREFIX : <http://example.org/>
@@ -1290,7 +1290,7 @@ func TestIfFunction(t *testing.T) {
 func TestStrBeforeAfter(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Add(rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"email"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"s"), rdflibgo.NewURIRefUnsafe(ex+"email"),
 		rdflibgo.NewLiteral("user@example.com"))
 
 	r, err := Query(g, `
@@ -1320,7 +1320,7 @@ func TestNestedFilterNotExists709(t *testing.T) {
 	// Case 1: only ex:a ex:rel ex:b → should return 0 rows
 	g1 := rdflibgo.NewGraph()
 	ex := "http://www.example.de#"
-	g1.Add(rdflibgo.NewURIRefUnsafe(ex+"a"), rdflibgo.NewURIRefUnsafe(ex+"rel"), rdflibgo.NewURIRefUnsafe(ex+"b"))
+	g1.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"a"), rdflibgo.NewURIRefUnsafe(ex+"rel"), rdflibgo.NewURIRefUnsafe(ex+"b"))
 
 	r1, err := Query(g1, `
 		PREFIX ex: <http://www.example.de#>
@@ -1341,8 +1341,8 @@ func TestNestedFilterNotExists709(t *testing.T) {
 
 	// Case 2: add ex:c ex:rel2 ex:b → should return 1 row
 	g2 := rdflibgo.NewGraph()
-	g2.Add(rdflibgo.NewURIRefUnsafe(ex+"a"), rdflibgo.NewURIRefUnsafe(ex+"rel"), rdflibgo.NewURIRefUnsafe(ex+"b"))
-	g2.Add(rdflibgo.NewURIRefUnsafe(ex+"c"), rdflibgo.NewURIRefUnsafe(ex+"rel2"), rdflibgo.NewURIRefUnsafe(ex+"b"))
+	g2.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"a"), rdflibgo.NewURIRefUnsafe(ex+"rel"), rdflibgo.NewURIRefUnsafe(ex+"b"))
+	g2.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ex+"c"), rdflibgo.NewURIRefUnsafe(ex+"rel2"), rdflibgo.NewURIRefUnsafe(ex+"b"))
 
 	r2, err := Query(g2, `
 		PREFIX ex: <http://www.example.de#>
@@ -1367,10 +1367,10 @@ func TestOptionalSubSelectBindings(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.com#"
 	alice := rdflibgo.NewURIRefUnsafe(ex + "Alice")
-	g.Add(alice, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(ex+"Person"))
-	g.Add(alice, rdflibgo.NewURIRefUnsafe(ex+"friendsWith"), rdflibgo.NewURIRefUnsafe(ex+"Bob"))
-	g.Add(alice, rdflibgo.NewURIRefUnsafe(ex+"friendsWith"), rdflibgo.NewURIRefUnsafe(ex+"Charlie"))
-	g.Add(alice, rdflibgo.NewURIRefUnsafe(ex+"name"), rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), alice, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(ex+"Person"))
+	g.Add(t.Context(), alice, rdflibgo.NewURIRefUnsafe(ex+"friendsWith"), rdflibgo.NewURIRefUnsafe(ex+"Bob"))
+	g.Add(t.Context(), alice, rdflibgo.NewURIRefUnsafe(ex+"friendsWith"), rdflibgo.NewURIRefUnsafe(ex+"Charlie"))
+	g.Add(t.Context(), alice, rdflibgo.NewURIRefUnsafe(ex+"name"), rdflibgo.NewLiteral("Alice"))
 
 	r, err := Query(g, `
 		PREFIX ex: <http://example.com#>
@@ -1414,9 +1414,9 @@ func TestNegatedPropertySetWithInverse(t *testing.T) {
 	b := rdflibgo.NewURIRefUnsafe(ex + "B")
 	c := rdflibgo.NewURIRefUnsafe(ex + "C")
 	d := rdflibgo.NewURIRefUnsafe(ex + "D")
-	g.Add(a, p0, b)
-	g.Add(b, p1, c)
-	g.Add(c, p2, d)
+	g.Add(t.Context(), a, p0, b)
+	g.Add(t.Context(), b, p1, c)
+	g.Add(t.Context(), c, p2, d)
 
 	// !(:p1|^:p2) means: any predicate that is NOT :p1 forward and NOT :p2 inverse
 	r, err := Query(g, `
@@ -1445,9 +1445,9 @@ func TestUpdateSnapshotWhere(t *testing.T) {
 	bar := rdflibgo.NewURIRefUnsafe(ex + "bar")
 	val := rdflibgo.NewURIRefUnsafe(ex + "value")
 
-	g.Add(foo, val, rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
-	g.Add(foo, val, rdflibgo.NewLiteral("11", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
-	g.Add(bar, val, rdflibgo.NewLiteral("3", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), foo, val, rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), foo, val, rdflibgo.NewLiteral("11", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), bar, val, rdflibgo.NewLiteral("3", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	ds := Dataset{Default: g}
 	err := Update(&ds, `
@@ -1467,7 +1467,7 @@ func TestUpdateSnapshotWhere(t *testing.T) {
 	// Should produce ex:bar ex:value 4 and ex:bar ex:value 14
 	// (3+1=4, 3+11=14), NOT 15 (which would mean re-evaluation)
 	var barVals []string
-	g.Triples(bar, &val, nil)(func(tr rdflibgo.Triple) bool {
+	g.Triples(t.Context(), bar, &val, nil)(func(tr rdflibgo.Triple, _ error) bool {
 		barVals = append(barVals, tr.Object.(rdflibgo.Literal).Lexical())
 		return true
 	})
@@ -1485,9 +1485,9 @@ func TestPropertyPathPlusNoSpurious1113(t *testing.T) {
 	cccc := rdflibgo.NewURIRefUnsafe(ex + "CCCC")
 	dddd := rdflibgo.NewURIRefUnsafe(ex + "DDDD")
 
-	g.Add(cccc, rdfsSubClassOf, aaaa)
-	g.Add(dddd, rdfsSubClassOf, bbbb)
-	g.Add(dddd, rdfsSubClassOf, aaaa)
+	g.Add(t.Context(), cccc, rdfsSubClassOf, aaaa)
+	g.Add(t.Context(), dddd, rdfsSubClassOf, bbbb)
+	g.Add(t.Context(), dddd, rdfsSubClassOf, aaaa)
 
 	r, err := Query(g, `
 		PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -1517,7 +1517,7 @@ func TestGroupConcatOptionalNone(t *testing.T) {
 	_ = rdflibgo.NewURIRefUnsafe(ex + "label")
 	thing := rdflibgo.NewURIRefUnsafe(ex + "Thing")
 
-	g.Add(s, typ, thing)
+	g.Add(t.Context(), s, typ, thing)
 	// s has NO label — OPTIONAL will be unbound
 
 	r, err := Query(g, `
@@ -1554,11 +1554,11 @@ func TestCollectionSyntaxInQuery(t *testing.T) {
 	// Build the list: Bob hasChildren (Dick Jane)
 	bn1 := rdflibgo.NewBNode("")
 	bn2 := rdflibgo.NewBNode("")
-	g.Add(bob, hasChildren, bn1)
-	g.Add(bn1, rdflibgo.RDF.First, dick)
-	g.Add(bn1, rdflibgo.RDF.Rest, bn2)
-	g.Add(bn2, rdflibgo.RDF.First, jane)
-	g.Add(bn2, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), bob, hasChildren, bn1)
+	g.Add(t.Context(), bn1, rdflibgo.RDF.First, dick)
+	g.Add(t.Context(), bn1, rdflibgo.RDF.Rest, bn2)
+	g.Add(t.Context(), bn2, rdflibgo.RDF.First, jane)
+	g.Add(t.Context(), bn2, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>

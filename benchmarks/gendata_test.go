@@ -1,6 +1,7 @@
 package benchmarks_test
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"strings"
@@ -77,8 +78,8 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 	for i, name := range genreNames {
 		u := term.NewURIRefUnsafe(fmt.Sprintf("http://freebase.com/genre/%d", i))
 		genres[i] = u
-		g.Add(u, rdfType, fbGenre)
-		g.Add(u, rdfsLabel, term.NewLiteral(name, term.WithLang("en")))
+		mustAdd(g, u, rdfType, fbGenre)
+		mustAdd(g, u, rdfsLabel, term.NewLiteral(name, term.WithLang("en")))
 	}
 
 	// Create countries
@@ -86,8 +87,8 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 	for i, name := range countryNames {
 		u := term.NewURIRefUnsafe(fmt.Sprintf("http://freebase.com/country/%d", i))
 		countries[i] = u
-		g.Add(u, rdfType, fbCountry)
-		g.Add(u, rdfsLabel, term.NewLiteral(name, term.WithLang("en")))
+		mustAdd(g, u, rdfType, fbCountry)
+		mustAdd(g, u, rdfsLabel, term.NewLiteral(name, term.WithLang("en")))
 	}
 
 	// Create directors
@@ -95,8 +96,8 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 	for i := range numDirectors {
 		u := term.NewURIRefUnsafe(fmt.Sprintf("http://freebase.com/director/%d", i))
 		directors[i] = u
-		g.Add(u, rdfType, fbDirector)
-		g.Add(u, rdfsLabel, term.NewLiteral(fmt.Sprintf("Director %d", i), term.WithLang("en")))
+		mustAdd(g, u, rdfType, fbDirector)
+		mustAdd(g, u, rdfsLabel, term.NewLiteral(fmt.Sprintf("Director %d", i), term.WithLang("en")))
 	}
 
 	// Create actors
@@ -104,32 +105,32 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 	for i := range numActors {
 		u := term.NewURIRefUnsafe(fmt.Sprintf("http://freebase.com/actor/%d", i))
 		actors[i] = u
-		g.Add(u, rdfType, fbActor)
-		g.Add(u, rdfsLabel, term.NewLiteral(fmt.Sprintf("Actor %d", i), term.WithLang("en")))
+		mustAdd(g, u, rdfType, fbActor)
+		mustAdd(g, u, rdfsLabel, term.NewLiteral(fmt.Sprintf("Actor %d", i), term.WithLang("en")))
 	}
 
 	// Create films with relationships
 	perfID := 0
 	for i := range numFilms {
 		film := term.NewURIRefUnsafe(fmt.Sprintf("http://freebase.com/film/%d", i))
-		g.Add(film, rdfType, fbFilm)
-		g.Add(film, rdfsLabel, term.NewLiteral(fmt.Sprintf("Film %d", i), term.WithLang("en")))
+		mustAdd(g, film, rdfType, fbFilm)
+		mustAdd(g, film, rdfsLabel, term.NewLiteral(fmt.Sprintf("Film %d", i), term.WithLang("en")))
 
 		// Director
-		g.Add(film, fbDirectedBy, directors[rng.IntN(numDirectors)])
+		mustAdd(g, film, fbDirectedBy, directors[rng.IntN(numDirectors)])
 
 		// Release date
 		year := 1950 + rng.IntN(75)
 		month := 1 + rng.IntN(12)
 		day := 1 + rng.IntN(28)
-		g.Add(film, fbReleaseDate, term.NewLiteral(
+		mustAdd(g, film, fbReleaseDate, term.NewLiteral(
 			fmt.Sprintf("%04d-%02d-%02d", year, month, day),
 			term.WithDatatype(xsdDate),
 		))
 
 		// Rating
 		rating := 1.0 + rng.Float64()*9.0
-		g.Add(film, fbRating, term.NewLiteral(
+		mustAdd(g, film, fbRating, term.NewLiteral(
 			fmt.Sprintf("%.1f", rating),
 			term.WithDatatype(xsdFloat),
 		))
@@ -140,7 +141,7 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 		for range numGenres {
 			idx := rng.IntN(len(genres))
 			if !used[idx] {
-				g.Add(film, fbHasGenre, genres[idx])
+				mustAdd(g, film, fbHasGenre, genres[idx])
 				used[idx] = true
 			}
 		}
@@ -148,7 +149,7 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 		// 1-2 countries
 		numCountries := 1 + rng.IntN(2)
 		for j := range numCountries {
-			g.Add(film, fbInCountry, countries[(i+j)%len(countries)])
+			mustAdd(g, film, fbInCountry, countries[(i+j)%len(countries)])
 		}
 
 		// 2-5 actors (performances)
@@ -156,11 +157,11 @@ func generateFilmDataset(targetTriples int) *graph.Graph {
 		for j := range numCast {
 			perf := term.NewURIRefUnsafe(fmt.Sprintf("http://freebase.com/performance/%d", perfID))
 			perfID++
-			g.Add(film, fbStarring, perf)
-			g.Add(perf, rdfType, fbPerformance)
-			g.Add(perf, fbPerfActor, actors[rng.IntN(numActors)])
-			g.Add(perf, fbPerfFilm, film)
-			g.Add(perf, fbPerfCharacter, term.NewLiteral(fmt.Sprintf("Character %d", j), term.WithLang("en")))
+			mustAdd(g, film, fbStarring, perf)
+			mustAdd(g, perf, rdfType, fbPerformance)
+			mustAdd(g, perf, fbPerfActor, actors[rng.IntN(numActors)])
+			mustAdd(g, perf, fbPerfFilm, film)
+			mustAdd(g, perf, fbPerfCharacter, term.NewLiteral(fmt.Sprintf("Character %d", j), term.WithLang("en")))
 		}
 	}
 
@@ -176,7 +177,10 @@ func generateFilmTurtle(targetTriples int) string {
 	sb.WriteString("@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n")
 	sb.WriteString("@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n")
 
-	for triple := range g.Triples(nil, nil, nil) {
+	for triple, err := range g.Triples(context.Background(), nil, nil, nil) {
+		if err != nil {
+			panic(err)
+		}
 		fmt.Fprintf(&sb, "%s %s %s .\n", triple.Subject.N3(), triple.Predicate.N3(), triple.Object.N3())
 	}
 	return sb.String()
@@ -186,8 +190,19 @@ func generateFilmTurtle(targetTriples int) string {
 func generateFilmNTriples(targetTriples int) string {
 	g := generateFilmDataset(targetTriples)
 	var sb strings.Builder
-	for triple := range g.Triples(nil, nil, nil) {
+	for triple, err := range g.Triples(context.Background(), nil, nil, nil) {
+		if err != nil {
+			panic(err)
+		}
 		fmt.Fprintf(&sb, "%s %s %s .\n", triple.Subject.N3(), triple.Predicate.N3(), triple.Object.N3())
 	}
 	return sb.String()
+}
+
+// mustAdd adds a triple to a MemoryStore-backed graph, which cannot fail
+// unless the context is done; the generators run before any timing starts.
+func mustAdd(g *graph.Graph, s term.Subject, p term.URIRef, o term.Term) {
+	if err := g.Add(context.Background(), s, p, o); err != nil {
+		panic(err)
+	}
 }

@@ -97,7 +97,8 @@ func (l *defaultLoader) httpClient() *http.Client {
 	return &http.Client{Timeout: l.timeout}
 }
 
-// Load fetches RDF data from uri and parses it into g.
+// Load fetches RDF data from uri and parses it into g. ctx bounds the fetch and
+// the parse; a failure of g's store is returned, wrapped.
 func (l *defaultLoader) Load(ctx context.Context, g *graph.Graph, uri string) error {
 	u, err := url.Parse(uri)
 	if err != nil {
@@ -106,7 +107,7 @@ func (l *defaultLoader) Load(ctx context.Context, g *graph.Graph, uri string) er
 
 	switch u.Scheme {
 	case "file", "":
-		return l.loadFile(g, u.Path)
+		return l.loadFile(ctx, g, u.Path)
 	case "http", "https":
 		return l.loadHTTP(ctx, g, uri)
 	default:
@@ -114,7 +115,7 @@ func (l *defaultLoader) Load(ctx context.Context, g *graph.Graph, uri string) er
 	}
 }
 
-func (l *defaultLoader) loadFile(g *graph.Graph, path string) error {
+func (l *defaultLoader) loadFile(ctx context.Context, g *graph.Graph, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("rdfloader: %w", err)
@@ -137,7 +138,7 @@ func (l *defaultLoader) loadFile(g *graph.Graph, path string) error {
 		}
 	}
 
-	return l.parseFormat(g, f, format)
+	return l.parseFormat(ctx, g, f, format)
 }
 
 func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string) error {
@@ -160,13 +161,13 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 	// Try Content-Type header
 	ct := resp.Header.Get("Content-Type")
 	if format, ok := plugin.FormatFromMIME(ct); ok {
-		return l.parseFormat(g, resp.Body, format)
+		return l.parseFormat(ctx, g, resp.Body, format)
 	}
 
 	// Try URL path extension
 	u, _ := url.Parse(uri)
 	if format, ok := plugin.FormatFromFilename(u.Path); ok {
-		return l.parseFormat(g, resp.Body, format)
+		return l.parseFormat(ctx, g, resp.Body, format)
 	}
 
 	// Content sniffing: buffer prefix, detect, then replay with remaining body.
@@ -187,14 +188,14 @@ func (l *defaultLoader) loadHTTP(ctx context.Context, g *graph.Graph, uri string
 	}
 
 	combined := io.MultiReader(bytes.NewReader(buf[:n]), resp.Body)
-	return l.parseFormat(g, combined, format)
+	return l.parseFormat(ctx, g, combined, format)
 }
 
 // parseFormat dispatches to the appropriate parser by format name, forwarding
 // the line-length options to the line-based parsers (N-Triples, N-Quads) and
 // the nesting limit to Turtle and TriG.
 // The blank-node identity option is forwarded to every format.
-func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) error {
+func (l *defaultLoader) parseFormat(ctx context.Context, g *graph.Graph, r io.Reader, format string) error {
 	switch format {
 	case "turtle":
 		var opts []turtle.Option
@@ -204,11 +205,11 @@ func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) 
 		if l.maxParseDepth > 0 {
 			opts = append(opts, turtle.WithMaxParseDepth(l.maxParseDepth))
 		}
-		return turtle.Parse(g, r, opts...)
+		return turtle.Parse(ctx, g, r, opts...)
 	case "nt":
-		return nt.Parse(g, r, l.ntOpts()...)
+		return nt.Parse(ctx, g, r, l.ntOpts()...)
 	case "nquads":
-		return nq.Parse(g, r, l.nqOpts()...)
+		return nq.Parse(ctx, g, r, l.nqOpts()...)
 	case "trig":
 		var opts []trig.Option
 		if l.preserveBlankNodeIDs {
@@ -217,19 +218,19 @@ func (l *defaultLoader) parseFormat(g *graph.Graph, r io.Reader, format string) 
 		if l.maxParseDepth > 0 {
 			opts = append(opts, trig.WithMaxParseDepth(l.maxParseDepth))
 		}
-		return trig.Parse(g, r, opts...)
+		return trig.Parse(ctx, g, r, opts...)
 	case "xml":
 		var opts []rdfxml.Option
 		if l.preserveBlankNodeIDs {
 			opts = append(opts, rdfxml.WithPreserveBlankNodeIDs())
 		}
-		return rdfxml.Parse(g, r, opts...)
+		return rdfxml.Parse(ctx, g, r, opts...)
 	case "json-ld":
 		var opts []jsonld.Option
 		if l.preserveBlankNodeIDs {
 			opts = append(opts, jsonld.WithPreserveBlankNodeIDs())
 		}
-		return jsonld.Parse(g, r, opts...)
+		return jsonld.Parse(ctx, g, r, opts...)
 	default:
 		return fmt.Errorf("rdfloader: unsupported format %q", format)
 	}

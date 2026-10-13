@@ -31,11 +31,11 @@ func TestParserBaseIRIResolution(t *testing.T) {
 			} else {
 				src = "@base <" + tc.base + "> .\n" + src
 			}
-			if err := Parse(g, strings.NewReader(src), opts...); err != nil {
+			if err := Parse(t.Context(), g, strings.NewReader(src), opts...); err != nil {
 				t.Fatalf("base %q ref %q via %s: %v", tc.base, tc.ref, via, err)
 			}
 			var got string
-			g.Triples(nil, nil, nil)(func(tr rdflibgo.Triple) bool {
+			g.Triples(t.Context(), nil, nil, nil)(func(tr rdflibgo.Triple, _ error) bool {
 				got = tr.Subject.String()
 				return false
 			})

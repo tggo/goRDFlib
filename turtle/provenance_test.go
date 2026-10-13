@@ -18,7 +18,7 @@ ex:s2 ex:p ex:o2 ,
 	// subject+object -> reported line
 	prov := map[string]int{}
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithProvenance(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithProvenance(
 		func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int) {
 			prov[s.String()+" "+o.String()] = lineNum
 		}))
@@ -44,10 +44,10 @@ func TestProvenanceUnsetIsNoop(t *testing.T) {
 ex:s ex:p ex:o .
 `
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if n := g.Len(); n != 1 {
+	if n, _ := g.Len(t.Context()); n != 1 {
 		t.Fatalf("got %d triples, want 1", n)
 	}
 }

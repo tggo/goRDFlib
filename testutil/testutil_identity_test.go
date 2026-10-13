@@ -25,9 +25,9 @@ func TestAssertGraphEqualSeesDatatypeAndLanguage(t *testing.T) {
 	one := func(o term.Term, bnodeSubject bool) *graph.Graph {
 		g := graph.NewGraph()
 		if bnodeSubject {
-			g.Add(term.NewBNode("b"), p, o)
+			g.Add(t.Context(), term.NewBNode("b"), p, o)
 		} else {
-			g.Add(s, p, o)
+			g.Add(t.Context(), s, p, o)
 		}
 		return g
 	}

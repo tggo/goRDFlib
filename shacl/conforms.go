@@ -27,6 +27,9 @@ var ErrUnknownShape = errors.New("shacl: unknown shape")
 // Prepared: each call evaluates in its own state. A stopped ctx returns an
 // error matching ErrCancelled, never a verdict.
 func (p *Prepared) Conforms(goctx context.Context, node, shape Term) (bool, error) {
+	if p.err != nil {
+		return false, p.err
+	}
 	if err := stopped(goctx); err != nil {
 		return false, err
 	}
@@ -36,9 +39,9 @@ func (p *Prepared) Conforms(goctx context.Context, node, shape Term) (bool, erro
 		return false, fmt.Errorf("%w: %s", ErrUnknownShape, shape)
 	}
 	ok := nodeConforms(ctx, s, node)
-	// A bound store that gave up on a read looks like "no match", which could
-	// turn a violation into conformance; poll before trusting the verdict.
-	if err := stopped(goctx); err != nil {
+	// A query the store failed on looks like "no match", which could turn a
+	// violation into conformance; check before trusting the verdict.
+	if err := finished(goctx, ctx); err != nil {
 		return false, err
 	}
 	return ok, nil

@@ -30,7 +30,7 @@ func TestW3CTurtle12Syntax(t *testing.T) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				g := graph.NewGraph(graph.WithBase(base))
-				if err := turtle.Parse(g, f, turtle.WithBase(base)); err != nil {
+				if err := turtle.Parse(t.Context(), g, f, turtle.WithBase(base)); err != nil {
 					t.Errorf("expected no error, got: %v", err)
 				}
 
@@ -42,7 +42,7 @@ func TestW3CTurtle12Syntax(t *testing.T) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				g := graph.NewGraph(graph.WithBase(base))
-				if err := turtle.Parse(g, f, turtle.WithBase(base)); err == nil {
+				if err := turtle.Parse(t.Context(), g, f, turtle.WithBase(base)); err == nil {
 					t.Error("expected error, got nil")
 				}
 
@@ -72,7 +72,7 @@ func TestW3CTurtle12Eval(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer f.Close()
-				if err := turtle.Parse(actual, f, turtle.WithBase(base)); err != nil {
+				if err := turtle.Parse(t.Context(), actual, f, turtle.WithBase(base)); err != nil {
 					t.Fatalf("parse action: %v", err)
 				}
 
@@ -82,7 +82,7 @@ func TestW3CTurtle12Eval(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer ef.Close()
-				if err := nt.Parse(expected, ef); err != nil {
+				if err := nt.Parse(t.Context(), expected, ef); err != nil {
 					t.Fatalf("parse result: %v", err)
 				}
 

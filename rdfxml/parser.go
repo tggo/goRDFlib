@@ -1,6 +1,7 @@
 package rdfxml
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -27,14 +28,16 @@ const (
 // rdf:about="urn:a|b") is an error matching term.ErrInvalidIRI, with the line
 // and column where it was read; percent-encode such characters. Statements
 // read before that point stay in g.
-func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+//
+// A failure of g's store, or a done ctx, stops the parse and is returned
+// (wrapped, so errors.Is sees it) with the position reached.
+func Parse(ctx context.Context, g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
 	}
 	p := newParser(&cfg, func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term) error {
-		g.Add(s, pred, o)
-		return nil
+		return g.Add(ctx, s, pred, o)
 	})
 	return p.parse(r)
 }

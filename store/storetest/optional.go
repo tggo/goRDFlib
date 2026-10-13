@@ -19,9 +19,9 @@ func testQueryable(t *testing.T, cfg Config) {
 		s := cfg.New(t)
 		for i := 0; i < 10; i++ {
 			subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-			s.Add(triple(subj, Name, lit(i)), nil)
+			s.Add(t.Context(), triple(subj, Name, lit(i)), nil)
 		}
-		s.Add(triple(Alice, Knows, Bob), nil)
+		s.Add(t.Context(), triple(Alice, Knows, Bob), nil)
 		return s, s.(store.QueryableStore)
 	}
 
@@ -40,8 +40,8 @@ func testQueryable(t *testing.T, cfg Config) {
 			{"no match", pattern(Dave, nil, nil)},
 		}
 		for _, p := range pats {
-			want := count(s.Triples(p.pat, nil))
-			if got := q.Count(p.pat, nil); got != want {
+			want := count(s.Triples(t.Context(), p.pat, nil))
+			if got, _ := q.Count(t.Context(), p.pat, nil); got != want {
 				t.Errorf("%s: Count = %d, Triples yielded %d", p.name, got, want)
 			}
 		}
@@ -56,8 +56,8 @@ func testQueryable(t *testing.T, cfg Config) {
 			pattern(Dave, nil, nil),
 		}
 		for _, p := range pats {
-			want := count(s.Triples(p, nil)) > 0
-			if got := q.Exists(p, nil); got != want {
+			want := count(s.Triples(t.Context(), p, nil)) > 0
+			if got, _ := q.Exists(t.Context(), p, nil); got != want {
 				t.Errorf("Exists = %v, want %v", got, want)
 			}
 		}
@@ -66,17 +66,17 @@ func testQueryable(t *testing.T, cfg Config) {
 	cfg.run(t, "Exists on an empty store is false", func(t *testing.T) {
 		s := cfg.New(t)
 		q := s.(store.QueryableStore)
-		if q.Exists(pattern(nil, nil, nil), nil) {
+		if mustV(q.Exists(t.Context(), pattern(nil, nil, nil), nil)) {
 			t.Error("Exists reported true on an empty store")
 		}
-		if got := q.Count(pattern(nil, nil, nil), nil); got != 0 {
+		if got, _ := q.Count(t.Context(), pattern(nil, nil, nil), nil); got != 0 {
 			t.Errorf("Count = %d on an empty store, want 0", got)
 		}
 	})
 
 	cfg.run(t, "TriplesWithLimit windows the result", func(t *testing.T) {
 		s, q := seed(t)
-		all := collect(s.Triples(pattern(nil, nil, nil), nil))
+		all := collect(s.Triples(t.Context(), pattern(nil, nil, nil), nil))
 		inAll := map[string]bool{}
 		for _, tr := range all {
 			inAll[tr] = true
@@ -100,7 +100,7 @@ func testQueryable(t *testing.T, cfg Config) {
 			if tc.limit > 0 && want > tc.limit {
 				want = tc.limit
 			}
-			page := collect(q.TriplesWithLimit(pattern(nil, nil, nil), nil, tc.limit, tc.offset))
+			page := collect(q.TriplesWithLimit(t.Context(), pattern(nil, nil, nil), nil, tc.limit, tc.offset))
 			if len(page) != want {
 				t.Errorf("limit %d offset %d: got %d triples, want %d (store holds %d)",
 					tc.limit, tc.offset, len(page), want, len(all))
@@ -116,18 +116,18 @@ func testQueryable(t *testing.T, cfg Config) {
 
 	cfg.run(t, "TriplesWithLimit with no limit returns everything after the offset", func(t *testing.T) {
 		s, q := seed(t)
-		all := count(s.Triples(pattern(nil, nil, nil), nil))
-		if got := count(q.TriplesWithLimit(pattern(nil, nil, nil), nil, 0, 0)); got != all {
+		all := count(s.Triples(t.Context(), pattern(nil, nil, nil), nil))
+		if got := count(q.TriplesWithLimit(t.Context(), pattern(nil, nil, nil), nil, 0, 0)); got != all {
 			t.Errorf("limit 0 returned %d triples, want all %d", got, all)
 		}
-		if got := count(q.TriplesWithLimit(pattern(nil, nil, nil), nil, -1, 2)); got != all-2 {
+		if got := count(q.TriplesWithLimit(t.Context(), pattern(nil, nil, nil), nil, -1, 2)); got != all-2 {
 			t.Errorf("limit -1 offset 2 returned %d triples, want %d", got, all-2)
 		}
 	})
 
 	cfg.run(t, "TriplesWithLimit honours the pattern", func(t *testing.T) {
 		_, q := seed(t)
-		got := count(q.TriplesWithLimit(pattern(nil, pred(Name), nil), nil, 4, 0))
+		got := count(q.TriplesWithLimit(t.Context(), pattern(nil, pred(Name), nil), nil, 4, 0))
 		if got != 4 {
 			t.Errorf("got %d triples, want 4", got)
 		}
@@ -135,7 +135,7 @@ func testQueryable(t *testing.T, cfg Config) {
 
 	cfg.run(t, "TriplesWithLimit past the end is empty", func(t *testing.T) {
 		_, q := seed(t)
-		if got := count(q.TriplesWithLimit(pattern(nil, nil, nil), nil, 5, 1000)); got != 0 {
+		if got := count(q.TriplesWithLimit(t.Context(), pattern(nil, nil, nil), nil, 5, 1000)); got != 0 {
 			t.Errorf("got %d triples past the end, want 0", got)
 		}
 	})
@@ -143,7 +143,7 @@ func testQueryable(t *testing.T, cfg Config) {
 	cfg.run(t, "TriplesWithLimit stops when the consumer stops", func(t *testing.T) {
 		_, q := seed(t)
 		seen := 0
-		q.TriplesWithLimit(pattern(nil, nil, nil), nil, 5, 0)(func(term.Triple) bool {
+		q.TriplesWithLimit(t.Context(), pattern(nil, nil, nil), nil, 5, 0)(func(term.Triple, error) bool {
 			seen++
 			return false
 		})
@@ -158,16 +158,16 @@ func testQueryable(t *testing.T, cfg Config) {
 			t.Skip("backend is not context aware")
 		}
 		q := s.(store.QueryableStore)
-		s.Add(triple(Alice, Name, lit("Alice")), Graph1)
-		s.Add(triple(Bob, Name, lit("Bob")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), Graph1)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), nil)
 
-		if got := q.Count(pattern(nil, nil, nil), Graph1); got != 1 {
+		if got, _ := q.Count(t.Context(), pattern(nil, nil, nil), Graph1); got != 1 {
 			t.Errorf("Count(graph1) = %d, want 1", got)
 		}
-		if got := q.Count(pattern(nil, nil, nil), nil); got != 1 {
+		if got, _ := q.Count(t.Context(), pattern(nil, nil, nil), nil); got != 1 {
 			t.Errorf("Count(default) = %d, want 1", got)
 		}
-		if q.Exists(pattern(Alice, nil, nil), nil) {
+		if mustV(q.Exists(t.Context(), pattern(Alice, nil, nil), nil)) {
 			t.Error("Exists found a graph1 triple in the default graph")
 		}
 	})
@@ -181,15 +181,15 @@ func testQueryable(t *testing.T, cfg Config) {
 func testSnapshot(t *testing.T, cfg Config) {
 	seed := func(t *testing.T) store.Store {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Knows, Bob), nil)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Bob, Knows, Carol), Graph1)
+		s.Add(t.Context(), triple(Alice, Knows, Bob), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Bob, Knows, Carol), Graph1)
 		return s
 	}
 
 	cfg.run(t, "reads match the store", func(t *testing.T) {
 		s := seed(t)
-		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		snap, release := readSnapshot(t, s)
 		defer release()
 		for _, p := range []term.TriplePattern{
 			pattern(nil, nil, nil),
@@ -199,23 +199,29 @@ func testSnapshot(t *testing.T, cfg Config) {
 			pattern(Dave, nil, nil),
 		} {
 			for _, ctx := range []term.Term{nil, Graph1} {
-				if got, want := count(snap.Triples(p, ctx)), count(s.Triples(p, ctx)); got != want {
+				if got, want := count(snap.Triples(t.Context(), p, ctx)), count(s.Triples(t.Context(), p, ctx)); got != want {
 					t.Errorf("pattern %v in %v: snapshot has %d, store has %d", p, ctx, got, want)
 				}
 			}
 		}
-		if got, want := snap.Len(nil), s.Len(nil); got != want {
+		if got, want := mustV(snap.Len(t.Context(), nil)), mustV(s.Len(t.Context(), nil)); got != want {
 			t.Errorf("Len: snapshot %d, store %d", got, want)
 		}
 	})
 
 	cfg.run(t, "nested iteration over one snapshot", func(t *testing.T) {
 		s := seed(t)
-		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		snap, release := readSnapshot(t, s)
 		defer release()
 		pairs := 0
-		for outer := range snap.Triples(pattern(nil, pred(Knows), nil), nil) {
-			for range snap.Triples(pattern(outer.Subject, nil, nil), nil) {
+		for outer, err := range snap.Triples(t.Context(), pattern(nil, pred(Knows), nil), nil) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, err := range snap.Triples(t.Context(), pattern(outer.Subject, nil, nil), nil) {
+				if err != nil {
+					t.Fatal(err)
+				}
 				pairs++
 			}
 		}
@@ -226,36 +232,36 @@ func testSnapshot(t *testing.T, cfg Config) {
 
 	cfg.run(t, "later writes are not visible", func(t *testing.T) {
 		s := seed(t)
-		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		snap, release := readSnapshot(t, s)
 		defer release()
-		s.Add(triple(Carol, Knows, Dave), nil)
-		s.Remove(pattern(Alice, pred(Name), nil), nil)
-		if count(snap.Triples(pattern(Carol, nil, nil), nil)) != 0 {
+		s.Add(t.Context(), triple(Carol, Knows, Dave), nil)
+		s.Remove(t.Context(), pattern(Alice, pred(Name), nil), nil)
+		if count(snap.Triples(t.Context(), pattern(Carol, nil, nil), nil)) != 0 {
 			t.Error("a triple added after the snapshot is visible in it")
 		}
-		if count(snap.Triples(pattern(Alice, pred(Name), nil), nil)) != 1 {
+		if count(snap.Triples(t.Context(), pattern(Alice, pred(Name), nil), nil)) != 1 {
 			t.Error("a triple removed after the snapshot is gone from it")
 		}
 	})
 
 	cfg.run(t, "writing to a snapshot panics", func(t *testing.T) {
 		s := seed(t)
-		snap, release := s.(store.SnapshotStore).ReadSnapshot()
+		snap, release := readSnapshot(t, s)
 		defer release()
 		defer func() {
 			if recover() == nil {
 				t.Error("Add on a read snapshot did not panic")
 			}
 		}()
-		snap.Add(triple(Dave, Knows, Alice), nil)
+		snap.Add(t.Context(), triple(Dave, Knows, Alice), nil)
 	})
 
 	cfg.run(t, "release is idempotent", func(t *testing.T) {
 		s := seed(t)
-		_, release := s.(store.SnapshotStore).ReadSnapshot()
+		_, release := readSnapshot(t, s)
 		release()
 		release()
-		if count(s.Triples(pattern(nil, nil, nil), nil)) != 2 {
+		if count(s.Triples(t.Context(), pattern(nil, nil, nil), nil)) != 2 {
 			t.Error("the store is not readable after a snapshot was released")
 		}
 	})
@@ -291,20 +297,20 @@ func testCardinality(t *testing.T, cfg Config) {
 		t.Helper()
 		c := s.(store.CardinalityStore)
 		for _, sh := range shapes() {
-			want := count(s.Triples(sh.pat, nil))
-			if got := c.Cardinality(sh.pat, nil); got != want {
+			want := count(s.Triples(t.Context(), sh.pat, nil))
+			if got, _ := c.Cardinality(t.Context(), sh.pat, nil); got != want {
 				t.Errorf("%s: Cardinality = %d, Triples yielded %d", sh.name, got, want)
 			}
 		}
 	}
 	seed := func(t *testing.T) store.Store {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Knows, Bob), nil)
-		s.Add(triple(Alice, Knows, Carol), nil)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Bob, Knows, Carol), nil)
-		s.Add(triple(Carol, Knows, Bob), nil)
-		s.Add(triple(Carol, Name, Bob), nil)
+		s.Add(t.Context(), triple(Alice, Knows, Bob), nil)
+		s.Add(t.Context(), triple(Alice, Knows, Carol), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Bob, Knows, Carol), nil)
+		s.Add(t.Context(), triple(Carol, Knows, Bob), nil)
+		s.Add(t.Context(), triple(Carol, Name, Bob), nil)
 		return s
 	}
 
@@ -313,13 +319,13 @@ func testCardinality(t *testing.T, cfg Config) {
 	})
 	cfg.run(t, "stays in step with duplicates, Remove and Set", func(t *testing.T) {
 		s := seed(t)
-		s.Add(triple(Alice, Knows, Bob), nil) // duplicate: must not count twice
+		s.Add(t.Context(), triple(Alice, Knows, Bob), nil) // duplicate: must not count twice
 		check(t, s)
-		s.Remove(pattern(nil, pred(Knows), Carol), nil)
+		s.Remove(t.Context(), pattern(nil, pred(Knows), Carol), nil)
 		check(t, s)
-		s.Set(triple(Alice, Knows, Dave), nil)
+		s.Set(t.Context(), triple(Alice, Knows, Dave), nil)
 		check(t, s)
-		s.Remove(pattern(nil, nil, nil), nil)
+		s.Remove(t.Context(), pattern(nil, nil, nil), nil)
 		check(t, s)
 	})
 
@@ -334,21 +340,21 @@ func testCardinality(t *testing.T, cfg Config) {
 		c := s.(store.CardinalityStore)
 		// The default graph and graph1 share one triple and differ in every
 		// other count, so no pattern shape can pass by reading the wrong graph.
-		s.Add(triple(Alice, Knows, Bob), nil)
-		s.Add(triple(Alice, Knows, Carol), nil)
-		s.Add(triple(Bob, Knows, Carol), nil)
-		s.Add(triple(Alice, Knows, Bob), Graph1)
-		s.Add(triple(Carol, Knows, Bob), Graph1)
-		s.Add(triple(Carol, Name, Bob), Graph1)
-		s.Add(triple(Dave, Knows, Bob), Graph1)
-		s.Add(triple(Dave, Knows, Alice), Graph2)
+		s.Add(t.Context(), triple(Alice, Knows, Bob), nil)
+		s.Add(t.Context(), triple(Alice, Knows, Carol), nil)
+		s.Add(t.Context(), triple(Bob, Knows, Carol), nil)
+		s.Add(t.Context(), triple(Alice, Knows, Bob), Graph1)
+		s.Add(t.Context(), triple(Carol, Knows, Bob), Graph1)
+		s.Add(t.Context(), triple(Carol, Name, Bob), Graph1)
+		s.Add(t.Context(), triple(Dave, Knows, Bob), Graph1)
+		s.Add(t.Context(), triple(Dave, Knows, Alice), Graph2)
 
 		checkIn := func(t *testing.T, what string) {
 			t.Helper()
 			for _, ctx := range []term.Term{nil, Graph1, Graph2, Graph3} {
 				for _, sh := range shapes() {
-					want := count(s.Triples(sh.pat, ctx))
-					if got := c.Cardinality(sh.pat, ctx); got != want {
+					want := count(s.Triples(t.Context(), sh.pat, ctx))
+					if got, _ := c.Cardinality(t.Context(), sh.pat, ctx); got != want {
 						t.Errorf("%s, context %v, %s: Cardinality = %d, Triples yielded %d",
 							what, ctx, sh.name, got, want)
 					}
@@ -370,19 +376,19 @@ func testCardinality(t *testing.T, cfg Config) {
 			{Graph2, pattern(nil, nil, nil), 1},
 			{Graph3, pattern(nil, nil, nil), 0},
 		} {
-			if got := c.Cardinality(tc.pat, tc.ctx); got != tc.want {
+			if got, _ := c.Cardinality(t.Context(), tc.pat, tc.ctx); got != tc.want {
 				t.Errorf("context %v: Cardinality = %d, want %d", tc.ctx, got, tc.want)
 			}
 		}
 
-		s.Remove(pattern(nil, pred(Knows), nil), Graph1)
+		s.Remove(t.Context(), pattern(nil, pred(Knows), nil), Graph1)
 		checkIn(t, "after Remove in graph1")
-		if got := c.Cardinality(pattern(nil, pred(Knows), nil), nil); got != 3 {
+		if got, _ := c.Cardinality(t.Context(), pattern(nil, pred(Knows), nil), nil); got != 3 {
 			t.Errorf("Remove in graph1 changed the default graph's count to %d, want 3", got)
 		}
-		s.Set(triple(Alice, Knows, Dave), Graph2)
+		s.Set(t.Context(), triple(Alice, Knows, Dave), Graph2)
 		checkIn(t, "after Set in graph2")
-		s.Remove(pattern(nil, nil, nil), Graph1)
+		s.Remove(t.Context(), pattern(nil, nil, nil), Graph1)
 		checkIn(t, "after emptying graph1")
 	})
 }
@@ -406,11 +412,11 @@ func testReachability(t *testing.T, cfg Config) {
 
 	seed := func(t *testing.T) (store.Store, store.ReachabilityStore) {
 		s := cfg.New(t)
-		s.Add(triple(a, Knows, b), nil)
-		s.Add(triple(b, Knows, c), nil)
-		s.Add(triple(c, Knows, a), nil)
-		s.Add(triple(b, Knows, d), nil)
-		s.Add(triple(d, Name, dave), nil)
+		s.Add(t.Context(), triple(a, Knows, b), nil)
+		s.Add(t.Context(), triple(b, Knows, c), nil)
+		s.Add(t.Context(), triple(c, Knows, a), nil)
+		s.Add(t.Context(), triple(b, Knows, d), nil)
+		s.Add(t.Context(), triple(d, Name, dave), nil)
 		return s, s.(store.ReachabilityStore)
 	}
 
@@ -418,7 +424,7 @@ func testReachability(t *testing.T, cfg Config) {
 	// entirely when the backend declined — declining is always allowed.
 	run := func(t *testing.T, r store.ReachabilityStore, q store.ReachabilityQuery) ([]string, bool) {
 		t.Helper()
-		got, err := r.Reachable(q)
+		got, err := r.Reachable(t.Context(), q)
 		if err != nil {
 			t.Logf("backend declined %v: %v", q, err)
 			return nil, false
@@ -533,7 +539,7 @@ func testReachability(t *testing.T, cfg Config) {
 
 	cfg.run(t, "a nil start is refused", func(t *testing.T) {
 		_, r := seed(t)
-		if _, err := r.Reachable(store.ReachabilityQuery{Predicates: []term.URIRef{Knows}}); err == nil {
+		if _, err := r.Reachable(t.Context(), store.ReachabilityQuery{Predicates: []term.URIRef{Knows}}); err == nil {
 			t.Error("Reachable accepted a query with no Start")
 		}
 	})
@@ -544,8 +550,8 @@ func testReachability(t *testing.T, cfg Config) {
 			t.Skip("backend is not context aware")
 		}
 		r := s.(store.ReachabilityStore)
-		s.Add(triple(a, Knows, b), Graph1)
-		s.Add(triple(b, Knows, c), nil)
+		s.Add(t.Context(), triple(a, Knows, b), Graph1)
+		s.Add(t.Context(), triple(b, Knows, c), nil)
 
 		got, ok := run(t, r, store.ReachabilityQuery{Start: a, Predicates: []term.URIRef{Knows}, Context: Graph1})
 		if !ok {
@@ -553,4 +559,14 @@ func testReachability(t *testing.T, cfg Config) {
 		}
 		same(t, "graph1 only", got, []string{b.N3()})
 	})
+}
+
+// readSnapshot opens a snapshot of s, failing the test if it cannot.
+func readSnapshot(t *testing.T, s store.Store) (store.Store, func()) {
+	t.Helper()
+	snap, release, err := s.(store.SnapshotStore).ReadSnapshot(t.Context())
+	if err != nil {
+		t.Fatalf("ReadSnapshot: %v", err)
+	}
+	return snap, release
 }

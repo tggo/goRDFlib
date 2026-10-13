@@ -114,7 +114,7 @@ func (x *tripleIndex) remove(t term.Triple) {
 // removeMatching deletes every triple matching pattern.
 func (x *tripleIndex) removeMatching(pattern term.TriplePattern) {
 	var toRemove []term.Triple
-	x.each(pattern, func(t term.Triple) bool {
+	x.each(pattern, func(t term.Triple, _ error) bool {
 		toRemove = append(toRemove, t)
 		return true
 	})
@@ -124,8 +124,10 @@ func (x *tripleIndex) removeMatching(pattern term.TriplePattern) {
 }
 
 // each yields the triples matching pattern until yield returns false. It
-// reports whether iteration ran to the end.
-func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) bool) bool {
+// reports whether iteration ran to the end. yield has the shape of a
+// TripleIterator's (the error is always nil), so Triples hands the consumer's
+// yield straight in: a wrapping closure per triple cost 25% on a plain scan.
+func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple, error) bool) bool {
 	sk := term.OptTermKey(pattern.Subject)
 	pk := term.OptPredKey(pattern.Predicate)
 	ok := term.OptTermKey(pattern.Object)
@@ -136,26 +138,26 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	switch {
 	case sk != "" && pk != "" && ok != "":
 		if t, exists := x.spo[sk][pk][ok]; exists {
-			return yield(*t)
+			return yield(*t, nil)
 		}
 
 	case sk != "" && pk != "":
 		for _, t := range x.spo[sk][pk] {
-			if !yield(*t) {
+			if !yield(*t, nil) {
 				return false
 			}
 		}
 
 	case pk != "" && ok != "":
 		for _, t := range x.pos[pk][ok] {
-			if !yield(*t) {
+			if !yield(*t, nil) {
 				return false
 			}
 		}
 
 	case sk != "" && ok != "":
 		for _, t := range x.osp[ok][sk] {
-			if !yield(*t) {
+			if !yield(*t, nil) {
 				return false
 			}
 		}
@@ -163,7 +165,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	case sk != "":
 		for _, o := range x.spo[sk] {
 			for _, t := range o {
-				if !yield(*t) {
+				if !yield(*t, nil) {
 					return false
 				}
 			}
@@ -172,7 +174,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	case pk != "":
 		for _, s := range x.pos[pk] {
 			for _, t := range s {
-				if !yield(*t) {
+				if !yield(*t, nil) {
 					return false
 				}
 			}
@@ -181,7 +183,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 	case ok != "":
 		for _, p := range x.osp[ok] {
 			for _, t := range p {
-				if !yield(*t) {
+				if !yield(*t, nil) {
 					return false
 				}
 			}
@@ -191,7 +193,7 @@ func (x *tripleIndex) each(pattern term.TriplePattern, yield func(term.Triple) b
 		for _, po := range x.spo {
 			for _, o := range po {
 				for _, t := range o {
-					if !yield(*t) {
+					if !yield(*t, nil) {
 						return false
 					}
 				}

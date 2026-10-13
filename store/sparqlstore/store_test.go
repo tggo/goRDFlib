@@ -1,6 +1,7 @@
 package sparqlstore_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/store/sparqlstore"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -40,10 +42,10 @@ func TestAddAndTriples(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, nil)
 
 	var count int
-	for range store.Triples(term.TriplePattern{}, nil) {
+	for range store.Triples(t.Context(), term.TriplePattern{}, nil) {
 		count++
 	}
 	if count != 1 {
@@ -51,7 +53,7 @@ func TestAddAndTriples(t *testing.T) {
 	}
 
 	// Check the actual values
-	for tr := range store.Triples(term.TriplePattern{Subject: s}, nil) {
+	for tr := range store.Triples(t.Context(), term.TriplePattern{Subject: s}, nil) {
 		if !tr.Subject.Equal(s) {
 			t.Errorf("subject = %v, want %v", tr.Subject, s)
 		}
@@ -70,10 +72,10 @@ func TestLen(t *testing.T) {
 	s := term.NewURIRefUnsafe("http://example.org/s")
 	p := term.NewURIRefUnsafe("http://example.org/p")
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("one")}, nil)
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("two")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("one")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("two")}, nil)
 
-	if n := store.Len(nil); n != 2 {
+	if n, _ := store.Len(t.Context(), nil); n != 2 {
 		t.Fatalf("Len = %d, want 2", n)
 	}
 }
@@ -85,10 +87,10 @@ func TestRemove(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
-	store.Remove(term.TriplePattern{Subject: s, Predicate: &p, Object: o}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, nil)
+	store.Remove(t.Context(), term.TriplePattern{Subject: s, Predicate: &p, Object: o}, nil)
 
-	if n := store.Len(nil); n != 0 {
+	if n, _ := store.Len(t.Context(), nil); n != 0 {
 		t.Fatalf("Len after remove = %d, want 0", n)
 	}
 }
@@ -99,14 +101,14 @@ func TestSet(t *testing.T) {
 	s := term.NewURIRefUnsafe("http://example.org/s")
 	p := term.NewURIRefUnsafe("http://example.org/p")
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("old")}, nil)
-	store.Set(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("new")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("old")}, nil)
+	store.Set(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("new")}, nil)
 
-	if n := store.Len(nil); n != 1 {
+	if n, _ := store.Len(t.Context(), nil); n != 1 {
 		t.Fatalf("Len after set = %d, want 1", n)
 	}
 
-	for tr := range store.Triples(term.TriplePattern{Subject: s}, nil) {
+	for tr := range store.Triples(t.Context(), term.TriplePattern{Subject: s}, nil) {
 		lit, ok := tr.Object.(term.Literal)
 		if !ok {
 			t.Fatalf("object is not Literal: %T", tr.Object)
@@ -121,20 +123,20 @@ func TestNamespaces(t *testing.T) {
 	_, store := newTestServer(t)
 
 	ns := term.NewURIRefUnsafe("http://example.org/")
-	store.Bind("ex", ns)
+	store.Bind(t.Context(), "ex", ns)
 
-	got, ok := store.Namespace("ex")
+	got, ok, _ := store.Namespace(t.Context(), "ex")
 	if !ok || !got.Equal(ns) {
 		t.Errorf("Namespace(ex) = %v, %v; want %v, true", got, ok, ns)
 	}
 
-	prefix, ok := store.Prefix(ns)
+	prefix, ok, _ := store.Prefix(t.Context(), ns)
 	if !ok || prefix != "ex" {
 		t.Errorf("Prefix(%v) = %q, %v; want %q, true", ns, prefix, ok, "ex")
 	}
 
 	var nsCount int
-	for range store.Namespaces() {
+	for range store.Namespaces(t.Context()) {
 		nsCount++
 	}
 	if nsCount != 1 {
@@ -162,9 +164,9 @@ func TestAddN(t *testing.T) {
 		{Triple: term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("a")}},
 		{Triple: term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("b")}},
 	}
-	store.AddN(quads)
+	store.AddN(t.Context(), quads)
 
-	if n := store.Len(nil); n != 2 {
+	if n, _ := store.Len(t.Context(), nil); n != 2 {
 		t.Fatalf("Len after AddN = %d, want 2", n)
 	}
 }
@@ -177,12 +179,12 @@ func TestTriplesWithPattern(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("val")
 
-	store.Add(term.Triple{Subject: s1, Predicate: p, Object: o}, nil)
-	store.Add(term.Triple{Subject: s2, Predicate: p, Object: o}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s1, Predicate: p, Object: o}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s2, Predicate: p, Object: o}, nil)
 
 	// Filter by subject
 	var count int
-	for range store.Triples(term.TriplePattern{Subject: s1}, nil) {
+	for range store.Triples(t.Context(), term.TriplePattern{Subject: s1}, nil) {
 		count++
 	}
 	if count != 1 {
@@ -201,10 +203,10 @@ func TestGraphIntegration(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("graph test")
 
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
-	if g.Len() != 1 {
-		t.Fatalf("graph Len = %d, want 1", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("graph Len = %d, want 1", mustV(g.Len(t.Context())))
 	}
 
 	// Query through SPARQL
@@ -236,7 +238,7 @@ func TestContexts(t *testing.T) {
 
 	remote := sparqlstore.New(ts.URL)
 	var count int
-	for g := range remote.Contexts(nil) {
+	for g := range remote.Contexts(t.Context(), nil) {
 		count++
 		if u, ok := g.(term.URIRef); !ok || u.Value() != "http://example.org/graph1" {
 			t.Errorf("unexpected context: %v", g)
@@ -257,7 +259,7 @@ func TestContextsWithTriple(t *testing.T) {
 	triple := term.Triple{Subject: s, Predicate: p, Object: o}
 
 	var count int
-	for range store.Contexts(&triple) {
+	for range store.Contexts(t.Context(), &triple) {
 		count++
 	}
 	// No named graphs, so expect 0
@@ -311,31 +313,39 @@ func TestAddWithNamedGraph(t *testing.T) {
 	o := rdflibgo.NewLiteral("named")
 
 	// Add with a URIRef context (named graph) — sends GRAPH <uri> { ... }
-	remote.Add(term.Triple{Subject: s, Predicate: p, Object: o}, graphURI)
+	remote.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, graphURI)
 
 	// The named graph should exist in the server dataset after the update
 	ng, ok := ds.NamedGraphs["http://example.org/graph1"]
 	if !ok {
 		t.Fatal("expected named graph to be created in dataset")
 	}
-	if ng.Len() != 1 {
-		t.Errorf("named graph len = %d, want 1", ng.Len())
+	if mustV(ng.Len(t.Context())) != 1 {
+		t.Errorf("named graph len = %d, want 1", mustV(ng.Len(t.Context())))
 	}
 }
 
 func TestAddNoUpdateEndpoint(t *testing.T) {
-	// Store without update endpoint — Add should be a no-op
+	// Store without update endpoint — every write is refused with a sentinel
 	remote := sparqlstore.New("http://localhost:0/query")
 	s := term.NewURIRefUnsafe("http://example.org/s")
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
 
-	// Should not panic
-	remote.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
-	remote.Remove(term.TriplePattern{Subject: s}, nil)
-	remote.Set(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
-	remote.AddN(nil)
-	remote.AddN([]term.Quad{{Triple: term.Triple{Subject: s, Predicate: p, Object: o}}})
+	tr := term.Triple{Subject: s, Predicate: p, Object: o}
+	for name, err := range map[string]error{
+		"Add":    remote.Add(t.Context(), tr, nil),
+		"Remove": remote.Remove(t.Context(), term.TriplePattern{Subject: s}, nil),
+		"Set":    remote.Set(t.Context(), tr, nil),
+		"AddN":   remote.AddN(t.Context(), []term.Quad{{Triple: tr}}),
+	} {
+		if !errors.Is(err, sparqlstore.ErrNoUpdateEndpoint) {
+			t.Errorf("%s without an update endpoint: err = %v, want ErrNoUpdateEndpoint", name, err)
+		}
+	}
+	if err := remote.AddN(t.Context(), nil); !errors.Is(err, sparqlstore.ErrNoUpdateEndpoint) {
+		t.Errorf("AddN(nil) without an update endpoint: err = %v, want ErrNoUpdateEndpoint", err)
+	}
 }
 
 func TestTriplesWithBNodeObjects(t *testing.T) {
@@ -345,10 +355,10 @@ func TestTriplesWithBNodeObjects(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	bnode := term.NewBNode()
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: bnode}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: bnode}, nil)
 
 	var count int
-	for tr := range store.Triples(term.TriplePattern{}, nil) {
+	for tr := range store.Triples(t.Context(), term.TriplePattern{}, nil) {
 		count++
 		if _, ok := tr.Object.(term.BNode); !ok {
 			t.Errorf("expected BNode object, got %T", tr.Object)
@@ -366,10 +376,10 @@ func TestTriplesWithTypedLiteral(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral(42)
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, nil)
 
 	var count int
-	for tr := range store.Triples(term.TriplePattern{}, nil) {
+	for tr := range store.Triples(t.Context(), term.TriplePattern{}, nil) {
 		count++
 		lit, ok := tr.Object.(term.Literal)
 		if !ok {
@@ -391,9 +401,9 @@ func TestTriplesWithLangLiteral(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("bonjour", rdflibgo.WithLang("fr"))
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, nil)
 
-	for tr := range store.Triples(term.TriplePattern{}, nil) {
+	for tr := range store.Triples(t.Context(), term.TriplePattern{}, nil) {
 		lit, ok := tr.Object.(term.Literal)
 		if !ok {
 			t.Fatalf("expected Literal, got %T", tr.Object)
@@ -412,13 +422,33 @@ func TestTriplesErrorHandling(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	remote := sparqlstore.New(ts.URL)
-	var count int
-	for range remote.Triples(term.TriplePattern{}, nil) {
-		count++
+	n, err := drainTriples(remote.Triples(t.Context(), term.TriplePattern{}, nil))
+	if n != 0 || err == nil {
+		t.Errorf("Triples on a 500 = %d triples, err %v; want 0 and an error", n, err)
 	}
-	if count != 0 {
-		t.Errorf("expected 0 triples on error, got %d", count)
+}
+
+// drainTriples counts the triples an iterator yields and returns its error.
+func drainTriples(it store.TripleIterator) (int, error) {
+	n := 0
+	for _, err := range it {
+		if err != nil {
+			return n, err
+		}
+		n++
 	}
+	return n, nil
+}
+
+func drainTerms(it store.TermIterator) (int, error) {
+	n := 0
+	for _, err := range it {
+		if err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 func TestLenErrorHandling(t *testing.T) {
@@ -428,8 +458,8 @@ func TestLenErrorHandling(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	remote := sparqlstore.New(ts.URL)
-	if n := remote.Len(nil); n != 0 {
-		t.Errorf("Len on error = %d, want 0", n)
+	if n, err := remote.Len(t.Context(), nil); n != 0 || err == nil {
+		t.Errorf("Len on a 500 = %d, err %v; want 0 and an error", n, err)
 	}
 }
 
@@ -440,12 +470,8 @@ func TestContextsErrorHandling(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	remote := sparqlstore.New(ts.URL)
-	var count int
-	for range remote.Contexts(nil) {
-		count++
-	}
-	if count != 0 {
-		t.Errorf("Contexts on error = %d, want 0", count)
+	if n, err := drainTerms(remote.Contexts(t.Context(), nil)); n != 0 || err == nil {
+		t.Errorf("Contexts on a 500 = %d, err %v; want 0 and an error", n, err)
 	}
 }
 
@@ -461,8 +487,9 @@ func TestExecUpdateError(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
 
-	// Should not panic even though update fails
-	remote.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
+	if err := remote.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, nil); err == nil {
+		t.Error("Add against a server that answers 500 returned no error")
+	}
 }
 
 func TestExecQueryJSONResponse(t *testing.T) {
@@ -475,7 +502,7 @@ func TestExecQueryJSONResponse(t *testing.T) {
 
 	remote := sparqlstore.New(ts.URL)
 	var count int
-	for range remote.Triples(term.TriplePattern{}, nil) {
+	for range remote.Triples(t.Context(), term.TriplePattern{}, nil) {
 		count++
 	}
 	if count != 1 {
@@ -488,7 +515,7 @@ func TestLenWithNamedGraphContext(t *testing.T) {
 
 	// Len with a URIRef context wraps in GRAPH — exercises wrapGraph with URIRef
 	graphURI := term.NewURIRefUnsafe("http://example.org/graph1")
-	n := store.Len(graphURI)
+	n, _ := store.Len(t.Context(), graphURI)
 	if n != 0 {
 		t.Errorf("Len(graph1) = %d, want 0", n)
 	}
@@ -500,13 +527,13 @@ func TestRemoveWithWildcard(t *testing.T) {
 	s := term.NewURIRefUnsafe("http://example.org/s")
 	p := term.NewURIRefUnsafe("http://example.org/p")
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("a")}, nil)
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("b")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("a")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("b")}, nil)
 
 	// Remove all triples with subject s (wildcard predicate and object)
-	store.Remove(term.TriplePattern{Subject: s}, nil)
+	store.Remove(t.Context(), term.TriplePattern{Subject: s}, nil)
 
-	if n := store.Len(nil); n != 0 {
+	if n, _ := store.Len(t.Context(), nil); n != 0 {
 		t.Errorf("Len after wildcard remove = %d, want 0", n)
 	}
 }
@@ -515,22 +542,14 @@ func TestExecQueryInvalidURL(t *testing.T) {
 	// Invalid URL triggers NewRequestWithContext error
 	remote := sparqlstore.New("://bad\x00url")
 
-	var count int
-	for range remote.Triples(term.TriplePattern{}, nil) {
-		count++
+	if n, err := drainTriples(remote.Triples(t.Context(), term.TriplePattern{}, nil)); n != 0 || err == nil {
+		t.Errorf("Triples with a bad URL = %d, err %v; want 0 and an error", n, err)
 	}
-	if count != 0 {
-		t.Errorf("expected 0 triples with bad URL, got %d", count)
+	if n, err := remote.Len(t.Context(), nil); n != 0 || err == nil {
+		t.Errorf("Len with a bad URL = %d, err %v; want 0 and an error", n, err)
 	}
-	if n := remote.Len(nil); n != 0 {
-		t.Errorf("Len with bad URL = %d, want 0", n)
-	}
-	var ctxCount int
-	for range remote.Contexts(nil) {
-		ctxCount++
-	}
-	if ctxCount != 0 {
-		t.Errorf("Contexts with bad URL = %d, want 0", ctxCount)
+	if n, err := drainTerms(remote.Contexts(t.Context(), nil)); n != 0 || err == nil {
+		t.Errorf("Contexts with a bad URL = %d, err %v; want 0 and an error", n, err)
 	}
 }
 
@@ -543,22 +562,31 @@ func TestExecUpdateInvalidURL(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
 
-	// Should not panic
-	remote.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
-	remote.Set(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
-	remote.Remove(term.TriplePattern{Subject: s}, nil)
+	tr := term.Triple{Subject: s, Predicate: p, Object: o}
+	for name, err := range map[string]error{
+		"Add":    remote.Add(t.Context(), tr, nil),
+		"Set":    remote.Set(t.Context(), tr, nil),
+		"Remove": remote.Remove(t.Context(), term.TriplePattern{Subject: s}, nil),
+	} {
+		if err == nil {
+			t.Errorf("%s with an unusable update URL returned no error", name)
+		}
+	}
 }
 
 func TestExecQueryConnectionRefused(t *testing.T) {
 	// Valid URL but nothing listening — client.Do error
 	remote := sparqlstore.New("http://127.0.0.1:1/query")
 
-	var count int
-	for range remote.Triples(term.TriplePattern{}, nil) {
-		count++
+	n, err := drainTriples(remote.Triples(t.Context(), term.TriplePattern{}, nil))
+	if n != 0 || err == nil {
+		t.Errorf("Triples with the server down = %d, err %v; want 0 and an error", n, err)
 	}
-	if count != 0 {
-		t.Errorf("expected 0 triples on connection refused, got %d", count)
+	if _, err := remote.Len(t.Context(), nil); err == nil {
+		t.Error("Len with the server down returned no error")
+	}
+	if _, err := drainTerms(remote.Contexts(t.Context(), nil)); err == nil {
+		t.Error("Contexts with the server down returned no error")
 	}
 }
 
@@ -570,8 +598,9 @@ func TestExecUpdateConnectionRefused(t *testing.T) {
 	p := term.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
 
-	// Should not panic
-	remote.Add(term.Triple{Subject: s, Predicate: p, Object: o}, nil)
+	if err := remote.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o}, nil); err == nil {
+		t.Error("Add with the server down returned no error")
+	}
 }
 
 func TestTriplesWithObjectPattern(t *testing.T) {
@@ -582,12 +611,12 @@ func TestTriplesWithObjectPattern(t *testing.T) {
 	o1 := rdflibgo.NewLiteral("one")
 	o2 := rdflibgo.NewLiteral("two")
 
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: o1}, nil)
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: o2}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o1}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: o2}, nil)
 
 	// Filter by all three positions
 	var count int
-	for range store.Triples(term.TriplePattern{Subject: s, Predicate: &p, Object: o1}, nil) {
+	for range store.Triples(t.Context(), term.TriplePattern{Subject: s, Predicate: &p, Object: o1}, nil) {
 		count++
 	}
 	if count != 1 {
@@ -600,13 +629,13 @@ func TestTriplesEarlyBreak(t *testing.T) {
 
 	s := term.NewURIRefUnsafe("http://example.org/s")
 	p := term.NewURIRefUnsafe("http://example.org/p")
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("a")}, nil)
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("b")}, nil)
-	store.Add(term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("c")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("a")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("b")}, nil)
+	store.Add(t.Context(), term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("c")}, nil)
 
 	// Break after first triple
 	var count int
-	for range store.Triples(term.TriplePattern{}, nil) {
+	for range store.Triples(t.Context(), term.TriplePattern{}, nil) {
 		count++
 		if count == 1 {
 			break
@@ -635,7 +664,7 @@ func TestContextsEarlyBreak(t *testing.T) {
 
 	remote := sparqlstore.New(ts.URL)
 	var count int
-	for range remote.Contexts(nil) {
+	for range remote.Contexts(t.Context(), nil) {
 		count++
 		if count == 1 {
 			break
@@ -649,12 +678,12 @@ func TestContextsEarlyBreak(t *testing.T) {
 func TestNamespacesEarlyBreak(t *testing.T) {
 	_, store := newTestServer(t)
 
-	store.Bind("ex", term.NewURIRefUnsafe("http://example.org/"))
-	store.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
-	store.Bind("dc", term.NewURIRefUnsafe("http://purl.org/dc/elements/1.1/"))
+	store.Bind(t.Context(), "ex", term.NewURIRefUnsafe("http://example.org/"))
+	store.Bind(t.Context(), "foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	store.Bind(t.Context(), "dc", term.NewURIRefUnsafe("http://purl.org/dc/elements/1.1/"))
 
 	var count int
-	for range store.Namespaces() {
+	for range store.Namespaces(t.Context()) {
 		count++
 		if count == 1 {
 			break
@@ -685,7 +714,7 @@ func TestTriplesMalformedResult(t *testing.T) {
 
 	remote := sparqlstore.New(ts.URL)
 	var count int
-	for range remote.Triples(term.TriplePattern{}, nil) {
+	for range remote.Triples(t.Context(), term.TriplePattern{}, nil) {
 		count++
 	}
 	// Should skip the malformed row
@@ -711,7 +740,7 @@ func TestLenNonLiteralCount(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	remote := sparqlstore.New(ts.URL)
-	if n := remote.Len(nil); n != 0 {
+	if n, _ := remote.Len(t.Context(), nil); n != 0 {
 		t.Errorf("Len with non-literal count = %d, want 0", n)
 	}
 }
@@ -733,7 +762,7 @@ func TestLenMissingCountVar(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	remote := sparqlstore.New(ts.URL)
-	if n := remote.Len(nil); n != 0 {
+	if n, _ := remote.Len(t.Context(), nil); n != 0 {
 		t.Errorf("Len with missing count var = %d, want 0", n)
 	}
 }
@@ -762,14 +791,14 @@ func TestAddNWithGraphContext(t *testing.T) {
 		{Triple: term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("a")}, Graph: graphURI},
 		{Triple: term.Triple{Subject: s, Predicate: p, Object: rdflibgo.NewLiteral("b")}, Graph: graphURI},
 	}
-	remote.AddN(quads)
+	remote.AddN(t.Context(), quads)
 
 	// Verify named graph was created
 	ng, ok := ds.NamedGraphs["http://example.org/graph1"]
 	if !ok {
 		t.Fatal("expected named graph to be created")
 	}
-	if ng.Len() != 2 {
-		t.Errorf("named graph len = %d, want 2", ng.Len())
+	if mustV(ng.Len(t.Context())) != 2 {
+		t.Errorf("named graph len = %d, want 2", mustV(ng.Len(t.Context())))
 	}
 }

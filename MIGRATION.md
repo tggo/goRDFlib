@@ -14,6 +14,7 @@ Upgrade straight to the latest version and read every section after the version 
 | v0.3.x | from [v0.2.0 → v0.4.0](#v020--v040) (the v0.4.0 part) |
 | v0.4.0 | from [v0.4.0 → v0.5.0](#v040--v050) |
 | v0.5.0 – v0.5.2 | [v0.5.x → v0.5.3](#v05x--v053) |
+| v0.5.3 – v0.8.x | [v0.8.x → v0.9.0](#v08x--v090) |
 
 If you implement `store.Store` yourself, also read [Custom store implementations](#custom-store-implementations).
 
@@ -214,6 +215,147 @@ Output that changes on purpose:
 
 ---
 
+## v0.8.x → v0.9.0
+
+**API, breaking, everyone.** v0.9 makes errors and `context.Context` part of every API that can do I/O
+(issue #52). Before it, a persistent store that failed a read or a write had
+no way to say so: `Len` returned 0, `Triples` yielded nothing, `Add` returned
+nothing, and the caller saw an empty graph. The in-memory store never fails,
+so the change is mechanical for code that only uses it: add a `ctx`, handle
+an `err`.
+
+### The rule
+
+Every method that reaches a store takes `ctx context.Context` as its first
+parameter and returns an `error`. Iterators become `iter.Seq2[T, error]`:
+an iteration that fails yields one `(zero, err)` pair and stops. Callers stop
+at the first non-nil error:
+
+```go
+for t, err := range g.Triples(ctx, nil, nil, nil) {
+	if err != nil {
+		return err
+	}
+	use(t)
+}
+```
+
+Methods that never touch storage (`Identifier`, `Base`, `Store`,
+`ContextAware`, `TransactionAware`, term constructors) are unchanged.
+
+### store.Store
+
+| v0.8 | v0.9 |
+|---|---|
+| `Add(t, g)` | `Add(ctx, t, g) error` |
+| `AddN(quads)` | `AddN(ctx, quads) error` |
+| `Remove(p, g)` | `Remove(ctx, p, g) error` |
+| `Set(t, g)` | `Set(ctx, t, g) error` |
+| `Triples(p, g) iter.Seq[Triple]` | `Triples(ctx, p, g) iter.Seq2[Triple, error]` |
+| `Len(g) int` | `Len(ctx, g) (int, error)` |
+| `Contexts(t) iter.Seq[Term]` | `Contexts(ctx, t) iter.Seq2[Term, error]` |
+| `Bind(prefix, ns)` | `Bind(ctx, prefix, ns) error` |
+| `Namespace(prefix) (URIRef, bool)` | `Namespace(ctx, prefix) (URIRef, bool, error)` |
+| `Prefix(ns) (string, bool)` | `Prefix(ctx, ns) (string, bool, error)` |
+| `Namespaces() iter.Seq2[string, URIRef]` | `Namespaces(ctx) iter.Seq2[NamespaceBinding, error]` |
+
+The type aliases keep their names and change their shape:
+`TripleIterator = iter.Seq2[term.Triple, error]`,
+`TermIterator = iter.Seq2[term.Term, error]`,
+`TermPairIterator = iter.Seq2[TermPair, error]` (`TermPair{First, Second}`),
+`NamespaceIterator = iter.Seq2[NamespaceBinding, error]`
+(`NamespaceBinding{Prefix, Namespace}`).
+
+Optional interfaces:
+
+| v0.8 | v0.9 |
+|---|---|
+| `QueryableStore.TriplesWithLimit(p, g, limit, offset)` | `(ctx, p, g, limit, offset) TripleIterator` |
+| `QueryableStore.Count(p, g) int` | `(ctx, p, g) (int, error)` |
+| `QueryableStore.Exists(p, g) bool` | `(ctx, p, g) (bool, error)` |
+| `CardinalityStore.Cardinality(p, g) int` | `(ctx, p, g) (int, error)` |
+| `SnapshotStore.ReadSnapshot() (Store, func())` | `ReadSnapshot(ctx) (Store, func(), error)` |
+| `ReachabilityStore.Reachable(q)` | `Reachable(ctx, q)` |
+| `ContextBinder.BindContext(ctx) Store`, `store.BindContext` | **removed**: the context is a parameter of every call |
+
+A store must honour `ctx`: a read or write started with a done context
+returns `ctx.Err()` (wrapped is fine) and does nothing.
+
+### graph.Graph
+
+| v0.8 | v0.9 |
+|---|---|
+| `Add(s, p, o) *Graph` | `Add(ctx, s, p, o) error` (no chaining) |
+| `Remove(s, p, o) *Graph` | `Remove(ctx, s, p, o) error` |
+| `Set(s, p, o) *Graph` | `Set(ctx, s, p, o) error` |
+| `Len() int` | `Len(ctx) (int, error)` |
+| `Contains(s, p, o) bool` | `Contains(ctx, s, p, o) (bool, error)` |
+| `Triples(s, p, o)` | `Triples(ctx, s, p, o) TripleIterator` |
+| `Subjects/Predicates/Objects(…)` | `(ctx, …) TermIterator` |
+| `SubjectPredicates/SubjectObjects/PredicateObjects(…)` | `(ctx, …) TermPairIterator` |
+| `Value(s, p, o) (Term, bool)` | `Value(ctx, s, p, o) (Term, bool, error)` |
+| `Bind(prefix, ns)` | `Bind(ctx, prefix, ns) error` |
+| `Namespaces()` | `Namespaces(ctx) NamespaceIterator` |
+| `QName(uri) string` | `QName(ctx, uri) (string, error)` |
+| `Union/Intersection/Difference(other) *Graph` | `(ctx, other) (*Graph, error)` |
+| `AllNodes() []Term` | `AllNodes(ctx) ([]Term, error)` |
+| `Connected() bool` | `Connected(ctx) (bool, error)` |
+| `Skolemize/DeSkolemize(authority, …) *Graph` | `(ctx, authority, …) (*Graph, error)` |
+| `BindContext(ctx) *Graph` | **removed** |
+
+`ConjunctiveGraph`, `Dataset`, `Collection` and `Resource` follow the same
+rule: every method that reads or writes takes `ctx` and returns an error.
+
+### Parsers and serializers
+
+`plugin.Parser.Parse(ctx, g, r) error` and
+`plugin.Serializer.Serialize(ctx, g, w) error`. The format packages follow:
+`turtle.Parse(ctx, g, r, opts...)`, `turtle.Serialize(ctx, g, w, opts...)`,
+and the same for nt, nq, trig, rdfxml and jsonld. A store error while
+serializing fails `Serialize`; it never produces a truncated document.
+`ParseStream`/`ParseStreamContext` do not touch a store and are unchanged.
+
+### Engines
+
+`sparql`, `shacl` and `reasoning` keep both forms (`Query` /
+`QueryContext`, `Validate` / `ValidateContext`, `Expand` / `ExpandContext`):
+the form without a context uses `context.Background()`. What changes is what
+a store error does: it used to look like "no match"; now it is the error of
+the query, update, validation or expansion, and no partial result is
+returned. `paths.Path.Eval` takes `ctx` and returns
+`iter.Seq2[store.TermPair, error]`; `paths.EvalContext` is gone.
+
+### Other API changes in v0.9
+
+- `NewGraph` binds rdf/rdfs/xsd/owl only over a MemoryStore; for any other
+  store call `g.BindDefaults(ctx)`.
+- `shacl.NewGraphFromRDF(ctx, g, base) (*Graph, error)`; `shacl.Graph.Add`
+  and `Merge` take `ctx` and return an error. New sentinel
+  `shacl.ErrQueryFailed` wraps an engine error of a shape's SPARQL query.
+  `CompileShapesContext` and `EvalRuleSetContext` are new. The entry points
+  without an error result (`Validate`, `Prepared.Validate`,
+  `CompiledShapes.Validate`) report a store failure in the new
+  `ValidationReport.Err` (with `Conforms` false and no results) and through
+  `WithErrorHandler`; check `Err` or use the `*Context` variants.
+  `(*shacl.Graph).Err()` reports a failed lazy index build.
+- `sparql.ErrUpdateRejected` marks an update refused for what it asks (LOAD
+  without a Loader, MOVE from a missing graph); a store error does not match it.
+  `endpoint` answers the first with 400 and a store failure with 500.
+- `sparqlstore`: a write without an update URL returns `ErrNoUpdateEndpoint`
+  (it was a silent no-op); `WriteNTriples` takes `ctx`.
+- `nq.Writer.WriteGraph(ctx, g)` takes `ctx`; it writes as it reads, so discard
+  the output after an error.
+- `reasoning.RDFSClosure`, `OWLRLClosure`, `OWLRLClosureCheck` take `ctx` and
+  return an error.
+
+### Writing a store
+
+Run `storetest.Run` against it. It checks the signatures above, that a done
+context is refused, and that an error from the store reaches the caller of
+`graph.Graph` instead of looking like an empty result.
+
+---
+
 ## Custom store implementations
 
 The current contract is checked by `store/storetest`. Run it against your store on every goRDFlib upgrade:
@@ -233,6 +375,7 @@ Rules that changed:
 | v0.2.0 | a nil context is the default graph, not every graph (`Len`, `Remove`, `Triples`); `TriplesWithLimit` with `limit <= 0` means no limit |
 | v0.5.3 | the default graph is nil **or** `store.DefaultGraph`; route every context through `store.IsDefaultGraph`. Any other term, blank nodes included, names a graph |
 | v0.5.3 | if you implement `store.CardinalityStore`, the count must be exact per pattern **and** context |
+| v0.9.0 | every method takes `ctx` and returns an error; iterators are `iter.Seq2[T, error]`; `ContextBinder` is gone. See [v0.8.x → v0.9.0](#v08x--v090) |
 
 The v0.5.3 change in code, as made in [rdflibgo-mongostore](https://github.com/tggo/rdflibgo-mongostore/commit/01b53cb):
 

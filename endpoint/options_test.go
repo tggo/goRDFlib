@@ -25,8 +25,8 @@ func TestUpdateThreeWays(t *testing.T) {
 	wantStatus(t, r, http.StatusNoContent)
 	r = postForm(t, ts.URL, url.Values{"update": {`INSERT DATA { GRAPH <http://example.org/g9> { <http://example.org/a> <http://example.org/b> 2 } }`}})
 	wantStatus(t, r, http.StatusNoContent)
-	if ds.Default.Len() != 2 || ds.NamedGraphs[ex+"g9"] == nil {
-		t.Fatalf("updates not applied: default %d, graphs %v", ds.Default.Len(), keys(ds.NamedGraphs))
+	if mustV(ds.Default.Len(t.Context())) != 2 || ds.NamedGraphs[ex+"g9"] == nil {
+		t.Fatalf("updates not applied: default %d, graphs %v", mustV(ds.Default.Len(t.Context())), keys(ds.NamedGraphs))
 	}
 }
 
@@ -67,7 +67,7 @@ func (l *recordingLoader) Load(_ context.Context, g *graph.Graph, uri string) er
 	l.mu.Lock()
 	l.uris = append(l.uris, uri)
 	l.mu.Unlock()
-	g.Add(iri(uri), iri(ex+"loaded"), term.NewLiteral(true))
+	g.Add(context.Background(), iri(uri), iri(ex+"loaded"), term.NewLiteral(true))
 	return nil
 }
 
@@ -78,7 +78,7 @@ func TestLoadWithLoader(t *testing.T) {
 	ds.Loader = &recordingLoader{}
 	ts, _ := serve(t, ds, endpoint.WithLoader(l))
 	wantStatus(t, postUpdate(t, ts.URL, "LOAD <http://example.org/data> INTO GRAPH <http://example.org/loaded>"), http.StatusNoContent)
-	if len(l.uris) != 1 || ds.NamedGraphs[ex+"loaded"] == nil || ds.NamedGraphs[ex+"loaded"].Len() != 1 {
+	if len(l.uris) != 1 || ds.NamedGraphs[ex+"loaded"] == nil || mustV(ds.NamedGraphs[ex+"loaded"].Len(t.Context())) != 1 {
 		t.Fatalf("loader calls %v, graphs %v", l.uris, keys(ds.NamedGraphs))
 	}
 	if len(ds.Loader.(*recordingLoader).uris) != 0 {
@@ -94,7 +94,7 @@ func TestReadOnly(t *testing.T) {
 	wantStatus(t, do(t, newReq(t, "PUT", graphURL(ts.URL, ex+"g1"), "text/turtle", "")), http.StatusForbidden)
 	wantStatus(t, do(t, newReq(t, "POST", graphURL(ts.URL, ex+"g1"), "text/turtle", "")), http.StatusForbidden)
 	wantStatus(t, do(t, newReq(t, "DELETE", graphURL(ts.URL, ex+"g1"), "", "")), http.StatusForbidden)
-	if ds.Default.Len() != 1 || ds.NamedGraphs[ex+"g1"].Len() != 1 {
+	if mustV(ds.Default.Len(t.Context())) != 1 || mustV(ds.NamedGraphs[ex+"g1"].Len(t.Context())) != 1 {
 		t.Fatal("a read-only endpoint changed the dataset")
 	}
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {"ASK {}"}}), http.StatusOK)
@@ -134,7 +134,7 @@ func TestAuthorizer(t *testing.T) {
 	wantStatus(t, do(t, newReq(t, "GET", graphURL(ts.URL, ex+"g1"), "", "", "Authorization", "reader")), http.StatusOK)
 	wantStatus(t, do(t, newReq(t, "DELETE", graphURL(ts.URL, ex+"g1"), "", "", "Authorization", "reader")), http.StatusForbidden)
 	wantStatus(t, get(t, ts.URL, nil, "Authorization", "reader"), http.StatusOK) // service description
-	if ds.Default.Len() != 1 || ds.NamedGraphs[ex+"g1"] == nil {
+	if mustV(ds.Default.Len(t.Context())) != 1 || ds.NamedGraphs[ex+"g1"] == nil {
 		t.Fatal("a refused request changed the dataset")
 	}
 	wantStatus(t, postUpdate(t, ts.URL, "CLEAR ALL", "Authorization", "admin"), http.StatusNoContent)
@@ -157,7 +157,7 @@ func TestRequestHook(t *testing.T) {
 		mu.Unlock()
 	}
 	ds := fixture()
-	ds.Default.Add(iri(ex+"s2"), iri(ex+"p"), term.NewLiteral("x"))
+	ds.Default.Add(t.Context(), iri(ex+"s2"), iri(ex+"p"), term.NewLiteral("x"))
 	ts, _ := serve(t, ds, endpoint.WithRequestHook(hook))
 	get(t, ts.URL, url.Values{"query": {"SELECT * WHERE { ?s ?p ?o }"}})
 	get(t, ts.URL, url.Values{"query": {"SELEC"}})
@@ -212,7 +212,7 @@ func (readerNoLen) Close() error { return nil }
 func TestMaxResultRows(t *testing.T) {
 	ds := fixture()
 	for i := range 5 {
-		ds.Default.Add(iri(fmt.Sprintf("%sr%d", ex, i)), iri(ex+"q"), term.NewLiteral(i))
+		ds.Default.Add(t.Context(), iri(fmt.Sprintf("%sr%d", ex, i)), iri(ex+"q"), term.NewLiteral(i))
 	}
 	ts, _ := serve(t, ds, endpoint.WithMaxResultRows(5))
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {`SELECT * WHERE { ?s <http://example.org/q> ?o }`}}), http.StatusOK)
@@ -237,7 +237,7 @@ func TestMaxResultRows(t *testing.T) {
 func TestMaxSolutions(t *testing.T) {
 	ds := fixture()
 	for i := range 30 {
-		ds.Default.Add(iri(fmt.Sprintf("%sr%d", ex, i)), iri(ex+"q"), term.NewLiteral(i))
+		ds.Default.Add(t.Context(), iri(fmt.Sprintf("%sr%d", ex, i)), iri(ex+"q"), term.NewLiteral(i))
 	}
 	ts, _ := serve(t, ds, endpoint.WithMaxSolutions(1000))
 	// A sort over a cross product builds every solution before the first row.
@@ -251,7 +251,7 @@ func TestMaxSolutions(t *testing.T) {
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {`SELECT * WHERE { ?s <http://example.org/q> ?o }`}}), http.StatusOK)
 	r = postForm(t, ts.URL, url.Values{"update": {`INSERT { ?a <http://example.org/x> ?f } WHERE { ?a ?b ?c . ?d ?e ?f . ?g ?h ?i }`}})
 	wantStatus(t, r, http.StatusUnprocessableEntity)
-	if n := ds.Default.Len(); n > 100 {
+	if n, _ := ds.Default.Len(t.Context()); n > 100 {
 		t.Errorf("update over the budget wrote: %d triples", n)
 	}
 }
@@ -330,7 +330,7 @@ func TestSeparateQueryAndUpdateHandlers(t *testing.T) {
 	wantStatus(t, postQuery(t, base+"/update", "ASK {}"), http.StatusBadRequest)
 	// Graph Store parameters are not served by either.
 	wantStatus(t, do(t, newReq(t, "PUT", graphURL(base+"/query", ex+"g"), "text/turtle", "")), http.StatusMethodNotAllowed)
-	if ds.Default.Len() != 0 {
+	if mustV(ds.Default.Len(t.Context())) != 0 {
 		t.Fatal("CLEAR DEFAULT via /update was not applied")
 	}
 }
@@ -339,7 +339,7 @@ func TestReadAndWriteHelpers(t *testing.T) {
 	ds := fixture()
 	ts, h := serve(t, ds)
 	err := h.Write(context.Background(), func() {
-		ds.Default.Add(iri(ex+"w"), iri(ex+"p"), term.NewLiteral("written"))
+		ds.Default.Add(t.Context(), iri(ex+"w"), iri(ex+"p"), term.NewLiteral("written"))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func TestReadAndWriteHelpers(t *testing.T) {
 		t.Fatal("a write through Handler.Write is not visible")
 	}
 	var n int
-	if err := h.Read(context.Background(), func() { n = ds.Default.Len() }); err != nil || n != 2 {
+	if err := h.Read(context.Background(), func() { n, _ = ds.Default.Len(t.Context()) }); err != nil || n != 2 {
 		t.Fatalf("Read: err %v, len %d", err, n)
 	}
 }

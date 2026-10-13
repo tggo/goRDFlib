@@ -56,7 +56,7 @@ func FuzzParseProvenance(f *testing.F) {
 		}
 		var seen []record
 
-		err := rdfxml.Parse(g, strings.NewReader(src), rdfxml.WithProvenance(
+		err := rdfxml.Parse(t.Context(), g, strings.NewReader(src), rdfxml.WithProvenance(
 			func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, line int) {
 				idx.Triple(s, p, o, line)
 				seen = append(seen, record{term.Triple{Subject: s, Predicate: p, Object: o}, line})
@@ -77,7 +77,7 @@ func FuzzParseProvenance(f *testing.F) {
 		// On a successful parse, every triple in the graph must have a line —
 		// the invariant that keeps a new production from calling g.Add
 		// directly and silently losing provenance.
-		g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+		g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 			if _, ok := idx.Line(tr.Subject, tr.Predicate, tr.Object); !ok {
 				t.Fatalf("no line for %s %s %s",
 					tr.Subject.N3(), tr.Predicate.N3(), tr.Object.N3())

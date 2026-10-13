@@ -30,15 +30,15 @@ func TestExpandContextSuppliesMissingTerms(t *testing.T) {
 	// Without the context nothing is recognised: "ex:thing" is a relative-ish
 	// IRI and "name" is not a term, so json-gold drops the property.
 	bare := graph.NewGraph()
-	if err := jsonld.Parse(bare, strings.NewReader(doc)); err != nil {
+	if err := jsonld.Parse(t.Context(), bare, strings.NewReader(doc)); err != nil {
 		t.Fatal(err)
 	}
-	if bare.Len() != 0 {
-		t.Fatalf("without an expand context got %d triples, want 0", bare.Len())
+	if mustV(bare.Len(t.Context())) != 0 {
+		t.Fatalf("without an expand context got %d triples, want 0", mustV(bare.Len(t.Context())))
 	}
 
 	g := graph.NewGraph()
-	if err := jsonld.Parse(g, strings.NewReader(doc), jsonld.WithExpandContext(exampleContext())); err != nil {
+	if err := jsonld.Parse(t.Context(), g, strings.NewReader(doc), jsonld.WithExpandContext(exampleContext())); err != nil {
 		t.Fatal(err)
 	}
 	want := term.Triple{
@@ -46,8 +46,8 @@ func TestExpandContextSuppliesMissingTerms(t *testing.T) {
 		Predicate: term.NewURIRefUnsafe("http://example.org/name"),
 		Object:    term.NewLiteral("Thing"),
 	}
-	if g.Len() != 1 || !g.Contains(want.Subject, want.Predicate, want.Object) {
-		t.Fatalf("with an expand context got %d triples and missing %v", g.Len(), want)
+	if mustV(g.Len(t.Context())) != 1 || !mustV(g.Contains(t.Context(), want.Subject, want.Predicate, want.Object)) {
+		t.Fatalf("with an expand context got %d triples and missing %v", mustV(g.Len(t.Context())), want)
 	}
 }
 
@@ -62,17 +62,17 @@ func TestExpandContextDocumentWins(t *testing.T) {
   "ex:other": "kept from the expand context"
 }`
 	g := graph.NewGraph()
-	if err := jsonld.Parse(g, strings.NewReader(doc), jsonld.WithExpandContext(exampleContext())); err != nil {
+	if err := jsonld.Parse(t.Context(), g, strings.NewReader(doc), jsonld.WithExpandContext(exampleContext())); err != nil {
 		t.Fatal(err)
 	}
 	s := term.NewURIRefUnsafe("http://example.org/thing")
-	if !g.Contains(s, term.NewURIRefUnsafe("http://example.org/label"), term.NewLiteral("Thing")) {
+	if !mustV(g.Contains(t.Context(), s, term.NewURIRefUnsafe("http://example.org/label"), term.NewLiteral("Thing"))) {
 		t.Error("document's own definition of \"name\" did not take precedence")
 	}
-	if g.Contains(s, term.NewURIRefUnsafe("http://example.org/name"), nil) {
+	if mustV(g.Contains(t.Context(), s, term.NewURIRefUnsafe("http://example.org/name"), nil)) {
 		t.Error("expand context's definition of \"name\" leaked past the document's")
 	}
-	if !g.Contains(s, term.NewURIRefUnsafe("http://example.org/other"), nil) {
+	if !mustV(g.Contains(t.Context(), s, term.NewURIRefUnsafe("http://example.org/other"), nil)) {
 		t.Error("prefix from the expand context was lost once the document declared its own context")
 	}
 }
@@ -97,13 +97,13 @@ func TestExpandContextForms(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := graph.NewGraph()
-			err := jsonld.Parse(g, strings.NewReader(doc),
+			err := jsonld.Parse(t.Context(), g, strings.NewReader(doc),
 				jsonld.WithExpandContext(tc.ctx), jsonld.WithDocumentLoader(loader))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !g.Contains(term.NewURIRefUnsafe("http://example.org/thing"), term.NewURIRefUnsafe("http://example.org/name"), term.NewLiteral("Thing")) {
-				t.Fatalf("triple not produced; graph has %d triples", g.Len())
+			if !mustV(g.Contains(t.Context(), term.NewURIRefUnsafe("http://example.org/thing"), term.NewURIRefUnsafe("http://example.org/name"), term.NewLiteral("Thing"))) {
+				t.Fatalf("triple not produced; graph has %d triples", mustV(g.Len(t.Context())))
 			}
 		})
 	}
@@ -119,10 +119,10 @@ func TestExpandContextInvalidIsAnError(t *testing.T) {
 		[]any{map[string]any{"@base": 7}},                                             // @base must be a string or null
 	} {
 		g := graph.NewGraph()
-		err := jsonld.Parse(g, strings.NewReader(doc),
+		err := jsonld.Parse(t.Context(), g, strings.NewReader(doc),
 			jsonld.WithExpandContext(ctx), jsonld.WithDocumentLoader(&staticLoader{}))
 		if err == nil {
-			t.Errorf("expand context %v: no error, graph has %d triples", ctx, g.Len())
+			t.Errorf("expand context %v: no error, graph has %d triples", ctx, mustV(g.Len(t.Context())))
 		}
 		if errors.Is(err, jsonld.ErrProcessorPanic) {
 			t.Errorf("expand context %v: processor panicked: %v", ctx, err)
@@ -145,13 +145,13 @@ func TestExpandContextProvenance(t *testing.T) {
 
 	g := graph.NewGraph()
 	idx := provenance.NewIndex()
-	err := jsonld.Parse(g, strings.NewReader(doc),
+	err := jsonld.Parse(t.Context(), g, strings.NewReader(doc),
 		jsonld.WithExpandContext(ctx), jsonld.WithProvenance(idx.Triple))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 2 {
-		t.Fatalf("got %d triples, want 2", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Fatalf("got %d triples, want 2", mustV(g.Len(t.Context())))
 	}
 	name := term.NewURIRefUnsafe("http://example.org/name")
 	for _, tc := range []struct {
@@ -171,12 +171,12 @@ func TestExpandContextProvenance(t *testing.T) {
 // options.
 func TestExpandContextIgnoredBySerializer(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(term.NewURIRefUnsafe("http://example.org/thing"), term.NewURIRefUnsafe("http://example.org/name"), term.NewLiteral("Thing"))
+	g.Add(t.Context(), term.NewURIRefUnsafe("http://example.org/thing"), term.NewURIRefUnsafe("http://example.org/name"), term.NewLiteral("Thing"))
 	var with, without strings.Builder
-	if err := jsonld.Serialize(g, &without, jsonld.WithExpanded()); err != nil {
+	if err := jsonld.Serialize(t.Context(), g, &without, jsonld.WithExpanded()); err != nil {
 		t.Fatal(err)
 	}
-	if err := jsonld.Serialize(g, &with, jsonld.WithExpanded(), jsonld.WithExpandContext(exampleContext())); err != nil {
+	if err := jsonld.Serialize(t.Context(), g, &with, jsonld.WithExpanded(), jsonld.WithExpandContext(exampleContext())); err != nil {
 		t.Fatal(err)
 	}
 	if with.String() != without.String() {

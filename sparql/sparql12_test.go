@@ -12,7 +12,7 @@ import (
 
 func TestTripleTermSpecialChars(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://ex/s"),
 		rdflibgo.NewURIRefUnsafe("http://ex/p"),
 		rdflibgo.NewTripleTerm(
@@ -40,7 +40,7 @@ func TestTripleTermSpecialChars(t *testing.T) {
 
 func TestTripleTermVariableMatching(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://ex/s"),
 		rdflibgo.NewURIRefUnsafe("http://ex/p"),
 		rdflibgo.NewTripleTerm(
@@ -82,7 +82,7 @@ func TestNestedTripleTermVariable(t *testing.T) {
 		rdflibgo.NewURIRefUnsafe("http://ex/b"),
 		inner,
 	)
-	g.Add(rdflibgo.NewURIRefUnsafe("http://ex/s"), rdflibgo.NewURIRefUnsafe("http://ex/has"), outer)
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://ex/s"), rdflibgo.NewURIRefUnsafe("http://ex/has"), outer)
 	r, err := sparql.Query(g, `
 		PREFIX : <http://ex/>
 		SELECT ?innerObj WHERE {
@@ -111,9 +111,9 @@ func TestAnnotationQuery(t *testing.T) {
 	o := rdflibgo.NewURIRefUnsafe("http://ex/o")
 	reifier := rdflibgo.NewBNode("r1")
 	rdfReifies := rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies")
-	g.Add(s, p, o)
-	g.Add(reifier, rdfReifies, rdflibgo.NewTripleTerm(s, p, o))
-	g.Add(reifier, rdflibgo.NewURIRefUnsafe("http://ex/source"), rdflibgo.NewURIRefUnsafe("http://ex/web"))
+	g.Add(t.Context(), s, p, o)
+	g.Add(t.Context(), reifier, rdfReifies, rdflibgo.NewTripleTerm(s, p, o))
+	g.Add(t.Context(), reifier, rdflibgo.NewURIRefUnsafe("http://ex/source"), rdflibgo.NewURIRefUnsafe("http://ex/web"))
 
 	r, err := sparql.Query(g, `
 		PREFIX : <http://ex/>
@@ -134,7 +134,7 @@ func TestAnnotationQuery(t *testing.T) {
 
 func TestTripleTermFunctions(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://ex/s"),
 		rdflibgo.NewURIRefUnsafe("http://ex/p"),
 		rdflibgo.NewTripleTerm(
@@ -176,7 +176,7 @@ func TestTripleTermFunctions(t *testing.T) {
 
 func TestTripleTermInVALUES(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://ex/s"),
 		rdflibgo.NewURIRefUnsafe("http://ex/p"),
 		rdflibgo.NewTripleTerm(
@@ -229,7 +229,7 @@ func TestDirectionalLangTags(t *testing.T) {
 
 func TestTripleTermCONSTRUCT(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		rdflibgo.NewURIRefUnsafe("http://ex/s"),
 		rdflibgo.NewURIRefUnsafe("http://ex/p"),
 		rdflibgo.NewTripleTerm(
@@ -253,7 +253,7 @@ func TestTripleTermCONSTRUCT(t *testing.T) {
 		t.Fatal("CONSTRUCT graph is nil")
 	}
 	count := 0
-	for range r.Graph.Triples(nil, nil, nil) {
+	for range r.Graph.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 1 {
@@ -267,7 +267,7 @@ func TestUpdateWithReifiedTriples(t *testing.T) {
 		NamedGraphs: map[string]*rdflibgo.Graph{
 			"http://ex/g1": func() *rdflibgo.Graph {
 				g := rdflibgo.NewGraph()
-				g.Add(rdflibgo.NewURIRefUnsafe("http://ex/a"), rdflibgo.NewURIRefUnsafe("http://ex/b"), rdflibgo.NewURIRefUnsafe("http://ex/c"))
+				g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://ex/a"), rdflibgo.NewURIRefUnsafe("http://ex/b"), rdflibgo.NewURIRefUnsafe("http://ex/c"))
 				return g
 			}(),
 		},
@@ -281,7 +281,7 @@ func TestUpdateWithReifiedTriples(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for range ds.Default.Triples(nil, nil, nil) {
+	for range ds.Default.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 2 {
@@ -378,7 +378,7 @@ func TestTripleTermRoundTrip(t *testing.T) {
 		),
 	}
 	for _, tt := range terms {
-		g.Add(s, p, tt)
+		g.Add(t.Context(), s, p, tt)
 	}
 	r, err := sparql.Query(g, `
 		PREFIX : <http://ex/>
@@ -401,9 +401,9 @@ func TestIsTripleNegative(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://ex/s")
 	p := rdflibgo.NewURIRefUnsafe("http://ex/p")
-	g.Add(s, p, rdflibgo.NewURIRefUnsafe("http://ex/a"))
-	g.Add(s, p, rdflibgo.NewLiteral("hello"))
-	g.Add(s, p, rdflibgo.NewLiteral(42, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewURIRefUnsafe("http://ex/a"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(42, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := sparql.Query(g, `
 		PREFIX : <http://ex/>
 		SELECT ?v WHERE {
@@ -423,7 +423,7 @@ func TestAccessorsOnNonTripleTerm(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://ex/s")
 	p := rdflibgo.NewURIRefUnsafe("http://ex/p")
-	g.Add(s, p, rdflibgo.NewURIRefUnsafe("http://ex/a"))
+	g.Add(t.Context(), s, p, rdflibgo.NewURIRefUnsafe("http://ex/a"))
 	r, err := sparql.Query(g, `
 		PREFIX : <http://ex/>
 		SELECT ?subj WHERE {
@@ -447,7 +447,7 @@ func TestAccessorsOnNonTripleTerm(t *testing.T) {
 func TestLargeGraphTripleTerms(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	for i := 0; i < 5000; i++ {
-		g.Add(
+		g.Add(t.Context(),
 			rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://ex/s%d", i)),
 			rdflibgo.NewURIRefUnsafe("http://ex/p"),
 			rdflibgo.NewTripleTerm(
@@ -482,7 +482,7 @@ func TestDeeplyNestedTripleTerms(t *testing.T) {
 		)
 	}
 	g := rdflibgo.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://ex/root"), rdflibgo.NewURIRefUnsafe("http://ex/has"), term)
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://ex/root"), rdflibgo.NewURIRefUnsafe("http://ex/has"), term)
 
 	r, err := sparql.Query(g, `SELECT ?o WHERE { ?s ?p ?o }`)
 	if err != nil {
@@ -522,14 +522,14 @@ func TestTripleTermN3RoundTrip(t *testing.T) {
 	for i, tt := range cases {
 		n3 := tt.N3()
 		g := rdflibgo.NewGraph()
-		err := turtle.Parse(g, strings.NewReader(
+		err := turtle.Parse(t.Context(), g, strings.NewReader(
 			fmt.Sprintf("<http://ex/s> <http://ex/p> %s .", n3),
 		))
 		if err != nil {
 			t.Fatalf("case %d: turtle parse failed: %v", i, err)
 		}
 		found := false
-		for tr := range g.Triples(nil, nil, nil) {
+		for tr := range g.Triples(t.Context(), nil, nil, nil) {
 			reparsed, ok := tr.Object.(rdflibgo.TripleTerm)
 			if !ok {
 				t.Fatalf("case %d: not a triple term after reparse: %T", i, tr.Object)

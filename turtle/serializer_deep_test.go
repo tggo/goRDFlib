@@ -2,6 +2,7 @@ package turtle
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -13,9 +14,9 @@ import (
 func blankChain(n int) *rdflibgo.Graph {
 	g := rdflibgo.NewGraph()
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/next")
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/root"), p, rdflibgo.NewBNode("b0"))
+	g.Add(context.Background(), rdflibgo.NewURIRefUnsafe("http://example.org/root"), p, rdflibgo.NewBNode("b0"))
 	for i := range n {
-		g.Add(rdflibgo.NewBNode(fmt.Sprintf("b%d", i)), p, rdflibgo.NewBNode(fmt.Sprintf("b%d", i+1)))
+		g.Add(context.Background(), rdflibgo.NewBNode(fmt.Sprintf("b%d", i)), p, rdflibgo.NewBNode(fmt.Sprintf("b%d", i+1)))
 	}
 	return g
 }
@@ -43,14 +44,14 @@ func TestSerializeDeepBlankNodeChain(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			var b bytes.Buffer
-			if err := Serialize(c.g, &b, c.opts...); err != nil {
+			if err := Serialize(t.Context(), c.g, &b, c.opts...); err != nil {
 				t.Fatal(err)
 			}
 			g2 := rdflibgo.NewGraph()
-			if err := Parse(g2, strings.NewReader(b.String())); err != nil {
+			if err := Parse(t.Context(), g2, strings.NewReader(b.String())); err != nil {
 				t.Fatalf("output does not parse: %v", err)
 			}
-			assertChain(t, g2, c.g.Len()-1)
+			assertChain(t, g2, mustV(c.g.Len(t.Context()))-1)
 			// Nesting stops at the limit: the node just past it starts a
 			// statement of its own.
 			if !strings.Contains(b.String(), fmt.Sprintf("_:b%d", maxNestDepthLimit)) && len(c.opts) > 0 {
@@ -60,7 +61,7 @@ func TestSerializeDeepBlankNodeChain(t *testing.T) {
 	}
 	for _, opts := range [][]Option{{WithMaxNestDepth(7)}, {WithPretty(), WithMaxNestDepth(7)}} {
 		var b bytes.Buffer
-		if err := Serialize(blankChain(300), &b, opts...); err != nil {
+		if err := Serialize(t.Context(), blankChain(300), &b, opts...); err != nil {
 			t.Fatal(err)
 		}
 		assertChain(t, mustParseTurtle(t, b.String()), 300)
@@ -72,14 +73,14 @@ func TestSerializeDeepBlankNodeChain(t *testing.T) {
 // the same signature, and its backtracking search is exponential on them.
 func assertChain(t *testing.T, g *rdflibgo.Graph, n int) {
 	t.Helper()
-	if g.Len() != n+1 {
-		t.Fatalf("got %d triples, want %d", g.Len(), n+1)
+	if mustV(g.Len(t.Context())) != n+1 {
+		t.Fatalf("got %d triples, want %d", mustV(g.Len(t.Context())), n+1)
 	}
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/next")
 	var node rdflibgo.Subject = rdflibgo.NewURIRefUnsafe("http://example.org/root")
 	seen := make(map[string]bool, n+1)
 	for i := 0; i <= n; i++ {
-		next, ok := g.Value(node, &p, nil)
+		next, ok, _ := g.Value(t.Context(), node, &p, nil)
 		b, isBNode := next.(rdflibgo.BNode)
 		if !ok || !isBNode || seen[b.Value()] {
 			t.Fatalf("link %d: got %v", i, next)

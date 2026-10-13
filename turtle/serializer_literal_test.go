@@ -21,13 +21,13 @@ func TestSerializeLongLiteralQuotesAtDelimiter(t *testing.T) {
 		"a\n\\\"",
 	} {
 		g := rdflibgo.NewGraph()
-		g.Add(rdflibgo.NewURIRefUnsafe("http://e/s"), rdflibgo.NewURIRefUnsafe("http://e/p"), rdflibgo.NewLiteral(lex))
+		g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://e/s"), rdflibgo.NewURIRefUnsafe("http://e/p"), rdflibgo.NewLiteral(lex))
 		var b bytes.Buffer
-		if err := Serialize(g, &b); err != nil {
+		if err := Serialize(t.Context(), g, &b); err != nil {
 			t.Fatal(err)
 		}
 		g2 := rdflibgo.NewGraph()
-		if err := Parse(g2, strings.NewReader(b.String())); err != nil {
+		if err := Parse(t.Context(), g2, strings.NewReader(b.String())); err != nil {
 			t.Errorf("%q: output does not parse: %v\n%s", lex, err, b.String())
 			continue
 		}

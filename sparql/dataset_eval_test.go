@@ -1,6 +1,7 @@
 package sparql_test
 
 import (
+	"context"
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -13,7 +14,7 @@ func datasetFixture() (*rdflibgo.Graph, map[string]*rdflibgo.Graph) {
 	p := rdflibgo.NewURIRefUnsafe("http://ex/p")
 	mk := func(s string) *rdflibgo.Graph {
 		g := rdflibgo.NewGraph()
-		g.Add(rdflibgo.NewURIRefUnsafe("http://ex/"+s), p, rdflibgo.NewLiteral(s))
+		g.Add(context.Background(), rdflibgo.NewURIRefUnsafe("http://ex/"+s), p, rdflibgo.NewLiteral(s))
 		return g
 	}
 	return mk("d"), map[string]*rdflibgo.Graph{

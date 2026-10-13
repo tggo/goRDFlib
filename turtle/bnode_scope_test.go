@@ -26,10 +26,10 @@ func TestBlankNodeDocumentScope(t *testing.T) {
 				var labelled rdflibgo.Subject
 				var anonymous rdflibgo.Subject
 				calls := 0
-				err := Parse(g, strings.NewReader(input), WithBase("http://example.org/"), WithProvenance(
+				err := Parse(t.Context(), g, strings.NewReader(input), WithBase("http://example.org/"), WithProvenance(
 					func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, line int) {
 						calls++
-						if line != 1 || !g.Contains(s, p, o) {
+						if line != 1 || !mustV(g.Contains(t.Context(), s, p, o)) {
 							t.Errorf("provenance does not match inserted triple: %v %v %v at %d", s, p, o, line)
 						}
 						switch calls {
@@ -68,8 +68,8 @@ func TestBlankNodeDocumentScope(t *testing.T) {
 			if sameGraph {
 				want = 6
 			}
-			if g.Len() != want {
-				t.Errorf("got %d triples, want %d", g.Len(), want)
+			if mustV(g.Len(t.Context())) != want {
+				t.Errorf("got %d triples, want %d", mustV(g.Len(t.Context())), want)
 			}
 		})
 	}
@@ -87,7 +87,7 @@ func TestBlankNodeRDF12Scope(t *testing.T) {
 			calls := 0
 			opts := []Option{WithProvenance(func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, line int) {
 				calls++
-				if !g.Contains(s, p, o) || line != 1 {
+				if !mustV(g.Contains(t.Context(), s, p, o)) || line != 1 {
 					t.Error("RDF 1.2 provenance does not match inserted triple")
 				}
 				if labelled == nil {
@@ -115,7 +115,7 @@ func TestBlankNodeRDF12Scope(t *testing.T) {
 			if preserve {
 				opts = append(opts, WithPreserveBlankNodeIDs())
 			}
-			if err := Parse(g, strings.NewReader(input), opts...); err != nil {
+			if err := Parse(t.Context(), g, strings.NewReader(input), opts...); err != nil {
 				t.Fatal(err)
 			}
 			if calls != 2 {
@@ -133,8 +133,8 @@ func TestBlankNodeRDF12Scope(t *testing.T) {
 		if preserve {
 			want = 2
 		}
-		if g.Len() != want {
-			t.Errorf("got %d triples, want %d", g.Len(), want)
+		if mustV(g.Len(t.Context())) != want {
+			t.Errorf("got %d triples, want %d", mustV(g.Len(t.Context())), want)
 		}
 	}
 }
@@ -157,12 +157,12 @@ func TestBlankNodeGeneratedLabelSeparation(t *testing.T) {
 			if preserve {
 				opts = append(opts, WithPreserveBlankNodeIDs())
 			}
-			if err := Parse(g, strings.NewReader(input), opts...); err != nil {
+			if err := Parse(t.Context(), g, strings.NewReader(input), opts...); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if g.Len() != 2 {
-			t.Errorf("got %d triples, want 2 distinct anonymous objects", g.Len())
+		if mustV(g.Len(t.Context())) != 2 {
+			t.Errorf("got %d triples, want 2 distinct anonymous objects", mustV(g.Len(t.Context())))
 		}
 	}
 }

@@ -118,7 +118,7 @@ func TestParseWithDocumentLoaderAndProvenance(t *testing.T) {
 `
 	g := graph.NewGraph()
 	var lines []int
-	err := Parse(g, strings.NewReader(doc),
+	err := Parse(t.Context(), g, strings.NewReader(doc),
 		WithDocumentLoader(ld.NewDefaultDocumentLoader(nil)),
 		WithProvenance(func(rdflibgo.Subject, rdflibgo.URIRef, rdflibgo.Term, int) {
 			lines = append(lines, 1)

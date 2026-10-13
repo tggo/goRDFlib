@@ -20,7 +20,7 @@ import (
 // client gets an error status instead of a 200 with a truncated document.
 func TestResultEncodingFailureBeforeFirstByte(t *testing.T) {
 	g := benchGraph(5_000)
-	g.Add(iri(ex+"zz"), iri(ex+"p"), term.NewLiteral("control \u0001 char"))
+	g.Add(t.Context(), iri(ex+"zz"), iri(ex+"p"), term.NewLiteral("control \u0001 char"))
 	ts, _ := serve(t, &sparql.Dataset{Default: g})
 	q := url.Values{"query": {benchQuery + " ORDER BY ?s"}}
 	r := get(t, ts.URL, q, "Accept", "application/sparql-results+xml")
@@ -79,7 +79,7 @@ func TestQueryGraphPatternWithoutNamedGraphs(t *testing.T) {
 func TestQueryProtocolDataset(t *testing.T) {
 	ds := fixture()
 	g2 := graph.NewGraph()
-	g2.Add(iri(ex+"s2"), iri(ex+"p"), iri(ex+"o2"))
+	g2.Add(t.Context(), iri(ex+"s2"), iri(ex+"p"), iri(ex+"o2"))
 	ds.NamedGraphs[ex+"g2"] = g2
 	ts, _ := serve(t, ds)
 
@@ -216,7 +216,7 @@ func TestQueryConstructBodies(t *testing.T) {
 	r := get(t, ts.URL, q, "Accept", "text/turtle")
 	wantStatus(t, r, http.StatusOK)
 	g := graph.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(r.body)); err != nil || g.Len() != 1 {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(r.body)); err != nil || mustV(g.Len(t.Context())) != 1 {
 		t.Fatalf("turtle body did not parse to one triple (err %v): %s", err, r.body)
 	}
 	if r.header.Get("Content-Length") == "" {
@@ -224,7 +224,7 @@ func TestQueryConstructBodies(t *testing.T) {
 	}
 	r = get(t, ts.URL, q, "Accept", "application/n-triples")
 	g = graph.NewGraph()
-	if err := nt.Parse(g, strings.NewReader(r.body)); err != nil || g.Len() != 1 {
+	if err := nt.Parse(t.Context(), g, strings.NewReader(r.body)); err != nil || mustV(g.Len(t.Context())) != 1 {
 		t.Fatalf("n-triples body did not parse to one triple (err %v): %s", err, r.body)
 	}
 }
@@ -307,7 +307,7 @@ func TestQuerySyntaxErrorLineAndColumn(t *testing.T) {
 
 func TestQueryRelativeIRIsResolveAgainstBase(t *testing.T) {
 	ds := fixture()
-	ds.Default.Add(iri("http://base.example/dir/thing"), iri(ex+"p"), iri(ex+"o"))
+	ds.Default.Add(t.Context(), iri("http://base.example/dir/thing"), iri(ex+"p"), iri(ex+"o"))
 	ts, _ := serve(t, ds, endpoint.WithBaseIRI("http://base.example/dir/"))
 	if !askResult(t, get(t, ts.URL, url.Values{"query": {`ASK { <thing> ?p ?o }`}})) {
 		t.Fatal("<thing> did not resolve against WithBaseIRI")
@@ -326,7 +326,7 @@ func TestServiceDescription(t *testing.T) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 	g := graph.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(r.body)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(r.body)); err != nil {
 		t.Fatalf("service description is not Turtle: %v\n%s", err, r.body)
 	}
 	for _, want := range []string{"SPARQL11Query", "SPARQL11Update", "SPARQL_Results_JSON", "SPARQL_Results_TSV", "formats:Turtle", ts.URL} {

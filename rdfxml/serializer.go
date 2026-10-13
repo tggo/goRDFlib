@@ -2,6 +2,7 @@ package rdfxml
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -27,10 +28,12 @@ func termKey(t rdflibgo.Term) string { return t.N3() }
 // ErrNoQName, and an RDF/XML syntax name used as a predicate with
 // ErrReservedPropertyName. A character XML 1.0 cannot carry (U+0001, invalid
 // UTF-8, ...) in an IRI or literal fails with ErrUnrepresentableChar rather than
-// being replaced. Nothing is written to w when Serialize fails.
+// being replaced. Nothing is written to w when Serialize fails, including when
+// g's store fails or ctx is done while the graph is read: the whole graph is
+// read before the first byte is written.
 //
 // Options: WithBase sets xml:base on the root element.
-func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
@@ -41,7 +44,10 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	var subjectOrder []string
 	labels := make(map[string]bool)
 	hasDir := false
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return fmt.Errorf("rdfxml: reading triples: %w", err)
+		}
 		sk := termKey(t.Subject)
 		if _, exists := subjects[sk]; !exists {
 			subjectOrder = append(subjectOrder, sk)
@@ -50,15 +56,16 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 		collectLabels(t.Subject, labels)
 		collectLabels(t.Object, labels)
 		hasDir = hasDir || usesDirection(t.Object)
-		return true
-	})
+	}
 	slices.Sort(subjectOrder)
 
 	bindings := make(map[string]string)
-	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		bindings[prefix] = ns.Value()
-		return true
-	})
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return fmt.Errorf("rdfxml: reading namespaces: %w", err)
+		}
+		bindings[b.Prefix] = b.Namespace.Value()
+	}
 	reserved := map[string]string{"rdf": rdfNS}
 	if hasDir {
 		reserved["its"] = itsNS

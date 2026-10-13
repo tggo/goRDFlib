@@ -19,31 +19,24 @@ type spanKey struct{}
 // spanStore records the span of every read and write (issue #35).
 type spanStore struct {
 	store.Store
-	ctx   context.Context
 	mu    *sync.Mutex
 	spans *[]string
 }
 
-func (s *spanStore) BindContext(ctx context.Context) store.Store {
-	c := *s
-	c.ctx = ctx
-	return &c
-}
-
-func (s *spanStore) record() {
-	v := ""
-	if s.ctx != nil {
-		v, _ = s.ctx.Value(spanKey{}).(string)
-	}
+func (s *spanStore) record(ctx context.Context) {
+	v, _ := ctx.Value(spanKey{}).(string)
 	s.mu.Lock()
 	*s.spans = append(*s.spans, v)
 	s.mu.Unlock()
 }
 
-func (s *spanStore) Add(t term.Triple, g term.Term) { s.record(); s.Store.Add(t, g) }
-func (s *spanStore) Triples(p term.TriplePattern, g term.Term) store.TripleIterator {
-	s.record()
-	return s.Store.Triples(p, g)
+func (s *spanStore) Add(ctx context.Context, t term.Triple, g term.Term) error {
+	s.record(ctx)
+	return s.Store.Add(ctx, t, g)
+}
+func (s *spanStore) Triples(ctx context.Context, p term.TriplePattern, g term.Term) store.TripleIterator {
+	s.record(ctx)
+	return s.Store.Triples(ctx, p, g)
 }
 
 func TestExpandContextReachesStore(t *testing.T) {
@@ -51,10 +44,10 @@ func TestExpandContextReachesStore(t *testing.T) {
 	st := &spanStore{Store: store.NewMemoryStore(), mu: &sync.Mutex{}, spans: &spans}
 	g := graph.NewGraph(graph.WithStore(st))
 	ex := func(s string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + s) }
-	g.Add(ex("Dog"), namespace.RDFS.SubClassOf, ex("Animal"))
-	g.Add(ex("rex"), namespace.RDF.Type, ex("Dog"))
-	g.Add(ex("owns"), namespace.OWL.InverseOf, ex("ownedBy"))
-	g.Add(ex("ann"), ex("owns"), ex("rex"))
+	g.Add(t.Context(), ex("Dog"), namespace.RDFS.SubClassOf, ex("Animal"))
+	g.Add(t.Context(), ex("rex"), namespace.RDF.Type, ex("Dog"))
+	g.Add(t.Context(), ex("owns"), namespace.OWL.InverseOf, ex("ownedBy"))
+	g.Add(t.Context(), ex("ann"), ex("owns"), ex("rex"))
 	spans = nil
 
 	n, err := ExpandContext(context.WithValue(context.Background(), spanKey{}, "span-1"), g, RDFS|OWLRL)
@@ -70,7 +63,7 @@ func TestExpandContextReachesStore(t *testing.T) {
 			t.Fatalf("store call %d of %d ran without the caller's context", i+1, len(calls))
 		}
 	}
-	if !g.Contains(ex("rex"), namespace.RDF.Type, ex("Animal")) || !g.Contains(ex("rex"), ex("ownedBy"), ex("ann")) {
+	if !mustV(g.Contains(t.Context(), ex("rex"), namespace.RDF.Type, ex("Animal"))) || !mustV(g.Contains(t.Context(), ex("rex"), ex("ownedBy"), ex("ann"))) {
 		t.Fatal("closure is missing an RDFS or OWL RL inference")
 	}
 }
@@ -81,10 +74,10 @@ func chainGraph(depth, instances int) *graph.Graph {
 	g := graph.NewGraph()
 	class := func(i int) term.URIRef { return term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/C%d", i)) }
 	for i := 0; i < depth; i++ {
-		g.Add(class(i), namespace.RDFS.SubClassOf, class(i+1))
+		g.Add(context.Background(), class(i), namespace.RDFS.SubClassOf, class(i+1))
 	}
 	for i := 0; i < instances; i++ {
-		g.Add(term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/i%d", i)), namespace.RDF.Type, class(0))
+		g.Add(context.Background(), term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/i%d", i)), namespace.RDF.Type, class(0))
 	}
 	return g
 }
@@ -94,10 +87,10 @@ func chainGraph(depth, instances int) *graph.Graph {
 func transitiveChain(n int) *graph.Graph {
 	g := graph.NewGraph()
 	p := term.NewURIRefUnsafe("http://example.org/before")
-	g.Add(p, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
+	g.Add(context.Background(), p, namespace.RDF.Type, namespace.OWL.TransitiveProperty)
 	node := func(i int) term.URIRef { return term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i)) }
 	for i := 0; i < n; i++ {
-		g.Add(node(i), p, node(i+1))
+		g.Add(context.Background(), node(i), p, node(i+1))
 	}
 	return g
 }

@@ -50,13 +50,17 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 	// Provide shapes graph as a named graph for GRAPH ?shapesGraph { ... }
 	var namedGraphs map[string]*graph.Graph
 	if ctx.shapesGraph != nil && ctx.shapesGraph.baseURI != "" {
-		namedGraphs = map[string]*graph.Graph{
-			ctx.shapesGraph.baseURI: ctx.shapesGraph.rdf(),
+		sg, err := rdfOf(ctx.goContext(), ctx.shapesGraph)
+		if err != nil {
+			ctx.guard.fail(err)
+			return nil
 		}
+		namedGraphs = map[string]*graph.Graph{ctx.shapesGraph.baseURI: sg}
 	}
 
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, namedGraphs, ctx.sparqlFuncs())
 	if err != nil {
+		ctx.guard.fail(err)
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		r.SourceConstraint = c.Node
 		if msgs := resultMessages(nil, func() map[string]Term {

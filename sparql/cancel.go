@@ -48,8 +48,6 @@ type evalCtx struct {
 	n    uint32
 	// err is the context's error once stop has reported true. It is sticky.
 	err error
-	// bound caches graphs with ctx bound to their store; see bind.
-	bound map[*rdflibgo.Graph]*rdflibgo.Graph
 	// budget is the WithMaxSolutions bound (0: none) and built the solutions
 	// counted against it so far; see produced.
 	budget, built int
@@ -103,16 +101,28 @@ func (e *evalCtx) poll() bool {
 // cancellable reports whether the context can ever be done.
 func (e *evalCtx) cancellable() bool { return e != nil && e.done != nil }
 
+// fail records a store error as the reason evaluation stops. The evaluator
+// has no error results, so a store error travels like a cancellation: every
+// loop unwinds through stop, and the entry point returns it. Before v0.9 a
+// store could not report one, and a failed read looked like "no match"
+// (issue #52). A nil evalCtx, which only tests use, drops it.
+func (e *evalCtx) fail(err error) {
+	if e != nil && e.err == nil && err != nil {
+		e.err = err
+	}
+}
+
 // failure returns the error a public entry point reports, or nil when
-// evaluation was not stopped.
+// evaluation was not stopped. A context that ended the evaluation, directly
+// or through a store that refused it, is reported as ErrQueryCancelled.
 func (e *evalCtx) failure() error {
 	if e == nil || e.err == nil {
 		return nil
 	}
-	if errors.Is(e.err, ErrTooManySolutions) {
-		return e.err
+	if e.ctx.Err() != nil && (errors.Is(e.err, context.Canceled) || errors.Is(e.err, context.DeadlineExceeded)) {
+		return fmt.Errorf("%w: %w", ErrQueryCancelled, e.err)
 	}
-	return fmt.Errorf("%w: %w", ErrQueryCancelled, e.err)
+	return e.err
 }
 
 // sortAborted is the panic value sortSolutions uses to leave slices.SortFunc,
@@ -157,8 +167,9 @@ func sortSolutions(ec *evalCtx, solutions []map[string]rdflibgo.Term, cmp func(a
 // and a single call to an extension function registered without a context
 // (Function; a ContextFunction receives ctx).
 //
-// A store that implements store.ContextBinder is bound to ctx for the whole
-// evaluation, so its calls carry ctx: a tracing span, a deadline, credentials.
+// Every store call the evaluation makes carries ctx: a tracing span, a
+// deadline, credentials. A store error ends the evaluation and is returned as
+// its error; there is no partial result.
 //
 // Like EvalQuery, it never mutates q.
 func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
@@ -166,24 +177,20 @@ func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, in
 	if ec.poll() {
 		return nil, ec.failure()
 	}
-	g, q = ec.bindQuery(g, q)
-	g, q, release := snapshotQueryGraphs(g, q)
+	g, q, release, serr := snapshotQueryGraphs(ec.ctx, g, q)
+	if serr != nil {
+		ec.fail(serr)
+		return nil, ec.failure()
+	}
 	defer release()
-	// After binding and snapshotting, never before: a FROM clause merges the
-	// graphs it names, and that read must go through the bound view and the
-	// store's read snapshot like every other read the query makes.
+	// After snapshotting, never before: a FROM clause merges the graphs it
+	// names, and that read must go through the store's read snapshot like
+	// every other read the query makes.
 	g, q, derr := applyDatasetClause(ec, g, q)
 	if derr != nil {
 		return nil, derr
 	}
 	res, err := evalQuery(ec, g, q, initBindings)
-	if len(ec.bound) > 0 {
-		// A bound store sees the cancellation too, and Store cannot report
-		// errors: a lookup it abandoned looks like a lookup that matched
-		// nothing. So a query that used one does not trust a result finished
-		// after ctx was done, even if evaluation never polled in between.
-		ec.poll()
-	}
 	if ferr := ec.failure(); ferr != nil {
 		return nil, ferr
 	}

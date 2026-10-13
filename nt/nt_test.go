@@ -18,10 +18,10 @@ func TestNTSerializerBasic(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("hello"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -41,10 +41,10 @@ func TestNTSerializerEscaping(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("line1\nline2"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("line1\nline2"))
 
 	var buf bytes.Buffer
-	Serialize(g, &buf)
+	Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), `\n`) {
 		t.Errorf("expected escaped newline, got:\n%s", buf.String())
 	}
@@ -54,11 +54,11 @@ func TestNTSerializerLangAndDatatype(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
-	g.Add(s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	var buf bytes.Buffer
-	Serialize(g, &buf)
+	Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	if !strings.Contains(out, `"hello"@en`) {
 		t.Errorf("expected lang tag, got:\n%s", out)
@@ -73,11 +73,11 @@ func TestNTSerializerDeterministic(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	for i := 0; i < 5; i++ {
 		p, _ := rdflibgo.NewURIRef(fmt.Sprintf("http://example.org/p%d", i))
-		g.Add(s, p, rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
 	}
 	var buf1, buf2 bytes.Buffer
-	Serialize(g, &buf1)
-	Serialize(g, &buf2)
+	Serialize(t.Context(), g, &buf1)
+	Serialize(t.Context(), g, &buf2)
 	if buf1.String() != buf2.String() {
 		t.Error("N-Triples output not deterministic")
 	}
@@ -89,11 +89,11 @@ func TestNTParserBasic(t *testing.T) {
 <http://example.org/s> <http://example.org/p2> <http://example.org/o> .
 `
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -101,11 +101,11 @@ func TestNTParserBNode(t *testing.T) {
 	input := `_:b1 <http://example.org/p> "hello" .
 `
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -113,10 +113,10 @@ func TestNTParserLangTag(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello"@en .
 `
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -129,10 +129,10 @@ func TestNTParserDatatype(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .
 `
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -148,9 +148,9 @@ func TestNTParserComments(t *testing.T) {
 # another comment
 `
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -158,10 +158,10 @@ func TestNTParserEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "line1\nline2" .
 `
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, _ := g.Value(s, &p, nil)
+	val, _, _ := g.Value(t.Context(), s, &p, nil)
 	if val.String() != "line1\nline2" {
 		t.Errorf("expected newline in value, got %q", val.String())
 	}
@@ -172,18 +172,18 @@ func TestNTRoundtrip(t *testing.T) {
 	g1 := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
-	g1.Add(s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
-	g1.Add(s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	var buf bytes.Buffer
-	Serialize(g1, &buf)
+	Serialize(t.Context(), g1, &buf)
 
 	g2 := rdflibgo.NewGraph()
-	Parse(g2, strings.NewReader(buf.String()))
+	Parse(t.Context(), g2, strings.NewReader(buf.String()))
 
-	if g1.Len() != g2.Len() {
-		t.Errorf("roundtrip: %d vs %d", g1.Len(), g2.Len())
+	if mustV(g1.Len(t.Context())) != mustV(g2.Len(t.Context())) {
+		t.Errorf("roundtrip: %d vs %d", mustV(g1.Len(t.Context())), mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -191,10 +191,10 @@ func TestNTRoundtrip(t *testing.T) {
 
 func TestNTParserEscapeTab(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(`<http://s> <http://p> "a\tb" .`+"\n"))
+	Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "a\tb" .`+"\n"))
 	s := rdflibgo.NewURIRefUnsafe("http://s")
 	p := rdflibgo.NewURIRefUnsafe("http://p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != "a\tb" {
 		t.Errorf("got %q", v.String())
 	}
@@ -202,10 +202,10 @@ func TestNTParserEscapeTab(t *testing.T) {
 
 func TestNTParserEscapeQuote(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(`<http://s> <http://p> "say \"hi\"" .`+"\n"))
+	Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "say \"hi\"" .`+"\n"))
 	s := rdflibgo.NewURIRefUnsafe("http://s")
 	p := rdflibgo.NewURIRefUnsafe("http://p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != `say "hi"` {
 		t.Errorf("got %q", v.String())
 	}
@@ -213,10 +213,10 @@ func TestNTParserEscapeQuote(t *testing.T) {
 
 func TestNTParserEscapeBackslash(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(`<http://s> <http://p> "a\\b" .`+"\n"))
+	Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "a\\b" .`+"\n"))
 	s := rdflibgo.NewURIRefUnsafe("http://s")
 	p := rdflibgo.NewURIRefUnsafe("http://p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != `a\b` {
 		t.Errorf("got %q", v.String())
 	}
@@ -224,10 +224,10 @@ func TestNTParserEscapeBackslash(t *testing.T) {
 
 func TestNTParserEscapeCarriageReturn(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(`<http://s> <http://p> "a\rb" .`+"\n"))
+	Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "a\rb" .`+"\n"))
 	s := rdflibgo.NewURIRefUnsafe("http://s")
 	p := rdflibgo.NewURIRefUnsafe("http://p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != "a\rb" {
 		t.Errorf("got %q", v.String())
 	}
@@ -235,10 +235,10 @@ func TestNTParserEscapeCarriageReturn(t *testing.T) {
 
 func TestNTParserUnicodeEscape8(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(`<http://s> <http://p> "\U00000042" .`+"\n"))
+	Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "\U00000042" .`+"\n"))
 	s := rdflibgo.NewURIRefUnsafe("http://s")
 	p := rdflibgo.NewURIRefUnsafe("http://p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != "B" {
 		t.Errorf("expected B, got %q", v.String())
 	}
@@ -250,9 +250,9 @@ func TestNTSerializerTab(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://s")
 	p, _ := rdflibgo.NewURIRef("http://p")
-	g.Add(s, p, rdflibgo.NewLiteral("a\tb"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("a\tb"))
 	var buf strings.Builder
-	Serialize(g, &buf)
+	Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	if !strings.Contains(out, `\t`) {
 		t.Errorf("expected tab escape, got:\n%s", out)
@@ -277,7 +277,7 @@ func TestNTParserMalformedEscape(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := rdflibgo.NewGraph()
-			err := Parse(g, strings.NewReader(tt.input))
+			err := Parse(t.Context(), g, strings.NewReader(tt.input))
 			if err == nil {
 				t.Error("expected error for malformed input")
 			}
@@ -287,13 +287,13 @@ func TestNTParserMalformedEscape(t *testing.T) {
 
 func TestNTParserUnicodeEscape4(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://s> <http://p> "\u0041" .`+"\n"))
+	err := Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "\u0041" .`+"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := rdflibgo.NewURIRefUnsafe("http://s")
 	p := rdflibgo.NewURIRefUnsafe("http://p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != "A" {
 		t.Errorf("expected A, got %q", v.String())
 	}
@@ -301,7 +301,7 @@ func TestNTParserUnicodeEscape4(t *testing.T) {
 
 func TestNTParserIRIWithMalformedEscape(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://s/\uZZZZ> <http://p> "hello" .`+"\n"))
+	err := Parse(t.Context(), g, strings.NewReader(`<http://s/\uZZZZ> <http://p> "hello" .`+"\n"))
 	if err == nil {
 		t.Error("expected error for malformed IRI escape")
 	}
@@ -311,17 +311,17 @@ func TestNTRoundtripWithAssertGraphEqual(t *testing.T) {
 	g1 := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
-	g1.Add(s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
-	g1.Add(s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	var buf bytes.Buffer
-	if err := Serialize(g1, &buf); err != nil {
+	if err := Serialize(t.Context(), g1, &buf); err != nil {
 		t.Fatal(err)
 	}
 
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatal(err)
 	}
 
@@ -332,10 +332,10 @@ func TestNTSerializerDatatypeIRIEscaped(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://s")
 	p, _ := rdflibgo.NewURIRef("http://p")
-	g.Add(s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -362,7 +362,7 @@ func TestNTParserErrorHandlerSkip(t *testing.T) {
 `
 	g := rdflibgo.NewGraph()
 	var skipped []int
-	err := Parse(g, strings.NewReader(input), WithErrorHandler(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			skipped = append(skipped, lineNum)
 			return "", false
@@ -371,8 +371,8 @@ func TestNTParserErrorHandlerSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 	if len(skipped) != 1 || skipped[0] != 2 {
 		t.Errorf("expected skipped=[2], got %v", skipped)
@@ -383,7 +383,7 @@ func TestNTParserErrorHandlerRetry(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <http://example.org/o with space> .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithErrorHandler(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			fixed := strings.ReplaceAll(line, "o with space", "o%20with%20space")
 			return fixed, true
@@ -392,8 +392,8 @@ func TestNTParserErrorHandlerRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -401,7 +401,7 @@ func TestNTParserNoErrorHandler(t *testing.T) {
 	input := `<http://example.org/s 2> <http://example.org/p> "bad" .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -411,7 +411,7 @@ func TestNTParserErrorHandlerRetryFails(t *testing.T) {
 	input := `<http://example.org/s 2> <http://example.org/p> "bad" .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithErrorHandler(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			return line, true // return same broken line
 		},
@@ -433,7 +433,7 @@ func TestNTParserErrorHandlerMultipleErrors(t *testing.T) {
 `
 	g := rdflibgo.NewGraph()
 	var skippedLines []int
-	err := Parse(g, strings.NewReader(input), WithErrorHandler(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			skippedLines = append(skippedLines, lineNum)
 			return "", false
@@ -442,8 +442,8 @@ func TestNTParserErrorHandlerMultipleErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if g.Len() != 3 {
-		t.Errorf("expected 3 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 3 {
+		t.Errorf("expected 3 triples, got %d", mustV(g.Len(t.Context())))
 	}
 	if len(skippedLines) != 2 || skippedLines[0] != 2 || skippedLines[1] != 4 {
 		t.Errorf("expected skipped=[2,4], got %v", skippedLines)
@@ -455,7 +455,7 @@ func TestNTParserErrorHandlerReceivesLineText(t *testing.T) {
 	input := badLine + "\n"
 	g := rdflibgo.NewGraph()
 	var receivedLine string
-	Parse(g, strings.NewReader(input), WithErrorHandler(
+	Parse(t.Context(), g, strings.NewReader(input), WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			receivedLine = line
 			return "", false
@@ -475,7 +475,7 @@ func TestNTParserLongLineDefaultErrors(t *testing.T) {
 	line := `<http://example.org/s> <http://example.org/p> "` + bigLiteral + `" .` + "\n"
 
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(line))
+	err := Parse(t.Context(), g, strings.NewReader(line))
 	if err == nil {
 		t.Fatal("expected error parsing line > 64KB with default buffer, got nil")
 	}
@@ -498,11 +498,11 @@ func TestNTParserWithMaxLineLength(t *testing.T) {
 	line := `<http://example.org/s> <http://example.org/p> "` + bigLiteral + `" .` + "\n"
 
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(line), WithMaxLineLength(1<<20)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(line), WithMaxLineLength(1<<20)); err != nil {
 		t.Fatalf("unexpected error with WithMaxLineLength(1MB): %v", err)
 	}
-	if g.Len() != 1 {
-		t.Fatalf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -514,11 +514,11 @@ func TestNTParserWithUnboundedLines(t *testing.T) {
 	line := `<http://example.org/s> <http://example.org/p> "` + bigLiteral + `" .` + "\n"
 
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(line), WithUnboundedLines()); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(line), WithUnboundedLines()); err != nil {
 		t.Fatalf("unexpected error with WithUnboundedLines: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Fatalf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -533,11 +533,11 @@ func TestNTParserUnboundedLinesMultiple(t *testing.T) {
 <http://example.org/s3> <http://example.org/p> "c" .` // no trailing newline
 
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input), WithUnboundedLines()); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input), WithUnboundedLines()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if g.Len() != 3 {
-		t.Fatalf("expected 3 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 3 {
+		t.Fatalf("expected 3 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -575,7 +575,7 @@ func BenchmarkNTParseScanner(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := rdflibgo.NewGraph()
-		if err := Parse(g, strings.NewReader(input)); err != nil {
+		if err := Parse(b.Context(), g, strings.NewReader(input)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -586,7 +586,7 @@ func BenchmarkNTParseUnbounded(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := rdflibgo.NewGraph()
-		if err := Parse(g, strings.NewReader(input), WithUnboundedLines()); err != nil {
+		if err := Parse(b.Context(), g, strings.NewReader(input), WithUnboundedLines()); err != nil {
 			b.Fatal(err)
 		}
 	}

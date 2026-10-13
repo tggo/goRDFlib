@@ -2,6 +2,7 @@ package turtle
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -13,7 +14,7 @@ import (
 func serialize(t *testing.T, g *rdflibgo.Graph, opts ...Option) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf, opts...); err != nil {
+	if err := Serialize(t.Context(), g, &buf, opts...); err != nil {
 		t.Fatal(err)
 	}
 	return buf.String()
@@ -23,7 +24,7 @@ func serialize(t *testing.T, g *rdflibgo.Graph, opts ...Option) string {
 func reparse(t *testing.T, out string) *rdflibgo.Graph {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(out)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(out)); err != nil {
 		t.Fatalf("reparsing output failed: %v\n%s", err, out)
 	}
 	return g
@@ -33,7 +34,7 @@ func reparse(t *testing.T, out string) *rdflibgo.Graph {
 func issueGraph() *rdflibgo.Graph {
 	const ns = "https://example.org/"
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe(ns))
+	g.Bind(context.Background(), "ex", rdflibgo.NewURIRefUnsafe(ns))
 
 	document := rdflibgo.NewURIRefUnsafe(ns + "document")
 	entryPred := rdflibgo.NewURIRefUnsafe(ns + "entry")
@@ -43,10 +44,10 @@ func issueGraph() *rdflibgo.Graph {
 
 	for i, label := range []string{"Alpha", "Beta", "Gamma"} {
 		entry := rdflibgo.NewBNode("entry-" + label)
-		g.Add(document, entryPred, entry)
-		g.Add(entry, rdflibgo.RDF.Type, entryClass)
-		g.Add(entry, labelPred, rdflibgo.NewLiteral(label))
-		g.Add(entry, posPred, rdflibgo.NewLiteral(i+1))
+		g.Add(context.Background(), document, entryPred, entry)
+		g.Add(context.Background(), entry, rdflibgo.RDF.Type, entryClass)
+		g.Add(context.Background(), entry, labelPred, rdflibgo.NewLiteral(label))
+		g.Add(context.Background(), entry, posPred, rdflibgo.NewLiteral(i+1))
 	}
 	return g
 }
@@ -137,16 +138,16 @@ func TestPrettyRoundTrip(t *testing.T) {
 func chainGraph(depth int) *rdflibgo.Graph {
 	const ns = "https://example.org/"
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe(ns))
+	g.Bind(context.Background(), "ex", rdflibgo.NewURIRefUnsafe(ns))
 
 	next := rdflibgo.NewURIRefUnsafe(ns + "next")
 	var parent rdflibgo.Subject = rdflibgo.NewURIRefUnsafe(ns + "root")
 	for i := 0; i < depth; i++ {
 		child := rdflibgo.NewBNode(fmt.Sprintf("n%d", i))
-		g.Add(parent, next, child)
+		g.Add(context.Background(), parent, next, child)
 		parent = child
 	}
-	g.Add(parent, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(ns+"Leaf"))
+	g.Add(context.Background(), parent, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe(ns+"Leaf"))
 	return g
 }
 
@@ -159,7 +160,7 @@ func chainGraph(depth int) *rdflibgo.Graph {
 func TestNestDepthLimit(t *testing.T) {
 	const depth = 500
 	g := chainGraph(depth)
-	wantLen := g.Len()
+	wantLen, _ := g.Len(t.Context())
 
 	for _, tc := range []struct {
 		name string
@@ -173,7 +174,7 @@ func TestNestDepthLimit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := serialize(t, g, tc.opts...)
-			if got := reparse(t, out).Len(); got != wantLen {
+			if got, _ := reparse(t, out).Len(t.Context()); got != wantLen {
 				t.Fatalf("triple count changed: got %d, want %d\n%s", got, wantLen, out)
 			}
 		})
@@ -200,21 +201,21 @@ func TestNestDepthLimitCollections(t *testing.T) {
 	const depth = 120
 
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe(ns))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe(ns))
 
 	var inner rdflibgo.Term = rdflibgo.NewLiteral("leaf")
 	for i := 0; i < depth; i++ {
 		node := rdflibgo.NewBNode(fmt.Sprintf("c%d", i))
-		g.Add(node, rdflibgo.RDF.First, inner)
-		g.Add(node, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+		g.Add(t.Context(), node, rdflibgo.RDF.First, inner)
+		g.Add(t.Context(), node, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 		inner = node
 	}
-	g.Add(rdflibgo.NewURIRefUnsafe(ns+"s"), rdflibgo.NewURIRefUnsafe(ns+"p"), inner)
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe(ns+"s"), rdflibgo.NewURIRefUnsafe(ns+"p"), inner)
 
 	for _, opts := range [][]Option{nil, {WithPretty()}, {WithPretty(), WithMaxNestDepth(3)}} {
 		out := serialize(t, g, opts...)
-		if got := reparse(t, out).Len(); got != g.Len() {
-			t.Fatalf("triple count changed: got %d, want %d\n%s", got, g.Len(), out)
+		if got, _ := reparse(t, out).Len(t.Context()); got != mustV(g.Len(t.Context())) {
+			t.Fatalf("triple count changed: got %d, want %d\n%s", got, mustV(g.Len(t.Context())), out)
 		}
 	}
 }
@@ -242,16 +243,16 @@ func TestNestDepthLimitBoundsIndentation(t *testing.T) {
 func collectionGraph(items ...rdflibgo.Term) *rdflibgo.Graph {
 	const ns = "https://example.org/"
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe(ns))
+	g.Bind(context.Background(), "ex", rdflibgo.NewURIRefUnsafe(ns))
 
 	var head rdflibgo.Subject = rdflibgo.RDF.Nil
 	for i := len(items) - 1; i >= 0; i-- {
 		node := rdflibgo.NewBNode(fmt.Sprintf("l%d", i))
-		g.Add(node, rdflibgo.RDF.First, items[i])
-		g.Add(node, rdflibgo.RDF.Rest, head)
+		g.Add(context.Background(), node, rdflibgo.RDF.First, items[i])
+		g.Add(context.Background(), node, rdflibgo.RDF.Rest, head)
 		head = node
 	}
-	g.Add(rdflibgo.NewURIRefUnsafe(ns+"s"), rdflibgo.NewURIRefUnsafe(ns+"p"), head)
+	g.Add(context.Background(), rdflibgo.NewURIRefUnsafe(ns+"s"), rdflibgo.NewURIRefUnsafe(ns+"p"), head)
 	return g
 }
 
@@ -269,7 +270,7 @@ func TestPrettyCollections(t *testing.T) {
 	// A collection holding a blank node expands one item per line.
 	inner := rdflibgo.NewBNode("inner")
 	nested := collectionGraph(rdflibgo.NewLiteral("a"), inner, rdflibgo.NewLiteral("c"))
-	nested.Add(inner, rdflibgo.NewURIRefUnsafe(ns+"k"), rdflibgo.NewLiteral("v"))
+	nested.Add(t.Context(), inner, rdflibgo.NewURIRefUnsafe(ns+"k"), rdflibgo.NewLiteral("v"))
 
 	out = serialize(t, nested, WithPretty())
 	if !strings.Contains(out, "(\n") || !strings.Contains(out, "ex:k \"v\"") {

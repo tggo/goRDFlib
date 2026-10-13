@@ -14,10 +14,10 @@ import (
 
 func TestSPARQLTripleQuotedString(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/desc")
-	g.Add(s, p, NewLiteral("line1\nline2"))
+	g.Add(t.Context(), s, p, NewLiteral("line1\nline2"))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?d WHERE { ex:s ex:desc ?d }`)
 	if err != nil {
@@ -32,11 +32,11 @@ func TestSPARQLTripleQuotedString(t *testing.T) {
 
 func TestSPARQLTypedLiteralInWhere(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Bind("xsd", NewURIRefUnsafe(XSDNamespace))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "xsd", NewURIRefUnsafe(XSDNamespace))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral("42", WithDatatype(XSDInteger)))
+	g.Add(t.Context(), s, p, NewLiteral("42", WithDatatype(XSDInteger)))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val 42 }`)
 	if err != nil {
@@ -91,14 +91,14 @@ func TestInvPathEvalWithObj(t *testing.T) {
 
 func TestTurtleSerializerMultipleSubjects(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	for _, name := range []string{"Alice", "Bob"} {
 		s := NewURIRefUnsafe("http://example.org/" + name)
 		p, _ := NewURIRef("http://example.org/name")
-		g.Add(s, p, NewLiteral(name))
+		g.Add(t.Context(), s, p, NewLiteral(name))
 	}
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	if strings.Count(buf.String(), " .") < 2 {
 		t.Errorf("expected 2 statements, got:\n%s", buf.String())
 	}

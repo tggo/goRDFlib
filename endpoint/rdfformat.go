@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"errors"
 	"io"
 
@@ -23,9 +24,9 @@ type rdfFormat struct {
 	contentType string
 	// formatIRI is the W3C format IRI for the service description.
 	formatIRI string
-	serialize func(g *graph.Graph, w io.Writer) error
+	serialize func(ctx context.Context, g *graph.Graph, w io.Writer) error
 	// parse is nil for formats that describe a dataset rather than one graph.
-	parse func(g *graph.Graph, r io.Reader, base string) error
+	parse func(ctx context.Context, g *graph.Graph, r io.Reader, base string) error
 }
 
 // ErrRemoteContext is returned when a JSON-LD body references a remote
@@ -47,49 +48,49 @@ var rdfFormats = []rdfFormat{
 		offer:       offer{mediaType: "text/turtle", aliases: []string{"application/x-turtle", "text/n3", "text/rdf+n3"}},
 		contentType: "text/turtle; charset=utf-8",
 		formatIRI:   "http://www.w3.org/ns/formats/Turtle",
-		serialize:   func(g *graph.Graph, w io.Writer) error { return turtle.Serialize(g, w) },
-		parse: func(g *graph.Graph, r io.Reader, base string) error {
-			return turtle.Parse(g, r, turtle.WithBase(base))
+		serialize:   func(ctx context.Context, g *graph.Graph, w io.Writer) error { return turtle.Serialize(ctx, g, w) },
+		parse: func(ctx context.Context, g *graph.Graph, r io.Reader, base string) error {
+			return turtle.Parse(ctx, g, r, turtle.WithBase(base))
 		},
 	},
 	{
 		offer:       offer{mediaType: "application/n-triples", aliases: []string{"text/plain"}},
 		contentType: "application/n-triples",
 		formatIRI:   "http://www.w3.org/ns/formats/N-Triples",
-		serialize:   func(g *graph.Graph, w io.Writer) error { return nt.Serialize(g, w) },
-		parse: func(g *graph.Graph, r io.Reader, base string) error {
-			return nt.Parse(g, r, nt.WithBase(base))
+		serialize:   func(ctx context.Context, g *graph.Graph, w io.Writer) error { return nt.Serialize(ctx, g, w) },
+		parse: func(ctx context.Context, g *graph.Graph, r io.Reader, base string) error {
+			return nt.Parse(ctx, g, r, nt.WithBase(base))
 		},
 	},
 	{
 		offer:       offer{mediaType: "application/ld+json", aliases: []string{"application/json"}},
 		contentType: "application/ld+json",
 		formatIRI:   "http://www.w3.org/ns/formats/JSON-LD",
-		serialize:   func(g *graph.Graph, w io.Writer) error { return jsonld.Serialize(g, w) },
-		parse: func(g *graph.Graph, r io.Reader, base string) error {
-			return jsonld.Parse(g, r, jsonld.WithBase(base), jsonld.WithDocumentLoader(noRemoteLoader{}))
+		serialize:   func(ctx context.Context, g *graph.Graph, w io.Writer) error { return jsonld.Serialize(ctx, g, w) },
+		parse: func(ctx context.Context, g *graph.Graph, r io.Reader, base string) error {
+			return jsonld.Parse(ctx, g, r, jsonld.WithBase(base), jsonld.WithDocumentLoader(noRemoteLoader{}))
 		},
 	},
 	{
 		offer:       offer{mediaType: "application/rdf+xml", aliases: []string{"application/xml", "text/xml"}},
 		contentType: "application/rdf+xml",
 		formatIRI:   "http://www.w3.org/ns/formats/RDF_XML",
-		serialize:   func(g *graph.Graph, w io.Writer) error { return rdfxml.Serialize(g, w) },
-		parse: func(g *graph.Graph, r io.Reader, base string) error {
-			return rdfxml.Parse(g, r, rdfxml.WithBase(base))
+		serialize:   func(ctx context.Context, g *graph.Graph, w io.Writer) error { return rdfxml.Serialize(ctx, g, w) },
+		parse: func(ctx context.Context, g *graph.Graph, r io.Reader, base string) error {
+			return rdfxml.Parse(ctx, g, r, rdfxml.WithBase(base))
 		},
 	},
 	{
 		offer:       offer{mediaType: "application/trig"},
 		contentType: "application/trig",
 		formatIRI:   "http://www.w3.org/ns/formats/TriG",
-		serialize:   func(g *graph.Graph, w io.Writer) error { return trig.Serialize(g, w) },
+		serialize:   func(ctx context.Context, g *graph.Graph, w io.Writer) error { return trig.Serialize(ctx, g, w) },
 	},
 	{
 		offer:       offer{mediaType: "application/n-quads"},
 		contentType: "application/n-quads",
 		formatIRI:   "http://www.w3.org/ns/formats/N-Quads",
-		serialize:   func(g *graph.Graph, w io.Writer) error { return nq.Serialize(g, w) },
+		serialize:   func(ctx context.Context, g *graph.Graph, w io.Writer) error { return nq.Serialize(ctx, g, w) },
 	},
 }
 

@@ -19,7 +19,7 @@ func TestLangStringDatatypeNeedsALanguageTag(t *testing.T) {
 		`<<( <http://e/s> <http://e/p> "a"^^rdf:langString )>>`,
 	} {
 		src := "@prefix rdf: <" + rdf + "> .\n<http://e/s> <http://e/p> " + obj + " ."
-		err := Parse(rdflibgo.NewGraph(), strings.NewReader(src))
+		err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(src))
 		if err == nil {
 			t.Errorf("%s: accepted", obj)
 			continue
@@ -29,7 +29,7 @@ func TestLangStringDatatypeNeedsALanguageTag(t *testing.T) {
 		}
 	}
 	src := "<http://e/s> <http://e/p> \"a\"@en, \"b\"@ar--rtl ."
-	if err := Parse(rdflibgo.NewGraph(), strings.NewReader(src)); err != nil {
+	if err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(src)); err != nil {
 		t.Errorf("language-tagged literals rejected: %v", err)
 	}
 }

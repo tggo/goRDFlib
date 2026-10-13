@@ -1,6 +1,10 @@
 package shacl
 
-import "context"
+import (
+	"context"
+	"errors"
+	"sync"
+)
 
 // afContext holds everything the SHACL-AF layer needs while it runs: the two
 // graphs, the caller's options, and the functions declared by the shapes graph.
@@ -26,6 +30,43 @@ type afContext struct {
 	// Loading continues past it so that one malformed declaration does not
 	// disable everything else, but the error is still surfaced.
 	loadErr error
+
+	// runErr is the first query evaluation failure of the rule pass, including
+	// inside a SHACL function, which the engine would otherwise turn into an
+	// unbound value. The pass returns it; validation runs keep theirs on the
+	// recursion guard, because this context outlives a run.
+	runMu  sync.Mutex
+	runErr error
+}
+
+// fail records err as the failure of the run if it is a query evaluation
+// error; see recursionGuard.fail.
+func (ctx *afContext) fail(err error) {
+	if errors.Is(err, ErrQueryFailed) {
+		ctx.abort(err)
+	}
+}
+
+// abort records err unconditionally as the failure of the rule pass, which
+// then stops. Used for store errors that are not query evaluations (a write).
+func (ctx *afContext) abort(err error) {
+	if ctx == nil || err == nil {
+		return
+	}
+	ctx.runMu.Lock()
+	if ctx.runErr == nil {
+		ctx.runErr = err
+	}
+	ctx.runMu.Unlock()
+}
+
+func (ctx *afContext) failure() error {
+	if ctx == nil {
+		return nil
+	}
+	ctx.runMu.Lock()
+	defer ctx.runMu.Unlock()
+	return ctx.runErr
 }
 
 // newAFContext reads the AF declarations out of the shapes graph.

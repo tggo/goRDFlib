@@ -29,8 +29,8 @@ func TestEvalQueryCONSTRUCT(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph == nil || r.Graph.Len() != 3 {
-		t.Errorf("expected 3 triples in constructed graph, got %d", r.Graph.Len())
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) != 3 {
+		t.Errorf("expected 3 triples in constructed graph, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -43,7 +43,7 @@ func TestEvalQueryCONSTRUCTWhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph == nil || r.Graph.Len() == 0 {
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) == 0 {
 		t.Error("expected triples in CONSTRUCT WHERE result")
 	}
 }
@@ -130,22 +130,22 @@ func TestConstructOrderByLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph == nil || r.Graph.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", r.Graph.Len())
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
 // GRAPH pattern in query
 func TestEvalGraphPattern(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	o := rdflibgo.NewLiteral("v")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
 	ng := rdflibgo.NewGraph()
-	ng.Add(s, p, rdflibgo.NewLiteral("ng-v"))
+	ng.Add(t.Context(), s, p, rdflibgo.NewLiteral("ng-v"))
 
 	q, err := Parse(`PREFIX ex: <http://example.org/>
 		SELECT ?v WHERE { GRAPH ex:g1 { ?s ex:p ?v } }`)
@@ -279,7 +279,7 @@ func TestConstructWithUnion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph == nil || r.Graph.Len() == 0 {
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) == 0 {
 		t.Error("expected triples")
 	}
 }
@@ -304,8 +304,8 @@ func TestEvalFilterBoolean(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
-	g.Add(s, p, rdflibgo.NewLiteral(true))
-	g.Add(s, p, rdflibgo.NewLiteral(false))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(true))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(false))
 
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:v ?v . FILTER(?v) }`)
 	if len(r.Bindings) != 1 {
@@ -353,7 +353,7 @@ func TestEvalDateFunctions(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/date")
-	g.Add(s, p, rdflibgo.NewLiteral("2024-03-15T10:30:45Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2024-03-15T10:30:45Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
 
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -477,8 +477,8 @@ func TestEBVIntegerZero(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
-	g.Add(s, p, rdflibgo.NewLiteral(int64(0), rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
-	g.Add(s, p, rdflibgo.NewLiteral(int64(5), rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(int64(0), rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(int64(5), rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:v ?v . FILTER(?v) }`)
 	if len(r.Bindings) != 1 {
 		t.Errorf("expected 1 truthy integer, got %d", len(r.Bindings))
@@ -489,8 +489,8 @@ func TestEBVFloat(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
-	g.Add(s, p, rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDFloat)))
-	g.Add(s, p, rdflibgo.NewLiteral("3.14", rdflibgo.WithDatatype(rdflibgo.XSDFloat)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDFloat)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("3.14", rdflibgo.WithDatatype(rdflibgo.XSDFloat)))
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:v ?v . FILTER(?v) }`)
 	if len(r.Bindings) != 1 {
 		t.Errorf("expected 1 truthy float, got %d", len(r.Bindings))
@@ -501,8 +501,8 @@ func TestEBVDecimal(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
-	g.Add(s, p, rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
-	g.Add(s, p, rdflibgo.NewLiteral("1.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("1.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:v ?v . FILTER(?v) }`)
 	if len(r.Bindings) != 1 {
 		t.Errorf("expected 1 truthy decimal, got %d", len(r.Bindings))
@@ -514,8 +514,8 @@ func TestEBVDefaultLiteral(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
 	custom := rdflibgo.NewURIRefUnsafe("http://example.org/mytype")
-	g.Add(s, p, rdflibgo.NewLiteral("somevalue", rdflibgo.WithDatatype(custom)))
-	g.Add(s, p, rdflibgo.NewLiteral("", rdflibgo.WithDatatype(custom)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("somevalue", rdflibgo.WithDatatype(custom)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("", rdflibgo.WithDatatype(custom)))
 	r, _ := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:v ?v . FILTER(?v) }`)
 	// SPARQL 1.1 §17.2.2: EBV of a literal of an unsupported datatype is a
 	// type error, so FILTER drops both rows.
@@ -530,8 +530,8 @@ func TestSumDecimal(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
-	g.Add(s, p, rdflibgo.NewLiteral("1.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
-	g.Add(s, p, rdflibgo.NewLiteral("2.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("1.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
 	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT (SUM(?v) AS ?total) WHERE { ?s ex:v ?v }`)
 	if err != nil {
 		t.Fatal(err)
@@ -545,8 +545,8 @@ func TestAvgDecimal(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/v")
-	g.Add(s, p, rdflibgo.NewLiteral("2.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
-	g.Add(s, p, rdflibgo.NewLiteral("3.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("3.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
 	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT (AVG(?v) AS ?avg) WHERE { ?s ex:v ?v }`)
 	if err != nil {
 		t.Fatal(err)
@@ -562,7 +562,7 @@ func TestExtractDatePartDateOnly(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/date")
-	g.Add(s, p, rdflibgo.NewLiteral("2024-06-15", rdflibgo.WithDatatype(rdflibgo.XSDDate)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2024-06-15", rdflibgo.WithDatatype(rdflibgo.XSDDate)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?y ?m ?d WHERE {
@@ -587,7 +587,7 @@ func TestExtractDatePartNoTZ(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/date")
-	g.Add(s, p, rdflibgo.NewLiteral("2024-03-15T10:30:45", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2024-03-15T10:30:45", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?h ?min WHERE {
@@ -613,7 +613,7 @@ func TestParseLiteralStringLangTag(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/label")
-	g.Add(s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
 	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT ?l WHERE { ?s ex:label "hello"@en }`)
 	if err != nil {
 		t.Fatal(err)
@@ -634,7 +634,7 @@ func TestParseLiteralStringTripleQuote(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/label")
-	g.Add(s, p, rdflibgo.NewLiteral("hello world"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello world"))
 	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT ?l WHERE { ?s ex:label """hello world""" }`)
 	if err != nil {
 		t.Fatal(err)
@@ -758,7 +758,7 @@ func TestClearNamed(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("v"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -766,7 +766,7 @@ func TestClearNamed(t *testing.T) {
 	if err := Update(ds, `CLEAR NAMED`); err != nil {
 		t.Fatal(err)
 	}
-	if g1.Len() != 0 {
+	if mustV(g1.Len(t.Context())) != 0 {
 		t.Errorf("expected named graph to be cleared")
 	}
 }
@@ -775,9 +775,9 @@ func TestDropAll(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	def := rdflibgo.NewGraph()
-	def.Add(s, p, rdflibgo.NewLiteral("default"))
+	def.Add(t.Context(), s, p, rdflibgo.NewLiteral("default"))
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("named"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("named"))
 	ds := &Dataset{
 		Default:     def,
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -785,7 +785,7 @@ func TestDropAll(t *testing.T) {
 	if err := Update(ds, `DROP ALL`); err != nil {
 		t.Fatal(err)
 	}
-	if def.Len() != 0 {
+	if mustV(def.Len(t.Context())) != 0 {
 		t.Errorf("expected default graph to be cleared")
 	}
 }
@@ -794,7 +794,7 @@ func TestClearGraphIRI(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("v"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -802,7 +802,7 @@ func TestClearGraphIRI(t *testing.T) {
 	if err := Update(ds, `CLEAR GRAPH <http://example.org/g1>`); err != nil {
 		t.Fatal(err)
 	}
-	if g1.Len() != 0 {
+	if mustV(g1.Len(t.Context())) != 0 {
 		t.Errorf("expected named graph to be cleared")
 	}
 }
@@ -828,8 +828,8 @@ func TestInsertDataNamedGraph(t *testing.T) {
 	if err := Update(ds, `INSERT DATA { GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> "hello" } }`); err != nil {
 		t.Fatal(err)
 	}
-	if g1.Len() != 1 {
-		t.Errorf("expected 1 triple in named graph, got %d", g1.Len())
+	if mustV(g1.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple in named graph, got %d", mustV(g1.Len(t.Context())))
 	}
 }
 
@@ -837,7 +837,7 @@ func TestDeleteDataNamedGraph(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -845,8 +845,8 @@ func TestDeleteDataNamedGraph(t *testing.T) {
 	if err := Update(ds, `DELETE DATA { GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> "hello" } }`); err != nil {
 		t.Fatal(err)
 	}
-	if g1.Len() != 0 {
-		t.Errorf("expected 0 triples in named graph, got %d", g1.Len())
+	if mustV(g1.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples in named graph, got %d", mustV(g1.Len(t.Context())))
 	}
 }
 
@@ -880,7 +880,7 @@ func TestAddGraphs(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	src := rdflibgo.NewGraph()
-	src.Add(s, p, rdflibgo.NewLiteral("v"))
+	src.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	dst := rdflibgo.NewGraph()
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
@@ -889,8 +889,8 @@ func TestAddGraphs(t *testing.T) {
 	if err := Update(ds, `ADD <http://example.org/src> TO <http://example.org/dst>`); err != nil {
 		t.Fatal(err)
 	}
-	if dst.Len() != 1 {
-		t.Errorf("expected 1 triple in dst, got %d", dst.Len())
+	if mustV(dst.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple in dst, got %d", mustV(dst.Len(t.Context())))
 	}
 }
 
@@ -898,9 +898,9 @@ func TestCopyGraphs(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	src := rdflibgo.NewGraph()
-	src.Add(s, p, rdflibgo.NewLiteral("v1"))
+	src.Add(t.Context(), s, p, rdflibgo.NewLiteral("v1"))
 	dst := rdflibgo.NewGraph()
-	dst.Add(s, p, rdflibgo.NewLiteral("old"))
+	dst.Add(t.Context(), s, p, rdflibgo.NewLiteral("old"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/src": src, "http://example.org/dst": dst},
@@ -908,8 +908,8 @@ func TestCopyGraphs(t *testing.T) {
 	if err := Update(ds, `COPY <http://example.org/src> TO <http://example.org/dst>`); err != nil {
 		t.Fatal(err)
 	}
-	if dst.Len() != 1 {
-		t.Errorf("expected 1 triple in dst after COPY, got %d", dst.Len())
+	if mustV(dst.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple in dst after COPY, got %d", mustV(dst.Len(t.Context())))
 	}
 }
 
@@ -917,7 +917,7 @@ func TestMoveGraphs(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	src := rdflibgo.NewGraph()
-	src.Add(s, p, rdflibgo.NewLiteral("v"))
+	src.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	dst := rdflibgo.NewGraph()
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
@@ -926,11 +926,11 @@ func TestMoveGraphs(t *testing.T) {
 	if err := Update(ds, `MOVE <http://example.org/src> TO <http://example.org/dst>`); err != nil {
 		t.Fatal(err)
 	}
-	if dst.Len() != 1 {
-		t.Errorf("expected 1 triple in dst after MOVE, got %d", dst.Len())
+	if mustV(dst.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple in dst after MOVE, got %d", mustV(dst.Len(t.Context())))
 	}
-	if src.Len() != 0 {
-		t.Errorf("expected 0 triples in src after MOVE, got %d", src.Len())
+	if mustV(src.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples in src after MOVE, got %d", mustV(src.Len(t.Context())))
 	}
 }
 
@@ -938,7 +938,7 @@ func TestMoveSameGraph(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g := rdflibgo.NewGraph()
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g": g},
@@ -946,8 +946,8 @@ func TestMoveSameGraph(t *testing.T) {
 	if err := Update(ds, `MOVE <http://example.org/g> TO <http://example.org/g>`); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected no change, got %d triples", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected no change, got %d triples", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -1223,7 +1223,7 @@ func TestValidateConstructWhereJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph == nil || r.Graph.Len() == 0 {
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) == 0 {
 		t.Error("expected triples from CONSTRUCT WHERE with join")
 	}
 }
@@ -1234,7 +1234,7 @@ func TestDeleteWhereWith(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("v"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -1242,8 +1242,8 @@ func TestDeleteWhereWith(t *testing.T) {
 	if err := Update(ds, `WITH <http://example.org/g1> DELETE WHERE { ?s <http://example.org/p> ?o }`); err != nil {
 		t.Fatal(err)
 	}
-	if g1.Len() != 0 {
-		t.Errorf("expected 0 triples after DELETE WHERE WITH, got %d", g1.Len())
+	if mustV(g1.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples after DELETE WHERE WITH, got %d", mustV(g1.Len(t.Context())))
 	}
 }
 
@@ -1254,8 +1254,8 @@ func TestMultipleUpdateOps(t *testing.T) {
 	if err := Update(ds, `INSERT DATA { <http://example.org/s> <http://example.org/p> "v1" } ; INSERT DATA { <http://example.org/s> <http://example.org/p> "v2" }`); err != nil {
 		t.Fatal(err)
 	}
-	if ds.Default.Len() != 2 {
-		t.Errorf("expected 2, got %d", ds.Default.Len())
+	if mustV(ds.Default.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(ds.Default.Len(t.Context())))
 	}
 }
 
@@ -1297,7 +1297,7 @@ func TestReadStringSingleQuote(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("hello"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
 	r, err := Query(g, `PREFIX ex: <http://example.org/> SELECT ?v WHERE { ?s ex:p 'hello' }`)
 	if err != nil {
 		t.Fatal(err)
@@ -1322,7 +1322,7 @@ func TestDeleteWhereNamedGraphVariable(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("v"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -1330,8 +1330,8 @@ func TestDeleteWhereNamedGraphVariable(t *testing.T) {
 	if err := Update(ds, `DELETE WHERE { GRAPH <http://example.org/g1> { ?s ?p ?o } }`); err != nil {
 		t.Fatal(err)
 	}
-	if g1.Len() != 0 {
-		t.Errorf("expected 0 triples, got %d", g1.Len())
+	if mustV(g1.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples, got %d", mustV(g1.Len(t.Context())))
 	}
 }
 
@@ -1348,7 +1348,7 @@ func TestExtractTemplateJoinPattern(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 3 persons * 2 triples = 6
-	if r.Graph == nil || r.Graph.Len() == 0 {
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) == 0 {
 		t.Error("expected triples")
 	}
 }
@@ -1380,8 +1380,8 @@ func TestDateComparisonFails(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/d")
 	// Add a date and compare with another date
-	g.Add(s, p, rdflibgo.NewLiteral("2024-01-01", rdflibgo.WithDatatype(rdflibgo.XSDDate)))
-	g.Add(s, p, rdflibgo.NewLiteral("2025-01-01", rdflibgo.WithDatatype(rdflibgo.XSDDate)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2024-01-01", rdflibgo.WithDatatype(rdflibgo.XSDDate)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2025-01-01", rdflibgo.WithDatatype(rdflibgo.XSDDate)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?d WHERE {
@@ -1401,8 +1401,8 @@ func TestParseDateTimeTime(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/t")
-	g.Add(s, p, rdflibgo.NewLiteral("10:30:45", rdflibgo.WithDatatype(rdflibgo.XSDTime)))
-	g.Add(s, p, rdflibgo.NewLiteral("20:00:00", rdflibgo.WithDatatype(rdflibgo.XSDTime)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("10:30:45", rdflibgo.WithDatatype(rdflibgo.XSDTime)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("20:00:00", rdflibgo.WithDatatype(rdflibgo.XSDTime)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?t WHERE {
@@ -1424,8 +1424,8 @@ func TestResolveBNodeWithScope(t *testing.T) {
 	if err := Update(ds, `INSERT DATA { _:b1 <http://example.org/p> "v" }`); err != nil {
 		t.Fatal(err)
 	}
-	if ds.Default.Len() != 1 {
-		t.Errorf("expected 1, got %d", ds.Default.Len())
+	if mustV(ds.Default.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(ds.Default.Len(t.Context())))
 	}
 }
 
@@ -1499,7 +1499,7 @@ func TestGraphForQuadSolutionVariable(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	g1 := rdflibgo.NewGraph()
-	g1.Add(s, p, rdflibgo.NewLiteral("v"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     rdflibgo.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": g1},
@@ -1571,8 +1571,8 @@ func TestParseDateTimeComparison(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/d")
-	g.Add(s, p, rdflibgo.NewLiteral("2024-01-01T10:00:00Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
-	g.Add(s, p, rdflibgo.NewLiteral("2025-01-01T10:00:00Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2024-01-01T10:00:00Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2025-01-01T10:00:00Z", rdflibgo.WithDatatype(rdflibgo.XSDDateTime)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>

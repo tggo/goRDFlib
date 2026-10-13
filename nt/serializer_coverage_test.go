@@ -28,10 +28,10 @@ func TestSerializeWithBaseOption(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("hi"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hi"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf, WithBase("http://base.example/")); err != nil {
+	if err := Serialize(t.Context(), g, &buf, WithBase("http://base.example/")); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), `"hi"`) {
@@ -44,10 +44,10 @@ func TestSerializeBNode(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	bn := rdflibgo.NewBNode("b1")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(bn, p, rdflibgo.NewLiteral("value"))
+	g.Add(t.Context(), bn, p, rdflibgo.NewLiteral("value"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -61,10 +61,10 @@ func TestSerializeLiteralWithLang(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("bonjour", rdflibgo.WithLang("fr")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("bonjour", rdflibgo.WithLang("fr")))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -78,10 +78,10 @@ func TestSerializeLiteralWithDatatype(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("3.14", rdflibgo.WithDatatype(rdflibgo.XSDDouble)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("3.14", rdflibgo.WithDatatype(rdflibgo.XSDDouble)))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -100,10 +100,10 @@ func TestSerializeTripleTerm(t *testing.T) {
 	// Use the triple term as an object
 	g := rdflibgo.NewGraph()
 	outer_p := rdflibgo.NewURIRefUnsafe("http://example.org/asserts")
-	g.Add(s, outer_p, tt)
+	g.Add(t.Context(), s, outer_p, tt)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -122,10 +122,10 @@ func TestSerializeTripleTermAsSubject(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	outer_p := rdflibgo.NewURIRefUnsafe("http://example.org/occursIn")
 	outer_o := rdflibgo.NewURIRefUnsafe("http://example.org/doc")
-	g.Add(tt, outer_p, outer_o)
+	g.Add(t.Context(), tt, outer_p, outer_o)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -140,10 +140,10 @@ func TestSerializeLiteralPlain(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("plain"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("plain"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -160,14 +160,14 @@ func TestSerializeWriteError(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("value"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("value"))
 
-	if err := Serialize(g, io.Discard); err != nil {
+	if err := Serialize(t.Context(), g, io.Discard); err != nil {
 		t.Fatal("unexpected error with Discard writer:", err)
 	}
 
 	// Use an always-failing writer to hit the Fprintln error return.
-	if err := Serialize(g, &failWriter{}); err == nil {
+	if err := Serialize(t.Context(), g, &failWriter{}); err == nil {
 		t.Error("expected write error, got nil")
 	}
 }
@@ -184,10 +184,10 @@ func TestSerializeBNodeObject(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	bn := rdflibgo.NewBNode("obj1")
-	g.Add(s, p, bn)
+	g.Add(t.Context(), s, p, bn)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -200,11 +200,11 @@ func TestSerializeBNodeObject(t *testing.T) {
 func TestParseWithBaseOption(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello" .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input), WithBase("http://base.example/")); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input), WithBase("http://base.example/")); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -213,10 +213,10 @@ func TestSerializeLiteralDirLang(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("مرحبا", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("مرحبا", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -229,14 +229,14 @@ func TestSerializeLiteralDirLang(t *testing.T) {
 func TestSerializeMultipleTriplesOrder(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/z"), p, rdflibgo.NewLiteral("z"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), p, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/z"), p, rdflibgo.NewLiteral("z"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), p, rdflibgo.NewLiteral("a"))
 
 	var buf1, buf2 bytes.Buffer
-	if err := Serialize(g, &buf1); err != nil {
+	if err := Serialize(t.Context(), g, &buf1); err != nil {
 		t.Fatal(err)
 	}
-	if err := Serialize(g, &buf2); err != nil {
+	if err := Serialize(t.Context(), g, &buf2); err != nil {
 		t.Fatal(err)
 	}
 	if buf1.String() != buf2.String() {
@@ -262,10 +262,10 @@ func TestSerializeTripleTermNestedInSubject(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	outerP := rdflibgo.NewURIRefUnsafe("http://example.org/asserts")
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, outerP, tt)
+	g.Add(t.Context(), s, outerP, tt)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -283,10 +283,10 @@ func TestSerializeTripleTermLiteralObject(t *testing.T) {
 
 	g := rdflibgo.NewGraph()
 	outerP := rdflibgo.NewURIRefUnsafe("http://example.org/asserts")
-	g.Add(s, outerP, tt)
+	g.Add(t.Context(), s, outerP, tt)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -301,10 +301,10 @@ func TestSerializeIRIWithSpecialChars(t *testing.T) {
 	// IRI with supplementary plane character
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/\U0001F600")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -319,9 +319,9 @@ func TestSerializeIRIWithControlChar(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/a\x01b")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
-	if err := Serialize(g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
+	if err := Serialize(t.Context(), g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
 		t.Errorf("want ErrInvalidIRI, got %v", err)
 	}
 }
@@ -332,9 +332,9 @@ func TestSerializeIRIWithAngleBrackets(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/a<b>c")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
-	if err := Serialize(g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
+	if err := Serialize(t.Context(), g, &bytes.Buffer{}); !errors.Is(err, ErrInvalidIRI) {
 		t.Errorf("want ErrInvalidIRI, got %v", err)
 	}
 }
@@ -345,9 +345,9 @@ func TestSerializeWriteErrorMultipleTriples(t *testing.T) {
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	for i := 0; i < 10; i++ {
 		s := rdflibgo.NewURIRefUnsafe("http://example.org/s" + string(rune('0'+i)))
-		g.Add(s, p, rdflibgo.NewLiteral("v"))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	}
-	err := Serialize(g, &failWriter{})
+	err := Serialize(t.Context(), g, &failWriter{})
 	if err == nil {
 		t.Error("expected write error, got nil")
 	}
@@ -358,10 +358,10 @@ func TestSerializeCarriageReturn(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("a\rb"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("a\rb"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), `\r`) {

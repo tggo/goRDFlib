@@ -17,10 +17,10 @@ func crossGraph(n int) *graph.Graph {
 	ex := func(s string) rdflibgo.URIRef { return rdflibgo.NewURIRefUnsafe("http://example.org/" + s) }
 	for i := 0; i < n; i++ {
 		s := ex("item" + strconv.Itoa(i))
-		g.Add(s, ex("type"), ex("Item"))
-		g.Add(s, ex("title"), rdflibgo.NewLiteral("title "+strconv.Itoa(i)))
-		g.Add(s, ex("n"), rdflibgo.NewLiteral(i))
-		g.Add(s, ex("link"), ex("item"+strconv.Itoa((i+1)%n)))
+		g.Add(context.Background(), s, ex("type"), ex("Item"))
+		g.Add(context.Background(), s, ex("title"), rdflibgo.NewLiteral("title "+strconv.Itoa(i)))
+		g.Add(context.Background(), s, ex("n"), rdflibgo.NewLiteral(i))
+		g.Add(context.Background(), s, ex("link"), ex("item"+strconv.Itoa((i+1)%n)))
 	}
 	return g
 }
@@ -60,7 +60,7 @@ func TestLimitStopsCrossProduct(t *testing.T) {
 				got = 1
 			}
 		case "CONSTRUCT":
-			got = r.Graph.Len()
+			got, _ = r.Graph.Len(t.Context())
 		}
 		if got != want {
 			t.Errorf("%s: %d results, want %d", q, got, want)
@@ -121,7 +121,7 @@ func TestMaxSolutions(t *testing.T) {
 	if err := UpdateContext(ctx, ds, `INSERT { ?a <http://x> ?f } WHERE { ?a ?b ?c . ?d ?e ?f }`); !errors.Is(err, ErrTooManySolutions) {
 		t.Errorf("update: err = %v", err)
 	}
-	if n := ds.Default.Len(); n != 160 {
+	if n, _ := ds.Default.Len(t.Context()); n != 160 {
 		t.Errorf("update over budget wrote: %d triples", n)
 	}
 	// n <= 0 removes the bound.

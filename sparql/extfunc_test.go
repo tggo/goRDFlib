@@ -22,7 +22,7 @@ ex:b ex:value 3  ; ex:name "bob" .
 func extFuncGraph(t *testing.T) *rdflibgo.Graph {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(extFuncData)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(extFuncData)); err != nil {
 		t.Fatal(err)
 	}
 	return g

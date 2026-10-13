@@ -59,10 +59,10 @@ func TestResourceGraphAndIdentifier(t *testing.T) {
 
 func TestNSManagerNamespacesPathsCov(t *testing.T) {
 	store := NewMemoryStore()
-	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	store.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
 	count := 0
-	mgr.Namespaces()(func(string, URIRef) bool { count++; return true })
+	mgr.Namespaces(t.Context())(func(pair_ NamespaceBinding, _ error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1, got %d", count)
 	}
@@ -72,10 +72,10 @@ func TestNSManagerBindPathsCov(t *testing.T) {
 	store := NewMemoryStore()
 	mgr := NewNSManager(store)
 	ns, _ := NewURIRef("http://example.org/")
-	mgr.Bind("ex", ns, true)
+	mgr.Bind(t.Context(), "ex", ns, true)
 	ns2, _ := NewURIRef("http://other.org/")
-	mgr.Bind("ex", ns2, false)
-	got, ok := store.Namespace("ex")
+	mgr.Bind(t.Context(), "ex", ns2, false)
+	got, ok, _ := store.Namespace(t.Context(), "ex")
 	if !ok || got != ns {
 		t.Errorf("override=false should keep original, got %v", got)
 	}
@@ -100,12 +100,12 @@ func TestMemoryStoreContextAware(t *testing.T) {
 
 func TestTurtleParserSPARQLBase(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		BASE <http://example.org/>
 		<s> <p> "hello" .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -118,8 +118,8 @@ func TestRDFXMLParserParseLiteral(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }

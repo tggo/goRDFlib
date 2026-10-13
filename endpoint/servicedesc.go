@@ -1,6 +1,9 @@
 package endpoint
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/sparql/results"
 	"github.com/tggo/goRDFlib/term"
@@ -22,36 +25,47 @@ var resultFormatIRIs = map[results.Format]string{
 // and RDF format the handler writes, and the default dataset. It claims no
 // sd:feature: the default graph is not the union of the named graphs, URIs are
 // not dereferenced, and a dataset is not required.
+//
+// The graph lives in memory, so building it cannot fail; the context is only
+// the one the in-memory store is asked with.
 func (h *Handler) ServiceDescription(endpointIRI string) *graph.Graph {
+	ctx := context.Background()
 	g := graph.NewGraph()
-	g.Bind("sd", term.NewURIRefUnsafe(SD))
-	g.Bind("formats", term.NewURIRefUnsafe("http://www.w3.org/ns/formats/"))
+	// An in-memory store never reports an error, so add and bind cannot fail.
+	must := func(err error) {
+		if err != nil {
+			panic(fmt.Sprintf("endpoint: building the service description: %v", err))
+		}
+	}
+	add := func(s term.Subject, p term.URIRef, o term.Term) { must(g.Add(ctx, s, p, o)) }
+	must(g.Bind(ctx, "sd", term.NewURIRefUnsafe(SD)))
+	must(g.Bind(ctx, "formats", term.NewURIRefUnsafe("http://www.w3.org/ns/formats/")))
 	sd := func(local string) term.URIRef { return term.NewURIRefUnsafe(SD + local) }
 	rdfType := term.NewURIRefUnsafe(term.RDFNamespace + "type")
 
 	svc := term.NewBNode()
-	g.Add(svc, rdfType, sd("Service"))
+	add(svc, rdfType, sd("Service"))
 	if u, err := term.NewURIRef(endpointIRI); err == nil {
-		g.Add(svc, sd("endpoint"), u)
+		add(svc, sd("endpoint"), u)
 	}
-	g.Add(svc, sd("supportedLanguage"), sd("SPARQL11Query"))
+	add(svc, sd("supportedLanguage"), sd("SPARQL11Query"))
 	if !h.cfg.readOnly {
-		g.Add(svc, sd("supportedLanguage"), sd("SPARQL11Update"))
+		add(svc, sd("supportedLanguage"), sd("SPARQL11Update"))
 	}
 	for _, f := range h.cfg.resultFormats {
 		if iri, ok := resultFormatIRIs[f]; ok {
-			g.Add(svc, sd("resultFormat"), term.NewURIRefUnsafe(iri))
+			add(svc, sd("resultFormat"), term.NewURIRefUnsafe(iri))
 		}
 	}
 	for _, f := range rdfFormats {
-		g.Add(svc, sd("resultFormat"), term.NewURIRefUnsafe(f.formatIRI))
+		add(svc, sd("resultFormat"), term.NewURIRefUnsafe(f.formatIRI))
 	}
 	ds := term.NewBNode()
 	dg := term.NewBNode()
-	g.Add(svc, sd("defaultDataset"), ds)
-	g.Add(ds, rdfType, sd("Dataset"))
-	g.Add(ds, sd("defaultGraph"), dg)
-	g.Add(dg, rdfType, sd("Graph"))
+	add(svc, sd("defaultDataset"), ds)
+	add(ds, rdfType, sd("Dataset"))
+	add(ds, sd("defaultGraph"), dg)
+	add(dg, rdfType, sd("Graph"))
 	return g
 }
 
@@ -64,5 +78,5 @@ func (x *exchange) serviceDescription() error {
 		return notAcceptable(accept, rdfMediaTypes())
 	}
 	g := x.h.ServiceDescription(x.h.requestIRI(x.r))
-	return x.writeGraph(g, f)
+	return x.writeGraph(x.r.Context(), g, f)
 }

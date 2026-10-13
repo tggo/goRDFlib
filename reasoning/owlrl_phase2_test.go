@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"context"
 	"testing"
 
 	"github.com/tggo/goRDFlib/graph"
@@ -20,14 +21,14 @@ func TestOWLRL_PropertyChainAxiom(t *testing.T) {
 
 	// uncle = parent . brother
 	chain := buildRDFList(g, []term.Term{parent, brother})
-	g.Add(uncle, namespace.OWL.PropertyChainAxiom, chain)
+	g.Add(t.Context(), uncle, namespace.OWL.PropertyChainAxiom, chain)
 
-	g.Add(exA, parent, exB)
-	g.Add(exB, brother, exC)
+	g.Add(t.Context(), exA, parent, exB)
+	g.Add(t.Context(), exB, brother, exC)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exA, uncle, exC) {
+	if !mustV(g.Contains(t.Context(), exA, uncle, exC)) {
 		t.Error("expected A uncle C via property chain (parent . brother)")
 	}
 }
@@ -40,15 +41,15 @@ func TestOWLRL_PropertyChainAxiomThreeSteps(t *testing.T) {
 	p3 := ex.Term("p3")
 
 	chain := buildRDFList(g, []term.Term{p1, p2, p3})
-	g.Add(result, namespace.OWL.PropertyChainAxiom, chain)
+	g.Add(t.Context(), result, namespace.OWL.PropertyChainAxiom, chain)
 
-	g.Add(exA, p1, exB)
-	g.Add(exB, p2, exC)
-	g.Add(exC, p3, exD)
+	g.Add(t.Context(), exA, p1, exB)
+	g.Add(t.Context(), exB, p2, exC)
+	g.Add(t.Context(), exC, p3, exD)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	if !g.Contains(exA, result, exD) {
+	if !mustV(g.Contains(t.Context(), exA, result, exD)) {
 		t.Error("expected A result D via 3-step chain")
 	}
 }
@@ -61,18 +62,18 @@ func TestOWLRL_HasKey(t *testing.T) {
 	cls := ex.Term("Person")
 
 	keys := buildRDFList(g, []term.Term{keyProp})
-	g.Add(cls, namespace.OWL.HasKey, keys)
+	g.Add(t.Context(), cls, namespace.OWL.HasKey, keys)
 
-	g.Add(exA, namespace.RDF.Type, cls)
-	g.Add(exB, namespace.RDF.Type, cls)
+	g.Add(t.Context(), exA, namespace.RDF.Type, cls)
+	g.Add(t.Context(), exB, namespace.RDF.Type, cls)
 	ssn := term.NewLiteral("123-45-6789")
-	g.Add(exA, keyProp, ssn)
-	g.Add(exB, keyProp, ssn)
+	g.Add(t.Context(), exA, keyProp, ssn)
+	g.Add(t.Context(), exB, keyProp, ssn)
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if !hasSameAs {
 		t.Error("expected A owl:sameAs B (same key values)")
 	}
@@ -84,17 +85,17 @@ func TestOWLRL_HasKeyNoMatch(t *testing.T) {
 	cls := ex.Term("Person")
 
 	keys := buildRDFList(g, []term.Term{keyProp})
-	g.Add(cls, namespace.OWL.HasKey, keys)
+	g.Add(t.Context(), cls, namespace.OWL.HasKey, keys)
 
-	g.Add(exA, namespace.RDF.Type, cls)
-	g.Add(exB, namespace.RDF.Type, cls)
-	g.Add(exA, keyProp, term.NewLiteral("111"))
-	g.Add(exB, keyProp, term.NewLiteral("222"))
+	g.Add(t.Context(), exA, namespace.RDF.Type, cls)
+	g.Add(t.Context(), exB, namespace.RDF.Type, cls)
+	g.Add(t.Context(), exA, keyProp, term.NewLiteral("111"))
+	g.Add(t.Context(), exB, keyProp, term.NewLiteral("222"))
 
-	OWLRLClosure(g)
+	OWLRLClosure(t.Context(), g)
 
-	hasSameAs := g.Contains(exA, namespace.OWL.SameAs, exB) ||
-		g.Contains(exB, namespace.OWL.SameAs, exA)
+	hasSameAs := mustV(g.Contains(t.Context(), exA, namespace.OWL.SameAs, exB)) ||
+		mustV(g.Contains(t.Context(), exB, namespace.OWL.SameAs, exA))
 	if hasSameAs {
 		t.Error("should NOT have sameAs (different key values)")
 	}
@@ -104,10 +105,10 @@ func TestOWLRL_HasKeyNoMatch(t *testing.T) {
 
 func TestOWLRL_IrreflexiveProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.IrreflexiveProperty)
-	g.Add(exA, exP, exA)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.IrreflexiveProperty)
+	g.Add(t.Context(), exA, exP, exA)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -123,10 +124,10 @@ func TestOWLRL_IrreflexiveProperty(t *testing.T) {
 
 func TestOWLRL_IrreflexivePropertyNoViolation(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.IrreflexiveProperty)
-	g.Add(exA, exP, exB)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.IrreflexiveProperty)
+	g.Add(t.Context(), exA, exP, exB)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	for _, i := range incon {
 		if i.Rule == "prp-irp" {
@@ -139,11 +140,11 @@ func TestOWLRL_IrreflexivePropertyNoViolation(t *testing.T) {
 
 func TestOWLRL_AsymmetricProperty(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.RDF.Type, namespace.OWL.AsymmetricProperty)
-	g.Add(exA, exP, exB)
-	g.Add(exB, exP, exA)
+	g.Add(t.Context(), exP, namespace.RDF.Type, namespace.OWL.AsymmetricProperty)
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exB, exP, exA)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -161,11 +162,11 @@ func TestOWLRL_AsymmetricProperty(t *testing.T) {
 
 func TestOWLRL_PropertyDisjointWith(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exP, namespace.OWL.PropertyDisjointWith, exQ)
-	g.Add(exA, exP, exB)
-	g.Add(exA, exQ, exB)
+	g.Add(t.Context(), exP, namespace.OWL.PropertyDisjointWith, exQ)
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exA, exQ, exB)
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -184,14 +185,14 @@ func TestOWLRL_PropertyDisjointWith(t *testing.T) {
 func TestOWLRL_AllDisjointProperties(t *testing.T) {
 	g := graph.NewGraph()
 	adpNode := term.NewBNode("")
-	g.Add(adpNode, namespace.RDF.Type, namespace.OWL.AllDisjointProperties)
+	g.Add(t.Context(), adpNode, namespace.RDF.Type, namespace.OWL.AllDisjointProperties)
 	memberList := buildRDFList(g, []term.Term{exP, exQ, exR})
-	g.Add(adpNode, namespace.OWL.Members, memberList)
+	g.Add(t.Context(), adpNode, namespace.OWL.Members, memberList)
 
-	g.Add(exA, exP, exB)
-	g.Add(exA, exQ, exB) // violates disjointness with P
+	g.Add(t.Context(), exA, exP, exB)
+	g.Add(t.Context(), exA, exQ, exB) // violates disjointness with P
 
-	_, incon := OWLRLClosureCheck(g)
+	_, incon, _ := OWLRLClosureCheck(t.Context(), g)
 
 	found := false
 	for _, i := range incon {
@@ -218,12 +219,12 @@ func buildRDFList(g *graph.Graph, items []term.Term) term.Subject {
 		if i == 0 {
 			head = node
 		}
-		g.Add(node, namespace.RDF.First, item)
+		g.Add(context.Background(), node, namespace.RDF.First, item)
 		if prev != nil {
-			g.Add(prev, namespace.RDF.Rest, node)
+			g.Add(context.Background(), prev, namespace.RDF.Rest, node)
 		}
 		prev = node
 	}
-	g.Add(prev, namespace.RDF.Rest, namespace.RDF.Nil)
+	g.Add(context.Background(), prev, namespace.RDF.Rest, namespace.RDF.Nil)
 	return head
 }

@@ -227,10 +227,10 @@ func parseTurtleObject(t *testing.T, cell string) rdflibgo.Term {
 	t.Helper()
 	g := rdflibgo.NewGraph()
 	doc := "<http://s> <http://p> " + cell + " ."
-	if err := turtle.Parse(g, strings.NewReader(doc), turtle.WithPreserveBlankNodeIDs()); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(doc), turtle.WithPreserveBlankNodeIDs()); err != nil {
 		t.Fatalf("cell %q does not parse as Turtle: %v", cell, err)
 	}
-	for tr := range g.Triples(nil, nil, nil) {
+	for tr := range g.Triples(t.Context(), nil, nil, nil) {
 		return tr.Object
 	}
 	t.Fatalf("cell %q produced no triple", cell)

@@ -2,6 +2,7 @@ package trig
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"strings"
@@ -44,8 +45,8 @@ func datasetAsGraph(ds *graph.Dataset) *rdflibgo.Graph {
 		if id := g.Identifier(); id != def {
 			suffix = " in " + id.(rdflibgo.URIRef).Value()
 		}
-		g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-			out.Add(t.Subject, rdflibgo.NewURIRefUnsafe(t.Predicate.Value()+suffix), t.Object)
+		g.Triples(context.Background(), nil, nil, nil)(func(t rdflibgo.Triple, _ error) bool {
+			out.Add(context.Background(), t.Subject, rdflibgo.NewURIRefUnsafe(t.Predicate.Value()+suffix), t.Object)
 			return true
 		})
 	}
@@ -57,11 +58,11 @@ func datasetAsGraph(ds *graph.Dataset) *rdflibgo.Graph {
 func assertDatasetRoundTrip(t *testing.T, ds *graph.Dataset, fresh func(*testing.T) *graph.Dataset) {
 	t.Helper()
 	var b bytes.Buffer
-	if err := SerializeDataset(ds, &b); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &b); err != nil {
 		t.Fatal(err)
 	}
 	ds2 := fresh(t)
-	if err := ParseDataset(ds2, strings.NewReader(b.String())); err != nil {
+	if err := ParseDataset(t.Context(), ds2, strings.NewReader(b.String())); err != nil {
 		t.Fatalf("output does not parse: %v\n%s", err, b.String())
 	}
 	testutil.AssertGraphEqual(t, datasetAsGraph(ds), datasetAsGraph(ds2))
@@ -90,7 +91,7 @@ ex:a ex:items _:h . ex:b ex:items _:t .`,
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
 			ds := graph.NewDataset()
-			if err := ParseDataset(ds, strings.NewReader(prefixes+src)); err != nil {
+			if err := ParseDataset(t.Context(), ds, strings.NewReader(prefixes+src)); err != nil {
 				t.Fatal(err)
 			}
 			assertDatasetRoundTrip(t, ds, memoryDataset)
@@ -120,7 +121,7 @@ func newShapeGen(seed int, ds *graph.Dataset, graphs int) *shapeGen {
 }
 
 func (s *shapeGen) add(subj rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) {
-	s.graphs[s.r.IntN(len(s.graphs))].Add(subj, p, o)
+	s.graphs[s.r.IntN(len(s.graphs))].Add(context.Background(), subj, p, o)
 }
 
 func (s *shapeGen) bnode() rdflibgo.BNode {
@@ -281,7 +282,7 @@ func TestSerializeBNodeInTripleTermKeepsIdentityTrig(t *testing.T) {
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
 			ds := graph.NewDataset()
-			if err := ParseDataset(ds, strings.NewReader(prefix+src)); err != nil {
+			if err := ParseDataset(t.Context(), ds, strings.NewReader(prefix+src)); err != nil {
 				t.Fatal(err)
 			}
 			assertDatasetRoundTrip(t, ds, memoryDataset)
@@ -306,7 +307,7 @@ func TestSerializeBNodeSharedAcrossGraphs(t *testing.T) {
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
 			ds := newBadgerDataset(t)
-			if err := ParseDataset(ds, strings.NewReader(prefix+src)); err != nil {
+			if err := ParseDataset(t.Context(), ds, strings.NewReader(prefix+src)); err != nil {
 				t.Fatal(err)
 			}
 			assertDatasetRoundTrip(t, ds, newBadgerDataset)

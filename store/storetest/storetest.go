@@ -120,11 +120,7 @@ func Run(t *testing.T, cfg Config) {
 	} else {
 		t.Log("backend does not implement store.ReachabilityStore; section skipped")
 	}
-	if _, ok := probe.(store.ContextBinder); ok {
-		cfg.run(t, "ContextBinder", func(t *testing.T) { testContextBinder(t, cfg) })
-	} else {
-		t.Log("backend does not implement store.ContextBinder; section skipped")
-	}
+	cfg.run(t, "DoneContext", func(t *testing.T) { testDoneContext(t, cfg) })
 
 	if !cfg.SkipConcurrency {
 		cfg.run(t, "Concurrency", func(t *testing.T) { testConcurrency(t, cfg) })
@@ -185,7 +181,7 @@ func pred(p term.URIRef) *term.URIRef { return &p }
 // order.
 func collect(it store.TripleIterator) []string {
 	var out []string
-	it(func(t term.Triple) bool {
+	it(func(t term.Triple, _ error) bool {
 		out = append(out, fmt.Sprintf("%s %s %s", t.Subject.N3(), t.Predicate.N3(), t.Object.N3()))
 		return true
 	})
@@ -195,7 +191,7 @@ func collect(it store.TripleIterator) []string {
 
 func count(it store.TripleIterator) int {
 	n := 0
-	it(func(term.Triple) bool {
+	it(func(term.Triple, error) bool {
 		n++
 		return true
 	})
@@ -208,14 +204,14 @@ func pattern(s term.Subject, p *term.URIRef, o term.Term) term.TriplePattern {
 
 func wantLen(t *testing.T, s store.Store, ctx term.Term, want int, what string) {
 	t.Helper()
-	if got := s.Len(ctx); got != want {
+	if got, _ := s.Len(t.Context(), ctx); got != want {
 		t.Errorf("%s: Len = %d, want %d", what, got, want)
 	}
 }
 
 func wantTriples(t *testing.T, s store.Store, pat term.TriplePattern, ctx term.Term, want int, what string) {
 	t.Helper()
-	if got := count(s.Triples(pat, ctx)); got != want {
+	if got := count(s.Triples(t.Context(), pat, ctx)); got != want {
 		t.Errorf("%s: %d triples, want %d", what, got, want)
 	}
 }
@@ -225,17 +221,17 @@ func wantTriples(t *testing.T, s store.Store, pat term.TriplePattern, ctx term.T
 func testAdd(t *testing.T, cfg Config) {
 	cfg.run(t, "counts", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Alice, Age, lit(30)), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Alice, Age, lit(30)), nil)
 		wantLen(t, s, nil, 2, "two distinct triples")
 	})
 
 	cfg.run(t, "is idempotent", func(t *testing.T) {
 		s := cfg.New(t)
 		tr := triple(Alice, Name, lit("Alice"))
-		s.Add(tr, nil)
-		s.Add(tr, nil)
-		s.Add(tr, nil)
+		s.Add(t.Context(), tr, nil)
+		s.Add(t.Context(), tr, nil)
+		s.Add(t.Context(), tr, nil)
 		wantLen(t, s, nil, 1, "same triple added three times")
 	})
 
@@ -245,8 +241,8 @@ func testAdd(t *testing.T, cfg Config) {
 			t.Skip("backend is not context aware")
 		}
 		tr := triple(Alice, Name, lit("Alice"))
-		s.Add(tr, Graph1)
-		s.Add(tr, Graph2)
+		s.Add(t.Context(), tr, Graph1)
+		s.Add(t.Context(), tr, Graph2)
 		wantLen(t, s, Graph1, 1, "graph1")
 		wantLen(t, s, Graph2, 1, "graph2")
 		wantLen(t, s, nil, 0, "default graph must be untouched")
@@ -258,7 +254,7 @@ func testAdd(t *testing.T, cfg Config) {
 func testAddN(t *testing.T, cfg Config) {
 	cfg.run(t, "batch", func(t *testing.T) {
 		s := cfg.New(t)
-		s.AddN([]term.Quad{
+		s.AddN(t.Context(), []term.Quad{
 			{Triple: triple(Alice, Name, lit("Alice"))},
 			{Triple: triple(Bob, Name, lit("Bob"))},
 		})
@@ -267,15 +263,15 @@ func testAddN(t *testing.T, cfg Config) {
 
 	cfg.run(t, "empty and nil are no-ops", func(t *testing.T) {
 		s := cfg.New(t)
-		s.AddN(nil)
-		s.AddN([]term.Quad{})
+		s.AddN(t.Context(), nil)
+		s.AddN(t.Context(), []term.Quad{})
 		wantLen(t, s, nil, 0, "no quads")
 	})
 
 	cfg.run(t, "deduplicates within a batch", func(t *testing.T) {
 		s := cfg.New(t)
 		tr := triple(Alice, Name, lit("Alice"))
-		s.AddN([]term.Quad{{Triple: tr}, {Triple: tr}, {Triple: tr}})
+		s.AddN(t.Context(), []term.Quad{{Triple: tr}, {Triple: tr}, {Triple: tr}})
 		wantLen(t, s, nil, 1, "one distinct quad repeated")
 	})
 
@@ -284,7 +280,7 @@ func testAddN(t *testing.T, cfg Config) {
 		if !s.ContextAware() {
 			t.Skip("backend is not context aware")
 		}
-		s.AddN([]term.Quad{
+		s.AddN(t.Context(), []term.Quad{
 			{Triple: triple(Alice, Name, lit("Alice")), Graph: Graph1},
 			{Triple: triple(Bob, Name, lit("Bob")), Graph: Graph2},
 			{Triple: triple(Carol, Name, lit("Carol"))},
@@ -305,7 +301,7 @@ func testAddN(t *testing.T, cfg Config) {
 			subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
 			quads = append(quads, term.Quad{Triple: triple(subj, Name, lit(i))})
 		}
-		s.AddN(quads)
+		s.AddN(t.Context(), quads)
 		wantLen(t, s, nil, n, "large batch")
 	})
 }
@@ -315,10 +311,10 @@ func testAddN(t *testing.T, cfg Config) {
 func testRemove(t *testing.T, cfg Config) {
 	seed := func(t *testing.T) store.Store {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Alice, Age, lit(30)), nil)
-		s.Add(triple(Bob, Name, lit("Bob")), nil)
-		s.Add(triple(Bob, Knows, Alice), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Alice, Age, lit(30)), nil)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), nil)
+		s.Add(t.Context(), triple(Bob, Knows, Alice), nil)
 		return s
 	}
 
@@ -340,7 +336,7 @@ func testRemove(t *testing.T, cfg Config) {
 	for _, tc := range cases {
 		cfg.run(t, tc.name, func(t *testing.T) {
 			s := seed(t)
-			s.Remove(tc.pat, nil)
+			s.Remove(t.Context(), tc.pat, nil)
 			wantLen(t, s, nil, tc.want, tc.name)
 		})
 	}
@@ -351,11 +347,11 @@ func testRemove(t *testing.T, cfg Config) {
 			t.Skip("backend is not context aware")
 		}
 		tr := triple(Alice, Name, lit("Alice"))
-		s.Add(tr, Graph1)
-		s.Add(tr, Graph2)
-		s.Add(tr, nil)
+		s.Add(t.Context(), tr, Graph1)
+		s.Add(t.Context(), tr, Graph2)
+		s.Add(t.Context(), tr, nil)
 
-		s.Remove(pattern(nil, nil, nil), Graph1)
+		s.Remove(t.Context(), pattern(nil, nil, nil), Graph1)
 		wantLen(t, s, Graph1, 0, "graph1 after Remove")
 		wantLen(t, s, Graph2, 1, "graph2 must be untouched")
 		wantLen(t, s, nil, 1, "default graph must be untouched")
@@ -367,11 +363,11 @@ func testRemove(t *testing.T, cfg Config) {
 func testSet(t *testing.T, cfg Config) {
 	cfg.run(t, "replaces the value", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Set(triple(Alice, Name, lit("Alicia")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Set(t.Context(), triple(Alice, Name, lit("Alicia")), nil)
 		wantLen(t, s, nil, 1, "after Set")
 
-		got := collect(s.Triples(pattern(Alice, pred(Name), nil), nil))
+		got := collect(s.Triples(t.Context(), pattern(Alice, pred(Name), nil), nil))
 		want := []string{`<http://example.org/Alice> <http://example.org/name> "Alicia"`}
 		if len(got) != 1 || got[0] != want[0] {
 			t.Errorf("got %v, want %v", got, want)
@@ -380,24 +376,24 @@ func testSet(t *testing.T, cfg Config) {
 
 	cfg.run(t, "collapses multiple existing values", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("A")), nil)
-		s.Add(triple(Alice, Name, lit("B")), nil)
-		s.Add(triple(Alice, Name, lit("C")), nil)
-		s.Set(triple(Alice, Name, lit("D")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("A")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("B")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("C")), nil)
+		s.Set(t.Context(), triple(Alice, Name, lit("D")), nil)
 		wantLen(t, s, nil, 1, "after Set over three values")
 	})
 
 	cfg.run(t, "leaves other predicates alone", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Alice, Age, lit(30)), nil)
-		s.Set(triple(Alice, Name, lit("Alicia")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Alice, Age, lit(30)), nil)
+		s.Set(t.Context(), triple(Alice, Name, lit("Alicia")), nil)
 		wantLen(t, s, nil, 2, "name replaced, age kept")
 	})
 
 	cfg.run(t, "works on an empty store", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Set(triple(Alice, Name, lit("Alice")), nil)
+		s.Set(t.Context(), triple(Alice, Name, lit("Alice")), nil)
 		wantLen(t, s, nil, 1, "Set with nothing to replace")
 	})
 
@@ -406,13 +402,13 @@ func testSet(t *testing.T, cfg Config) {
 		if !s.ContextAware() {
 			t.Skip("backend is not context aware")
 		}
-		s.Add(triple(Alice, Name, lit("old")), Graph1)
-		s.Add(triple(Alice, Name, lit("old")), nil)
-		s.Set(triple(Alice, Name, lit("new")), Graph1)
+		s.Add(t.Context(), triple(Alice, Name, lit("old")), Graph1)
+		s.Add(t.Context(), triple(Alice, Name, lit("old")), nil)
+		s.Set(t.Context(), triple(Alice, Name, lit("new")), Graph1)
 		wantLen(t, s, Graph1, 1, "graph1")
 		wantLen(t, s, nil, 1, "default graph")
 
-		got := collect(s.Triples(pattern(nil, nil, nil), nil))
+		got := collect(s.Triples(t.Context(), pattern(nil, nil, nil), nil))
 		if len(got) != 1 || got[0] != `<http://example.org/Alice> <http://example.org/name> "old"` {
 			t.Errorf("default graph was modified by a Set in graph1: %v", got)
 		}
@@ -424,10 +420,10 @@ func testSet(t *testing.T, cfg Config) {
 func testTriples(t *testing.T, cfg Config) {
 	seed := func(t *testing.T) store.Store {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Alice, Age, lit(30)), nil)
-		s.Add(triple(Bob, Name, lit("Bob")), nil)
-		s.Add(triple(Bob, Knows, Alice), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Alice, Age, lit(30)), nil)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), nil)
+		s.Add(t.Context(), triple(Bob, Knows, Alice), nil)
 		return s
 	}
 
@@ -461,7 +457,7 @@ func testTriples(t *testing.T, cfg Config) {
 	cfg.run(t, "stops when the consumer stops", func(t *testing.T) {
 		s := seed(t)
 		seen := 0
-		s.Triples(pattern(nil, nil, nil), nil)(func(term.Triple) bool {
+		s.Triples(t.Context(), pattern(nil, nil, nil), nil)(func(term.Triple, error) bool {
 			seen++
 			return false
 		})
@@ -472,7 +468,7 @@ func testTriples(t *testing.T, cfg Config) {
 
 	cfg.run(t, "is restartable", func(t *testing.T) {
 		s := seed(t)
-		it := s.Triples(pattern(nil, nil, nil), nil)
+		it := s.Triples(t.Context(), pattern(nil, nil, nil), nil)
 		first, second := count(it), count(it)
 		if first != second {
 			t.Errorf("second pass over the same iterator yielded %d, first yielded %d", second, first)
@@ -484,8 +480,8 @@ func testTriples(t *testing.T, cfg Config) {
 		if !s.ContextAware() {
 			t.Skip("backend is not context aware")
 		}
-		s.Add(triple(Alice, Name, lit("Alice")), Graph1)
-		s.Add(triple(Bob, Name, lit("Bob")), Graph2)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), Graph1)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), Graph2)
 		wantTriples(t, s, pattern(nil, nil, nil), Graph1, 1, "graph1")
 		wantTriples(t, s, pattern(nil, nil, nil), Graph2, 1, "graph2")
 		wantTriples(t, s, pattern(nil, nil, nil), nil, 0, "default graph")
@@ -498,7 +494,7 @@ func testTriples(t *testing.T, cfg Config) {
 func testContexts(t *testing.T, cfg Config) {
 	names := func(s store.Store, tr *term.Triple) []string {
 		var out []string
-		s.Contexts(tr)(func(c term.Term) bool {
+		s.Contexts(t.Context(), tr)(func(c term.Term, _ error) bool {
 			out = append(out, c.N3())
 			return true
 		})
@@ -518,9 +514,9 @@ func testContexts(t *testing.T, cfg Config) {
 		if !s.ContextAware() {
 			t.Skip("backend is not context aware")
 		}
-		s.Add(triple(Alice, Name, lit("Alice")), Graph1)
-		s.Add(triple(Bob, Name, lit("Bob")), Graph2)
-		s.Add(triple(Carol, Name, lit("Carol")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), Graph1)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), Graph2)
+		s.Add(t.Context(), triple(Carol, Name, lit("Carol")), nil)
 
 		got := names(s, nil)
 		want := []string{Graph1.N3(), Graph2.N3()}
@@ -535,9 +531,9 @@ func testContexts(t *testing.T, cfg Config) {
 			t.Skip("backend is not context aware")
 		}
 		tr := triple(Alice, Name, lit("Alice"))
-		s.Add(tr, Graph1)
-		s.Add(tr, Graph2)
-		s.Add(triple(Bob, Name, lit("Bob")), Graph3)
+		s.Add(t.Context(), tr, Graph1)
+		s.Add(t.Context(), tr, Graph2)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), Graph3)
 
 		if got := names(s, &tr); len(got) != 2 {
 			t.Errorf("got %v, want the two graphs holding the triple", got)
@@ -553,12 +549,12 @@ func testContexts(t *testing.T, cfg Config) {
 		if !s.ContextAware() {
 			t.Skip("backend is not context aware")
 		}
-		s.Add(triple(Alice, Name, lit("Alice")), Graph1)
-		s.Add(triple(Bob, Name, lit("Bob")), Graph2)
-		s.Add(triple(Carol, Name, lit("Carol")), Graph3)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), Graph1)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), Graph2)
+		s.Add(t.Context(), triple(Carol, Name, lit("Carol")), Graph3)
 
 		seen := 0
-		s.Contexts(nil)(func(term.Term) bool {
+		s.Contexts(t.Context(), nil)(func(term.Term, error) bool {
 			seen++
 			return false
 		})
@@ -576,13 +572,13 @@ func testNamespaces(t *testing.T, cfg Config) {
 
 	cfg.run(t, "round-trips both ways", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Bind("ex", ex)
+		s.Bind(t.Context(), "ex", ex)
 
-		got, ok := s.Namespace("ex")
+		got, ok, _ := s.Namespace(t.Context(), "ex")
 		if !ok || got.Value() != ex.Value() {
 			t.Errorf("Namespace(ex) = %v, %v; want %v, true", got, ok, ex)
 		}
-		prefix, ok := s.Prefix(ex)
+		prefix, ok, _ := s.Prefix(t.Context(), ex)
 		if !ok || prefix != "ex" {
 			t.Errorf("Prefix(%v) = %q, %v; want \"ex\", true", ex, prefix, ok)
 		}
@@ -590,19 +586,19 @@ func testNamespaces(t *testing.T, cfg Config) {
 
 	cfg.run(t, "reports unknown lookups as missing", func(t *testing.T) {
 		s := cfg.New(t)
-		if _, ok := s.Namespace("nope"); ok {
+		if _, ok, _ := s.Namespace(t.Context(), "nope"); ok {
 			t.Error("Namespace of an unbound prefix reported ok")
 		}
-		if _, ok := s.Prefix(other); ok {
+		if _, ok, _ := s.Prefix(t.Context(), other); ok {
 			t.Error("Prefix of an unbound namespace reported ok")
 		}
 	})
 
 	cfg.run(t, "rebinding a prefix overwrites it", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Bind("ex", ex)
-		s.Bind("ex", other)
-		got, ok := s.Namespace("ex")
+		s.Bind(t.Context(), "ex", ex)
+		s.Bind(t.Context(), "ex", other)
+		got, ok, _ := s.Namespace(t.Context(), "ex")
 		if !ok || got.Value() != other.Value() {
 			t.Errorf("Namespace(ex) = %v, %v; want %v, true", got, ok, other)
 		}
@@ -610,14 +606,16 @@ func testNamespaces(t *testing.T, cfg Config) {
 
 	cfg.run(t, "iterates every binding", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Bind("ex", ex)
-		s.Bind("other", other)
+		s.Bind(t.Context(), "ex", ex)
+		s.Bind(t.Context(), "other", other)
 
 		got := map[string]string{}
-		s.Namespaces()(func(p string, ns term.URIRef) bool {
-			got[p] = ns.Value()
-			return true
-		})
+		for b, err := range s.Namespaces(t.Context()) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			got[b.Prefix] = b.Namespace.Value()
+		}
 		if got["ex"] != ex.Value() || got["other"] != other.Value() {
 			t.Errorf("Namespaces() = %v, want both bindings", got)
 		}
@@ -625,12 +623,12 @@ func testNamespaces(t *testing.T, cfg Config) {
 
 	cfg.run(t, "stops when the consumer stops", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Bind("a", term.NewURIRefUnsafe("http://a.example/"))
-		s.Bind("b", term.NewURIRefUnsafe("http://b.example/"))
-		s.Bind("c", term.NewURIRefUnsafe("http://c.example/"))
+		s.Bind(t.Context(), "a", term.NewURIRefUnsafe("http://a.example/"))
+		s.Bind(t.Context(), "b", term.NewURIRefUnsafe("http://b.example/"))
+		s.Bind(t.Context(), "c", term.NewURIRefUnsafe("http://c.example/"))
 
 		seen := 0
-		s.Namespaces()(func(string, term.URIRef) bool {
+		s.Namespaces(t.Context())(func(store.NamespaceBinding, error) bool {
 			seen++
 			return false
 		})
@@ -657,9 +655,9 @@ func testContextConventions(t *testing.T, cfg Config) {
 		if !s.ContextAware() {
 			t.Skip("backend is not context aware")
 		}
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
-		s.Add(triple(Bob, Name, lit("Bob")), Graph1)
-		s.Add(triple(Carol, Name, lit("Carol")), Graph2)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), Graph1)
+		s.Add(t.Context(), triple(Carol, Name, lit("Carol")), Graph2)
 
 		wantLen(t, s, nil, 1, "Len(nil) counts only the default graph")
 		wantTriples(t, s, pattern(nil, nil, nil), nil, 1, "Triples(nil) reads only the default graph")
@@ -667,8 +665,8 @@ func testContextConventions(t *testing.T, cfg Config) {
 
 	cfg.run(t, "the DefaultGraph identifier is the default graph", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), store.DefaultGraph)
-		s.Add(triple(Bob, Name, lit("Bob")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), store.DefaultGraph)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), nil)
 
 		wantLen(t, s, nil, 2, "Len(nil) after adds under nil and DefaultGraph")
 		wantLen(t, s, store.DefaultGraph, 2, "Len(DefaultGraph)")
@@ -677,7 +675,7 @@ func testContextConventions(t *testing.T, cfg Config) {
 
 		if s.ContextAware() {
 			seen := 0
-			s.Contexts(nil)(func(term.Term) bool {
+			s.Contexts(t.Context(), nil)(func(term.Term, error) bool {
 				seen++
 				return true
 			})
@@ -686,9 +684,9 @@ func testContextConventions(t *testing.T, cfg Config) {
 			}
 		}
 
-		s.Remove(pattern(Alice, nil, nil), store.DefaultGraph)
+		s.Remove(t.Context(), pattern(Alice, nil, nil), store.DefaultGraph)
 		wantLen(t, s, nil, 1, "Remove under DefaultGraph deletes from the default graph")
-		s.Set(triple(Bob, Name, lit("Robert")), store.DefaultGraph)
+		s.Set(t.Context(), triple(Bob, Name, lit("Robert")), store.DefaultGraph)
 		wantTriples(t, s, pattern(Bob, pred(Name), lit("Robert")), nil, 1, "Set under DefaultGraph")
 		wantLen(t, s, nil, 1, "Set under DefaultGraph replaced the value")
 	})
@@ -701,9 +699,9 @@ func testContextConventions(t *testing.T, cfg Config) {
 		bn := term.NewBNode()
 		other := term.NewBNode()
 
-		s.Add(triple(Alice, Name, lit("Alice")), bn)
-		s.Add(triple(Bob, Name, lit("Bob")), nil)
-		s.AddN([]term.Quad{{Triple: triple(Carol, Name, lit("Carol")), Graph: other}})
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), bn)
+		s.Add(t.Context(), triple(Bob, Name, lit("Bob")), nil)
+		s.AddN(t.Context(), []term.Quad{{Triple: triple(Carol, Name, lit("Carol")), Graph: other}})
 
 		wantLen(t, s, bn, 1, "the blank-node graph")
 		wantLen(t, s, other, 1, "a second blank-node graph")
@@ -713,7 +711,7 @@ func testContextConventions(t *testing.T, cfg Config) {
 		wantTriples(t, s, pattern(Alice, nil, nil), nil, 0, "the default graph")
 
 		var names []string
-		s.Contexts(nil)(func(c term.Term) bool {
+		s.Contexts(t.Context(), nil)(func(c term.Term, _ error) bool {
 			names = append(names, c.N3())
 			return true
 		})
@@ -724,7 +722,7 @@ func testContextConventions(t *testing.T, cfg Config) {
 			t.Errorf("Contexts = %v, want the two blank-node graphs %v", names, want)
 		}
 
-		s.Remove(pattern(nil, nil, nil), bn)
+		s.Remove(t.Context(), pattern(nil, nil, nil), bn)
 		wantLen(t, s, bn, 0, "the blank-node graph after Remove")
 		wantLen(t, s, other, 1, "Remove in one blank-node graph must not touch another")
 		wantLen(t, s, nil, 1, "Remove in a blank-node graph must not touch the default graph")
@@ -768,18 +766,18 @@ func testTermRoundTrip(t *testing.T, cfg Config) {
 	for _, tc := range cases {
 		cfg.run(t, tc.name, func(t *testing.T) {
 			s := cfg.New(t)
-			s.Add(tc.tr, nil)
+			s.Add(t.Context(), tc.tr, nil)
 			wantLen(t, s, nil, 1, tc.name)
 
 			// Exact lookup: the strongest check, since it requires the stored
 			// key to match the key computed from the original term.
 			p := tc.tr.Predicate
 			exact := pattern(tc.tr.Subject, &p, tc.tr.Object)
-			if count(s.Triples(exact, nil)) != 1 {
+			if count(s.Triples(t.Context(), exact, nil)) != 1 {
 				t.Fatalf("%s: exact lookup found nothing", tc.name)
 			}
 
-			got := collect(s.Triples(pattern(nil, nil, nil), nil))
+			got := collect(s.Triples(t.Context(), pattern(nil, nil, nil), nil))
 			want := fmt.Sprintf("%s %s %s", tc.tr.Subject.N3(), tc.tr.Predicate.N3(), tc.tr.Object.N3())
 			if len(got) != 1 || got[0] != want {
 				t.Errorf("%s: round-tripped as %v, want [%s]", tc.name, got, want)
@@ -789,10 +787,10 @@ func testTermRoundTrip(t *testing.T, cfg Config) {
 
 	cfg.run(t, "terms that differ only by a tag are distinct", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Label, lit("x")), nil)
-		s.Add(triple(Alice, Label, lit("x", term.WithLang("en"))), nil)
-		s.Add(triple(Alice, Label, lit("x", term.WithLang("fr"))), nil)
-		s.Add(triple(Alice, Label, lit("x", term.WithDatatype(xsdInt))), nil)
+		s.Add(t.Context(), triple(Alice, Label, lit("x")), nil)
+		s.Add(t.Context(), triple(Alice, Label, lit("x", term.WithLang("en"))), nil)
+		s.Add(t.Context(), triple(Alice, Label, lit("x", term.WithLang("fr"))), nil)
+		s.Add(t.Context(), triple(Alice, Label, lit("x", term.WithDatatype(xsdInt))), nil)
 		wantLen(t, s, nil, 4, "four literals with the same lexical form")
 	})
 }
@@ -807,11 +805,11 @@ func testEmptyStore(t *testing.T, cfg Config) {
 	wantTriples(t, s, pattern(Alice, pred(Name), lit("Alice")), nil, 0, "empty store exact")
 
 	// Removing from an empty store must not panic or corrupt anything.
-	s.Remove(pattern(nil, nil, nil), nil)
-	s.Remove(pattern(Alice, nil, nil), Graph1)
+	s.Remove(t.Context(), pattern(nil, nil, nil), nil)
+	s.Remove(t.Context(), pattern(Alice, nil, nil), Graph1)
 	wantLen(t, s, nil, 0, "after removing from an empty store")
 
-	if _, ok := s.Namespace("nope"); ok {
+	if _, ok, _ := s.Namespace(t.Context(), "nope"); ok {
 		t.Error("empty store returned a namespace binding")
 	}
 }
@@ -830,7 +828,7 @@ func testConcurrency(t *testing.T, cfg Config) {
 				defer wg.Done()
 				for i := 0; i < each; i++ {
 					subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/w%d-%d", w, i))
-					s.Add(triple(subj, Name, lit(i)), nil)
+					s.Add(t.Context(), triple(subj, Name, lit(i)), nil)
 				}
 			}(w)
 		}
@@ -841,7 +839,7 @@ func testConcurrency(t *testing.T, cfg Config) {
 
 	cfg.run(t, "concurrent reads and writes", func(t *testing.T) {
 		s := cfg.New(t)
-		s.Add(triple(Alice, Name, lit("Alice")), nil)
+		s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
 
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -849,14 +847,14 @@ func testConcurrency(t *testing.T, cfg Config) {
 			defer wg.Done()
 			for i := 0; i < 200; i++ {
 				subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/r%d", i))
-				s.Add(triple(subj, Name, lit(i)), nil)
+				s.Add(t.Context(), triple(subj, Name, lit(i)), nil)
 			}
 		}()
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 200; i++ {
-				count(s.Triples(pattern(nil, pred(Name), nil), nil))
-				s.Len(nil)
+				count(s.Triples(t.Context(), pattern(nil, pred(Name), nil), nil))
+				s.Len(t.Context(), nil)
 			}
 		}()
 		wg.Wait()
@@ -870,14 +868,14 @@ func testConcurrency(t *testing.T, cfg Config) {
 func testPersistence(t *testing.T, cfg Config) {
 	s := cfg.New(t)
 
-	s.Add(triple(Alice, Name, lit("Alice")), nil)
-	s.Add(triple(Alice, Age, lit(30)), nil)
-	s.Add(triple(Bob, Knows, Alice), Graph1)
+	s.Add(t.Context(), triple(Alice, Name, lit("Alice")), nil)
+	s.Add(t.Context(), triple(Alice, Age, lit(30)), nil)
+	s.Add(t.Context(), triple(Bob, Knows, Alice), Graph1)
 	bn := term.NewBNode("persistedgraph")
 	if s.ContextAware() {
-		s.Add(triple(Carol, Knows, Alice), bn)
+		s.Add(t.Context(), triple(Carol, Knows, Alice), bn)
 	}
-	s.Bind("ex", term.NewURIRefUnsafe("http://example.org/"))
+	s.Bind(t.Context(), "ex", term.NewURIRefUnsafe("http://example.org/"))
 
 	s2 := cfg.Reopen(t, s)
 
@@ -888,7 +886,7 @@ func testPersistence(t *testing.T, cfg Config) {
 		wantLen(t, s2, Graph1, 1, "named graph after reopen")
 		wantLen(t, s2, bn, 1, "blank-node graph after reopen")
 		found := false
-		s2.Contexts(nil)(func(c term.Term) bool {
+		s2.Contexts(t.Context(), nil)(func(c term.Term, _ error) bool {
 			found = found || c.N3() == bn.N3()
 			return true
 		})
@@ -897,7 +895,7 @@ func testPersistence(t *testing.T, cfg Config) {
 		}
 	}
 
-	ns, ok := s2.Namespace("ex")
+	ns, ok, _ := s2.Namespace(t.Context(), "ex")
 	if !ok || ns.Value() != "http://example.org/" {
 		t.Errorf("namespace binding did not survive reopen: %v, %v", ns, ok)
 	}

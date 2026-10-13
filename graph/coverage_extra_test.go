@@ -22,8 +22,8 @@ func TestNewGraphFromStore(t *testing.T) {
 		t.Error("wrong identifier")
 	}
 	// NewGraphFromStore should not add default namespace bindings, so Len starts 0.
-	if g.Len() != 0 {
-		t.Errorf("expected empty graph, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected empty graph, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -47,11 +47,11 @@ func TestGraphPredicateObjects(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p1, _ := term.NewURIRef("http://example.org/p1")
 	p2, _ := term.NewURIRef("http://example.org/p2")
-	g.Add(s, p1, term.NewLiteral("a"))
-	g.Add(s, p2, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p1, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p2, term.NewLiteral("b"))
 
 	count := 0
-	g.PredicateObjects(s)(func(p, o term.Term) bool {
+	g.PredicateObjects(t.Context(), s)(func(pair_ store.TermPair, _ error) bool {
 		count++
 		return true
 	})
@@ -65,11 +65,11 @@ func TestGraphPredicateObjectsEarlyStop(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p1, _ := term.NewURIRef("http://example.org/p1")
 	p2, _ := term.NewURIRef("http://example.org/p2")
-	g.Add(s, p1, term.NewLiteral("a"))
-	g.Add(s, p2, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p1, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p2, term.NewLiteral("b"))
 
 	count := 0
-	g.PredicateObjects(s)(func(p, o term.Term) bool {
+	g.PredicateObjects(t.Context(), s)(func(pair_ store.TermPair, _ error) bool {
 		count++
 		return false // stop after first
 	})
@@ -84,12 +84,12 @@ func TestGraphPredicateObjectsDedup(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o := term.NewLiteral("v")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	// Add same triple again — underlying store de-dupes or not, but our iterator dedupes.
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
 	count := 0
-	g.PredicateObjects(s)(func(_, _ term.Term) bool { count++; return true })
+	g.PredicateObjects(t.Context(), s)(func(pair_ store.TermPair, _ error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 (deduplicated), got %d", count)
 	}
@@ -102,12 +102,12 @@ func TestGraphSubjectsDuplicateSuppression(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	o1 := term.NewLiteral("a")
 	o2 := term.NewLiteral("b")
-	g.Add(s, p, o1)
-	g.Add(s, p, o2)
+	g.Add(t.Context(), s, p, o1)
+	g.Add(t.Context(), s, p, o2)
 
 	// Both triples have the same subject; Subjects() should yield it once.
 	count := 0
-	g.Subjects(&p, nil)(func(term.Term) bool { count++; return true })
+	g.Subjects(t.Context(), &p, nil)(func(term.Term, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 unique subject, got %d", count)
 	}
@@ -117,11 +117,11 @@ func TestGraphPredicatesDuplicateSuppression(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("a"))
-	g.Add(s, p, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p, term.NewLiteral("b"))
 
 	count := 0
-	g.Predicates(s, nil)(func(term.Term) bool { count++; return true })
+	g.Predicates(t.Context(), s, nil)(func(term.Term, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 unique predicate, got %d", count)
 	}
@@ -133,11 +133,11 @@ func TestGraphObjectsDuplicateSuppression(t *testing.T) {
 	s2, _ := term.NewURIRef("http://example.org/s2")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o := term.NewLiteral("same")
-	g.Add(s1, p, o)
-	g.Add(s2, p, o)
+	g.Add(t.Context(), s1, p, o)
+	g.Add(t.Context(), s2, p, o)
 
 	count := 0
-	g.Objects(nil, &p)(func(term.Term) bool { count++; return true })
+	g.Objects(t.Context(), nil, &p)(func(term.Term, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 unique object, got %d", count)
 	}
@@ -149,11 +149,11 @@ func TestGraphSubjectPredicatesEarlyStop(t *testing.T) {
 	s2, _ := term.NewURIRef("http://example.org/s2")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o, _ := term.NewURIRef("http://example.org/o")
-	g.Add(s1, p, o)
-	g.Add(s2, p, o)
+	g.Add(t.Context(), s1, p, o)
+	g.Add(t.Context(), s2, p, o)
 
 	count := 0
-	g.SubjectPredicates(o)(func(_, _ term.Term) bool { count++; return false })
+	g.SubjectPredicates(t.Context(), o)(func(pair_ store.TermPair, _ error) bool { count++; return false })
 	if count != 1 {
 		t.Errorf("expected early stop at 1, got %d", count)
 	}
@@ -163,11 +163,11 @@ func TestGraphSubjectObjectsEarlyStop(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("a"))
-	g.Add(s, p, term.NewLiteral("b"))
+	g.Add(t.Context(), s, p, term.NewLiteral("a"))
+	g.Add(t.Context(), s, p, term.NewLiteral("b"))
 
 	count := 0
-	g.SubjectObjects(&p)(func(_, _ term.Term) bool { count++; return false })
+	g.SubjectObjects(t.Context(), &p)(func(pair_ store.TermPair, _ error) bool { count++; return false })
 	if count != 1 {
 		t.Errorf("expected early stop at 1, got %d", count)
 	}
@@ -175,7 +175,7 @@ func TestGraphSubjectObjectsEarlyStop(t *testing.T) {
 
 func TestGraphValueAllNil(t *testing.T) {
 	g := graph.NewGraph()
-	_, ok := g.Value(nil, nil, nil)
+	_, ok, _ := g.Value(t.Context(), nil, nil, nil)
 	if ok {
 		t.Error("all-nil should return false")
 	}
@@ -186,7 +186,7 @@ func TestGraphValueAllNonNil(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	o := term.NewLiteral("v")
-	_, ok := g.Value(s, &p, o)
+	_, ok, _ := g.Value(t.Context(), s, &p, o)
 	if ok {
 		t.Error("all-non-nil should return false")
 	}
@@ -212,10 +212,10 @@ func TestResourceAdd(t *testing.T) {
 	id, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	r := graph.NewResource(g, id)
-	r.Add(p, term.NewLiteral("hello"))
+	r.Add(t.Context(), p, term.NewLiteral("hello"))
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -224,11 +224,11 @@ func TestResourceRemove(t *testing.T) {
 	id, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	r := graph.NewResource(g, id)
-	r.Add(p, term.NewLiteral("hello"))
-	r.Remove(p, term.NewLiteral("hello"))
+	r.Add(t.Context(), p, term.NewLiteral("hello"))
+	r.Remove(t.Context(), p, term.NewLiteral("hello"))
 
-	if g.Len() != 0 {
-		t.Errorf("expected 0 after remove, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 after remove, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -237,13 +237,13 @@ func TestResourceSet(t *testing.T) {
 	id, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	r := graph.NewResource(g, id)
-	r.Add(p, term.NewLiteral("old"))
-	r.Set(p, term.NewLiteral("new"))
+	r.Add(t.Context(), p, term.NewLiteral("old"))
+	r.Set(t.Context(), p, term.NewLiteral("new"))
 
-	if g.Len() != 1 {
-		t.Errorf("expected 1 after set, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 after set, got %d", mustV(g.Len(t.Context())))
 	}
-	val, ok := r.Value(p)
+	val, ok, _ := r.Value(t.Context(), p)
 	if !ok || val.N3() != term.NewLiteral("new").N3() {
 		t.Errorf("unexpected value: %v", val)
 	}
@@ -254,11 +254,11 @@ func TestResourceObjects(t *testing.T) {
 	id, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	r := graph.NewResource(g, id)
-	r.Add(p, term.NewLiteral("a"))
-	r.Add(p, term.NewLiteral("b"))
+	r.Add(t.Context(), p, term.NewLiteral("a"))
+	r.Add(t.Context(), p, term.NewLiteral("b"))
 
 	count := 0
-	r.Objects(p)(func(term.Term) bool { count++; return true })
+	r.Objects(t.Context(), p)(func(term.Term, error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -270,12 +270,12 @@ func TestResourceSubjects(t *testing.T) {
 	s1, _ := term.NewURIRef("http://example.org/s1")
 	s2, _ := term.NewURIRef("http://example.org/s2")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s1, p, id)
-	g.Add(s2, p, id)
+	g.Add(t.Context(), s1, p, id)
+	g.Add(t.Context(), s2, p, id)
 
 	r := graph.NewResource(g, id)
 	count := 0
-	r.Subjects(p)(func(term.Term) bool { count++; return true })
+	r.Subjects(t.Context(), p)(func(term.Term, error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -286,9 +286,9 @@ func TestResourceValue(t *testing.T) {
 	id, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 	r := graph.NewResource(g, id)
-	r.Add(p, term.NewLiteral("v"))
+	r.Add(t.Context(), p, term.NewLiteral("v"))
 
-	val, ok := r.Value(p)
+	val, ok, _ := r.Value(t.Context(), p)
 	if !ok {
 		t.Fatal("expected a value")
 	}
@@ -303,7 +303,7 @@ func TestResourceValueNotFound(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	r := graph.NewResource(g, id)
 
-	_, ok := r.Value(p)
+	_, ok, _ := r.Value(t.Context(), p)
 	if ok {
 		t.Error("expected not found")
 	}
@@ -315,11 +315,11 @@ func TestResourcePredicateObjects(t *testing.T) {
 	p1, _ := term.NewURIRef("http://example.org/p1")
 	p2, _ := term.NewURIRef("http://example.org/p2")
 	r := graph.NewResource(g, id)
-	r.Add(p1, term.NewLiteral("a"))
-	r.Add(p2, term.NewLiteral("b"))
+	r.Add(t.Context(), p1, term.NewLiteral("a"))
+	r.Add(t.Context(), p2, term.NewLiteral("b"))
 
 	count := 0
-	r.PredicateObjects()(func(_, _ term.Term) bool { count++; return true })
+	r.PredicateObjects(t.Context())(func(pair_ store.TermPair, _ error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -333,27 +333,27 @@ func TestCollectionIndex(t *testing.T) {
 	a := term.NewLiteral("apple")
 	b := term.NewLiteral("banana")
 	c := term.NewLiteral("cherry")
-	col.Append(a)
-	col.Append(b)
-	col.Append(c)
+	col.Append(t.Context(), a)
+	col.Append(t.Context(), b)
+	col.Append(t.Context(), c)
 
-	if col.Index(a) != 0 {
-		t.Errorf("expected 0, got %d", col.Index(a))
+	if mustV(col.Index(t.Context(), a)) != 0 {
+		t.Errorf("expected 0, got %d", mustV(col.Index(t.Context(), a)))
 	}
-	if col.Index(b) != 1 {
-		t.Errorf("expected 1, got %d", col.Index(b))
+	if mustV(col.Index(t.Context(), b)) != 1 {
+		t.Errorf("expected 1, got %d", mustV(col.Index(t.Context(), b)))
 	}
-	if col.Index(c) != 2 {
-		t.Errorf("expected 2, got %d", col.Index(c))
+	if mustV(col.Index(t.Context(), c)) != 2 {
+		t.Errorf("expected 2, got %d", mustV(col.Index(t.Context(), c)))
 	}
 }
 
 func TestCollectionIndexNotFound(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
-	col.Append(term.NewLiteral("a"))
+	col.Append(t.Context(), term.NewLiteral("a"))
 
-	if col.Index(term.NewLiteral("nope")) != -1 {
+	if mustV(col.Index(t.Context(), term.NewLiteral("nope"))) != -1 {
 		t.Error("expected -1 for missing item")
 	}
 }
@@ -361,7 +361,7 @@ func TestCollectionIndexNotFound(t *testing.T) {
 func TestCollectionIndexEmpty(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
-	if col.Index(term.NewLiteral("x")) != -1 {
+	if mustV(col.Index(t.Context(), term.NewLiteral("x"))) != -1 {
 		t.Error("expected -1 for empty collection")
 	}
 }
@@ -369,25 +369,25 @@ func TestCollectionIndexEmpty(t *testing.T) {
 func TestCollectionClear(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
-	col.Append(term.NewLiteral("a"))
-	col.Append(term.NewLiteral("b"))
-	col.Append(term.NewLiteral("c"))
+	col.Append(t.Context(), term.NewLiteral("a"))
+	col.Append(t.Context(), term.NewLiteral("b"))
+	col.Append(t.Context(), term.NewLiteral("c"))
 
-	if col.Len() != 3 {
-		t.Fatalf("precondition: expected 3, got %d", col.Len())
+	if mustV(col.Len(t.Context())) != 3 {
+		t.Fatalf("precondition: expected 3, got %d", mustV(col.Len(t.Context())))
 	}
 
-	col.Clear()
+	col.Clear(t.Context())
 
-	if col.Len() != 0 {
-		t.Errorf("expected 0 after clear, got %d", col.Len())
+	if mustV(col.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 after clear, got %d", mustV(col.Len(t.Context())))
 	}
 }
 
 func TestCollectionClearEmpty(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
-	col.Clear() // should not panic
+	col.Clear(t.Context()) // should not panic
 }
 
 func TestCollectionGetInBounds(t *testing.T) {
@@ -395,14 +395,14 @@ func TestCollectionGetInBounds(t *testing.T) {
 	col := graph.NewEmptyCollection(g)
 	a := term.NewLiteral("x")
 	b := term.NewLiteral("y")
-	col.Append(a)
-	col.Append(b)
+	col.Append(t.Context(), a)
+	col.Append(t.Context(), b)
 
-	v0, ok0 := col.Get(0)
+	v0, ok0, _ := col.Get(t.Context(), 0)
 	if !ok0 || v0.N3() != a.N3() {
 		t.Errorf("Get(0): expected %v, got %v ok=%v", a, v0, ok0)
 	}
-	v1, ok1 := col.Get(1)
+	v1, ok1, _ := col.Get(t.Context(), 1)
 	if !ok1 || v1.N3() != b.N3() {
 		t.Errorf("Get(1): expected %v, got %v ok=%v", b, v1, ok1)
 	}
@@ -412,7 +412,7 @@ func TestCollectionIterEmptyList(t *testing.T) {
 	g := graph.NewGraph()
 	col := graph.NewEmptyCollection(g)
 	count := 0
-	col.Iter()(func(term.Term) bool { count++; return true })
+	col.Iter(t.Context())(func(term.Term, error) bool { count++; return true })
 	if count != 0 {
 		t.Errorf("expected 0, got %d", count)
 	}
@@ -424,14 +424,14 @@ func TestCollectionGetContainerCycle(t *testing.T) {
 	n1 := term.NewBNode()
 	n2 := term.NewBNode()
 	// n1 -> n2 -> n1 (cycle)
-	g.Add(n1, namespace.RDF.First, term.NewLiteral("first"))
-	g.Add(n1, namespace.RDF.Rest, n2)
-	g.Add(n2, namespace.RDF.First, term.NewLiteral("second"))
-	g.Add(n2, namespace.RDF.Rest, n1) // cycle
+	g.Add(t.Context(), n1, namespace.RDF.First, term.NewLiteral("first"))
+	g.Add(t.Context(), n1, namespace.RDF.Rest, n2)
+	g.Add(t.Context(), n2, namespace.RDF.First, term.NewLiteral("second"))
+	g.Add(t.Context(), n2, namespace.RDF.Rest, n1) // cycle
 
 	col := graph.NewCollection(g, n1)
 	// Index 3 requires traversing past the cycle; should not hang, returns nil.
-	_, ok := col.Get(3)
+	_, ok, _ := col.Get(t.Context(), 3)
 	if ok {
 		t.Error("expected false for out-of-bounds on cyclic list")
 	}
@@ -442,13 +442,13 @@ func TestCollectionClearCycle(t *testing.T) {
 	g := graph.NewGraph()
 	n1 := term.NewBNode()
 	n2 := term.NewBNode()
-	g.Add(n1, namespace.RDF.First, term.NewLiteral("first"))
-	g.Add(n1, namespace.RDF.Rest, n2)
-	g.Add(n2, namespace.RDF.First, term.NewLiteral("second"))
-	g.Add(n2, namespace.RDF.Rest, n1) // cycle
+	g.Add(t.Context(), n1, namespace.RDF.First, term.NewLiteral("first"))
+	g.Add(t.Context(), n1, namespace.RDF.Rest, n2)
+	g.Add(t.Context(), n2, namespace.RDF.First, term.NewLiteral("second"))
+	g.Add(t.Context(), n2, namespace.RDF.Rest, n1) // cycle
 
 	col := graph.NewCollection(g, n1)
-	col.Clear() // must not loop
+	col.Clear(t.Context()) // must not loop
 }
 
 // ─── conjunctive.go ─────────────────────────────────────────────────────────
@@ -487,7 +487,7 @@ func TestDatasetRemoveGraphNonExistent(t *testing.T) {
 	ds := graph.NewDataset()
 	id, _ := term.NewURIRef("http://example.org/nonexistent")
 	// should not panic
-	ds.RemoveGraph(id)
+	ds.RemoveGraph(t.Context(), id)
 }
 
 func TestDatasetRemoveGraphExisting(t *testing.T) {
@@ -497,14 +497,14 @@ func TestDatasetRemoveGraphExisting(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 
 	ctx := ds.Graph(id)
-	ctx.Add(s, p, term.NewLiteral("v"))
+	ctx.Add(t.Context(), s, p, term.NewLiteral("v"))
 
 	// Confirm triple is there
-	if ctx.Len() != 1 {
-		t.Fatalf("precondition: expected 1, got %d", ctx.Len())
+	if mustV(ctx.Len(t.Context())) != 1 {
+		t.Fatalf("precondition: expected 1, got %d", mustV(ctx.Len(t.Context())))
 	}
 
-	ds.RemoveGraph(id)
+	ds.RemoveGraph(t.Context(), id)
 
 	// After removal the named graph should be gone from ds.Graphs()
 	count := 0

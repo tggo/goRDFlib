@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/tggo/goRDFlib/graph"
@@ -18,18 +19,22 @@ type Inconsistency struct {
 // Returns the total number of triples added.
 //
 // Not safe for concurrent use.
-func OWLRLClosure(g *graph.Graph) int {
-	n, _ := OWLRLClosureCheck(g)
-	return n
+func OWLRLClosure(ctx context.Context, g *graph.Graph) (int, error) {
+	n, _, err := OWLRLClosureCheck(ctx, g)
+	return n, err
 }
 
 // OWLRLClosureCheck applies OWL 2 RL closure rules and checks consistency.
 // Returns the total number of triples added and any detected inconsistencies.
 //
 // Not safe for concurrent use.
-func OWLRLClosureCheck(g *graph.Graph) (int, []Inconsistency) {
-	e := newOWLRLEngine(g, nil)
-	return e.run()
+func OWLRLClosureCheck(ctx context.Context, g *graph.Graph) (int, []Inconsistency, error) {
+	stop := newStopper(ctx)
+	n, ic := newOWLRLEngine(g, stop).run()
+	if err := stop.failure(); err != nil {
+		return n, nil, err
+	}
+	return n, ic, nil
 }
 
 // ruleTriple is a snapshot triple used during rule application.
@@ -66,7 +71,7 @@ type negPropAssertion struct {
 type owlrlEngine struct {
 	g    *graph.Graph
 	ded  *dedupSet
-	stop *stopper // nil never stops
+	stop *stopper
 
 	// Phase 1: Core property indexes
 	symmetricProps  map[string]struct{}       // owl:SymmetricProperty
@@ -111,14 +116,14 @@ type owlrlEngine struct {
 func newOWLRLEngine(g *graph.Graph, stop *stopper) *owlrlEngine {
 	return &owlrlEngine{
 		g:    g,
-		ded:  newDedupSet(g.Len()),
+		ded:  newDedupSet(stop.length(g)),
 		stop: stop,
 	}
 }
 
 func (e *owlrlEngine) run() (int, []Inconsistency) {
 	// Populate dedup set
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		e.ded.addNew(t.Subject, t.Predicate, t.Object)
 		return true
 	})
@@ -142,7 +147,10 @@ func (e *owlrlEngine) run() (int, []Inconsistency) {
 			if e.stop.tick() {
 				return totalAdded + i, nil
 			}
-			e.g.Add(t.Subject, t.Predicate, t.Object)
+			e.stop.add(e.g, t.Subject, t.Predicate, t.Object)
+			if e.stop.halted() {
+				return totalAdded + i, nil
+			}
 			if e.isSchemaTriple(t) {
 				hasSchemaTriples = true
 			}
@@ -247,7 +255,7 @@ func (e *owlrlEngine) buildSchemaIndexes() {
 	var allDisjClassNodes []term.Subject
 	var negPANodes []term.Subject
 
-	e.g.Triples(nil, &rdfType, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &rdfType, nil, func(t term.Triple) bool {
 		sk := term.TermKey(t.Subject)
 		switch term.TermKey(t.Object) {
 		case term.TermKey(namespace.OWL.SymmetricProperty):
@@ -279,7 +287,7 @@ func (e *owlrlEngine) buildSchemaIndexes() {
 
 	// === owl:sameAs ===
 	sameAs := namespace.OWL.SameAs
-	e.g.Triples(nil, &sameAs, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &sameAs, nil, func(t term.Triple) bool {
 		e.uf.union(t.Subject, t.Object)
 		return true
 	})
@@ -301,7 +309,7 @@ func (e *owlrlEngine) buildSchemaIndexes() {
 
 	// === owl:differentFrom ===
 	diffFrom := namespace.OWL.DifferentFrom
-	e.g.Triples(nil, &diffFrom, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &diffFrom, nil, func(t term.Triple) bool {
 		sk := term.TermKey(t.Subject)
 		e.differentFrom[sk] = append(e.differentFrom[sk], t.Object)
 		ok := term.TermKey(t.Object)
@@ -314,7 +322,7 @@ func (e *owlrlEngine) buildSchemaIndexes() {
 
 	// === owl:disjointWith ===
 	disjWith := namespace.OWL.DisjointWith
-	e.g.Triples(nil, &disjWith, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &disjWith, nil, func(t term.Triple) bool {
 		if c2, ok := t.Object.(term.URIRef); ok {
 			if c1, ok := t.Subject.(term.URIRef); ok {
 				c1k := term.TermKey(c1)
@@ -329,7 +337,7 @@ func (e *owlrlEngine) buildSchemaIndexes() {
 
 func (e *owlrlEngine) scanPropertyTriples() {
 	invOf := namespace.OWL.InverseOf
-	e.g.Triples(nil, &invOf, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &invOf, nil, func(t term.Triple) bool {
 		if p2, ok := t.Object.(term.URIRef); ok {
 			if p1, ok := t.Subject.(term.URIRef); ok {
 				p1k := term.TermKey(p1)
@@ -342,7 +350,7 @@ func (e *owlrlEngine) scanPropertyTriples() {
 	})
 
 	eqProp := namespace.OWL.EquivalentProperty
-	e.g.Triples(nil, &eqProp, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &eqProp, nil, func(t term.Triple) bool {
 		if p2, ok := t.Object.(term.URIRef); ok {
 			if p1, ok := t.Subject.(term.URIRef); ok {
 				p1k := term.TermKey(p1)
@@ -358,7 +366,7 @@ func (e *owlrlEngine) scanPropertyTriples() {
 	// class expression. Each direction is indexed on its own so that a blank
 	// node on one side does not suppress the axiom entirely.
 	eqClass := namespace.OWL.EquivalentClass
-	e.g.Triples(nil, &eqClass, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &eqClass, nil, func(t term.Triple) bool {
 		c2, ok := t.Object.(term.Subject)
 		if !ok {
 			return true
@@ -372,7 +380,7 @@ func (e *owlrlEngine) scanPropertyTriples() {
 	})
 
 	propDW := namespace.OWL.PropertyDisjointWith
-	e.g.Triples(nil, &propDW, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &propDW, nil, func(t term.Triple) bool {
 		if p2, ok := t.Object.(term.URIRef); ok {
 			if p1, ok := t.Subject.(term.URIRef); ok {
 				p1k := term.TermKey(p1)
@@ -385,9 +393,9 @@ func (e *owlrlEngine) scanPropertyTriples() {
 	})
 
 	chainAxiom := namespace.OWL.PropertyChainAxiom
-	e.g.Triples(nil, &chainAxiom, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &chainAxiom, nil, func(t term.Triple) bool {
 		if p, ok := t.Subject.(term.URIRef); ok {
-			listItems := collectList(e.g, t.Object)
+			listItems := collectList(e.stop, e.g, t.Object)
 			var chain []term.URIRef
 			for _, item := range listItems {
 				if u, ok := item.(term.URIRef); ok {
@@ -403,8 +411,8 @@ func (e *owlrlEngine) scanPropertyTriples() {
 	})
 
 	hasKey := namespace.OWL.HasKey
-	e.g.Triples(nil, &hasKey, nil)(func(t term.Triple) bool {
-		listItems := collectList(e.g, t.Object)
+	e.stop.triples(e.g, nil, &hasKey, nil, func(t term.Triple) bool {
+		listItems := collectList(e.stop, e.g, t.Object)
 		var keys []term.URIRef
 		for _, item := range listItems {
 			if u, ok := item.(term.URIRef); ok {
@@ -432,32 +440,32 @@ func (e *owlrlEngine) buildRestrictions(nodes map[string]term.Subject) {
 	for _, node := range nodes {
 		r := &owlRestriction{node: node, maxCard: -1, maxQualCard: -1}
 
-		e.g.Triples(node, &onProp, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &onProp, nil, func(t term.Triple) bool {
 			if u, ok := t.Object.(term.URIRef); ok {
 				r.onProperty = u
 				r.hasOnProperty = true
 			}
 			return false
 		})
-		e.g.Triples(node, &svf, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &svf, nil, func(t term.Triple) bool {
 			r.someValuesFrom = t.Object
 			return false
 		})
-		e.g.Triples(node, &avf, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &avf, nil, func(t term.Triple) bool {
 			r.allValuesFrom = t.Object
 			return false
 		})
-		e.g.Triples(node, &hv, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &hv, nil, func(t term.Triple) bool {
 			r.hasValue = t.Object
 			return false
 		})
-		e.g.Triples(node, &hs, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &hs, nil, func(t term.Triple) bool {
 			if lit, ok := t.Object.(term.Literal); ok && lit.Lexical() == "true" {
 				r.hasSelf = true
 			}
 			return false
 		})
-		e.g.Triples(node, &mc, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &mc, nil, func(t term.Triple) bool {
 			if lit, ok := t.Object.(term.Literal); ok {
 				if v, err := strconv.Atoi(lit.Lexical()); err == nil {
 					r.maxCard = v
@@ -465,7 +473,7 @@ func (e *owlrlEngine) buildRestrictions(nodes map[string]term.Subject) {
 			}
 			return false
 		})
-		e.g.Triples(node, &mqc, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &mqc, nil, func(t term.Triple) bool {
 			if lit, ok := t.Object.(term.Literal); ok {
 				if v, err := strconv.Atoi(lit.Lexical()); err == nil {
 					r.maxQualCard = v
@@ -473,7 +481,7 @@ func (e *owlrlEngine) buildRestrictions(nodes map[string]term.Subject) {
 			}
 			return false
 		})
-		e.g.Triples(node, &oc, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &oc, nil, func(t term.Triple) bool {
 			r.onClass = t.Object
 			return false
 		})
@@ -488,8 +496,8 @@ func (e *owlrlEngine) buildRestrictions(nodes map[string]term.Subject) {
 
 func (e *owlrlEngine) buildListBasedIndexes() {
 	intOf := namespace.OWL.IntersectionOf
-	e.g.Triples(nil, &intOf, nil)(func(t term.Triple) bool {
-		items := collectList(e.g, t.Object)
+	e.stop.triples(e.g, nil, &intOf, nil, func(t term.Triple) bool {
+		items := collectList(e.stop, e.g, t.Object)
 		if len(items) > 0 {
 			ck := term.TermKey(t.Subject)
 			e.intersectionOf[ck] = items
@@ -498,8 +506,8 @@ func (e *owlrlEngine) buildListBasedIndexes() {
 	})
 
 	unOf := namespace.OWL.UnionOf
-	e.g.Triples(nil, &unOf, nil)(func(t term.Triple) bool {
-		items := collectList(e.g, t.Object)
+	e.stop.triples(e.g, nil, &unOf, nil, func(t term.Triple) bool {
+		items := collectList(e.stop, e.g, t.Object)
 		if len(items) > 0 {
 			ck := term.TermKey(t.Subject)
 			e.unionOf[ck] = items
@@ -508,15 +516,15 @@ func (e *owlrlEngine) buildListBasedIndexes() {
 	})
 
 	compOf := namespace.OWL.ComplementOf
-	e.g.Triples(nil, &compOf, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &compOf, nil, func(t term.Triple) bool {
 		ck := term.TermKey(t.Subject)
 		e.complementOf[ck] = t.Object
 		return true
 	})
 
 	oof := namespace.OWL.OneOf
-	e.g.Triples(nil, &oof, nil)(func(t term.Triple) bool {
-		items := collectList(e.g, t.Object)
+	e.stop.triples(e.g, nil, &oof, nil, func(t term.Triple) bool {
+		items := collectList(e.stop, e.g, t.Object)
 		if len(items) > 0 {
 			ck := term.TermKey(t.Subject)
 			e.oneOfMembers[ck] = items
@@ -527,8 +535,8 @@ func (e *owlrlEngine) buildListBasedIndexes() {
 
 func (e *owlrlEngine) buildAllDisjoint(nodes []term.Subject, target *[][]term.URIRef, membersPred term.URIRef) {
 	for _, node := range nodes {
-		e.g.Triples(node, &membersPred, nil)(func(t term.Triple) bool {
-			items := collectList(e.g, t.Object)
+		e.stop.triples(e.g, node, &membersPred, nil, func(t term.Triple) bool {
+			items := collectList(e.stop, e.g, t.Object)
 			var uris []term.URIRef
 			for _, item := range items {
 				if u, ok := item.(term.URIRef); ok {
@@ -552,25 +560,25 @@ func (e *owlrlEngine) buildNegPropAssertions(nodes []term.Subject) {
 	for _, node := range nodes {
 		npa := &negPropAssertion{}
 
-		e.g.Triples(node, &srcPred, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &srcPred, nil, func(t term.Triple) bool {
 			if s, ok := t.Object.(term.Subject); ok {
 				npa.source = s
 			}
 			return false
 		})
-		e.g.Triples(node, &propPred, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &propPred, nil, func(t term.Triple) bool {
 			if u, ok := t.Object.(term.URIRef); ok {
 				npa.property = u
 			}
 			return false
 		})
-		e.g.Triples(node, &tiPred, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &tiPred, nil, func(t term.Triple) bool {
 			if s, ok := t.Object.(term.Subject); ok {
 				npa.targetI = s
 			}
 			return false
 		})
-		e.g.Triples(node, &tvPred, nil)(func(t term.Triple) bool {
+		e.stop.triples(e.g, node, &tvPred, nil, func(t term.Triple) bool {
 			npa.targetV = t.Object
 			return false
 		})
@@ -588,7 +596,7 @@ func (e *owlrlEngine) applyRules() []term.Triple {
 	var newTriples []term.Triple
 
 	var allTriples []ruleTriple
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		if e.stop.tick() {
 			return false
 		}

@@ -13,10 +13,10 @@ import (
 
 func TestSPARQLQueryWithLangLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/name")
-	g.Add(s, p, NewLiteral("hello", WithLang("en")))
+	g.Add(t.Context(), s, p, NewLiteral("hello", WithLang("en")))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?n WHERE { ?s ex:name "hello"@en }`)
 	_ = r
@@ -25,10 +25,10 @@ func TestSPARQLQueryWithLangLiteral(t *testing.T) {
 
 func TestSPARQLQueryWithDatatypeLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral("42", WithDatatype(XSDInteger)))
+	g.Add(t.Context(), s, p, NewLiteral("42", WithDatatype(XSDInteger)))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val "42"^^<http://www.w3.org/2001/XMLSchema#integer> }`)
 	_ = r
@@ -37,10 +37,10 @@ func TestSPARQLQueryWithDatatypeLiteral(t *testing.T) {
 
 func TestSPARQLQueryTripleQuotedLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/desc")
-	g.Add(s, p, NewLiteral("multi\nline"))
+	g.Add(t.Context(), s, p, NewLiteral("multi\nline"))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:desc """multi
 line""" }`)
@@ -50,10 +50,10 @@ line""" }`)
 
 func TestSPARQLQuerySingleQuotedLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/name")
-	g.Add(s, p, NewLiteral("hello"))
+	g.Add(t.Context(), s, p, NewLiteral("hello"))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:name 'hello' }`)
 	_ = r
@@ -64,10 +64,10 @@ func TestSPARQLQuerySingleQuotedLiteral(t *testing.T) {
 
 func TestSPARQLQueryDecimalLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral("3.14", WithDatatype(XSDDecimal)))
+	g.Add(t.Context(), s, p, NewLiteral("3.14", WithDatatype(XSDDecimal)))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val 3.14 }`)
 	_ = r
@@ -76,10 +76,10 @@ func TestSPARQLQueryDecimalLiteral(t *testing.T) {
 
 func TestSPARQLQueryDoubleLiteral(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral("1.5e2", WithDatatype(XSDDouble)))
+	g.Add(t.Context(), s, p, NewLiteral("1.5e2", WithDatatype(XSDDouble)))
 
 	r, err := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:val 1.5e2 }`)
 	_ = r
@@ -125,13 +125,13 @@ func TestSPARQLDollarVarSyntax(t *testing.T) {
 
 func TestTurtleSerializerClassSubject(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Bind("rdfs", NewURIRefUnsafe(RDFSNamespace))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdfs", NewURIRefUnsafe(RDFSNamespace))
 	cls, _ := NewURIRef("http://example.org/MyClass")
-	g.Add(cls, RDF.Type, RDFS.Class)
+	g.Add(t.Context(), cls, RDF.Type, RDFS.Class)
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), " a ") {
 		t.Errorf("expected 'a' shorthand for rdf:type")
 	}
@@ -141,12 +141,12 @@ func TestTurtleSerializerClassSubject(t *testing.T) {
 
 func TestTurtleParserAbsoluteIRINoResolve(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@base <http://example.org/> .
 		<http://other.org/s> <http://other.org/p> "v" .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -171,7 +171,7 @@ func TestSPARQLDistinctExplicitVars(t *testing.T) {
 
 func TestTurtleParserMatchKeywordAtEnd(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader("PREFIX ex: <http://example.org/>\nex:s ex:p \"v\" ."))
+	err := turtle.Parse(t.Context(), g, strings.NewReader("PREFIX ex: <http://example.org/>\nex:s ex:p \"v\" ."))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,18 +181,18 @@ func TestTurtleParserMatchKeywordAtEnd(t *testing.T) {
 
 func TestTurtleSerializerBNodeLabel(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	b := NewBNode("mybn")
 	p1, _ := NewURIRef("http://example.org/p1")
 	p2, _ := NewURIRef("http://example.org/p2")
 	s, _ := NewURIRef("http://example.org/s")
 	s2, _ := NewURIRef("http://example.org/s2")
-	g.Add(s, p1, b)
-	g.Add(s2, p1, b)
-	g.Add(b, p2, NewLiteral("v"))
+	g.Add(t.Context(), s, p1, b)
+	g.Add(t.Context(), s2, p1, b)
+	g.Add(t.Context(), b, p2, NewLiteral("v"))
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	if !strings.Contains(out, "_:mybn") {
 		t.Errorf("expected _:mybn for referenced BNode, got:\n%s", out)

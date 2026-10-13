@@ -13,16 +13,31 @@ type Prepared struct {
 	ctx        evalContext
 	inspection *evalContext
 	targets    map[*Shape][]Term
+	err        error    // set by Prepare when preparation failed; every run returns it
 	ordered    []*Shape // shapesInOrder of the parsed shapes when known up front; nil means compute it
 }
 
 // Prepare performs the same preparation as Validate, including the configured
 // rule pass. It does not modify caller data. Existing WithErrorHandler reporting
-// applies; a prepared run does not introduce a new execution error contract.
+// applies.
+//
+// It never returns nil. If a graph cannot be read from its store the error is
+// reported to WithErrorHandler and the result is a failed Prepared: Validate
+// returns a report with Err set, and ValidateContext and Conforms return the
+// error. Use PrepareContext to get the error directly.
 func Prepare(dataGraph, shapesGraph *Graph, opts ...Option) *Prepared {
 	cfg := newConfig(opts)
 	cfg.strictShapes = false // no error result to carry it; reported instead
-	p, _ := prepare(context.Background(), dataGraph, shapesGraph, cfg, nil)
+	p, err := prepare(context.Background(), dataGraph, shapesGraph, cfg, nil)
+	if err != nil {
+		cfg.report(err)
+		return &Prepared{err: err, ctx: evalContext{
+			dataGraph:   dataGraph,
+			shapesGraph: shapesGraph,
+			shapesMap:   map[string]*Shape{},
+			cfg:         cfg,
+		}}
+	}
 	return p
 }
 
@@ -62,7 +77,10 @@ func prepare(ctx context.Context, dataGraph, shapesGraph *Graph, cfg *config, co
 			}
 		}
 	}
-	af, dataGraph := prepareAdvanced(ctx, dataGraph, shapesGraph, cfg)
+	af, dataGraph, err := prepareAdvanced(ctx, dataGraph, shapesGraph, cfg)
+	if err != nil {
+		return nil, err
+	}
 	if err := stopped(ctx); err != nil {
 		return nil, err
 	}

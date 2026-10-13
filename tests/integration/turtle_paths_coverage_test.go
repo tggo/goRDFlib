@@ -13,17 +13,17 @@ import (
 
 func TestTurtleSerializerRDFSClassFirst(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Bind("rdfs", NewURIRefUnsafe(RDFSNamespace))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdfs", NewURIRefUnsafe(RDFSNamespace))
 	cls, _ := NewURIRef("http://example.org/MyClass")
-	g.Add(cls, RDF.Type, RDFS.Class)
-	g.Add(cls, RDFS.Label, NewLiteral("My Class"))
+	g.Add(t.Context(), cls, RDF.Type, RDFS.Class)
+	g.Add(t.Context(), cls, RDFS.Label, NewLiteral("My Class"))
 
 	s, _ := NewURIRef("http://example.org/instance")
-	g.Add(s, RDF.Type, cls)
+	g.Add(t.Context(), s, RDF.Type, cls)
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	classIdx := strings.Index(out, "ex:MyClass")
 	instanceIdx := strings.Index(out, "ex:instance")
@@ -37,18 +37,18 @@ func TestTurtleSerializerRDFSClassFirst(t *testing.T) {
 
 func TestTurtleSerializerInvalidList(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/list")
 	b := NewBNode()
-	g.Add(s, p, b)
-	g.Add(b, RDF.First, NewLiteral("a"))
-	g.Add(b, RDF.Rest, RDF.Nil)
+	g.Add(t.Context(), s, p, b)
+	g.Add(t.Context(), b, RDF.First, NewLiteral("a"))
+	g.Add(t.Context(), b, RDF.Rest, RDF.Nil)
 	extra, _ := NewURIRef("http://example.org/extra")
-	g.Add(b, extra, NewLiteral("x"))
+	g.Add(t.Context(), b, extra, NewLiteral("x"))
 
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	if strings.Contains(buf.String(), "( ") {
 		t.Errorf("invalid list should not use collection syntax:\n%s", buf.String())
 	}
@@ -58,7 +58,7 @@ func TestTurtleSerializerInvalidList(t *testing.T) {
 
 func TestTurtleParserEscapeError(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\z" .`))
+	err := turtle.Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\z" .`))
 	if err == nil {
 		t.Error("expected error for unknown escape \\z")
 	}
@@ -66,7 +66,7 @@ func TestTurtleParserEscapeError(t *testing.T) {
 
 func TestTurtleParserUnterminatedLongString(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p """unterminated`))
+	err := turtle.Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p """unterminated`))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -74,7 +74,7 @@ func TestTurtleParserUnterminatedLongString(t *testing.T) {
 
 func TestTurtleParserUnterminatedShortString(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader("@prefix ex: <http://example.org/> . ex:s ex:p \"unterminated\n"))
+	err := turtle.Parse(t.Context(), g, strings.NewReader("@prefix ex: <http://example.org/> . ex:s ex:p \"unterminated\n"))
 	if err == nil {
 		t.Error("expected error for newline in short string")
 	}
@@ -82,7 +82,7 @@ func TestTurtleParserUnterminatedShortString(t *testing.T) {
 
 func TestTurtleParserUnterminatedUnicodeEscape(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\u00" .`))
+	err := turtle.Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "\u00" .`))
 	if err == nil {
 		t.Error("expected error for truncated unicode escape")
 	}
@@ -92,34 +92,34 @@ func TestTurtleParserUnterminatedUnicodeEscape(t *testing.T) {
 
 func TestTurtleParserPositiveNumeric(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p +42 .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserDecimalNumeric(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p 3.14 .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserDoubleNumeric(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p 1.5e10 .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -132,7 +132,8 @@ func TestMulPathBackwardEval(t *testing.T) {
 
 	path := ZeroOrMore(AsPath(p))
 	var pairs [][2]string
-	path.Eval(g, nil, d)(func(s, o Term) bool {
+	path.Eval(t.Context(), g, nil, d)(func(pair_ TermPair, _ error) bool {
+		s, o := pair_.First, pair_.Second
 		pairs = append(pairs, [2]string{s.N3(), o.N3()})
 		return true
 	})
@@ -151,7 +152,7 @@ func TestAlternativePathEarlyStop(t *testing.T) {
 
 	path := Alternative(AsPath(p), AsPath(q))
 	count := 0
-	path.Eval(g, a, nil)(func(s, o Term) bool {
+	path.Eval(t.Context(), g, a, nil)(func(pair_ TermPair, _ error) bool {
 		count++
 		return false
 	})
@@ -172,8 +173,8 @@ func TestSPARQLPrefixedNameInConstruct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() != 3 {
-		t.Errorf("expected 3, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 3 {
+		t.Errorf("expected 3, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -181,10 +182,10 @@ func TestSPARQLPrefixedNameInConstruct(t *testing.T) {
 
 func TestSPARQLUnaryMinusFloat(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/val")
-	g.Add(s, p, NewLiteral(3.14))
+	g.Add(t.Context(), s, p, NewLiteral(3.14))
 
 	r, _ := sparql.Query(g, `PREFIX ex: <http://example.org/> SELECT ?neg WHERE { ?s ex:val ?v . BIND(-?v AS ?neg) }`)
 	if len(r.Bindings) != 1 {
@@ -196,12 +197,12 @@ func TestSPARQLUnaryMinusFloat(t *testing.T) {
 
 func TestTurtleSerializerSinglePredicate(t *testing.T) {
 	g := NewGraph()
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("v"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), " .") {
 		t.Error("expected dot terminator")
 	}

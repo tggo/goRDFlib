@@ -164,7 +164,7 @@ ex:a ex:q "text" ;
 `
 	g := graph.NewGraph()
 	idx := NewIndex()
-	if err := turtle.Parse(g, strings.NewReader(doc), turtle.WithProvenance(idx.Triple)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(doc), turtle.WithProvenance(idx.Triple)); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 

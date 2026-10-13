@@ -34,7 +34,7 @@ func runConcurrentReadWrite(t *testing.T, s store.Store) {
 				subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/crw/s%d", idx))
 				pred := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/crw/p%d", idx%10))
 				obj := term.NewLiteral(fmt.Sprintf("val_%d", idx))
-				s.Add(term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
+				s.Add(t.Context(), term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
 			}
 		}(w)
 	}
@@ -46,7 +46,7 @@ func runConcurrentReadWrite(t *testing.T, s store.Store) {
 			defer wg.Done()
 			subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/crw/s%d", r*writesEach/readers))
 			for range readsEach {
-				for range s.Triples(term.TriplePattern{Subject: subj}, nil) {
+				for range s.Triples(t.Context(), term.TriplePattern{Subject: subj}, nil) {
 				}
 			}
 		}(r)
@@ -98,13 +98,13 @@ func runLargeLiterals(t *testing.T, s store.Store) {
 		subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/large/s%d", i))
 		pred := term.NewURIRefUnsafe("http://example.org/large/p")
 		obj := term.NewLiteral(fmt.Sprintf("%s_%d", large, i))
-		s.Add(term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
+		s.Add(t.Context(), term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
 	}
 
 	for i := range n {
 		subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/large/s%d", i))
 		count := 0
-		for range s.Triples(term.TriplePattern{Subject: subj}, nil) {
+		for range s.Triples(t.Context(), term.TriplePattern{Subject: subj}, nil) {
 			count++
 		}
 		if count != 1 {
@@ -166,13 +166,13 @@ func runUnicode(t *testing.T, s store.Store) {
 		subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/uni/s%d", i))
 		pred := term.NewURIRefUnsafe("http://example.org/uni/p")
 		obj := term.NewLiteral(fmt.Sprintf("%s_%d", suffix, i))
-		s.Add(term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
+		s.Add(t.Context(), term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
 	}
 
 	for i := range n {
 		subj := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/uni/s%d", i))
 		count := 0
-		for t3 := range s.Triples(term.TriplePattern{Subject: subj}, nil) {
+		for t3 := range s.Triples(t.Context(), term.TriplePattern{Subject: subj}, nil) {
 			_ = t3
 			count++
 		}
@@ -229,19 +229,19 @@ func runQueryableStore(t *testing.T, s store.Store) {
 		for pi := range predicates {
 			pred := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/qs/p%d", pi))
 			obj := term.NewLiteral(fmt.Sprintf("val_%d_%d", si, pi))
-			s.Add(term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
+			s.Add(t.Context(), term.Triple{Subject: subj, Predicate: pred, Object: obj}, nil)
 		}
 	}
 
 	// Count with no filter = 100
-	total := qs.Count(term.TriplePattern{}, nil)
+	total, _ := qs.Count(t.Context(), term.TriplePattern{}, nil)
 	if total != 100 {
 		t.Errorf("Count(no filter) = %d, want 100", total)
 	}
 
 	// Count with subject filter = 10
 	subj0 := term.NewURIRefUnsafe("http://example.org/qs/s0")
-	bySubj := qs.Count(term.TriplePattern{Subject: subj0}, nil)
+	bySubj, _ := qs.Count(t.Context(), term.TriplePattern{Subject: subj0}, nil)
 	if bySubj != 10 {
 		t.Errorf("Count(subject=s0) = %d, want 10", bySubj)
 	}
@@ -249,21 +249,21 @@ func runQueryableStore(t *testing.T, s store.Store) {
 	// Exists with existing triple = true
 	pred0 := term.NewURIRefUnsafe("http://example.org/qs/p0")
 	obj0 := term.NewLiteral("val_0_0")
-	existsYes := qs.Exists(term.TriplePattern{Subject: subj0, Predicate: &pred0, Object: obj0}, nil)
+	existsYes, _ := qs.Exists(t.Context(), term.TriplePattern{Subject: subj0, Predicate: &pred0, Object: obj0}, nil)
 	if !existsYes {
 		t.Errorf("Exists(existing triple) = false, want true")
 	}
 
 	// Exists with non-existing triple = false
 	missing := term.NewURIRefUnsafe("http://example.org/qs/missing")
-	existsNo := qs.Exists(term.TriplePattern{Subject: missing}, nil)
+	existsNo, _ := qs.Exists(t.Context(), term.TriplePattern{Subject: missing}, nil)
 	if existsNo {
 		t.Errorf("Exists(non-existing triple) = true, want false")
 	}
 
 	// TriplesWithLimit(limit=5, offset=0) returns 5
 	count := 0
-	for range qs.TriplesWithLimit(term.TriplePattern{}, nil, 5, 0) {
+	for range qs.TriplesWithLimit(t.Context(), term.TriplePattern{}, nil, 5, 0) {
 		count++
 	}
 	if count != 5 {
@@ -272,7 +272,7 @@ func runQueryableStore(t *testing.T, s store.Store) {
 
 	// TriplesWithLimit(limit=5, offset=95) returns 5
 	count = 0
-	for range qs.TriplesWithLimit(term.TriplePattern{}, nil, 5, 95) {
+	for range qs.TriplesWithLimit(t.Context(), term.TriplePattern{}, nil, 5, 95) {
 		count++
 	}
 	if count != 5 {
@@ -281,7 +281,7 @@ func runQueryableStore(t *testing.T, s store.Store) {
 
 	// TriplesWithLimit(limit=5, offset=100) returns 0
 	count = 0
-	for range qs.TriplesWithLimit(term.TriplePattern{}, nil, 5, 100) {
+	for range qs.TriplesWithLimit(t.Context(), term.TriplePattern{}, nil, 5, 100) {
 		count++
 	}
 	if count != 0 {

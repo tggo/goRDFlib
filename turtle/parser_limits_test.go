@@ -1,6 +1,7 @@
 package turtle
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -38,7 +39,7 @@ func nested(kind string, depth int) string {
 }
 
 func parseNested(src string, opts ...Option) error {
-	return Parse(rdflibgo.NewGraph(), strings.NewReader(src), opts...)
+	return Parse(context.Background(), rdflibgo.NewGraph(), strings.NewReader(src), opts...)
 }
 
 // TestNestingDepthIsBounded is the stack-overflow guard: "[ :p " repeated two

@@ -28,7 +28,7 @@ func TestParseInvalidJSONIsActionable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, opts := range [][]Option{nil, {WithProvenance(provenance.NewIndex().Triple)}} {
-				err := Parse(rdflibgo.NewGraph(), strings.NewReader(tc.src), opts...)
+				err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(tc.src), opts...)
 				if !errors.Is(err, ErrInvalidJSON) {
 					t.Fatalf("err = %v, want ErrInvalidJSON", err)
 				}
@@ -43,7 +43,7 @@ func TestParseInvalidJSONIsActionable(t *testing.T) {
 // A syntax error still unwraps to encoding/json's own error for callers that
 // want the raw offset.
 func TestParseInvalidJSONUnwrapsSyntaxError(t *testing.T) {
-	err := Parse(rdflibgo.NewGraph(), strings.NewReader(`{"a" 1}`))
+	err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(`{"a" 1}`))
 	var syn *json.SyntaxError
 	if !errors.As(err, &syn) {
 		t.Fatalf("err = %v, want it to wrap *json.SyntaxError", err)
@@ -54,7 +54,7 @@ func TestParseInvalidJSONUnwrapsSyntaxError(t *testing.T) {
 func TestParseReadErrorIsNotInvalidJSON(t *testing.T) {
 	boom := errors.New("disk on fire")
 	for _, opts := range [][]Option{nil, {WithProvenance(provenance.NewIndex().Triple)}} {
-		err := Parse(rdflibgo.NewGraph(), iotest.ErrReader(boom), opts...)
+		err := Parse(t.Context(), rdflibgo.NewGraph(), iotest.ErrReader(boom), opts...)
 		if errors.Is(err, ErrInvalidJSON) {
 			t.Fatalf("read failure reported as invalid JSON: %v", err)
 		}
@@ -68,10 +68,10 @@ func TestParseReadErrorIsNotInvalidJSON(t *testing.T) {
 func TestParseValidJSONUnaffected(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	src := "{\n\"@id\": \"urn:s\",\n\"urn:p\": \"v\"\n}\n"
-	if err := Parse(g, iotest.OneByteReader(strings.NewReader(src))); err != nil {
+	if err := Parse(t.Context(), g, iotest.OneByteReader(strings.NewReader(src))); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Fatalf("len = %d, want 1", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("len = %d, want 1", mustV(g.Len(t.Context())))
 	}
 }

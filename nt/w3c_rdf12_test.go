@@ -28,7 +28,7 @@ func TestW3CNTriples12(t *testing.T) {
 				}
 				defer f.Close()
 				g := graph.NewGraph()
-				if err := nt.Parse(g, f); err != nil {
+				if err := nt.Parse(t.Context(), g, f); err != nil {
 					t.Errorf("expected no error, got: %v", err)
 				}
 
@@ -39,7 +39,7 @@ func TestW3CNTriples12(t *testing.T) {
 				}
 				defer f.Close()
 				g := graph.NewGraph()
-				if err := nt.Parse(g, f); err == nil {
+				if err := nt.Parse(t.Context(), g, f); err == nil {
 					t.Error("expected error, got nil")
 				}
 

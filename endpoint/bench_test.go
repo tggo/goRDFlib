@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,7 +20,7 @@ func benchGraph(n int) *graph.Graph {
 	g := graph.NewGraph()
 	p := iri(ex + "p")
 	for i := range n {
-		g.Add(iri(fmt.Sprintf("%ss%d", ex, i)), p, term.NewLiteral(fmt.Sprintf("value %d", i)))
+		g.Add(context.Background(), iri(fmt.Sprintf("%ss%d", ex, i)), p, term.NewLiteral(fmt.Sprintf("value %d", i)))
 	}
 	return g
 }

@@ -15,11 +15,11 @@ func TestSerializerBufioWrapping(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, rdflibgo.NewLiteral("value"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("value"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -31,15 +31,15 @@ func TestSerializerBufioWrapping(t *testing.T) {
 func TestSerializerResolveSubjectPerformance(t *testing.T) {
 	// Ensure resolveSubject uses subjectMap (O(1) instead of O(N)).
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	for i := 0; i < 100; i++ {
 		s, _ := rdflibgo.NewURIRef("http://example.org/s" + strings.Repeat("x", i))
 		p, _ := rdflibgo.NewURIRef("http://example.org/p")
-		g.Add(s, p, rdflibgo.NewLiteral("v"))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	}
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {
@@ -53,18 +53,18 @@ func TestSerializerErrorPropagationInList(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/list")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	n1 := rdflibgo.NewBNode()
 	n2 := rdflibgo.NewBNode()
-	g.Add(s, p, n1)
-	g.Add(n1, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
-	g.Add(n1, rdflibgo.RDF.Rest, n2)
-	g.Add(n2, rdflibgo.RDF.First, rdflibgo.NewLiteral("b"))
-	g.Add(n2, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), s, p, n1)
+	g.Add(t.Context(), n1, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), n1, rdflibgo.RDF.Rest, n2)
+	g.Add(t.Context(), n2, rdflibgo.RDF.First, rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), n2, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "(") {
@@ -110,7 +110,7 @@ func TestParserUTF8MultiByteInLiteral(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -126,7 +126,7 @@ func TestParserUTF8InTripleQuotedLiteral(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -142,7 +142,7 @@ func TestParserUTF8Emoji(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -154,7 +154,7 @@ func TestParserUTF8Emoji(t *testing.T) {
 func TestParserErrorNoCol(t *testing.T) {
 	// Verify error messages include line but not misleading col.
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`unknown:s unknown:p "hello" .`))
+	err := Parse(t.Context(), g, strings.NewReader(`unknown:s unknown:p "hello" .`))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -171,7 +171,7 @@ func TestParserErrorNoCol(t *testing.T) {
 func TestParserUnescapeIRIMalformedU(t *testing.T) {
 	// Malformed \u escape in IRI should return an error.
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://example.org/\uZZZZ> <http://example.org/p> "v" .`))
+	err := Parse(t.Context(), g, strings.NewReader(`<http://example.org/\uZZZZ> <http://example.org/p> "v" .`))
 	if err == nil {
 		t.Error("expected error for malformed \\u escape in IRI")
 	}
@@ -179,7 +179,7 @@ func TestParserUnescapeIRIMalformedU(t *testing.T) {
 
 func TestParserUnescapeIRIMalformedUShort(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://example.org/\u00> <http://example.org/p> "v" .`))
+	err := Parse(t.Context(), g, strings.NewReader(`<http://example.org/\u00> <http://example.org/p> "v" .`))
 	if err == nil {
 		t.Error("expected error for truncated \\u escape in IRI")
 	}
@@ -187,7 +187,7 @@ func TestParserUnescapeIRIMalformedUShort(t *testing.T) {
 
 func TestParserUnescapeIRIMalformedBigU(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://example.org/\UZZZZZZZZ> <http://example.org/p> "v" .`))
+	err := Parse(t.Context(), g, strings.NewReader(`<http://example.org/\UZZZZZZZZ> <http://example.org/p> "v" .`))
 	if err == nil {
 		t.Error("expected error for malformed \\U escape in IRI")
 	}
@@ -196,7 +196,7 @@ func TestParserUnescapeIRIMalformedBigU(t *testing.T) {
 func TestParserBlankNodeLabelEmpty(t *testing.T) {
 	// Empty blank node label should produce an error.
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . _: ex:p "v" .`))
+	err := Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . _: ex:p "v" .`))
 	if err == nil {
 		t.Error("expected error for empty blank node label")
 	}
@@ -216,12 +216,12 @@ func TestParserErrorfNoDoubleFormat(t *testing.T) {
 func TestParserValidIRIUnicodeEscape(t *testing.T) {
 	// Valid \u escape in IRI should work.
 	g := parseTurtle(t, `<http://example.org/\u0041> <http://example.org/p> "v" .`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 	a, _ := rdflibgo.NewURIRef("http://example.org/A")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	if !g.Contains(a, p, rdflibgo.NewLiteral("v")) {
+	if !mustV(g.Contains(t.Context(), a, p, rdflibgo.NewLiteral("v"))) {
 		t.Error("expected triple with unescaped IRI")
 	}
 }

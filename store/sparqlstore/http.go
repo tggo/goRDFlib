@@ -35,10 +35,15 @@ func (s *SPARQLStore) execQuery(ctx context.Context, query string) (*sparql.Resu
 	}
 
 	ct := resp.Header.Get("Content-Type")
+	parse := sparql.ParseSRX
 	if strings.Contains(ct, "json") {
-		return sparql.ParseSRJ(resp.Body)
+		parse = sparql.ParseSRJ
 	}
-	return sparql.ParseSRX(resp.Body)
+	res, err := parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("sparqlstore: query result (%s) is unreadable: %w", ct, err)
+	}
+	return res, nil
 }
 
 // execUpdate sends a SPARQL update to the update endpoint.

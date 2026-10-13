@@ -42,12 +42,14 @@ type StreamHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, 
 // Parse parses N-Quads format RDF into the given graph.
 // Graph context is preserved and passed to the optional QuadHandler if configured via WithQuadHandler.
 // When no QuadHandler is set, all triples are added to the given graph regardless of graph context.
-func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+// A store failure while adding a triple stops the parse and is returned
+// (wrapped, with the line number); it is never passed to WithErrorHandler,
+// which sees malformed lines only.
+func Parse(ctx context.Context, g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	quadHandler := func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term) error {
-		g.Add(s, p, o)
-		return nil
+		return g.Add(ctx, s, p, o)
 	}
-	return parseLines(context.Background(), r, opts, quadHandler, true)
+	return parseLines(ctx, r, opts, quadHandler, true)
 }
 
 // ParseStream parses N-Quads format RDF and dispatches each parsed quad to the
@@ -81,6 +83,15 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h StreamHandler
 		o(&cfg)
 	}
 	scope := bnodes.New(cfg.preserveBlankNodeIDs)
+	// A handler error (a failing store, or the caller's callback) aborts the
+	// parse: it says nothing about the line, so the error handler must not see
+	// it and offer a retry.
+	var hErr error
+	userH := h
+	h = func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term) error {
+		hErr = userH(s, p, o, graph)
+		return hErr
+	}
 	nextLine := ntsyntax.NewLineReader(r, cfg.maxLineLen, cfg.unbounded)
 	lineNum := 0
 	for {
@@ -103,6 +114,9 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h StreamHandler
 			continue
 		}
 		if err := parseNQLine(line, lineNum, h, cfg.quadHandler, dispatchQuadHandler, cfg.provenance, scope); err != nil {
+			if hErr != nil {
+				return err
+			}
 			if cfg.errorHandler == nil {
 				return err
 			}
@@ -153,7 +167,7 @@ func parseNQLine(line string, lineNum int, h StreamHandler, qh QuadHandler, disp
 		qh(subj, pred, obj, graphCtx)
 	}
 	if err := h(subj, pred, obj, graphCtx); err != nil {
-		return err
+		return fmt.Errorf("line %d: %w", lineNum, err)
 	}
 	if prov != nil {
 		prov(subj, pred, obj, graphCtx, lineNum)

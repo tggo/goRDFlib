@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -70,6 +71,9 @@ func (ctx *afContext) applyRules() (int, error) {
 		}
 		added, groupErr := ctx.applyGroup(group)
 		total += added
+		if ferr := ctx.failure(); ferr != nil && stopped(ctx.ctx) == nil {
+			return total, ferr
+		}
 		if serr := stopped(ctx.ctx); serr != nil {
 			// A rule whose query was cut short inferred less than it should
 			// have; the run is reported as stopped, not as a malformed rule.
@@ -105,7 +109,11 @@ func (ctx *afContext) applyGroup(group ruleGroup) (int, error) {
 				return total + added, err
 			}
 			n, err := ctx.applyRule(eval, group.shapeID, &group.rules[i])
+			ctx.fail(eval.guard.err) // a query of a condition or target failed
 			added += n
+			if ferr := ctx.failure(); ferr != nil && stopped(ctx.ctx) == nil {
+				return total + added, ferr
+			}
 			if err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -220,7 +228,12 @@ func (ctx *afContext) applyTripleRule(eval *evalContext, rule *afRule, focusNode
 					continue
 				}
 				for _, o := range objects {
-					if ctx.addTriple(s, p, o) {
+					isNew, err := ctx.addTriple(s, p, o)
+					if err != nil {
+						ctx.abort(err)
+						return added, err
+					}
+					if isNew {
 						added++
 					}
 				}
@@ -238,15 +251,26 @@ func (ctx *afContext) applySPARQLRule(rule *afRule, focusNodes []Term) (int, err
 			return added, err
 		}
 		query, bindings := preBindThis(rule.query, fn)
-		triples, err := executeSPARQLConstruct(orBackground(ctx.ctx), ctx.dataGraph, query, bindings, ctx.functionsAtDepth(1))
+		triples, err := executeSPARQLConstruct(orBackground(ctx.ctx), ctx.dataGraph, query, bindings, ctx.functionsAtDepth(1, ctx.fail))
 		if err != nil {
+			if errors.Is(err, ErrQueryFailed) {
+				// The store failed, which is not a malformed rule: the pass
+				// stops, because what the rule would have inferred is unknown.
+				ctx.fail(err)
+				return added, fmt.Errorf("sh:construct of %s: %w", rule.node, err)
+			}
 			if firstErr == nil {
 				firstErr = fmt.Errorf("%w: sh:construct of %s: %w", ErrMalformedRule, rule.node, err)
 			}
 			continue
 		}
 		for _, t := range triples {
-			if ctx.addTriple(t.Subject, t.Predicate, t.Object) {
+			isNew, err := ctx.addTriple(t.Subject, t.Predicate, t.Object)
+			if err != nil {
+				ctx.abort(err)
+				return added, err
+			}
+			if isNew {
 				added++
 			}
 		}
@@ -255,12 +279,21 @@ func (ctx *afContext) applySPARQLRule(rule *afRule, focusNodes []Term) (int, err
 }
 
 // addTriple adds a triple to the data graph, reporting whether it was new.
-func (ctx *afContext) addTriple(s, p, o Term) bool {
-	if ctx.dataGraph.Has(&s, &p, &o) {
-		return false
+// The indexes are rebuilt here, with the run's context, after an earlier Add
+// invalidated them, so a store that fails mid-run is an error and not a
+// triple wrongly judged new.
+func (ctx *afContext) addTriple(s, p, o Term) (bool, error) {
+	goctx := orBackground(ctx.ctx)
+	if err := buildIndexes(goctx, ctx.dataGraph); err != nil {
+		return false, err
 	}
-	ctx.dataGraph.Add(s, p, o)
-	return true
+	if ctx.dataGraph.Has(&s, &p, &o) {
+		return false, nil
+	}
+	if err := ctx.dataGraph.Add(goctx, s, p, o); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // preBindThis binds $this in a rule's query to the focus node.

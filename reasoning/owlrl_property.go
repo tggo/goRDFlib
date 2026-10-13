@@ -205,7 +205,7 @@ func (e *owlrlEngine) termForKey(key string) (term.URIRef, bool) {
 	chainAxiom := namespace.OWL.PropertyChainAxiom
 	var result term.URIRef
 	found := false
-	e.g.Triples(nil, &chainAxiom, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &chainAxiom, nil, func(t term.Triple) bool {
 		if u, ok := t.Subject.(term.URIRef); ok && term.TermKey(u) == key {
 			result = u
 			found = true

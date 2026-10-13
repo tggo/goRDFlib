@@ -2,7 +2,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
@@ -11,10 +13,17 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	g := rdf.NewGraph()
 
 	// Build initial data
-	turtle.Parse(g, strings.NewReader(`
+	if err := turtle.Parse(ctx, g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 
@@ -29,28 +38,38 @@ func main() {
 		ex:Charlie a foaf:Person ;
 			foaf:name "Charlie" ;
 			ex:status "published" .
-	`))
-	fmt.Printf("Initial: %d triples\n", g.Len())
+	`)); err != nil {
+		return err
+	}
+	if err := printLen(ctx, "Initial", g); err != nil {
+		return err
+	}
 
 	ds := &sparql.Dataset{Default: g}
 
 	// INSERT DATA: add a new triple
-	_ = sparql.Update(ds, `
+	if err := sparql.UpdateContext(ctx, ds, `
 		PREFIX ex: <http://example.org/>
 		INSERT DATA { ex:Alice ex:email "alice@example.org" }
-	`)
-	fmt.Printf("After INSERT DATA: %d triples\n", g.Len())
+	`); err != nil {
+		return err
+	}
+	if err := printLen(ctx, "After INSERT DATA", g); err != nil {
+		return err
+	}
 
 	// DELETE/INSERT WHERE: bulk status change
-	_ = sparql.Update(ds, `
+	if err := sparql.UpdateContext(ctx, ds, `
 		PREFIX ex: <http://example.org/>
 		DELETE { ?s ex:status "draft" }
 		INSERT { ?s ex:status "published" }
 		WHERE  { ?s ex:status "draft" }
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Verify the update
-	result, _ := sparql.Query(g, `
+	result, err := sparql.QueryContext(ctx, g, `
 		PREFIX ex: <http://example.org/>
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		SELECT ?name ?status WHERE {
@@ -59,17 +78,24 @@ func main() {
 		}
 		ORDER BY ?name
 	`)
+	if err != nil {
+		return err
+	}
 	fmt.Println("\nAfter bulk status update:")
 	for _, row := range result.Bindings {
 		fmt.Printf("  %s -> %s\n", row["name"], row["status"])
 	}
 
 	// DELETE WHERE shorthand: remove all email triples
-	_ = sparql.Update(ds, `
+	if err := sparql.UpdateContext(ctx, ds, `
 		PREFIX ex: <http://example.org/>
 		DELETE WHERE { ?s ex:email ?o }
-	`)
-	fmt.Printf("\nAfter DELETE WHERE: %d triples\n", g.Len())
+	`); err != nil {
+		return err
+	}
+	if err := printLen(ctx, "\nAfter DELETE WHERE", g); err != nil {
+		return err
+	}
 
 	// Named graphs: COPY between graphs
 	named := rdf.NewGraph()
@@ -77,6 +103,17 @@ func main() {
 		"http://example.org/archive": named,
 	}
 
-	_ = sparql.Update(ds, `COPY DEFAULT TO <http://example.org/archive>`)
-	fmt.Printf("Archive graph: %d triples\n", named.Len())
+	if err := sparql.UpdateContext(ctx, ds, `COPY DEFAULT TO <http://example.org/archive>`); err != nil {
+		return err
+	}
+	return printLen(ctx, "Archive graph", named)
+}
+
+func printLen(ctx context.Context, label string, g *rdf.Graph) error {
+	n, err := g.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s: %d triples\n", label, n)
+	return nil
 }

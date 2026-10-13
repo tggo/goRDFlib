@@ -23,11 +23,13 @@ var ErrLineTooLong = ntsyntax.ErrLineTooLong
 // aborts the parse and is propagated to the caller of ParseStream.
 type TripleHandler func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error
 
-// Parse parses N-Triples format RDF into the given graph.
-func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
-	return parseLines(context.Background(), r, opts, func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
-		g.Add(s, p, o)
-		return nil
+// Parse parses N-Triples format RDF into the given graph. A store failure
+// while adding a triple stops the parse and is returned (wrapped, with the line
+// number); it is never passed to WithErrorHandler, which sees malformed lines
+// only. ctx stops the parse the same way as in ParseStreamContext.
+func Parse(ctx context.Context, g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+	return parseLines(ctx, r, opts, func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
+		return g.Add(ctx, s, p, o)
 	})
 }
 
@@ -59,6 +61,15 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 		o(&cfg)
 	}
 	scope := bnodes.New(cfg.preserveBlankNodeIDs)
+	// A handler error (a failing store, or the caller's callback) aborts the
+	// parse: it says nothing about the line, so the error handler must not see
+	// it and offer a retry.
+	var hErr error
+	userH := h
+	h = func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
+		hErr = userH(s, p, o)
+		return hErr
+	}
 	nextLine := ntsyntax.NewLineReader(r, cfg.maxLineLen, cfg.unbounded)
 	lineNum := 0
 	for {
@@ -81,6 +92,9 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 			continue
 		}
 		if err := parseNTLine(line, lineNum, h, cfg.provenance, scope); err != nil {
+			if hErr != nil {
+				return err
+			}
 			if cfg.errorHandler == nil {
 				return err
 			}
@@ -121,7 +135,7 @@ func parseNTLine(line string, lineNum int, h TripleHandler, prov ProvenanceHandl
 	}
 
 	if err := h(subj, pred, obj); err != nil {
-		return err
+		return fmt.Errorf("line %d: %w", lineNum, err)
 	}
 	if prov != nil {
 		prov(subj, pred, obj, lineNum)

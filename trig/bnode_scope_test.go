@@ -26,10 +26,10 @@ func TestBlankNodeDatasetScope(t *testing.T) {
 				}
 				var labelled rdflibgo.Subject
 				calls := 0
-				err := ParseDataset(ds, strings.NewReader(input), WithBase("http://example.org/"), WithProvenance(
+				err := ParseDataset(t.Context(), ds, strings.NewReader(input), WithBase("http://example.org/"), WithProvenance(
 					func(s rdflibgo.Subject, p rdflibgo.URIRef, o, gr rdflibgo.Term, line int) {
 						calls++
-						if line != 1 || !ds.Graph(gr).Contains(s, p, o) {
+						if line != 1 || !mustV(ds.Graph(gr).Contains(t.Context(), s, p, o)) {
 							t.Errorf("provenance does not match inserted quad at line %d", line)
 						}
 						if labelled == nil {
@@ -72,7 +72,7 @@ func TestBlankNodeDatasetScope(t *testing.T) {
 			if sameDataset {
 				want, wantGraphs = 4, 4
 			}
-			if got := ds.Len(); got != want {
+			if got, _ := ds.Len(t.Context()); got != want {
 				t.Errorf("dataset union has %d triples, want %d", got, want)
 			}
 			graphs := 0
@@ -105,7 +105,7 @@ _:LABEL <http://example.org/p> <<( _:LABEL <http://example.org/q> <<( _:LABEL <h
 				triples := make([]rdflibgo.Triple, 0, 3)
 				opts := []Option{WithProvenance(func(s rdflibgo.Subject, p rdflibgo.URIRef, o, gr rdflibgo.Term, line int) {
 					triples = append(triples, rdflibgo.Triple{Subject: s, Predicate: p, Object: o})
-					if dataset && !ds.Graph(gr).Contains(s, p, o) {
+					if dataset && !mustV(ds.Graph(gr).Contains(t.Context(), s, p, o)) {
 						t.Error("provenance does not match inserted quad")
 					}
 					if p.Value() == "http://example.org/anonymous" {
@@ -149,9 +149,9 @@ _:LABEL <http://example.org/p> <<( _:LABEL <http://example.org/q> <<( _:LABEL <h
 				}
 				var err error
 				if dataset {
-					err = ParseDataset(ds, strings.NewReader(input), opts...)
+					err = ParseDataset(t.Context(), ds, strings.NewReader(input), opts...)
 				} else {
-					err = Parse(g, strings.NewReader(input), opts...)
+					err = Parse(t.Context(), g, strings.NewReader(input), opts...)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -161,7 +161,7 @@ _:LABEL <http://example.org/p> <<( _:LABEL <http://example.org/q> <<( _:LABEL <h
 				}
 				if !dataset {
 					for _, triple := range triples {
-						if !g.Contains(triple.Subject, triple.Predicate, triple.Object) {
+						if !mustV(g.Contains(t.Context(), triple.Subject, triple.Predicate, triple.Object)) {
 							t.Error("provenance does not match flattened graph")
 						}
 					}
@@ -175,10 +175,10 @@ _:LABEL <http://example.org/p> <<( _:LABEL <http://example.org/q> <<( _:LABEL <h
 			if preserve {
 				want = 4
 			}
-			got := g.Len()
+			got, _ := g.Len(t.Context())
 			if dataset {
 				// The triples live in the blank-node graphs, so count the union.
-				got = ds.Len()
+				got, _ = ds.Len(t.Context())
 			}
 			if got != want {
 				t.Errorf("got %d triples, want %d", got, want)
@@ -199,7 +199,7 @@ func TestBlankNodeFlattenedScope(t *testing.T) {
 				g = rdflibgo.NewGraph()
 			}
 			var current rdflibgo.Subject
-			err := Parse(g, strings.NewReader(input), WithBase("http://example.org/"), WithProvenance(
+			err := Parse(t.Context(), g, strings.NewReader(input), WithBase("http://example.org/"), WithProvenance(
 				func(s rdflibgo.Subject, p rdflibgo.URIRef, o, gr rdflibgo.Term, line int) {
 					current = s
 				},
@@ -207,7 +207,7 @@ func TestBlankNodeFlattenedScope(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !g.Contains(current, rdflibgo.NewURIRefUnsafe("http://example.org/p"), current) {
+			if !mustV(g.Contains(t.Context(), current, rdflibgo.NewURIRefUnsafe("http://example.org/p"), current)) {
 				t.Error("provenance node does not match flattened graph")
 			}
 			if previous != nil && current.Equal(previous) {
@@ -219,8 +219,8 @@ func TestBlankNodeFlattenedScope(t *testing.T) {
 		if sameGraph {
 			want = 2
 		}
-		if g.Len() != want {
-			t.Errorf("got %d triples, want %d", g.Len(), want)
+		if mustV(g.Len(t.Context())) != want {
+			t.Errorf("got %d triples, want %d", mustV(g.Len(t.Context())), want)
 		}
 	}
 }

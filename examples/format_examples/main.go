@@ -4,7 +4,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
@@ -15,36 +17,60 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	// Build a graph
 	g := rdf.NewGraph()
-	g.Bind("ex", rdf.NewURIRefUnsafe("http://example.org/"))
-	g.Bind("foaf", rdf.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	if err := g.Bind(ctx, "ex", rdf.NewURIRefUnsafe("http://example.org/")); err != nil {
+		return err
+	}
+	if err := g.Bind(ctx, "foaf", rdf.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/")); err != nil {
+		return err
+	}
 
 	alice, _ := rdf.NewURIRef("http://example.org/Alice")
 	name, _ := rdf.NewURIRef("http://xmlns.com/foaf/0.1/name")
 	age, _ := rdf.NewURIRef("http://example.org/age")
 	person, _ := rdf.NewURIRef("http://xmlns.com/foaf/0.1/Person")
 
-	g.Add(alice, rdf.RDF.Type, person)
-	g.Add(alice, name, rdf.NewLiteral("Alice"))
-	g.Add(alice, age, rdf.NewLiteral(30))
+	for _, t := range []struct {
+		p rdf.URIRef
+		o rdf.Term
+	}{
+		{rdf.RDF.Type, person},
+		{name, rdf.NewLiteral("Alice")},
+		{age, rdf.NewLiteral(30)},
+	} {
+		if err := g.Add(ctx, alice, t.p, t.o); err != nil {
+			return err
+		}
+	}
 
-	fmt.Printf("Graph has %d triples\n\n", g.Len())
+	n, err := g.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Graph has %d triples\n\n", n)
 
 	// Serialize to each format
 	serializers := []struct {
 		name string
-		fn   func(*rdf.Graph, *bytes.Buffer) error
+		fn   func(context.Context, *rdf.Graph, *bytes.Buffer) error
 	}{
-		{"turtle", func(g *rdf.Graph, buf *bytes.Buffer) error { return turtle.Serialize(g, buf) }},
-		{"nt", func(g *rdf.Graph, buf *bytes.Buffer) error { return nt.Serialize(g, buf) }},
-		{"xml", func(g *rdf.Graph, buf *bytes.Buffer) error { return rdfxml.Serialize(g, buf) }},
-		{"json-ld", func(g *rdf.Graph, buf *bytes.Buffer) error { return jsonld.Serialize(g, buf) }},
+		{"turtle", func(ctx context.Context, g *rdf.Graph, buf *bytes.Buffer) error { return turtle.Serialize(ctx, g, buf) }},
+		{"nt", func(ctx context.Context, g *rdf.Graph, buf *bytes.Buffer) error { return nt.Serialize(ctx, g, buf) }},
+		{"xml", func(ctx context.Context, g *rdf.Graph, buf *bytes.Buffer) error { return rdfxml.Serialize(ctx, g, buf) }},
+		{"json-ld", func(ctx context.Context, g *rdf.Graph, buf *bytes.Buffer) error { return jsonld.Serialize(ctx, g, buf) }},
 	}
 
 	for _, s := range serializers {
 		var buf bytes.Buffer
-		if err := s.fn(g, &buf); err != nil {
+		if err := s.fn(ctx, g, &buf); err != nil {
 			fmt.Printf("%s: error: %v\n", s.name, err)
 			continue
 		}
@@ -56,8 +82,14 @@ func main() {
 <http://example.org/Bob> <http://example.org/age> "25"^^<http://www.w3.org/2001/XMLSchema#integer> .
 `
 	g2 := rdf.NewGraph()
-	nt.Parse(g2, strings.NewReader(ntData))
-	fmt.Printf("Parsed %d triples from N-Triples\n", g2.Len())
+	if err := nt.Parse(ctx, g2, strings.NewReader(ntData)); err != nil {
+		return err
+	}
+	n2, err := g2.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Parsed %d triples from N-Triples\n", n2)
 
 	// Format auto-detection
 	for _, filename := range []string{"data.ttl", "data.nt", "data.rdf", "data.jsonld"} {
@@ -66,4 +98,5 @@ func main() {
 			fmt.Printf("  %s → %s\n", filename, format)
 		}
 	}
+	return nil
 }

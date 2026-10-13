@@ -18,7 +18,7 @@ func TestProvenanceTracksLineNumbersAndGraph(t *testing.T) {
 	}
 	prov := map[string]entry{}
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithProvenance(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithProvenance(
 		func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, graph rdflibgo.Term, lineNum int) {
 			gs := ""
 			if graph != nil {
@@ -41,10 +41,10 @@ func TestProvenanceTracksLineNumbersAndGraph(t *testing.T) {
 func TestProvenanceUnsetIsNoop(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <http://example.org/o> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if n := g.Len(); n != 1 {
+	if n, _ := g.Len(t.Context()); n != 1 {
 		t.Fatalf("got %d triples, want 1", n)
 	}
 }

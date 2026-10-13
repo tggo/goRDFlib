@@ -2,12 +2,14 @@ package paths_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/paths"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -17,16 +19,16 @@ var next = term.NewURIRefUnsafe("http://example.org/next")
 func chain(n int) *graph.Graph {
 	g := graph.NewGraph()
 	for i := range n - 1 {
-		g.Add(term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i)), next,
+		g.Add(context.Background(), term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i)), next,
 			term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i+1)))
 	}
 	return g
 }
 
-// TestEvalContext_CancelStopsTraversal cancels p* over a 5,000-node chain
+// TestEval_CancelStopsTraversal cancels p* over a 5,000-node chain
 // with neither end bound: 12.5 million pairs, seconds of work. The consumer
 // never stops on its own, so only the traversal's own checks can end it.
-func TestEvalContext_CancelStopsTraversal(t *testing.T) {
+func TestEval_CancelStopsTraversal(t *testing.T) {
 	g := chain(5_000)
 	for _, tt := range []struct {
 		name string
@@ -42,11 +44,18 @@ func TestEvalContext_CancelStopsTraversal(t *testing.T) {
 			defer cancel()
 			start := time.Now()
 			pairs := 0
-			paths.EvalContext(ctx, tt.path, g, nil, nil)(func(term.Term, term.Term) bool {
+			var gotErr error
+			for _, err := range tt.path.Eval(ctx, g, nil, nil) {
+				if err != nil {
+					gotErr = err
+					break
+				}
 				pairs++
-				return true
-			})
+			}
 			elapsed := time.Since(start)
+			if !errors.Is(gotErr, context.DeadlineExceeded) {
+				t.Errorf("Eval ended with %v, want the context's error", gotErr)
+			}
 			t.Logf("%d pairs in %v", pairs, elapsed)
 			if ctx.Err() == nil {
 				t.Fatal("traversal finished before the deadline; the test proves nothing")
@@ -58,29 +67,26 @@ func TestEvalContext_CancelStopsTraversal(t *testing.T) {
 	}
 }
 
-func TestEvalContext_UncancelledMatchesEval(t *testing.T) {
+func TestEval_CancelledContext(t *testing.T) {
 	g := chain(50)
 	p := paths.OneOrMore(paths.AsPath(next))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	count := func(it func(func(term.Term, term.Term) bool)) int {
+	count := func(it store.TermPairIterator) (int, error) {
 		n := 0
-		it(func(term.Term, term.Term) bool { n++; return true })
-		return n
+		for _, err := range it {
+			if err != nil {
+				return n, err
+			}
+			n++
+		}
+		return n, nil
 	}
-	want := count(p.Eval(g, nil, nil))
-	if want != 49*50/2 {
-		t.Fatalf("Eval gave %d pairs, want %d", want, 49*50/2)
+	if got, err := count(p.Eval(t.Context(), g, nil, nil)); err != nil || got != 49*50/2 {
+		t.Fatalf("Eval gave %d pairs, %v; want %d", got, err, 49*50/2)
 	}
-	if got := count(paths.EvalContext(ctx, p, g, nil, nil)); got != want {
-		t.Fatalf("EvalContext gave %d pairs, Eval %d", got, want)
-	}
-	if got := count(paths.EvalContext(context.Background(), p, g, nil, nil)); got != want {
-		t.Fatalf("EvalContext(Background) gave %d pairs, Eval %d", got, want)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := count(paths.EvalContext(ctx, p, g, nil, nil)); got != 0 {
-		t.Fatalf("EvalContext with a cancelled context yielded %d pairs", got)
+	if got, err := count(p.Eval(ctx, g, nil, nil)); got != 0 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Eval with a cancelled context: %d pairs, %v", got, err)
 	}
 }
 
@@ -101,7 +107,7 @@ func TestMulPath_ConsumerStopIsFinal(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			calls := 0
-			tt.path.Eval(g, tt.subj, tt.obj)(func(term.Term, term.Term) bool {
+			tt.path.Eval(t.Context(), g, tt.subj, tt.obj)(func(pair_ store.TermPair, _ error) bool {
 				calls++
 				return false
 			})

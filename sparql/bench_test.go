@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"context"
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -13,7 +14,7 @@ func setupBenchGraph(n int) *rdflibgo.Graph {
 		s := rdflibgo.NewURIRefUnsafe(ns + "s" + string(rune('0'+i%10)))
 		p := rdflibgo.NewURIRefUnsafe(ns + "p")
 		o := rdflibgo.NewLiteral(i, rdflibgo.WithDatatype(rdflibgo.XSDInteger))
-		g.Add(s, p, o)
+		g.Add(context.Background(), s, p, o)
 	}
 	return g
 }
@@ -50,7 +51,7 @@ func BenchmarkSelectWithRegex(b *testing.B) {
 	p := rdflibgo.NewURIRefUnsafe(ns + "name")
 	for i := range 500 {
 		s := rdflibgo.NewURIRefUnsafe(ns + "s" + string(rune('A'+i%26)))
-		g.Add(s, p, rdflibgo.NewLiteral("Alice"+string(rune('0'+i%10))))
+		g.Add(b.Context(), s, p, rdflibgo.NewLiteral("Alice"+string(rune('0'+i%10))))
 	}
 	q := `PREFIX ex: <http://example.org/>
 SELECT ?s WHERE { ?s ex:name ?n . FILTER(REGEX(?n, "^Ali")) }`

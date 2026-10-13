@@ -17,22 +17,22 @@ import (
 func TestDatasetKeepsGraphsApart(t *testing.T) {
 	ds := graph.NewDataset()
 	src := `@prefix : <http://e/> . :a :b :c . :g { :x :y :z . }`
-	if err := ParseDataset(ds, strings.NewReader(src)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(src)); err != nil {
 		t.Fatal(err)
 	}
 	g := rdflibgo.NewURIRefUnsafe("http://e/g")
-	if n := ds.Graph(g).Len(); n != 1 {
+	if n, _ := ds.Graph(g).Len(t.Context()); n != 1 {
 		t.Errorf("named graph :g has %d triples, want 1", n)
 	}
-	if n := ds.DefaultContext().Len(); n != 1 {
+	if n, _ := ds.DefaultContext().Len(t.Context()); n != 1 {
 		t.Errorf("default graph has %d triples, want 1", n)
 	}
-	if n := ds.Len(); n != 2 {
+	if n, _ := ds.Len(t.Context()); n != 2 {
 		t.Errorf("dataset union has %d triples, want 2", n)
 	}
 
 	var b bytes.Buffer
-	if err := SerializeDataset(ds, &b); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &b); err != nil {
 		t.Fatal(err)
 	}
 	out := b.String()
@@ -67,14 +67,14 @@ func TestBlankNodeGraphNameStaysNamed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ds := newDS(t)
 			src := `@prefix : <http://e/> . :d :d :d . _:g { :a :b :c . } [] { :x :y :z . }`
-			if err := ParseDataset(ds, strings.NewReader(src)); err != nil {
+			if err := ParseDataset(t.Context(), ds, strings.NewReader(src)); err != nil {
 				t.Fatal(err)
 			}
-			if n := ds.DefaultContext().Len(); n != 1 {
+			if n, _ := ds.DefaultContext().Len(t.Context()); n != 1 {
 				t.Errorf("default graph has %d triples, want 1", n)
 			}
 			var named []rdflibgo.Term
-			ds.Contexts(nil)(func(c rdflibgo.Term) bool {
+			ds.Contexts(t.Context(), nil)(func(c rdflibgo.Term, _ error) bool {
 				named = append(named, c)
 				return true
 			})
@@ -85,7 +85,7 @@ func TestBlankNodeGraphNameStaysNamed(t *testing.T) {
 				if _, ok := c.(rdflibgo.BNode); !ok {
 					t.Errorf("graph name %v is not a blank node", c)
 				}
-				if n := ds.Graph(c).Len(); n != 1 {
+				if n, _ := ds.Graph(c).Len(t.Context()); n != 1 {
 					t.Errorf("graph %v has %d triples, want 1", c, n)
 				}
 			}

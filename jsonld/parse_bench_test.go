@@ -24,7 +24,7 @@ func BenchmarkParse(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
 					g := rdflibgo.NewGraph()
-					if err := Parse(g, strings.NewReader(doc), func(c *config) { c.forceTextPath = path.text }); err != nil {
+					if err := Parse(b.Context(), g, strings.NewReader(doc), func(c *config) { c.forceTextPath = path.text }); err != nil {
 						b.Fatal(err)
 					}
 				}

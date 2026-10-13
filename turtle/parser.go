@@ -1,6 +1,7 @@
 package turtle
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -16,7 +17,9 @@ import (
 // Parse reads Turtle from r and adds triples to g.
 // Blank node labels have a fresh scope for each call, unless
 // WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
-func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+// A store error, or a done ctx, stops the parse and is returned (wrapped with
+// the line reached); triples added before it stay in g.
+func Parse(ctx context.Context, g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -26,15 +29,19 @@ func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 		return err
 	}
 	parser := newParser(cfg, string(data), func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term) error {
-		g.Add(s, p, o)
-		return nil
+		return g.Add(ctx, s, p, o)
 	})
-	parser.bind = func(prefix, iri string) { g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri)) }
+	parser.stop = stream.New(ctx)
+	parser.bind = func(prefix, iri string) error {
+		return g.Bind(ctx, prefix, rdflibgo.NewURIRefUnsafe(iri))
+	}
 	// Copy graph namespace bindings as initial prefixes
-	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		parser.prefixes[prefix] = ns.Value()
-		return true
-	})
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return fmt.Errorf("turtle: reading namespaces: %w", err)
+		}
+		parser.prefixes[b.Prefix] = b.Namespace.Value()
+	}
 	return parser.parse()
 }
 
@@ -51,9 +58,9 @@ func newParser(cfg *config, input string, sink TripleHandler) *turtleParser {
 }
 
 type turtleParser struct {
-	sink       TripleHandler            // receives every triple
-	bind       func(prefix, iri string) // optional: records a prefix declaration
-	stop       *stream.Stopper          // set by a streaming parse; nil otherwise
+	sink       TripleHandler                  // receives every triple
+	bind       func(prefix, iri string) error // optional: records a prefix declaration
+	stop       *stream.Stopper                // set by a streaming parse; nil otherwise
 	input      string
 	pos        int
 	line       int
@@ -155,7 +162,9 @@ func (p *turtleParser) directive() error {
 		iri = p.resolveIRI(iri)
 		p.prefixes[prefix] = iri
 		if p.bind != nil {
-			p.bind(prefix, iri)
+			if err := p.bind(prefix, iri); err != nil {
+				return err
+			}
 		}
 		p.skipWS()
 		if !p.expect('.') {
@@ -207,7 +216,7 @@ func (p *turtleParser) sparqlPrefix() error {
 	iri = p.resolveIRI(iri)
 	p.prefixes[prefix] = iri
 	if p.bind != nil {
-		p.bind(prefix, iri)
+		return p.bind(prefix, iri)
 	}
 	return nil
 }

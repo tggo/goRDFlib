@@ -13,8 +13,8 @@ func TestAssertGraphEqual(t *testing.T) {
 	g2 := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g1.Add(s, p, term.NewLiteral("hello"))
-	g2.Add(s, p, term.NewLiteral("hello"))
+	g1.Add(t.Context(), s, p, term.NewLiteral("hello"))
+	g2.Add(t.Context(), s, p, term.NewLiteral("hello"))
 
 	testutil.AssertGraphEqual(t, g1, g2)
 }
@@ -24,8 +24,8 @@ func TestAssertGraphEqualDifferentGraphs(t *testing.T) {
 	g2 := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g1.Add(s, p, term.NewLiteral("hello"))
-	g2.Add(s, p, term.NewLiteral("world"))
+	g1.Add(t.Context(), s, p, term.NewLiteral("hello"))
+	g2.Add(t.Context(), s, p, term.NewLiteral("world"))
 
 	mockT := &testing.T{}
 	testutil.AssertGraphEqual(mockT, g1, g2)
@@ -38,7 +38,7 @@ func TestAssertGraphContains(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("hello"))
+	g.Add(t.Context(), s, p, term.NewLiteral("hello"))
 	testutil.AssertGraphContains(t, g, s, p, term.NewLiteral("hello"))
 }
 
@@ -46,6 +46,6 @@ func TestAssertGraphLen(t *testing.T) {
 	g := graph.NewGraph()
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(s, p, term.NewLiteral("hello"))
+	g.Add(t.Context(), s, p, term.NewLiteral("hello"))
 	testutil.AssertGraphLen(t, g, 1)
 }

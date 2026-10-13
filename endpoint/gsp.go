@@ -117,16 +117,16 @@ func (x *exchange) gspTarget(direct bool) (gspTarget, error) {
 
 // lookup returns the addressed graph, or nil when it does not exist. The
 // default graph always exists.
-func (x *exchange) lookup(t gspTarget) *graph.Graph {
-	def, _ := x.h.backend.view()
+func (x *exchange) lookup(ctx context.Context, t gspTarget) (*graph.Graph, error) {
 	if t.isDefault {
-		return def
+		def, _, err := x.h.backend.view(ctx)
+		return def, err
 	}
-	g, ok := x.h.backend.graph(t.iri)
-	if !ok {
-		return nil
+	g, ok, err := x.h.backend.graph(ctx, t.iri)
+	if err != nil || !ok {
+		return nil, err
 	}
-	return g
+	return g, nil
 }
 
 func notFound(t gspTarget) error {
@@ -148,20 +148,30 @@ func (x *exchange) gspGet(t gspTarget) error {
 	defer cancel()
 	var buf bytes.Buffer
 	err := x.readLocked(ctx, func() error {
-		g := x.lookup(t)
+		g, err := x.lookup(ctx, t)
+		if err != nil {
+			return err
+		}
 		if g == nil {
 			return notFound(t)
 		}
-		n := g.Len()
+		n, err := g.Len(ctx)
+		if err != nil {
+			return fmt.Errorf("graph %s cannot be read: %w", t, err)
+		}
 		x.rows = n
 		if max := x.h.cfg.maxResultRows; max > 0 && n > max {
 			return tooManyRows(max, "triples")
 		}
 		// Serialized into memory under the lock, sent after it: a slow client
-		// must not hold back updates.
-		if err := f.serialize(g, &buf); err != nil {
+		// must not hold back updates. A store failure fails the request here,
+		// before the first byte, so a truncated graph is never sent.
+		if err := f.serialize(ctx, g, &buf); err != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return err
+			}
 			return httpErrf(http.StatusInternalServerError,
-				"graph %s cannot be written as %s: %v (request another format with the Accept header)", t, f.mediaType, err)
+				"graph %s cannot be written as %s: %v (if the format is the cause, request another with the Accept header)", t, f.mediaType, err)
 		}
 		return nil
 	})
@@ -188,9 +198,9 @@ func (x *exchange) gspPut(t gspTarget) error {
 		return err
 	}
 	var created bool
-	err = x.writeLocked(func() error {
-		created = x.replace(t, payload)
-		return nil
+	err = x.writeLocked(func(ctx context.Context) (err error) {
+		created, err = x.replace(ctx, t, payload)
+		return err
 	})
 	if err != nil {
 		return err
@@ -206,22 +216,37 @@ func (x *exchange) gspPut(t gspTarget) error {
 
 // replace makes the target graph hold exactly the payload, and reports
 // whether it did not exist (for the default graph: was empty) before.
-func (x *exchange) replace(t gspTarget, payload *graph.Graph) bool {
+func (x *exchange) replace(ctx context.Context, t gspTarget, payload *graph.Graph) (bool, error) {
 	b := x.h.backend
 	var g *graph.Graph
 	var created bool
 	if t.isDefault {
-		g, _ = b.view()
-		created = g.Len() == 0
-		g.Remove(nil, nil, nil)
+		var err error
+		if g, _, err = b.view(ctx); err != nil {
+			return false, err
+		}
+		n, err := g.Len(ctx)
+		if err != nil {
+			return false, fmt.Errorf("graph %s cannot be read: %w", t, err)
+		}
+		created = n == 0
 	} else {
-		_, exists := b.graph(t.iri)
+		_, exists, err := b.graph(ctx, t.iri)
+		if err != nil {
+			return false, err
+		}
 		created = !exists
 		g = b.ensureGraph(t.iri)
-		g.Remove(nil, nil, nil)
 	}
-	copyTriples(g, payload)
-	return created
+	// Not atomic: a store that fails between the two steps leaves the graph
+	// emptied or partly filled, and the request is answered with an error.
+	if err := g.Remove(ctx, nil, nil, nil); err != nil {
+		return false, fmt.Errorf("graph %s cannot be cleared: %w", t, err)
+	}
+	if err := copyTriples(ctx, g, payload); err != nil {
+		return false, fmt.Errorf("graph %s cannot be written: %w", t, err)
+	}
+	return created, nil
 }
 
 func (x *exchange) gspPost(t gspTarget) error {
@@ -235,8 +260,10 @@ func (x *exchange) gspPost(t gspTarget) error {
 		if err != nil {
 			return err
 		}
-		if err := x.writeLocked(func() error {
-			copyTriples(x.h.backend.ensureGraph(iri), payload)
+		if err := x.writeLocked(func(ctx context.Context) error {
+			if err := copyTriples(ctx, x.h.backend.ensureGraph(iri), payload); err != nil {
+				return fmt.Errorf("graph %s cannot be written: %w", t, err)
+			}
 			return nil
 		}); err != nil {
 			return err
@@ -251,18 +278,26 @@ func (x *exchange) gspPost(t gspTarget) error {
 		return err
 	}
 	created := false
-	err = x.writeLocked(func() error {
+	err = x.writeLocked(func(ctx context.Context) error {
 		var g *graph.Graph
 		if t.isDefault {
-			g, _ = x.h.backend.view()
+			var err error
+			if g, _, err = x.h.backend.view(ctx); err != nil {
+				return err
+			}
 		} else {
-			_, exists := x.h.backend.graph(t.iri)
+			_, exists, err := x.h.backend.graph(ctx, t.iri)
+			if err != nil {
+				return err
+			}
 			created = !exists
 			g = x.h.backend.ensureGraph(t.iri)
 		}
 		// The parser gave the payload's blank nodes fresh identities, so adding
 		// its triples is an RDF merge, not a union (GSP §5.5).
-		copyTriples(g, payload)
+		if err := copyTriples(ctx, g, payload); err != nil {
+			return fmt.Errorf("graph %s cannot be written: %w", t, err)
+		}
 		return nil
 	})
 	if err != nil {
@@ -283,17 +318,25 @@ func (x *exchange) gspDelete(t gspTarget) error {
 	if t.isStore {
 		return httpErrf(http.StatusBadRequest, "DELETE on the graph store itself needs ?default or ?graph=<iri>")
 	}
-	err := x.writeLocked(func() error {
+	err := x.writeLocked(func(ctx context.Context) error {
 		if t.isDefault {
-			def, _ := x.h.backend.view()
-			def.Remove(nil, nil, nil)
+			def, _, err := x.h.backend.view(ctx)
+			if err != nil {
+				return err
+			}
+			if err := def.Remove(ctx, nil, nil, nil); err != nil {
+				return fmt.Errorf("graph %s cannot be cleared: %w", t, err)
+			}
 			return nil
 		}
-		if _, ok := x.h.backend.graph(t.iri); !ok {
+		_, ok, err := x.h.backend.graph(ctx, t.iri)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			return notFound(t)
 		}
-		x.h.backend.dropGraph(t.iri)
-		return nil
+		return x.h.backend.dropGraph(ctx, t.iri)
 	})
 	if err != nil {
 		return err
@@ -309,23 +352,31 @@ func (x *exchange) readLocked(ctx context.Context, fn func() error) error {
 		return evalError(ctx, err)
 	}
 	defer x.h.lock.runlock()
-	return fn()
+	return evalError(ctx, fn())
 }
 
-func (x *exchange) writeLocked(fn func() error) error {
+func (x *exchange) writeLocked(fn func(ctx context.Context) error) error {
 	ctx, cancel := withTimeout(x.r.Context(), x.h.cfg.updateTimeout)
 	defer cancel()
 	if err := x.h.lock.lock(ctx); err != nil {
 		return evalError(ctx, err)
 	}
 	defer x.h.lock.unlock()
-	return fn()
+	return evalError(ctx, fn(ctx))
 }
 
-func copyTriples(dst, src *graph.Graph) {
-	for t := range src.Triples(nil, nil, nil) {
-		dst.Add(t.Subject, t.Predicate, t.Object)
+// copyTriples adds every triple of src to dst, stopping at the first store
+// error.
+func copyTriples(ctx context.Context, dst, src *graph.Graph) error {
+	for t, err := range src.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return err
+		}
+		if err := dst.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // newGraphIRI mints the IRI of a graph created by POST to the graph store:
@@ -369,10 +420,12 @@ func (x *exchange) readPayload(t gspTarget) (*graph.Graph, error) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return g, nil
 	}
-	if err := parsePayload(f, g, bytes.NewReader(body), base); err != nil {
+	if err := parsePayload(x.r.Context(), f, g, bytes.NewReader(body), base); err != nil {
 		return nil, err
 	}
-	x.rows = g.Len()
+	if x.rows, err = g.Len(x.r.Context()); err != nil {
+		return nil, err
+	}
 	return g, nil
 }
 
@@ -408,12 +461,12 @@ func (x *exchange) readMultipart(g *graph.Graph, header, base string) error {
 		if len(bytes.TrimSpace(data)) == 0 {
 			continue
 		}
-		if err := parsePayload(f, g, bytes.NewReader(data), base); err != nil {
+		if err := parsePayload(x.r.Context(), f, g, bytes.NewReader(data), base); err != nil {
 			return fmt.Errorf("part %q: %w", part.FileName(), err)
 		}
 	}
-	x.rows = g.Len()
-	return nil
+	x.rows, err = g.Len(x.r.Context())
+	return err
 }
 
 // formatFromFilename guesses a part's format from its extension, as GSP §5.5
@@ -434,7 +487,7 @@ func formatFromFilename(name string) *rdfFormat {
 	return rdfFormatFor("")
 }
 
-func parsePayload(f *rdfFormat, g *graph.Graph, r io.Reader, base string) (err error) {
+func parsePayload(ctx context.Context, f *rdfFormat, g *graph.Graph, r io.Reader, base string) (err error) {
 	defer func() {
 		// A parser is aimed at untrusted bytes; a panic in one is a bad
 		// request, not a crashed handler.
@@ -442,7 +495,7 @@ func parsePayload(f *rdfFormat, g *graph.Graph, r io.Reader, base string) (err e
 			err = httpErrf(http.StatusBadRequest, "malformed %s payload: parser failed: %v", f.mediaType, v)
 		}
 	}()
-	if perr := f.parse(g, r, base); perr != nil {
+	if perr := f.parse(ctx, g, r, base); perr != nil {
 		return httpErrf(http.StatusBadRequest, "malformed %s payload: %v", f.mediaType, perr)
 	}
 	return nil

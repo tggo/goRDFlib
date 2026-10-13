@@ -38,9 +38,9 @@ func TestInversePathWithModifierResults(t *testing.T) {
 	ex := func(s string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + s) }
 
 	g := graph.NewGraph()
-	g.Add(ex("a"), ex("knows"), ex("b"))
-	g.Add(ex("b"), ex("knows"), ex("c"))
-	g.Add(ex("c"), ex("knows"), ex("d"))
+	g.Add(t.Context(), ex("a"), ex("knows"), ex("b"))
+	g.Add(t.Context(), ex("b"), ex("knows"), ex("c"))
+	g.Add(t.Context(), ex("c"), ex("knows"), ex("d"))
 
 	run := func(t *testing.T, query string) []string {
 		t.Helper()

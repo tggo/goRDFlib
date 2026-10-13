@@ -14,8 +14,8 @@ func TestSerializeDatasetWithBaseWritesRelativeIRIs(t *testing.T) {
 	const base = "http://localhost/doc.trig"
 	u := rdflibgo.NewURIRefUnsafe
 	ds := graph.NewDataset()
-	ds.DefaultContext().Add(u(base+"#s"), u("http://localhost/p"), u("http://elsewhere/o"))
-	ds.Graph(u(base+"#g")).Add(u(base+"#s"), u("http://localhost/p"), rdflibgo.NewLiteral("v", rdflibgo.WithDatatype(u(base+"#dt"))))
+	ds.DefaultContext().Add(t.Context(), u(base+"#s"), u("http://localhost/p"), u("http://elsewhere/o"))
+	ds.Graph(u(base+"#g")).Add(t.Context(), u(base+"#s"), u("http://localhost/p"), rdflibgo.NewLiteral("v", rdflibgo.WithDatatype(u(base+"#dt"))))
 
 	out := mustSerializeDS(t, ds, WithBase(base))
 	for _, want := range []string{"<#g> {", "<#s> <p>", "^^<#dt>", "<http://elsewhere/o>"} {
@@ -32,11 +32,11 @@ func TestSerializeDatasetWithBaseWritesRelativeIRIs(t *testing.T) {
 		} else {
 			a, b = ds.Graph(ctx.(rdflibgo.URIRef)), ds2.Graph(ctx.(rdflibgo.URIRef))
 		}
-		if a.Len() != b.Len() {
-			t.Fatalf("graph %v: %d triples, parsed back %d\n%s", ctx, a.Len(), b.Len(), out)
+		if mustV(a.Len(t.Context())) != mustV(b.Len(t.Context())) {
+			t.Fatalf("graph %v: %d triples, parsed back %d\n%s", ctx, mustV(a.Len(t.Context())), mustV(b.Len(t.Context())), out)
 		}
-		a.Triples(nil, nil, nil)(func(tr rdflibgo.Triple) bool {
-			if !b.Contains(tr.Subject, tr.Predicate, tr.Object) {
+		a.Triples(t.Context(), nil, nil, nil)(func(tr rdflibgo.Triple, _ error) bool {
+			if !mustV(b.Contains(t.Context(), tr.Subject, tr.Predicate, tr.Object)) {
 				t.Errorf("graph %v lost %v", ctx, tr)
 			}
 			return true

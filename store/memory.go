@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"sync"
 
 	"github.com/tggo/goRDFlib/term"
@@ -11,7 +12,9 @@ import (
 // (SPO, POS, OSP), so reads, counts and removals never cross graph boundaries.
 // It follows the context conventions documented on Store.
 //
-// All methods are safe for concurrent use.
+// All methods are safe for concurrent use. MemoryStore never fails on its
+// own: the only error it returns is that of a context that is already done
+// when a call starts.
 // Ported from: rdflib.plugins.stores.memory.Memory
 type MemoryStore struct {
 	mu sync.RWMutex
@@ -97,92 +100,117 @@ func (m *MemoryStore) dropIfEmpty(ctx term.Term) {
 	}
 }
 
-// Add inserts a triple into the graph addressed by context.
+// Add inserts a triple into the graph addressed by graph.
 // Ported from: rdflib.plugins.stores.memory.Memory.add
-func (m *MemoryStore) Add(t term.Triple, context term.Term) {
+func (m *MemoryStore) Add(ctx context.Context, t term.Triple, graph term.Term) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.writeIndex(context).add(t)
+	m.writeIndex(graph).add(t)
+	return nil
 }
 
 // Set atomically removes all triples matching (s, p, *) from the graph
-// addressed by context and adds the new triple, under a single write lock.
-func (m *MemoryStore) Set(t term.Triple, context term.Term) {
+// addressed by graph and adds the new triple, under a single write lock.
+func (m *MemoryStore) Set(ctx context.Context, t term.Triple, graph term.Term) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	idx := m.writeIndex(context)
+	idx := m.writeIndex(graph)
 	idx.removeMatching(term.TriplePattern{Subject: t.Subject, Predicate: &t.Predicate})
 	idx.add(t)
+	return nil
 }
 
 // AddN atomically batch-adds quads, each to the graph named by its Graph field.
 // Ported from: rdflib.store.Store.addN
-func (m *MemoryStore) AddN(quads []term.Quad) {
+func (m *MemoryStore) AddN(ctx context.Context, quads []term.Quad) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, q := range quads {
 		m.writeIndex(q.Graph).add(q.Triple)
 	}
+	return nil
 }
 
 // Remove deletes triples matching the pattern from the graph addressed by
-// context. The match and delete happen under a single write lock.
+// graph. The match and delete happen under a single write lock.
 // Ported from: rdflib.plugins.stores.memory.Memory.remove
-func (m *MemoryStore) Remove(pattern term.TriplePattern, context term.Term) {
+func (m *MemoryStore) Remove(ctx context.Context, pattern term.TriplePattern, graph term.Term) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	idx := m.index(context)
+	idx := m.index(graph)
 	if idx == nil {
-		return
+		return nil
 	}
 	idx.removeMatching(pattern)
-	m.dropIfEmpty(context)
+	m.dropIfEmpty(graph)
+	return nil
 }
 
 // Triples returns the triples matching the pattern in the graph addressed by
-// context.
+// graph.
 // Ported from: rdflib.plugins.stores.memory.Memory.triples
-func (m *MemoryStore) Triples(pattern term.TriplePattern, context term.Term) TripleIterator {
-	if isDefaultContext(context) {
-		// Not capturing the context keeps the closure in the same allocation
-		// size class as before named graphs existed: this is the hot path.
-		return func(yield func(term.Triple) bool) {
+func (m *MemoryStore) Triples(ctx context.Context, pattern term.TriplePattern, graph term.Term) TripleIterator {
+	if err := ctx.Err(); err != nil {
+		return ErrorIterator[term.Triple](err)
+	}
+	if isDefaultContext(graph) {
+		// Not capturing the graph keeps the closure in a smaller allocation
+		// size class: this is the hot path.
+		return func(yield func(term.Triple, error) bool) {
 			m.mu.RLock()
 			defer m.mu.RUnlock()
 			m.def.each(pattern, yield)
 		}
 	}
-	return func(yield func(term.Triple) bool) {
+	return func(yield func(term.Triple, error) bool) {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
-		if idx := m.index(context); idx != nil {
+		if idx := m.index(graph); idx != nil {
 			idx.each(pattern, yield)
 		}
 	}
 }
 
-// Len returns the number of triples in the graph addressed by context.
+// Len returns the number of triples in the graph addressed by graph.
 // Ported from: rdflib.plugins.stores.memory.Memory.__len__
-func (m *MemoryStore) Len(context term.Term) int {
+func (m *MemoryStore) Len(ctx context.Context, graph term.Term) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if idx := m.index(context); idx != nil {
-		return idx.count
+	if idx := m.index(graph); idx != nil {
+		return idx.count, nil
 	}
-	return 0
+	return 0, nil
 }
 
 // Contexts returns the named graphs, or with a non-nil triple the named graphs
 // that contain it. The default graph is never reported.
-func (m *MemoryStore) Contexts(triple *term.Triple) TermIterator {
-	return func(yield func(term.Term) bool) {
+func (m *MemoryStore) Contexts(ctx context.Context, triple *term.Triple) TermIterator {
+	if err := ctx.Err(); err != nil {
+		return ErrorIterator[term.Term](err)
+	}
+	return func(yield func(term.Term, error) bool) {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
 		for _, g := range m.named {
 			if triple != nil && !g.idx.has(*triple) {
 				continue
 			}
-			if !yield(g.name) {
+			if !yield(g.name, nil) {
 				return
 			}
 		}
@@ -191,60 +219,76 @@ func (m *MemoryStore) Contexts(triple *term.Triple) TermIterator {
 
 // Bind associates a prefix with a namespace.
 // Ported from: rdflib.plugins.stores.memory.Memory.bind
-func (m *MemoryStore) Bind(prefix string, namespace term.URIRef) {
+func (m *MemoryStore) Bind(ctx context.Context, prefix string, namespace term.URIRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nsPrefix[prefix] = namespace
 	m.nsURI[namespace.Value()] = prefix
+	return nil
 }
 
 // Namespace returns the namespace URI for a prefix.
 // Ported from: rdflib.plugins.stores.memory.Memory.namespace
-func (m *MemoryStore) Namespace(prefix string) (term.URIRef, bool) {
+func (m *MemoryStore) Namespace(ctx context.Context, prefix string) (term.URIRef, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return term.URIRef{}, false, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	ns, ok := m.nsPrefix[prefix]
-	return ns, ok
+	return ns, ok, nil
 }
 
 // Prefix returns the prefix for a namespace URI.
 // Ported from: rdflib.plugins.stores.memory.Memory.prefix
-func (m *MemoryStore) Prefix(namespace term.URIRef) (string, bool) {
+func (m *MemoryStore) Prefix(ctx context.Context, namespace term.URIRef) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	p, ok := m.nsURI[namespace.Value()]
-	return p, ok
+	return p, ok, nil
 }
 
 // Namespaces returns an iterator over all namespace bindings.
 // Ported from: rdflib.plugins.stores.memory.Memory.namespaces
-func (m *MemoryStore) Namespaces() NamespaceIterator {
-	return func(yield func(string, term.URIRef) bool) {
+func (m *MemoryStore) Namespaces(ctx context.Context) NamespaceIterator {
+	if err := ctx.Err(); err != nil {
+		return ErrorIterator[NamespaceBinding](err)
+	}
+	return func(yield func(NamespaceBinding, error) bool) {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
 		for prefix, ns := range m.nsPrefix {
-			if !yield(prefix, ns) {
+			if !yield(NamespaceBinding{Prefix: prefix, Namespace: ns}, nil) {
 				return
 			}
 		}
 	}
 }
 
-// TriplesWithLimit returns matching triples in the graph addressed by ctx,
+// TriplesWithLimit returns matching triples in the graph addressed by graph,
 // skipping the first offset items then yielding up to limit items. If
 // limit <= 0, all remaining items after offset are yielded.
 // Safe for concurrent use.
-func (m *MemoryStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term, limit, offset int) TripleIterator {
-	return func(yield func(term.Triple) bool) {
+func (m *MemoryStore) TriplesWithLimit(ctx context.Context, pattern term.TriplePattern, graph term.Term, limit, offset int) TripleIterator {
+	if err := ctx.Err(); err != nil {
+		return ErrorIterator[term.Triple](err)
+	}
+	return func(yield func(term.Triple, error) bool) {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
-		idx := m.index(ctx)
+		idx := m.index(graph)
 		if idx == nil {
 			return
 		}
 		skipped := 0
 		yielded := 0
-		idx.each(pattern, func(t term.Triple) bool {
+		idx.each(pattern, func(t term.Triple, _ error) bool {
 			if skipped < offset {
 				skipped++
 				return true
@@ -253,46 +297,52 @@ func (m *MemoryStore) TriplesWithLimit(pattern term.TriplePattern, ctx term.Term
 				return false
 			}
 			yielded++
-			return yield(t)
+			return yield(t, nil)
 		})
 	}
 }
 
 // Count returns the number of triples matching the pattern in the graph
-// addressed by ctx, from index sizes. Safe for concurrent use.
-func (m *MemoryStore) Count(pattern term.TriplePattern, ctx term.Term) int {
-	return m.Cardinality(pattern, ctx)
+// addressed by graph, from index sizes. Safe for concurrent use.
+func (m *MemoryStore) Count(ctx context.Context, pattern term.TriplePattern, graph term.Term) (int, error) {
+	return m.Cardinality(ctx, pattern, graph)
 }
 
 // Cardinality returns the number of triples matching the pattern in the graph
-// addressed by ctx without visiting them. A pattern bound in two or three
+// addressed by graph without visiting them. A pattern bound in two or three
 // positions, only in the predicate, or not at all is answered in constant time;
 // subject-only walks the subject's predicates and object-only the object's
 // subjects, never the triples. Safe for concurrent use.
-func (m *MemoryStore) Cardinality(pattern term.TriplePattern, ctx term.Term) int {
+func (m *MemoryStore) Cardinality(ctx context.Context, pattern term.TriplePattern, graph term.Term) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if idx := m.index(ctx); idx != nil {
-		return idx.cardinality(pattern)
+	if idx := m.index(graph); idx != nil {
+		return idx.cardinality(pattern), nil
 	}
-	return 0
+	return 0, nil
 }
 
 // Exists reports whether at least one triple matching the pattern exists in
-// the graph addressed by ctx. Safe for concurrent use.
-func (m *MemoryStore) Exists(pattern term.TriplePattern, ctx term.Term) bool {
+// the graph addressed by graph. Safe for concurrent use.
+func (m *MemoryStore) Exists(ctx context.Context, pattern term.TriplePattern, graph term.Term) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	idx := m.index(ctx)
+	idx := m.index(graph)
 	if idx == nil {
-		return false
+		return false, nil
 	}
 	found := false
-	idx.each(pattern, func(term.Triple) bool {
+	idx.each(pattern, func(term.Triple, error) bool {
 		found = true
 		return false
 	})
-	return found
+	return found, nil
 }
 
 // Compile-time checks: MemoryStore implements the optional interfaces.

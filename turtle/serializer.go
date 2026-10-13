@@ -2,6 +2,7 @@ package turtle
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	iriref "github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -24,7 +26,10 @@ import (
 //
 // Serialize is safe for concurrent use provided the graph is not mutated
 // concurrently; it holds all of its state locally.
-func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
+//
+// The triples and namespaces are read from the graph before the first byte is
+// written, so a store error (or a done ctx) is returned with nothing written.
+func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -37,7 +42,9 @@ func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	if cfg.base != "" {
 		ts.checkIRI(cfg.base)
 	}
-	ts.preprocess()
+	if err := ts.preprocess(ctx); err != nil {
+		return err
+	}
 	if ts.err != nil {
 		return ts.err
 	}
@@ -57,6 +64,8 @@ func termKey(t rdflibgo.Term) string {
 type turtleState struct {
 	g    *rdflibgo.Graph
 	base string
+	// namespaces are the graph's prefix bindings, read once in preprocess.
+	namespaces []store.NamespaceBinding
 
 	// subject -> predicate -> []object
 	spoMap map[string]map[string][]rdflibgo.Term
@@ -147,8 +156,16 @@ func (ts *turtleState) indent(level int) string {
 }
 
 // preprocess collects triples, counts references, detects lists, and tracks used prefixes.
-func (ts *turtleState) preprocess() {
-	ts.g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+func (ts *turtleState) preprocess(ctx context.Context) error {
+	nss, err := readNamespaces(ctx, ts.g)
+	if err != nil {
+		return err
+	}
+	ts.namespaces = nss
+	for t, err := range ts.g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return fmt.Errorf("turtle: reading triples: %w", err)
+		}
 		sk := termKey(t.Subject)
 		pk := termKey(t.Predicate)
 
@@ -171,12 +188,24 @@ func (ts *turtleState) preprocess() {
 		if l, ok := t.Object.(rdflibgo.Literal); ok {
 			ts.checkIRI(l.Datatype().Value())
 		}
-
-		return true
-	})
+	}
 
 	// Detect rdf:List patterns
 	ts.detectLists()
+	return nil
+}
+
+// readNamespaces reads the graph's prefix bindings once, so rendering never
+// goes back to the store.
+func readNamespaces(ctx context.Context, g *rdflibgo.Graph) ([]store.NamespaceBinding, error) {
+	var nss []store.NamespaceBinding
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("turtle: reading namespaces: %w", err)
+		}
+		nss = append(nss, b)
+	}
+	return nss, nil
 }
 
 // trackNS registers a namespace as used if the term is a URIRef with a known prefix.
@@ -200,14 +229,13 @@ func (ts *turtleState) trackNS(t rdflibgo.Term) {
 	}
 	ts.nsSeen[uri] = true
 	ts.checkIRI(uri)
-	ts.g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		nsStr := ns.Value()
-		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(prefix) {
+	for _, b := range ts.namespaces {
+		nsStr := b.Namespace.Value()
+		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(b.Prefix) {
 			ts.checkIRI(nsStr)
-			ts.usedNS[prefix] = ns
+			ts.usedNS[b.Prefix] = b.Namespace
 		}
-		return true
-	})
+	}
 }
 
 // checkIRI records an error for an IRI that no Turtle IRIREF can hold.

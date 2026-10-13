@@ -187,7 +187,7 @@ func (e *afFunctionExpr) Eval(ctx *nodeExprContext) []Term {
 	var out []Term
 	seen := make(map[string]bool)
 	for _, args := range cartesian(argSets) {
-		res, err := e.Fn.call(ctx.goContext(), ctx.af, args, 1)
+		res, err := e.Fn.call(ctx.goContext(), ctx.af, args, 1, ctx.guard.fail)
 		if err != nil {
 			ctx.af.cfg.report(err)
 			continue

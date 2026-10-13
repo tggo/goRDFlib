@@ -12,7 +12,6 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/internal/bnodes"
-	"github.com/tggo/goRDFlib/paths"
 	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -79,7 +78,12 @@ func evalQuery(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[
 		if tp := extractSimpleBGP(q.Where); tp != nil {
 			if qs, ok := g.Store().(store.QueryableStore); ok {
 				pat := buildStorePattern(tp, q.Prefixes)
-				return &Result{Type: "ASK", AskResult: qs.Exists(pat, g.Identifier())}, nil
+				found, err := qs.Exists(ec.context(), pat, g.Identifier())
+				if err != nil {
+					ec.fail(err)
+					return nil, nil
+				}
+				return &Result{Type: "ASK", AskResult: found}, nil
 			}
 		}
 		return &Result{Type: "ASK", AskResult: len(solutions) > 0}, nil
@@ -194,7 +198,8 @@ func evalSelect(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[
 					limit = 0 // 0 means no limit in TriplesWithLimit
 				}
 				solutions = nil
-				qs.TriplesWithLimit(pat, g.Identifier(), limit, q.Offset)(func(t rdflibgo.Triple) bool {
+				qs.TriplesWithLimit(ec.context(), pat, g.Identifier(), limit, q.Offset)(func(t rdflibgo.Triple, err error) bool {
+					ec.fail(err)
 					if ec.stop() {
 						return false
 					}
@@ -305,7 +310,11 @@ func evalAggregation(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions [
 			if tp := extractSimpleBGP(q.Where); tp != nil {
 				if qs, okQ := g.Store().(store.QueryableStore); okQ {
 					pat := buildStorePattern(tp, q.Prefixes)
-					cnt := qs.Count(pat, g.Identifier())
+					cnt, err := qs.Count(ec.context(), pat, g.Identifier())
+					if err != nil {
+						ec.fail(err)
+						return nil
+					}
 					row := map[string]rdflibgo.Term{
 						pe.Var: rdflibgo.NewLiteral(cnt, rdflibgo.WithDatatype(rdflibgo.XSDInteger)),
 					}
@@ -567,7 +576,12 @@ func evalConstruct(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []m
 			if !okS || !okP {
 				continue
 			}
-			result.Add(subj, pred, o)
+			// An in-memory graph fails only on a done context, which must
+			// end the query rather than truncate its graph.
+			if err := result.Add(ec.context(), subj, pred, o); err != nil {
+				ec.fail(err)
+				return nil, nil
+			}
 		}
 	}
 	return &Result{Type: "CONSTRUCT", Graph: result}, nil
@@ -1067,7 +1081,7 @@ func evalBGP(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[stri
 // evalBGPUpTo is evalBGP returning at most limit solutions; limit <= 0 means
 // all of them.
 func evalBGPUpTo(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
-	return evalBGPInOrder(ec, g, orderBGP(g, triples, bindings, prefixes), bindings, prefixes, limit)
+	return evalBGPInOrder(ec, g, orderBGP(ec, g, triples, bindings, prefixes), bindings, prefixes, limit)
 }
 
 // evalBGPInOrder evaluates the triple patterns as nested loops in the order
@@ -1137,7 +1151,8 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 	obj = oVal
 
 	cont := true
-	g.Triples(subj, pred, obj)(func(t rdflibgo.Triple) bool {
+	g.Triples(ec.context(), subj, pred, obj)(func(t rdflibgo.Triple, err error) bool {
+		ec.fail(err)
 		// Checked per matched triple, not per solution: a pattern whose
 		// matches all fail a later pattern produces no rows but still works.
 		if ec.stop() {
@@ -1212,18 +1227,14 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 	oVal := resolvePatternTerm(tp.Object, bindings, prefixes)
 	obj = oVal
 
-	var pairs func(yield func(term.Term, term.Term) bool)
-	if ec.cancellable() {
-		pairs = paths.EvalContext(ec.ctx, tp.PredicatePath, gg, subj, obj)
-	} else {
-		pairs = tp.PredicatePath.Eval(gg, subj, obj)
-	}
 	cont := true
-	pairs(func(s, o term.Term) bool {
+	tp.PredicatePath.Eval(ec.context(), gg, subj, obj)(func(pair store.TermPair, err error) bool {
+		ec.fail(err)
 		if ec.stop() {
 			cont = false
 			return false
 		}
+		s, o := pair.First, pair.Second
 		nb := copyBindings(bindings)
 
 		if strings.HasPrefix(tp.Subject, "?") {
@@ -1242,12 +1253,6 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 		cont = eachBGPSolution(ec, g, rest, nb, prefixes, yield)
 		return cont
 	})
-	// The path iterator stops without saying so; ask the context whether the
-	// pairs were complete (see paths.EvalContext).
-	if ec.cancellable() && ec.err == nil && ec.ctx.Err() != nil {
-		ec.err = ec.ctx.Err()
-	}
-
 	return cont
 }
 

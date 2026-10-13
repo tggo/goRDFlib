@@ -2,8 +2,10 @@ package paths
 
 import (
 	"context"
+	"errors"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -13,27 +15,33 @@ import (
 // well under a millisecond.
 const stopCheckInterval = 1024
 
-// stopper tells a traversal when its context is done. A nil *stopper never
-// stops, which is what Eval passes, so the uncancellable path pays one nil
-// check per step.
+// stopper carries a traversal's context and its first failure: the context's
+// error once it is done, or an error from the store. The internal eval
+// functions yield plain (subject, object) pairs and have no error result, so
+// failure travels as state: once stop reports true it keeps doing so, and
+// every level of a nested traversal unwinds without polling again. Eval
+// reports the error at the end.
 //
 // A stopper is not safe for concurrent use; one traversal runs on one
 // goroutine.
 type stopper struct {
-	done    <-chan struct{}
-	n       uint32
-	stopped bool
+	ctx  context.Context
+	done <-chan struct{}
+	n    uint32
+	err  error
+}
+
+func newStopper(ctx context.Context) *stopper {
+	return &stopper{ctx: ctx, done: ctx.Done()}
 }
 
 // stop counts one traversal step and reports whether the traversal must end.
-// Once it has reported true it keeps doing so, which is what lets every level
-// of a nested traversal unwind without polling the context again.
 func (s *stopper) stop() bool {
-	if s == nil {
-		return false
-	}
-	if s.stopped {
+	if s.err != nil {
 		return true
+	}
+	if s.done == nil {
+		return false
 	}
 	s.n++
 	if s.n%stopCheckInterval != 0 {
@@ -44,42 +52,73 @@ func (s *stopper) stop() bool {
 
 // halted reports whether the traversal has already been stopped, without
 // counting a step.
-func (s *stopper) halted() bool { return s != nil && s.stopped }
+func (s *stopper) halted() bool { return s.err != nil }
 
+// poll checks the context now.
 func (s *stopper) poll() bool {
+	if s.err != nil {
+		return true
+	}
+	if s.done == nil {
+		return false
+	}
 	select {
 	case <-s.done:
-		s.stopped = true
+		s.err = s.ctx.Err()
 	default:
 	}
-	return s.stopped
+	return s.err != nil
 }
 
-// EvalContext evaluates p like p.Eval, and stops the traversal once ctx is
-// done. The context is polled every stopCheckInterval steps, including steps
-// that emit nothing, such as a repetition walking a long chain towards an
-// object that is not on it.
-//
-// The iterator has no error result. After it returns, a nil ctx.Err()
-// guarantees the pairs yielded were the complete answer; a non-nil one means
-// they may be a prefix of it.
-//
-// A transitive repetition that is pushed down to a store.ReachabilityStore
-// runs as one store call, which is not interrupted; the pairs it returns are
-// still emitted with cancellation checks. A store that implements
-// store.ContextBinder is bound to ctx, so that call and every other lookup
-// carry it.
-func EvalContext(ctx context.Context, p Path, g *graph.Graph, subj term.Subject, obj term.Term) func(yield func(term.Term, term.Term) bool) {
-	g = g.BindContext(ctx)
-	done := ctx.Done()
-	if done == nil {
-		return p.Eval(g, subj, obj)
+// fail records err as the traversal's failure, keeping the first one.
+func (s *stopper) fail(err error) {
+	if s.err == nil {
+		s.err = err
 	}
-	return func(yield func(term.Term, term.Term) bool) {
-		st := &stopper{done: done}
-		if st.poll() {
+}
+
+// triples yields the matching triples to yield, and records a store error on
+// the stopper.
+func (s *stopper) triples(g *graph.Graph, subj term.Subject, p *term.URIRef, obj term.Term, yield func(term.Triple) bool) {
+	for t, err := range g.Triples(s.ctx, subj, p, obj) {
+		if err != nil {
+			s.fail(err)
 			return
 		}
-		p.eval(st, g, subj, obj)(yield)
+		if s.stop() || !yield(t) {
+			return
+		}
 	}
+}
+
+// run evaluates p with ctx and turns the traversal into a TermPairIterator:
+// the pairs, then the failure, if any, as a final (zero, err) pair. The
+// context is polled every stopCheckInterval steps, including steps that emit
+// nothing, such as a repetition walking a long chain towards an object that is
+// not on it.
+func run(ctx context.Context, p Path, g *graph.Graph, subj term.Subject, obj term.Term) store.TermPairIterator {
+	return func(yield func(store.TermPair, error) bool) {
+		st := newStopper(ctx)
+		if st.poll() {
+			yield(store.TermPair{}, st.err)
+			return
+		}
+		stopped := false
+		p.eval(st, g, subj, obj)(func(s, o term.Term) bool {
+			if !yield(store.TermPair{First: s, Second: o}, nil) {
+				stopped = true
+				return false
+			}
+			return true
+		})
+		if !stopped && st.err != nil {
+			yield(store.TermPair{}, st.err)
+		}
+	}
+}
+
+// isContextErr reports whether err is a context's error, which a store
+// returns when it was asked with a done context.
+func isContextErr(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

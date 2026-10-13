@@ -19,13 +19,13 @@ func TestR1_SerializerSpecialChars(t *testing.T) {
 	}
 	for _, uri := range uris {
 		g := rdflibgo.NewGraph()
-		g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+		g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 		s := rdflibgo.NewURIRefUnsafe(uri)
 		p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-		g.Add(s, p, rdflibgo.NewLiteral("val"))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 
 		var buf bytes.Buffer
-		if err := Serialize(g, &buf); err != nil {
+		if err := Serialize(t.Context(), g, &buf); err != nil {
 			t.Errorf("R1: serialize failed for %s: %v", uri, err)
 			continue
 		}
@@ -33,7 +33,7 @@ func TestR1_SerializerSpecialChars(t *testing.T) {
 
 		// Re-parse to verify round-trip
 		g2 := rdflibgo.NewGraph()
-		if err := Parse(g2, strings.NewReader(out)); err != nil {
+		if err := Parse(t.Context(), g2, strings.NewReader(out)); err != nil {
 			t.Errorf("R1: re-parse failed for %s:\nOutput:\n%s\nError: %v", uri, out, err)
 		}
 	}
@@ -43,17 +43,17 @@ func TestR1_SerializerSpecialChars(t *testing.T) {
 func TestR10_DeterministicSerialization(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	ex := "http://example.org/"
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe(ex))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe(ex))
 	for i := 0; i < 20; i++ {
 		s := rdflibgo.NewURIRefUnsafe(ex + "s" + string(rune('A'+i)))
 		p := rdflibgo.NewURIRefUnsafe(ex + "p")
-		g.Add(s, p, rdflibgo.NewLiteral(i))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral(i))
 	}
 
 	var first string
 	for i := 0; i < 50; i++ {
 		var buf bytes.Buffer
-		if err := Serialize(g, &buf); err != nil {
+		if err := Serialize(t.Context(), g, &buf); err != nil {
 			t.Fatal(err)
 		}
 		if i == 0 {
@@ -70,12 +70,12 @@ func TestP4_EmptyLocalBeforeDot(t *testing.T) {
 ex: ex:p ex:o .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("P4: parse failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("P4: expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("P4: expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -85,12 +85,12 @@ func TestR4_DotInLocalName(t *testing.T) {
 ex:local.name ex:p ex:o .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("R4: parse failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("R4: expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("R4: expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -99,12 +99,12 @@ func TestP5_UnicodeEscapeInIRI(t *testing.T) {
 	input := `<http://example.org/\u00E9> <http://example.org/p> "val" .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("P5: parse failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("P5: expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("P5: expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -113,16 +113,16 @@ func TestSingleQuoteEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> 'it\'s fine' .
 `
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("single quote escape: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Fatalf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 	// Verify the value
 	var val string
-	g.Triples(nil, nil, nil)(func(triple rdflibgo.Triple) bool {
+	g.Triples(t.Context(), nil, nil, nil)(func(triple rdflibgo.Triple, _ error) bool {
 		val = triple.Object.(rdflibgo.Literal).Lexical()
 		return false
 	})
@@ -147,13 +147,13 @@ func TestTurtleEscapeSequences(t *testing.T) {
 	for _, tc := range cases {
 		ttl := `<http://ex/s> <http://ex/p> ` + tc.input + ` .`
 		g := rdflibgo.NewGraph()
-		err := Parse(g, strings.NewReader(ttl))
+		err := Parse(t.Context(), g, strings.NewReader(ttl))
 		if err != nil {
 			t.Errorf("escape %s: parse error: %v", tc.input, err)
 			continue
 		}
 		var got string
-		g.Triples(nil, nil, nil)(func(triple rdflibgo.Triple) bool {
+		g.Triples(t.Context(), nil, nil, nil)(func(triple rdflibgo.Triple, _ error) bool {
 			got = triple.Object.(rdflibgo.Literal).Lexical()
 			return false
 		})
@@ -166,20 +166,20 @@ func TestTurtleEscapeSequences(t *testing.T) {
 // RDFLib #771 — Turtle prefix with space should produce valid output
 func TestPrefixWithSpace(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("bad prefix", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "bad prefix", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 
 	var buf bytes.Buffer
-	err := Serialize(g, &buf)
+	err := Serialize(t.Context(), g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
 	// Output should be valid Turtle — re-parse must succeed
 	g2 := rdflibgo.NewGraph()
-	err = Parse(g2, strings.NewReader(out))
+	err = Parse(t.Context(), g2, strings.NewReader(out))
 	if err != nil {
 		t.Errorf("#771: prefix with space produced invalid Turtle:\n%s\nError: %v", out, err)
 	}

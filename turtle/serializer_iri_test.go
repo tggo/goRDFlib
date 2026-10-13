@@ -15,38 +15,42 @@ func TestSerializeRejectsUnwritableIRI(t *testing.T) {
 	p := rdflibgo.NewURIRefUnsafe("http://e/p")
 	bad := rdflibgo.NewURIRefUnsafe("http://e/a\tb")
 	cases := map[string]func(g *rdflibgo.Graph){
-		"subject":   func(g *rdflibgo.Graph) { g.Add(bad, p, rdflibgo.NewLiteral("v")) },
-		"predicate": func(g *rdflibgo.Graph) { g.Add(p, rdflibgo.NewURIRefUnsafe("http://e/a>b"), rdflibgo.NewLiteral("v")) },
-		"object":    func(g *rdflibgo.Graph) { g.Add(p, p, rdflibgo.NewURIRefUnsafe("http://e/{x}")) },
-		"datatype":  func(g *rdflibgo.Graph) { g.Add(p, p, rdflibgo.NewLiteral("v", rdflibgo.WithDatatype(bad))) },
+		"subject": func(g *rdflibgo.Graph) { g.Add(t.Context(), bad, p, rdflibgo.NewLiteral("v")) },
+		"predicate": func(g *rdflibgo.Graph) {
+			g.Add(t.Context(), p, rdflibgo.NewURIRefUnsafe("http://e/a>b"), rdflibgo.NewLiteral("v"))
+		},
+		"object": func(g *rdflibgo.Graph) { g.Add(t.Context(), p, p, rdflibgo.NewURIRefUnsafe("http://e/{x}")) },
+		"datatype": func(g *rdflibgo.Graph) {
+			g.Add(t.Context(), p, p, rdflibgo.NewLiteral("v", rdflibgo.WithDatatype(bad)))
+		},
 		"triple term": func(g *rdflibgo.Graph) {
-			g.Add(p, p, rdflibgo.NewTripleTerm(p, p, bad))
+			g.Add(t.Context(), p, p, rdflibgo.NewTripleTerm(p, p, bad))
 		},
 	}
 	for name, add := range cases {
 		g := rdflibgo.NewGraph()
 		add(g)
 		var b bytes.Buffer
-		err := Serialize(g, &b)
+		err := Serialize(t.Context(), g, &b)
 		if !errors.Is(err, rdflibgo.ErrInvalidIRI) {
 			t.Errorf("%s: err = %v, want ErrInvalidIRI; output:\n%s", name, err, b.String())
 		}
 	}
 
 	g := rdflibgo.NewGraph()
-	g.Add(p, p, rdflibgo.NewLiteral("v"))
-	if err := Serialize(g, &bytes.Buffer{}, WithBase("http://e/ x")); !errors.Is(err, rdflibgo.ErrInvalidIRI) {
+	g.Add(t.Context(), p, p, rdflibgo.NewLiteral("v"))
+	if err := Serialize(t.Context(), g, &bytes.Buffer{}, WithBase("http://e/ x")); !errors.Is(err, rdflibgo.ErrInvalidIRI) {
 		t.Errorf("base: err = %v, want ErrInvalidIRI", err)
 	}
 
 	// A valid non-ASCII IRI still round-trips.
 	g = rdflibgo.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://e/é"), p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://e/é"), p, rdflibgo.NewLiteral("v"))
 	var b bytes.Buffer
-	if err := Serialize(g, &b); err != nil {
+	if err := Serialize(t.Context(), g, &b); err != nil {
 		t.Fatal(err)
 	}
-	if err := Parse(rdflibgo.NewGraph(), strings.NewReader(b.String())); err != nil {
+	if err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(b.String())); err != nil {
 		t.Errorf("output does not parse: %v\n%s", err, b.String())
 	}
 }

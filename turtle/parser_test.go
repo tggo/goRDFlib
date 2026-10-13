@@ -14,7 +14,7 @@ func parseTurtle(t *testing.T, input string) *rdflibgo.Graph {
 	t.Helper()
 	g := rdflibgo.NewGraph()
 	r := strings.NewReader(input)
-	if err := Parse(g, r); err != nil {
+	if err := Parse(t.Context(), g, r); err != nil {
 		t.Fatal(err)
 	}
 	return g
@@ -26,8 +26,8 @@ func TestParseTurtleBasicTriple(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "hello" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -37,8 +37,8 @@ func TestParseTurtleMultipleTriples(t *testing.T) {
 		ex:s ex:p1 "a" .
 		ex:s ex:p2 "b" .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -49,8 +49,8 @@ func TestParseTurtleSemicolon(t *testing.T) {
 		ex:s ex:p1 "a" ;
 		     ex:p2 "b" .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -60,8 +60,8 @@ func TestParseTurtleComma(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "a", "b", "c" .
 	`)
-	if g.Len() != 3 {
-		t.Errorf("expected 3, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 3 {
+		t.Errorf("expected 3, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -73,7 +73,7 @@ func TestParseTurtleAShorthand(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	thing, _ := rdflibgo.NewURIRef("http://example.org/Thing")
-	if !g.Contains(s, rdflibgo.RDF.Type, thing) {
+	if !mustV(g.Contains(t.Context(), s, rdflibgo.RDF.Type, thing)) {
 		t.Error("expected rdf:type triple")
 	}
 }
@@ -86,8 +86,8 @@ func TestParseTurtleNumericLiterals(t *testing.T) {
 		ex:s ex:dec 3.14 .
 		ex:s ex:dbl 1.5e2 .
 	`)
-	if g.Len() != 3 {
-		t.Errorf("expected 3, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 3 {
+		t.Errorf("expected 3, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -98,8 +98,8 @@ func TestParseTurtleBooleans(t *testing.T) {
 		ex:s ex:t true .
 		ex:s ex:f false .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -111,7 +111,7 @@ func TestParseTurtleLangTag(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -133,7 +133,7 @@ func TestParseTurtleTypedLiteral(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -152,8 +152,8 @@ func TestParseTurtleBlankNodeLabel(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		_:b1 ex:p "hello" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -163,8 +163,8 @@ func TestParseTurtleBlankNodePropertyList(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:knows [ ex:name "Alice" ] .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples (s→bnode, bnode→name), got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples (s→bnode, bnode→name), got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -175,8 +175,8 @@ func TestParseTurtleStandaloneBlankNodePropertyList(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		[ ex:name "Alice" ; ex:age "30" ] .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -186,8 +186,8 @@ func TestParseTurtleStandaloneBlankNodeWithFollowingTriples(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		[ ex:name "Alice" ] ex:knows ex:Bob .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -197,8 +197,8 @@ func TestParseTurtleNestedBlankNode(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:knows [ ex:name "Alice" ; ex:knows [ ex:name "Bob" ] ] .
 	`)
-	if g.Len() != 4 {
-		t.Errorf("expected 4, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 4 {
+		t.Errorf("expected 4, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -209,8 +209,8 @@ func TestParseTurtleCollection(t *testing.T) {
 		ex:s ex:list ( "a" "b" "c" ) .
 	`)
 	// 1 (s→head) + 3*(first+rest) = 7
-	if g.Len() != 7 {
-		t.Errorf("expected 7, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 7 {
+		t.Errorf("expected 7, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -222,7 +222,7 @@ func TestParseTurtleEmptyCollection(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	list, _ := rdflibgo.NewURIRef("http://example.org/list")
-	if !g.Contains(s, list, rdflibgo.RDF.Nil) {
+	if !mustV(g.Contains(t.Context(), s, list, rdflibgo.RDF.Nil)) {
 		t.Error("expected rdf:nil as object")
 	}
 }
@@ -234,8 +234,8 @@ func TestParseTurtleMultilineString(t *testing.T) {
 		ex:s ex:p """line1
 line2""" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -247,8 +247,8 @@ func TestParseTurtleEscapeSequences(t *testing.T) {
 		ex:s ex:p2 "tab\there" .
 		ex:s ex:p3 "quote\"here" .
 	`)
-	if g.Len() != 3 {
-		t.Errorf("expected 3, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 3 {
+		t.Errorf("expected 3, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -260,7 +260,7 @@ func TestParseTurtleUnicodeEscape(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -275,8 +275,8 @@ func TestParseTurtleComments(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "hello" . # inline comment
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -288,7 +288,7 @@ func TestParseTurtleBaseDirective(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	if !g.Contains(s, p, rdflibgo.NewLiteral("hello")) {
+	if !mustV(g.Contains(t.Context(), s, p, rdflibgo.NewLiteral("hello"))) {
 		t.Error("expected resolved triple")
 	}
 }
@@ -299,8 +299,8 @@ func TestParseTurtleSPARQLPrefix(t *testing.T) {
 		PREFIX ex: <http://example.org/>
 		ex:s ex:p "hello" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -312,8 +312,8 @@ func TestParseTurtleTrailingSemicolon(t *testing.T) {
 		     ex:q "b" ;
 		.
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -321,7 +321,7 @@ func TestParseTurtleErrorUndefinedPrefix(t *testing.T) {
 	// Ported from: W3C turtle negative syntax test — undefined prefix
 	g := rdflibgo.NewGraph()
 	r := strings.NewReader(`unknown:s unknown:p "hello" .`)
-	err := Parse(g, r)
+	err := Parse(t.Context(), g, r)
 	if err == nil {
 		t.Error("expected error for undefined prefix")
 	}
@@ -330,7 +330,7 @@ func TestParseTurtleErrorUndefinedPrefix(t *testing.T) {
 func TestParseTurtleErrorUnterminatedString(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	r := strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "unterminated .`)
-	err := Parse(g, r)
+	err := Parse(t.Context(), g, r)
 	if err == nil {
 		t.Error("expected error for unterminated string")
 	}
@@ -353,18 +353,18 @@ ex:Bob a ex:Person ;
 
 	// Serialize
 	var buf bytes.Buffer
-	if err := Serialize(g1, &buf); err != nil {
+	if err := Serialize(t.Context(), g1, &buf); err != nil {
 		t.Fatal(err)
 	}
 
 	// Parse again
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatalf("roundtrip parse failed: %v\nSerialized:\n%s", err, buf.String())
 	}
 
 	// Compare triple counts
-	if g1.Len() != g2.Len() {
-		t.Errorf("roundtrip: g1 has %d triples, g2 has %d\nSerialized:\n%s", g1.Len(), g2.Len(), buf.String())
+	if mustV(g1.Len(t.Context())) != mustV(g2.Len(t.Context())) {
+		t.Errorf("roundtrip: g1 has %d triples, g2 has %d\nSerialized:\n%s", mustV(g1.Len(t.Context())), mustV(g2.Len(t.Context())), buf.String())
 	}
 }

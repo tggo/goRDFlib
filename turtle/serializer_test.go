@@ -14,7 +14,7 @@ import (
 func serializeTurtle(t *testing.T, g *rdflibgo.Graph) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	return buf.String()
@@ -26,8 +26,8 @@ func TestTurtleBasic(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	o := rdflibgo.NewLiteral("hello")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, o)
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, o)
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, "ex:s") {
@@ -45,8 +45,8 @@ func TestTurtleRDFTypeShorthand(t *testing.T) {
 	// Ported from: rdflib turtle serializer — "a" shorthand for rdf:type
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/Alice")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, " a ") {
@@ -60,9 +60,9 @@ func TestTurtleMultiplePredicates(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p1, _ := rdflibgo.NewURIRef("http://example.org/p1")
 	p2, _ := rdflibgo.NewURIRef("http://example.org/p2")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p1, rdflibgo.NewLiteral("a"))
-	g.Add(s, p2, rdflibgo.NewLiteral("b"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p1, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), s, p2, rdflibgo.NewLiteral("b"))
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, ";") {
@@ -75,9 +75,9 @@ func TestTurtleMultipleObjects(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, rdflibgo.NewLiteral("a"))
-	g.Add(s, p, rdflibgo.NewLiteral("b"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("b"))
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, ",") {
@@ -90,11 +90,11 @@ func TestTurtleLiteralTypes(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
-	g.Add(s, p, rdflibgo.NewLiteral(42))
-	g.Add(s, p, rdflibgo.NewLiteral(true))
-	g.Add(s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(42))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral(true))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, "42") {
@@ -113,9 +113,9 @@ func TestTurtlePrefixOnlyUsed(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Bind("unused", rdflibgo.NewURIRefUnsafe("http://unused.org/"))
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "unused", rdflibgo.NewURIRefUnsafe("http://unused.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	out := serializeTurtle(t, g)
 	if strings.Contains(out, "unused") {
@@ -126,11 +126,11 @@ func TestTurtlePrefixOnlyUsed(t *testing.T) {
 func TestTurtleDeterministic(t *testing.T) {
 	// Ported from: test/test_turtle_sort_issue613.py — deterministic output
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	for i := 0; i < 5; i++ {
 		s, _ := rdflibgo.NewURIRef(fmt.Sprintf("http://example.org/s%d", i))
 		p, _ := rdflibgo.NewURIRef("http://example.org/p")
-		g.Add(s, p, rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
 	}
 
 	out1 := serializeTurtle(t, g)
@@ -145,10 +145,10 @@ func TestTurtleBase(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	var buf bytes.Buffer
-	err := Serialize(g, &buf, WithBase("http://example.org/"))
+	err := Serialize(t.Context(), g, &buf, WithBase("http://example.org/"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,11 +163,11 @@ func TestTurtleInlineBNode(t *testing.T) {
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
 	name, _ := rdflibgo.NewURIRef("http://example.org/name")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	bnode := rdflibgo.NewBNode()
-	g.Add(s, p, bnode)
-	g.Add(bnode, name, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), s, p, bnode)
+	g.Add(t.Context(), bnode, name, rdflibgo.NewLiteral("Alice"))
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, "[") || !strings.Contains(out, "]") {
@@ -180,19 +180,19 @@ func TestTurtleCollection(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/list")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	// Build list: (1 2 3)
 	n1 := rdflibgo.NewBNode()
 	n2 := rdflibgo.NewBNode()
 	n3 := rdflibgo.NewBNode()
-	g.Add(s, p, n1)
-	g.Add(n1, rdflibgo.RDF.First, rdflibgo.NewLiteral(1))
-	g.Add(n1, rdflibgo.RDF.Rest, n2)
-	g.Add(n2, rdflibgo.RDF.First, rdflibgo.NewLiteral(2))
-	g.Add(n2, rdflibgo.RDF.Rest, n3)
-	g.Add(n3, rdflibgo.RDF.First, rdflibgo.NewLiteral(3))
-	g.Add(n3, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), s, p, n1)
+	g.Add(t.Context(), n1, rdflibgo.RDF.First, rdflibgo.NewLiteral(1))
+	g.Add(t.Context(), n1, rdflibgo.RDF.Rest, n2)
+	g.Add(t.Context(), n2, rdflibgo.RDF.First, rdflibgo.NewLiteral(2))
+	g.Add(t.Context(), n2, rdflibgo.RDF.Rest, n3)
+	g.Add(t.Context(), n3, rdflibgo.RDF.First, rdflibgo.NewLiteral(3))
+	g.Add(t.Context(), n3, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 
 	out := serializeTurtle(t, g)
 	if !strings.Contains(out, "( ") {
@@ -205,9 +205,9 @@ func TestTurtleSortRDFTypeFirst(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/name")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, rdflibgo.NewLiteral("Alice"))
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
 
 	out := serializeTurtle(t, g)
 	aIdx := strings.Index(out, " a ")

@@ -20,7 +20,7 @@ import (
 func newTestDataset(t *testing.T) (*httptest.Server, *sparql.Dataset) {
 	t.Helper()
 	g := graph.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/s"),
 		term.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("hello"),
@@ -155,8 +155,8 @@ func TestUpdatePOSTDirect(t *testing.T) {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
 
-	if ds.Default.Len() != 2 {
-		t.Errorf("default graph len = %d, want 2", ds.Default.Len())
+	if mustV(ds.Default.Len(t.Context())) != 2 {
+		t.Errorf("default graph len = %d, want 2", mustV(ds.Default.Len(t.Context())))
 	}
 }
 
@@ -174,8 +174,8 @@ func TestUpdatePOSTForm(t *testing.T) {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
 
-	if ds.Default.Len() != 2 {
-		t.Errorf("default graph len = %d, want 2", ds.Default.Len())
+	if mustV(ds.Default.Len(t.Context())) != 2 {
+		t.Errorf("default graph len = %d, want 2", mustV(ds.Default.Len(t.Context())))
 	}
 }
 
@@ -268,7 +268,7 @@ func TestQueryJSONAccept(t *testing.T) {
 
 func TestNewServerWithGraph(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/s"),
 		term.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("test"),
@@ -339,7 +339,7 @@ func TestASKFalseResult(t *testing.T) {
 func TestProtocolDataset(t *testing.T) {
 	defaultG := graph.NewGraph()
 	namedG := graph.NewGraph()
-	namedG.Add(
+	namedG.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/ns"),
 		term.NewURIRefUnsafe("http://example.org/np"),
 		rdflibgo.NewLiteral("from-named"),
@@ -377,7 +377,7 @@ func TestProtocolDataset(t *testing.T) {
 
 func TestProtocolDatasetNamedGraph(t *testing.T) {
 	namedG := graph.NewGraph()
-	namedG.Add(
+	namedG.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/ns"),
 		term.NewURIRefUnsafe("http://example.org/np"),
 		rdflibgo.NewLiteral("named-val"),
@@ -408,13 +408,13 @@ func TestProtocolDatasetNamedGraph(t *testing.T) {
 
 func TestWriteNTriples(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/s"),
 		term.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("hello"),
 	)
 	var buf bytes.Buffer
-	err := sparqlstore.WriteNTriples(g, &buf)
+	err := sparqlstore.WriteNTriples(t.Context(), g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,8 +457,8 @@ func TestUpdateMissingBody(t *testing.T) {
 func TestQueryWithBNodeAndTypedLiteralResults(t *testing.T) {
 	g := graph.NewGraph()
 	bnode := term.NewBNode()
-	g.Add(bnode, term.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral(42))
-	g.Add(bnode, term.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("text", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), bnode, term.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral(42))
+	g.Add(t.Context(), bnode, term.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("text", rdflibgo.WithLang("en")))
 
 	srv := sparqlstore.NewServerWithGraph(g)
 	ts := httptest.NewServer(srv.Handler())
@@ -507,7 +507,7 @@ func TestPluginRegistration(t *testing.T) {
 
 func TestQueryFormDatasetParams(t *testing.T) {
 	namedG := graph.NewGraph()
-	namedG.Add(
+	namedG.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/ns"),
 		term.NewURIRefUnsafe("http://example.org/np"),
 		rdflibgo.NewLiteral("form-ds"),
@@ -677,7 +677,7 @@ func TestASKJSONFalse(t *testing.T) {
 
 func TestDirLangLiteralXMLAndJSON(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/s"),
 		term.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("مرحبا", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")),
@@ -724,7 +724,7 @@ func TestDirLangLiteralXMLAndJSON(t *testing.T) {
 
 func TestOPTIONALNullBindingXML(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(
+	g.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/s1"),
 		term.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("val"),
@@ -756,7 +756,7 @@ func TestOPTIONALNullBindingXML(t *testing.T) {
 
 func TestQueryFormWithNamedGraphURI(t *testing.T) {
 	namedG := graph.NewGraph()
-	namedG.Add(
+	namedG.Add(t.Context(),
 		term.NewURIRefUnsafe("http://example.org/ns"),
 		term.NewURIRefUnsafe("http://example.org/np"),
 		rdflibgo.NewLiteral("ng-form"),

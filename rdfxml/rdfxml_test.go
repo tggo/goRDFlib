@@ -20,11 +20,11 @@ func TestRDFXMLParserBasic(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -38,14 +38,14 @@ func TestRDFXMLParserTypedNode(t *testing.T) {
   </ex:Person>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	// Should have: rdf:type + ex:name = 2 triples
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 	alice, _ := rdflibgo.NewURIRef("http://example.org/Alice")
 	person, _ := rdflibgo.NewURIRef("http://example.org/Person")
-	if !g.Contains(alice, rdflibgo.RDF.Type, person) {
+	if !mustV(g.Contains(t.Context(), alice, rdflibgo.RDF.Type, person)) {
 		t.Error("expected rdf:type triple")
 	}
 }
@@ -60,11 +60,11 @@ func TestRDFXMLParserResource(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	knows, _ := rdflibgo.NewURIRef("http://example.org/knows")
 	o, _ := rdflibgo.NewURIRef("http://example.org/o")
-	if !g.Contains(s, knows, o) {
+	if !mustV(g.Contains(t.Context(), s, knows, o)) {
 		t.Error("expected resource link triple")
 	}
 }
@@ -79,10 +79,10 @@ func TestRDFXMLParserLangTag(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	name, _ := rdflibgo.NewURIRef("http://example.org/name")
-	val, ok := g.Value(s, &name, nil)
+	val, ok, _ := g.Value(t.Context(), s, &name, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -102,10 +102,10 @@ func TestRDFXMLParserDatatype(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	age, _ := rdflibgo.NewURIRef("http://example.org/age")
-	val, ok := g.Value(s, &age, nil)
+	val, ok, _ := g.Value(t.Context(), s, &age, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -126,10 +126,10 @@ func TestRDFXMLParserParseTypeResource(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
+	Parse(t.Context(), g, strings.NewReader(input))
 	// s → address → bnode, bnode → city → "Berlin" = 2 triples
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -146,9 +146,9 @@ func TestRDFXMLParserNodeID(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	Parse(g, strings.NewReader(input))
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -157,11 +157,11 @@ func TestRDFXMLSerializerBasic(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, rdflibgo.NewLiteral("hello"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -176,12 +176,12 @@ func TestRDFXMLSerializerBasic(t *testing.T) {
 func TestRDFXMLSerializerTypedNode(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/Alice")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
 
 	var buf bytes.Buffer
-	Serialize(g, &buf)
+	Serialize(t.Context(), g, &buf)
 	out := buf.String()
 	if !strings.Contains(out, "ex:Person") {
 		t.Errorf("expected typed node element, got:\n%s", out)
@@ -193,20 +193,20 @@ func TestRDFXMLRoundtrip(t *testing.T) {
 	g1 := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g1.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
-	g1.Add(s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
+	g1.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("world", rdflibgo.WithLang("en")))
 
 	var buf bytes.Buffer
-	Serialize(g1, &buf)
+	Serialize(t.Context(), g1, &buf)
 
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatalf("roundtrip parse failed: %v\nSerialized:\n%s", err, buf.String())
 	}
 
-	if g1.Len() != g2.Len() {
-		t.Errorf("roundtrip: %d vs %d\nSerialized:\n%s", g1.Len(), g2.Len(), buf.String())
+	if mustV(g1.Len(t.Context())) != mustV(g2.Len(t.Context())) {
+		t.Errorf("roundtrip: %d vs %d\nSerialized:\n%s", mustV(g1.Len(t.Context())), mustV(g2.Len(t.Context())), buf.String())
 	}
 }
 
@@ -222,12 +222,12 @@ func TestReadInnerXMLPreservesAttributes(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	content, _ := rdflibgo.NewURIRef("http://example.org/content")
-	val, ok := g.Value(s, &content, nil)
+	val, ok, _ := g.Value(t.Context(), s, &content, nil)
 	if !ok {
 		t.Fatal("expected value")
 	}
@@ -280,20 +280,20 @@ func TestXMLBaseScoping(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	// s1 should resolve against http://other.org/
 	s1, _ := rdflibgo.NewURIRef("http://other.org/s1")
 	o1, _ := rdflibgo.NewURIRef("http://other.org/o1")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	if !g.Contains(s1, p, o1) {
+	if !mustV(g.Contains(t.Context(), s1, p, o1)) {
 		t.Error("expected s1 resolved against nested base http://other.org/")
 	}
 	// s2 should resolve against the original base http://example.org/
 	s2, _ := rdflibgo.NewURIRef("http://example.org/s2")
 	o2, _ := rdflibgo.NewURIRef("http://example.org/o2")
-	if !g.Contains(s2, p, o2) {
+	if !mustV(g.Contains(t.Context(), s2, p, o2)) {
 		t.Error("expected s2 resolved against original base http://example.org/")
 	}
 }
@@ -314,7 +314,7 @@ func TestSkipToEndHandlesErrors(t *testing.T) {
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
 	// This should parse without error; the fix ensures skipToEnd doesn't silently fail
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -323,13 +323,13 @@ func TestSkipToEndHandlesErrors(t *testing.T) {
 func TestSerializerMultipleRDFType(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/Alice")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Agent"))
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Agent"))
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -341,11 +341,11 @@ func TestSerializerMultipleRDFType(t *testing.T) {
 
 	// Roundtrip should preserve all types
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(out)); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(out)); err != nil {
 		t.Fatalf("roundtrip parse failed: %v", err)
 	}
-	if g2.Len() != 3 {
-		t.Errorf("expected 3 triples after roundtrip, got %d\nSerialized:\n%s", g2.Len(), out)
+	if mustV(g2.Len(t.Context())) != 3 {
+		t.Errorf("expected 3 triples after roundtrip, got %d\nSerialized:\n%s", mustV(g2.Len(t.Context())), out)
 	}
 }
 
@@ -373,12 +373,12 @@ func TestParseTypeResourceWithXMLBase(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	addr, _ := rdflibgo.NewURIRef("http://example.org/address")
-	if _, ok := g.Value(s, &addr, nil); !ok {
+	if _, ok, _ := g.Value(t.Context(), s, &addr, nil); !ok {
 		t.Error("expected address triple with resolved base")
 	}
 }

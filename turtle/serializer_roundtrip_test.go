@@ -2,6 +2,7 @@ package turtle
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"strings"
@@ -15,11 +16,11 @@ import (
 func assertTurtleRoundTrip(t *testing.T, g *rdflibgo.Graph, opts ...Option) {
 	t.Helper()
 	var b bytes.Buffer
-	if err := Serialize(g, &b, opts...); err != nil {
+	if err := Serialize(t.Context(), g, &b, opts...); err != nil {
 		t.Fatal(err)
 	}
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(b.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(b.String())); err != nil {
 		t.Fatalf("output does not parse: %v\n%s", err, b.String())
 	}
 	testutil.AssertGraphEqual(t, g, g2)
@@ -31,7 +32,7 @@ func assertTurtleRoundTrip(t *testing.T, g *rdflibgo.Graph, opts ...Option) {
 func mustParseTurtle(t *testing.T, src string) *rdflibgo.Graph {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(src)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(src)); err != nil {
 		t.Fatalf("parse: %v\n%s", err, src)
 	}
 	return g
@@ -86,7 +87,7 @@ _:l rdf:first 1 ; rdf:rest rdf:nil .`,
 func TestSerializeWellFormedListStaysCollection(t *testing.T) {
 	g := mustParseTurtle(t, `@prefix ex: <http://example.org/> . ex:a ex:p ( 1 2 3 ) .`)
 	var b bytes.Buffer
-	if err := Serialize(g, &b); err != nil {
+	if err := Serialize(t.Context(), g, &b); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(b.String(), "( 1 2 3 )") {
@@ -96,7 +97,7 @@ func TestSerializeWellFormedListStaysCollection(t *testing.T) {
 	g = mustParseTurtle(t, `@prefix ex: <http://example.org/> . @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 ex:a ex:p _:l . ex:b ex:p _:l . _:l rdf:first 1 ; rdf:rest ( 2 3 ) .`)
 	b.Reset()
-	if err := Serialize(g, &b); err != nil {
+	if err := Serialize(t.Context(), g, &b); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(b.String(), "( 2 3 )") {
@@ -151,7 +152,7 @@ func (s *shapeGen) item(depth int) rdflibgo.Term {
 	case 3:
 		b := s.bnode()
 		if depth > 0 {
-			s.g.Add(b, exQ, s.item(depth-1))
+			s.g.Add(context.Background(), b, exQ, s.item(depth-1))
 		}
 		return b
 	case 4:
@@ -200,7 +201,7 @@ func (s *shapeGen) list(depth int) rdflibgo.Term {
 		}
 	}
 	for i, c := range cells {
-		s.g.Add(c, rdflibgo.RDF.First, s.item(depth))
+		s.g.Add(context.Background(), c, rdflibgo.RDF.First, s.item(depth))
 		var rest rdflibgo.Term = rdflibgo.RDF.Nil
 		if i+1 < len(cells) {
 			rest = cells[i+1]
@@ -211,13 +212,13 @@ func (s *shapeGen) list(depth int) rdflibgo.Term {
 		case 1: // no rest at all
 			continue
 		case 2: // an extra triple on the cell
-			s.g.Add(c, exP, rdflibgo.NewLiteral(i))
+			s.g.Add(context.Background(), c, exP, rdflibgo.NewLiteral(i))
 		case 3: // a second rdf:first
-			s.g.Add(c, rdflibgo.RDF.First, rdflibgo.NewLiteral("extra"))
+			s.g.Add(context.Background(), c, rdflibgo.RDF.First, rdflibgo.NewLiteral("extra"))
 		case 4: // an outside reference to this cell (shared tail)
-			s.g.Add(s.iri(), exP, c)
+			s.g.Add(context.Background(), s.iri(), exP, c)
 		}
-		s.g.Add(c, rdflibgo.RDF.Rest, rest)
+		s.g.Add(context.Background(), c, rdflibgo.RDF.Rest, rest)
 	}
 	return cells[0]
 }
@@ -232,18 +233,18 @@ func (s *shapeGen) build() {
 			prev := first
 			for range s.r.IntN(5) {
 				next := s.bnode()
-				s.g.Add(prev, exP, next)
+				s.g.Add(context.Background(), prev, exP, next)
 				prev = next
 			}
 			if s.r.IntN(2) == 0 {
-				s.g.Add(prev, exP, first)
+				s.g.Add(context.Background(), prev, exP, first)
 			}
 		default:
 			var subj rdflibgo.Subject = s.iri()
 			if s.r.IntN(3) == 0 {
 				subj = s.existing()
 			}
-			s.g.Add(subj, exP, s.item(2))
+			s.g.Add(context.Background(), subj, exP, s.item(2))
 		}
 	}
 }

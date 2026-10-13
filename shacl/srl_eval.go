@@ -1,6 +1,7 @@
 package shacl
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,7 +15,18 @@ type srlGroundTriple struct {
 // EvalRuleSet evaluates an SRL RuleSet against a data graph.
 // Returns a new Graph containing only the inferred triples (including DATA block triples)
 // that are not in the original data graph.
+//
+// It uses context.Background; see EvalRuleSetContext.
 func EvalRuleSet(rs *RuleSet, dataGraph *Graph) (*Graph, error) {
+	return EvalRuleSetContext(context.Background(), rs, dataGraph)
+}
+
+// EvalRuleSetContext is EvalRuleSet reading dataGraph with ctx: a store error
+// or a done context is returned, never an evaluation over part of the graph.
+func EvalRuleSetContext(ctx context.Context, rs *RuleSet, dataGraph *Graph) (*Graph, error) {
+	if err := buildIndexes(ctx, dataGraph); err != nil {
+		return nil, err
+	}
 	e := &srlEvalEngine{
 		triples:  make(map[srlGroundTriple]bool),
 		prefixes: rs.Prefixes,
@@ -73,7 +85,10 @@ func EvalRuleSet(rs *RuleSet, dataGraph *Graph) (*Graph, error) {
 		s := srlKeyToTerm(gt.S)
 		p := srlKeyToTerm(gt.P)
 		o := srlKeyToTerm(gt.O)
-		result.Add(s, p, o)
+		// result is a fresh in-memory graph: adding to it cannot fail.
+		if err := result.Add(ctx, s, p, o); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }

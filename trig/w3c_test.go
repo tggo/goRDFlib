@@ -1,6 +1,7 @@
 package trig_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestW3CTrig(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer f.Close()
-				if err := trig.ParseDataset(actual, f, trig.WithBase(base)); err != nil {
+				if err := trig.ParseDataset(t.Context(), actual, f, trig.WithBase(base)); err != nil {
 					t.Fatalf("parse action: %v", err)
 				}
 
@@ -53,7 +54,7 @@ func TestW3CTrig(t *testing.T) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				ds := graph.NewDataset()
-				if err := trig.ParseDataset(ds, f, trig.WithBase(base)); err != nil {
+				if err := trig.ParseDataset(t.Context(), ds, f, trig.WithBase(base)); err != nil {
 					t.Errorf("expected no error, got: %v", err)
 				}
 
@@ -65,7 +66,7 @@ func TestW3CTrig(t *testing.T) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				ds := graph.NewDataset()
-				if err := trig.ParseDataset(ds, f, trig.WithBase(base)); err == nil {
+				if err := trig.ParseDataset(t.Context(), ds, f, trig.WithBase(base)); err == nil {
 					t.Error("expected error, got nil")
 				}
 
@@ -82,7 +83,7 @@ func parseNQuadsIntoDataset(t *testing.T, ds *graph.Dataset, f *os.File) {
 	// ParseStream, not Parse: Parse also adds every quad to the graph it is
 	// given, which would copy each named-graph triple into the default graph.
 	err := nq.ParseStream(f, func(s term.Subject, p term.URIRef, o term.Term, graphCtx term.Term) error {
-		ds.Graph(graphCtx).Add(s, p, o) // nil → default graph
+		ds.Graph(graphCtx).Add(t.Context(), s, p, o) // nil → default graph
 		return nil
 	})
 	if err != nil {
@@ -146,7 +147,7 @@ func collectQuads(ds *graph.Dataset) []quad {
 		if g.Identifier() != defaultID {
 			graphLabel = g.Identifier()
 		}
-		g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+		g.Triples(context.Background(), nil, nil, nil)(func(t term.Triple, _ error) bool {
 			quads = append(quads, quad{t.Subject, t.Predicate, t.Object, graphLabel})
 			return true
 		})

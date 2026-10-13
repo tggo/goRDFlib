@@ -18,7 +18,7 @@ func TestProvenanceTracksLineNumbers(t *testing.T) {
 `
 	prov := map[string]int{}
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithProvenance(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithProvenance(
 		func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int) {
 			prov[s.String()] = lineNum
 		}))
@@ -49,7 +49,7 @@ func TestProvenanceReportsDuplicates(t *testing.T) {
 `
 	var lines []int
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithProvenance(
+	err := Parse(t.Context(), g, strings.NewReader(input), WithProvenance(
 		func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int) {
 			lines = append(lines, lineNum)
 		}))
@@ -65,10 +65,10 @@ func TestProvenanceReportsDuplicates(t *testing.T) {
 func TestProvenanceUnsetIsNoop(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <http://example.org/o> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if n := g.Len(); n != 1 {
+	if n, _ := g.Len(t.Context()); n != 1 {
 		t.Fatalf("got %d triples, want 1", n)
 	}
 }
@@ -88,7 +88,7 @@ func BenchmarkNTParseNoProvenance(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := rdflibgo.NewGraph()
-		if err := Parse(g, strings.NewReader(input)); err != nil {
+		if err := Parse(b.Context(), g, strings.NewReader(input)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -100,7 +100,7 @@ func BenchmarkNTParseWithProvenance(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := rdflibgo.NewGraph()
-		err := Parse(g, strings.NewReader(input), WithProvenance(
+		err := Parse(b.Context(), g, strings.NewReader(input), WithProvenance(
 			func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int) {
 				sink += lineNum
 			}))

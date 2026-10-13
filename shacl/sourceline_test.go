@@ -63,22 +63,22 @@ func loadWithProvenance(t *testing.T, ttl string) (*shacl.Graph, *provenance.Ind
 
 	g := graph.NewGraph()
 	idx := provenance.NewIndex()
-	if err := turtle.Parse(g, strings.NewReader(ttl), turtle.WithProvenance(idx.Triple)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(ttl), turtle.WithProvenance(idx.Triple)); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if idx.Len() == 0 {
 		t.Fatal("provenance index is empty; the option never reached the parser")
 	}
-	return shacl.NewGraphFromRDF(g, ""), idx
+	return mustV(shacl.NewGraphFromRDF(t.Context(), g, "")), idx
 }
 
 func loadShapes(t *testing.T, ttl string) *shacl.Graph {
 	t.Helper()
 	g := graph.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(ttl)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(ttl)); err != nil {
 		t.Fatalf("parse shapes: %v", err)
 	}
-	return shacl.NewGraphFromRDF(g, "")
+	return mustV(shacl.NewGraphFromRDF(t.Context(), g, ""))
 }
 
 // TestValidationResultsCarrySourceLines is the end-to-end case: parse with

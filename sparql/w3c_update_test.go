@@ -1,6 +1,7 @@
 package sparql_test
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -113,9 +114,9 @@ func runUpdateEvalTest(t *testing.T, entry w3c.TestEntry) {
 	if entry.ResultData != "" || len(entry.ResultGraphData) > 0 {
 		// Check default graph is empty if not specified in result
 		if entry.ResultData == "" {
-			if ds.Default.Len() > 0 {
+			if mustV(ds.Default.Len(t.Context())) > 0 {
 				t.Errorf("default graph should be empty but has %d triples: %s",
-					ds.Default.Len(), graphToString(ds.Default))
+					mustV(ds.Default.Len(t.Context())), graphToString(ds.Default))
 			}
 		}
 	}
@@ -162,13 +163,13 @@ func runNegativeUpdateSyntaxTest(t *testing.T, entry w3c.TestEntry) {
 }
 
 func graphsEqual(a, b *rdflibgo.Graph) bool {
-	if a.Len() != b.Len() {
+	if mustV(a.Len(context.Background())) != mustV(b.Len(context.Background())) {
 		return false
 	}
 	// Check all triples in a exist in b
 	allMatch := true
-	for tr := range a.Triples(nil, nil, nil) {
-		if !b.Contains(tr.Subject, tr.Predicate, tr.Object) {
+	for tr := range a.Triples(context.Background(), nil, nil, nil) {
+		if !mustV(b.Contains(context.Background(), tr.Subject, tr.Predicate, tr.Object)) {
 			allMatch = false
 			break
 		}
@@ -178,7 +179,7 @@ func graphsEqual(a, b *rdflibgo.Graph) bool {
 
 func graphToString(g *rdflibgo.Graph) string {
 	var parts []string
-	for tr := range g.Triples(nil, nil, nil) {
+	for tr := range g.Triples(context.Background(), nil, nil, nil) {
 		parts = append(parts, tr.Subject.N3()+" "+tr.Predicate.N3()+" "+tr.Object.N3())
 	}
 	if len(parts) == 0 {

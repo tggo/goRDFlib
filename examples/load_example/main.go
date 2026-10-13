@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,20 +17,28 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	// --- Example 1: Load from HTTP ---
 	fmt.Println("=== Example 1: LOAD from HTTP ===")
-	httpExample()
+	if err := httpExample(ctx); err != nil {
+		log.Fatal(err)
+	}
 
 	// --- Example 2: Load from file:// ---
 	fmt.Println("\n=== Example 2: LOAD from file:// ===")
-	fileExample()
+	if err := fileExample(ctx); err != nil {
+		log.Fatal(err)
+	}
 
 	// --- Example 3: Custom HTTP client ---
 	fmt.Println("\n=== Example 3: LOAD with custom HTTP client ===")
-	customClientExample()
+	if err := customClientExample(ctx); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func httpExample() {
+func httpExample(ctx context.Context) error {
 	// Start a test server serving Turtle data
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/turtle")
@@ -47,21 +56,30 @@ ex:Bob ex:knows ex:Charlie .
 	}
 
 	query := fmt.Sprintf("LOAD <%s/data.ttl>", srv.URL)
-	if err := sparql.Update(ds, query); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+	if err := sparql.UpdateContext(ctx, ds, query); err != nil {
+		return err
 	}
-	fmt.Printf("Loaded %d triples into default graph\n", ds.Default.Len())
+	n, err := ds.Default.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Loaded %d triples into default graph\n", n)
+	return nil
 }
 
-func fileExample() {
+func fileExample(ctx context.Context) error {
 	// Create a temp file with N-Triples data
-	dir, _ := os.MkdirTemp("", "rdfloader-example")
+	dir, err := os.MkdirTemp("", "rdfloader-example")
+	if err != nil {
+		return err
+	}
 	defer os.RemoveAll(dir)
 
 	path := filepath.Join(dir, "data.nt")
-	os.WriteFile(path, []byte(`<http://example.org/s> <http://example.org/p> "hello" .
-`), 0o644)
+	if err := os.WriteFile(path, []byte(`<http://example.org/s> <http://example.org/p> "hello" .
+`), 0o644); err != nil {
+		return err
+	}
 
 	ds := &sparql.Dataset{
 		Default:     rdflibgo.NewGraph(),
@@ -70,14 +88,18 @@ func fileExample() {
 	}
 
 	query := fmt.Sprintf("LOAD <file://%s>", path)
-	if err := sparql.Update(ds, query); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+	if err := sparql.UpdateContext(ctx, ds, query); err != nil {
+		return err
 	}
-	fmt.Printf("Loaded %d triples from file\n", ds.Default.Len())
+	n, err := ds.Default.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Loaded %d triples from file\n", n)
+	return nil
 }
 
-func customClientExample() {
+func customClientExample(ctx context.Context) error {
 	// Server that requires a custom header
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-API-Key") != "secret" {
@@ -108,11 +130,15 @@ ex:Private ex:data "secret-value" .
 	}
 
 	query := fmt.Sprintf("LOAD <%s/private.ttl>", srv.URL)
-	if err := sparql.Update(ds, query); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+	if err := sparql.UpdateContext(ctx, ds, query); err != nil {
+		return err
 	}
-	fmt.Printf("Loaded %d triples with auth\n", ds.Default.Len())
+	n, err := ds.Default.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Loaded %d triples with auth\n", n)
+	return nil
 }
 
 type headerTransport struct {
@@ -122,7 +148,7 @@ type headerTransport struct {
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(context.Background())
+	req = req.Clone(req.Context())
 	req.Header.Set(t.header, t.value)
 	return t.base.RoundTrip(req)
 }

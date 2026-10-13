@@ -14,7 +14,7 @@ func selectRow(t *testing.T, data, q string) map[string]string {
 	t.Helper()
 	g := rdflibgo.NewGraph()
 	if data != "" {
-		if err := turtle.Parse(g, strings.NewReader(data)); err != nil {
+		if err := turtle.Parse(t.Context(), g, strings.NewReader(data)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -47,7 +47,7 @@ func checkRow(t *testing.T, got, want map[string]string) {
 func countRows(t *testing.T, data, q string) int {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(data)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(data)); err != nil {
 		t.Fatal(err)
 	}
 	res, err := Query(g, q)

@@ -32,7 +32,7 @@ func TestWithBase(t *testing.T) {
 		"http://example.org/p": "v"
 	}`
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithBase("http://example.org/"))
+	err := Parse(t.Context(), g, strings.NewReader(input), WithBase("http://example.org/"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,10 +43,10 @@ func TestWithBaseInSerializer(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	var buf strings.Builder
-	err := Serialize(g, &buf, WithBase("http://example.org/"))
+	err := Serialize(t.Context(), g, &buf, WithBase("http://example.org/"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestWithBaseInSerializer(t *testing.T) {
 // TestParseInvalidJSON covers the json decode error branch in Parse
 func TestParseInvalidJSON(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`not valid json`))
+	err := Parse(t.Context(), g, strings.NewReader(`not valid json`))
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -68,12 +68,12 @@ func TestParseInvalidJSON(t *testing.T) {
 func TestParseEmptyDocument(t *testing.T) {
 	// An empty JSON-LD object with no triples produces empty N-Quads
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`{}`))
+	err := Parse(t.Context(), g, strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 0 {
-		t.Errorf("expected 0 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -82,7 +82,7 @@ func TestParseEmptyDocument(t *testing.T) {
 func TestParseNullJSON(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	// A JSON null value — json.Decode succeeds, ToRDF result handling exercised
-	err := Parse(g, strings.NewReader(`null`))
+	err := Parse(t.Context(), g, strings.NewReader(`null`))
 	// Either nil error (empty result) or an error from json-gold; just don't panic
 	_ = err
 }
@@ -92,11 +92,11 @@ func TestSerializeWithDocumentLoader(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	var buf strings.Builder
 	loader := ld.NewCachingDocumentLoader(ld.NewDefaultDocumentLoader(nil))
-	err := Serialize(g, &buf, WithDocumentLoader(loader))
+	err := Serialize(t.Context(), g, &buf, WithDocumentLoader(loader))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestParseWithDocumentLoaderNonNil(t *testing.T) {
 	input := `{"@id": "http://example.org/s", "http://example.org/p": "v"}`
 	g := rdflibgo.NewGraph()
 	loader := ld.NewCachingDocumentLoader(ld.NewDefaultDocumentLoader(nil))
-	err := Parse(g, strings.NewReader(input), WithDocumentLoader(loader))
+	err := Parse(t.Context(), g, strings.NewReader(input), WithDocumentLoader(loader))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestParseWithDocumentLoaderNonNil(t *testing.T) {
 func TestParseToRDFError(t *testing.T) {
 	input := `{"@context": "http://example.org/ctx.jsonld", "@id": "http://example.org/s"}`
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input), WithDocumentLoader(failingDocumentLoader{}))
+	err := Parse(t.Context(), g, strings.NewReader(input), WithDocumentLoader(failingDocumentLoader{}))
 	if err == nil {
 		t.Error("expected error when document loader fails")
 	}
@@ -129,9 +129,9 @@ func TestSerializeWriterError(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
-	err := Serialize(g, errWriter{})
+	err := Serialize(t.Context(), g, errWriter{})
 	if err == nil {
 		t.Error("expected error from broken writer")
 	}
@@ -143,10 +143,10 @@ func TestSerializeWriterErrorWithNamespace(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
-	err := Serialize(g, errWriter{})
+	err := Serialize(t.Context(), g, errWriter{})
 	if err == nil {
 		t.Error("expected error from broken writer")
 	}
@@ -161,11 +161,11 @@ func TestSerializeKeywordPrefixIgnored(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/remote-ctx.jsonld#s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Bind("@context", rdflibgo.NewURIRefUnsafe("http://example.org/remote-ctx.jsonld"))
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Bind(t.Context(), "@context", rdflibgo.NewURIRefUnsafe("http://example.org/remote-ctx.jsonld"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf, WithDocumentLoader(failingDocumentLoader{})); err != nil {
+	if err := Serialize(t.Context(), g, &buf, WithDocumentLoader(failingDocumentLoader{})); err != nil {
 		t.Fatalf("keyword binding must not reach the processor: %v", err)
 	}
 }
@@ -186,11 +186,11 @@ func TestSerializeExpandedForm(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	var buf strings.Builder
-	err := Serialize(g, &buf, WithExpanded())
+	err := Serialize(t.Context(), g, &buf, WithExpanded())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,10 +204,10 @@ func TestSerializeNoNamespaces(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 
 	var buf strings.Builder
-	err := Serialize(g, &buf)
+	err := Serialize(t.Context(), g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestSerializeNoNamespaces(t *testing.T) {
 func TestSerializeEmptyGraph(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var buf strings.Builder
-	err := Serialize(g, &buf)
+	err := Serialize(t.Context(), g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,12 +235,12 @@ func TestParseWithRemoteContext(t *testing.T) {
 		"ex:p": "hello"
 	}`
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -251,12 +251,12 @@ func TestParseArrayDocument(t *testing.T) {
 		"http://example.org/p": [{"@value": "v"}]
 	}]`
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -265,20 +265,20 @@ func TestSerializeRoundTrip(t *testing.T) {
 	g1 := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	g1.Add(s, p, rdflibgo.NewLiteral("hello"))
-	g1.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g1.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello"))
+	g1.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	var buf strings.Builder
-	if err := Serialize(g1, &buf); err != nil {
+	if err := Serialize(t.Context(), g1, &buf); err != nil {
 		t.Fatal(err)
 	}
 
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatal(err)
 	}
-	if g2.Len() != 1 {
-		t.Errorf("expected 1 triple after round-trip, got %d", g2.Len())
+	if mustV(g2.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple after round-trip, got %d", mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -299,11 +299,11 @@ func TestParseMultipleTriples(t *testing.T) {
 		"http://example.org/p2": "v2"
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -316,7 +316,7 @@ func TestSerializeWithDocumentLoaderInParse(t *testing.T) {
 	}`
 	g := rdflibgo.NewGraph()
 	loader := ld.NewCachingDocumentLoader(ld.NewDefaultDocumentLoader(nil))
-	err := Parse(g, strings.NewReader(input), WithDocumentLoader(loader))
+	err := Parse(t.Context(), g, strings.NewReader(input), WithDocumentLoader(loader))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,11 +331,11 @@ func TestParseTypedLiteral(t *testing.T) {
 		"http://example.org/age": {"@value": "42", "@type": "http://www.w3.org/2001/XMLSchema#integer"}
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -346,11 +346,11 @@ func TestParseLangLiteral(t *testing.T) {
 		"http://example.org/label": {"@value": "Hello", "@language": "en"}
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -361,11 +361,11 @@ func TestParseLinkedNodes(t *testing.T) {
 		"http://example.org/knows": {"@id": "http://example.org/o"}
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -378,11 +378,11 @@ func TestParseBlankNodes(t *testing.T) {
 		}
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -390,12 +390,12 @@ func TestParseBlankNodes(t *testing.T) {
 func TestSerializeMultipleTriples(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p1"), rdflibgo.NewLiteral("v1"))
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p2"), rdflibgo.NewLiteral("v2"))
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p1"), rdflibgo.NewLiteral("v1"))
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p2"), rdflibgo.NewLiteral("v2"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {
@@ -408,10 +408,10 @@ func TestSerializeURIRefObject(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	o, _ := rdflibgo.NewURIRef("http://example.org/o")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/knows"), o)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/knows"), o)
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -424,11 +424,11 @@ func TestSerializeURIRefObject(t *testing.T) {
 func TestSerializeTypedLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/age"),
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/age"),
 		rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -441,11 +441,11 @@ func TestSerializeTypedLiteral(t *testing.T) {
 func TestSerializeLangLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/label"),
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/label"),
 		rdflibgo.NewLiteral("Hola", rdflibgo.WithLang("es")))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -457,12 +457,12 @@ func TestSerializeLangLiteral(t *testing.T) {
 // TestParseEmptyArray covers parsing an empty JSON-LD array.
 func TestParseEmptyArray(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`[]`))
+	err := Parse(t.Context(), g, strings.NewReader(`[]`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 0 {
-		t.Errorf("expected 0 triples for empty array, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples for empty array, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -470,7 +470,7 @@ func TestParseEmptyArray(t *testing.T) {
 func TestParseBoolJSON(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	// A boolean value — should be handled by json-gold
-	err := Parse(g, strings.NewReader(`true`))
+	err := Parse(t.Context(), g, strings.NewReader(`true`))
 	// Either nil or an error; just don't panic
 	_ = err
 }
@@ -478,7 +478,7 @@ func TestParseBoolJSON(t *testing.T) {
 // TestParseNumberJSON covers parsing a JSON number value.
 func TestParseNumberJSON(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`42`))
+	err := Parse(t.Context(), g, strings.NewReader(`42`))
 	_ = err
 }
 
@@ -486,21 +486,21 @@ func TestParseNumberJSON(t *testing.T) {
 func TestSerializeRoundTripWithTypes(t *testing.T) {
 	g1 := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
-	g1.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
-	g1.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
-	g1.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g1.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Person"))
+	g1.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
+	g1.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	var buf strings.Builder
-	if err := Serialize(g1, &buf); err != nil {
+	if err := Serialize(t.Context(), g1, &buf); err != nil {
 		t.Fatal(err)
 	}
 
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatal(err)
 	}
-	if g2.Len() != 2 {
-		t.Errorf("expected 2 triples after round-trip, got %d", g2.Len())
+	if mustV(g2.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples after round-trip, got %d", mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -508,19 +508,19 @@ func TestSerializeRoundTripWithTypes(t *testing.T) {
 func TestSerializeExpandedRoundTrip(t *testing.T) {
 	g1 := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
-	g1.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g1.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	var buf strings.Builder
-	if err := Serialize(g1, &buf, WithExpanded()); err != nil {
+	if err := Serialize(t.Context(), g1, &buf, WithExpanded()); err != nil {
 		t.Fatal(err)
 	}
 
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatal(err)
 	}
-	if g2.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g2.Len())
+	if mustV(g2.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -535,11 +535,11 @@ func TestParseNestedContext(t *testing.T) {
 		"name": "Alice"
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -548,12 +548,12 @@ func TestSerializeMultipleSubjects(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	for i := 0; i < 3; i++ {
 		s, _ := rdflibgo.NewURIRef(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
+		g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
 	}
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {
@@ -565,11 +565,11 @@ func TestSerializeMultipleSubjects(t *testing.T) {
 func TestSerializeWithBaseAndNamespaces(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	var buf strings.Builder
-	err := Serialize(g, &buf, WithBase("http://example.org/"), WithDocumentLoader(ld.NewCachingDocumentLoader(ld.NewDefaultDocumentLoader(nil))))
+	err := Serialize(t.Context(), g, &buf, WithBase("http://example.org/"), WithDocumentLoader(ld.NewCachingDocumentLoader(ld.NewDefaultDocumentLoader(nil))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,11 +585,11 @@ func TestParseGraphWithList(t *testing.T) {
 		"http://example.org/p": {"@list": ["a", "b", "c"]}
 	}`
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() < 1 {
-		t.Errorf("expected at least 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) < 1 {
+		t.Errorf("expected at least 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -603,10 +603,10 @@ func TestSerializeFromRDFError(t *testing.T) {
 		rdflibgo.NewURIRefUnsafe("http://example.org/b"),
 		rdflibgo.NewURIRefUnsafe("http://example.org/c"),
 	)
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), tt)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p"), tt)
 
 	var buf strings.Builder
-	err := Serialize(g, &buf)
+	err := Serialize(t.Context(), g, &buf)
 	if err == nil {
 		t.Error("expected error from proc.FromRDF for triple terms")
 	}
@@ -616,10 +616,10 @@ func TestSerializeFromRDFError(t *testing.T) {
 func TestSerializeBNodeSubject(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	bn := rdflibgo.NewBNode("x1")
-	g.Add(bn, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Bob"))
+	g.Add(t.Context(), bn, rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Bob"))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {

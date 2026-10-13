@@ -81,7 +81,7 @@ func checkLoadBlankNodeScope[O any](t *testing.T, data string, preserve O,
 					if subjects[0].Equal(subjects[1]) != keep {
 						t.Fatalf("cross-load identity: %v and %v, preserve=%v", subjects[0], subjects[1], keep)
 					}
-					first.Merge(second)
+					first.Merge(t.Context(), second)
 					want := 2
 					if keep {
 						want = 1

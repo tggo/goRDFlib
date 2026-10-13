@@ -21,15 +21,15 @@ func TestParserBaseIRIResolution(t *testing.T) {
 	for _, tc := range cases {
 		ds := graph.NewDataset()
 		src := "<" + tc.ref + "> { <" + tc.ref + "> <http://x/p> <http://x/o> . }"
-		if err := ParseDataset(ds, strings.NewReader(src), WithBase(tc.base)); err != nil {
+		if err := ParseDataset(t.Context(), ds, strings.NewReader(src), WithBase(tc.base)); err != nil {
 			t.Fatalf("base %q ref %q: %v", tc.base, tc.ref, err)
 		}
 		g := ds.Graph(rdflibgo.NewURIRefUnsafe(tc.want))
-		if g.Len() != 1 {
-			t.Errorf("base %q ref %q: graph %q holds %d triples, want 1", tc.base, tc.ref, tc.want, g.Len())
+		if mustV(g.Len(t.Context())) != 1 {
+			t.Errorf("base %q ref %q: graph %q holds %d triples, want 1", tc.base, tc.ref, tc.want, mustV(g.Len(t.Context())))
 			continue
 		}
-		g.Triples(nil, nil, nil)(func(tr rdflibgo.Triple) bool {
+		g.Triples(t.Context(), nil, nil, nil)(func(tr rdflibgo.Triple, _ error) bool {
 			if got := tr.Subject.String(); got != tc.want {
 				t.Errorf("base %q ref %q: subject %q, want %q", tc.base, tc.ref, got, tc.want)
 			}

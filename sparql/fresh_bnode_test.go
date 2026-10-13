@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"context"
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -9,7 +10,7 @@ import (
 func subjectsOf(g *rdflibgo.Graph, pred string) map[string]bool {
 	p := rdflibgo.NewURIRefUnsafe(pred)
 	subs := map[string]bool{}
-	for tr := range g.Triples(nil, &p, nil) {
+	for tr := range g.Triples(context.Background(), nil, &p, nil) {
 		subs[tr.Subject.N3()] = true
 	}
 	return subs

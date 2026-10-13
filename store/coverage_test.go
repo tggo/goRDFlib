@@ -31,20 +31,20 @@ func TestSet(t *testing.T) {
 	o2 := term.NewLiteral("second")
 
 	// Add initial triple
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: o1}, nil)
-	if s.Len(nil) != 1 {
-		t.Fatalf("expected 1 triple, got %d", s.Len(nil))
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: o1}, nil)
+	if mustV(s.Len(t.Context(), nil)) != 1 {
+		t.Fatalf("expected 1 triple, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 
 	// Set replaces (s, p, first) with (s, p, second)
-	s.Set(term.Triple{Subject: sub, Predicate: pred, Object: o2}, nil)
-	if s.Len(nil) != 1 {
-		t.Fatalf("expected 1 triple after Set, got %d", s.Len(nil))
+	s.Set(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: o2}, nil)
+	if mustV(s.Len(t.Context(), nil)) != 1 {
+		t.Fatalf("expected 1 triple after Set, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 
 	// Verify the new value is present
 	found := false
-	s.Triples(term.TriplePattern{Subject: sub, Predicate: &pred}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Subject: sub, Predicate: &pred}, nil)(func(t term.Triple, _ error) bool {
 		if t.Object == o2 {
 			found = true
 		}
@@ -62,16 +62,16 @@ func TestSetMultipleReplaced(t *testing.T) {
 	pred, _ := term.NewURIRef("http://example.org/p")
 	p2, _ := term.NewURIRef("http://example.org/p2")
 
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral("v1")}, nil)
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral("v2")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral("v1")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: term.NewLiteral("v2")}, nil)
 	// Add an unrelated triple that should survive
-	s.Add(term.Triple{Subject: sub, Predicate: p2, Object: term.NewLiteral("other")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p2, Object: term.NewLiteral("other")}, nil)
 
 	newObj := term.NewLiteral("new")
-	s.Set(term.Triple{Subject: sub, Predicate: pred, Object: newObj}, nil)
+	s.Set(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: newObj}, nil)
 
-	if s.Len(nil) != 2 {
-		t.Fatalf("expected 2 triples after Set, got %d", s.Len(nil))
+	if mustV(s.Len(t.Context(), nil)) != 2 {
+		t.Fatalf("expected 2 triples after Set, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 }
 
@@ -80,11 +80,11 @@ func TestNamespacesIterator(t *testing.T) {
 	s := NewMemoryStore()
 	ns1, _ := term.NewURIRef("http://example.org/ns1#")
 	ns2, _ := term.NewURIRef("http://example.org/ns2#")
-	s.Bind("ex1", ns1)
-	s.Bind("ex2", ns2)
+	s.Bind(t.Context(), "ex1", ns1)
+	s.Bind(t.Context(), "ex2", ns2)
 
 	count := 0
-	s.Namespaces()(func(prefix string, ns term.URIRef) bool {
+	s.Namespaces(t.Context())(func(NamespaceBinding, error) bool {
 		count++
 		return true
 	})
@@ -98,11 +98,11 @@ func TestNamespacesEarlyExit(t *testing.T) {
 	s := NewMemoryStore()
 	ns1, _ := term.NewURIRef("http://example.org/ns1#")
 	ns2, _ := term.NewURIRef("http://example.org/ns2#")
-	s.Bind("ex1", ns1)
-	s.Bind("ex2", ns2)
+	s.Bind(t.Context(), "ex1", ns1)
+	s.Bind(t.Context(), "ex2", ns2)
 
 	count := 0
-	s.Namespaces()(func(prefix string, ns term.URIRef) bool {
+	s.Namespaces(t.Context())(func(NamespaceBinding, error) bool {
 		count++
 		return false // stop after first
 	})
@@ -120,18 +120,18 @@ func TestRemoveLockedCleanupAllIndices(t *testing.T) {
 	obj := term.NewLiteral("v")
 
 	t1 := term.Triple{Subject: sub, Predicate: pred, Object: obj}
-	s.Add(t1, nil)
+	s.Add(t.Context(), t1, nil)
 	// Remove via wildcard — exercises removeLocked cleanup with all maps becoming empty
-	s.Remove(term.TriplePattern{}, nil)
+	s.Remove(t.Context(), term.TriplePattern{}, nil)
 
-	if s.Len(nil) != 0 {
-		t.Errorf("expected 0 after remove all, got %d", s.Len(nil))
+	if mustV(s.Len(t.Context(), nil)) != 0 {
+		t.Errorf("expected 0 after remove all, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 
 	// Verify indices are clean by re-adding and checking count
-	s.Add(t1, nil)
-	if s.Len(nil) != 1 {
-		t.Errorf("expected 1 after re-add, got %d", s.Len(nil))
+	s.Add(t.Context(), t1, nil)
+	if mustV(s.Len(t.Context(), nil)) != 1 {
+		t.Errorf("expected 1 after re-add, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 }
 
@@ -143,9 +143,9 @@ func TestRemoveNonExistent(t *testing.T) {
 	obj := term.NewLiteral("v")
 
 	// Remove a triple that was never added — should be a no-op
-	s.Remove(term.TriplePattern{Subject: sub, Predicate: &pred, Object: obj}, nil)
-	if s.Len(nil) != 0 {
-		t.Errorf("expected 0, got %d", s.Len(nil))
+	s.Remove(t.Context(), term.TriplePattern{Subject: sub, Predicate: &pred, Object: obj}, nil)
+	if mustV(s.Len(t.Context(), nil)) != 0 {
+		t.Errorf("expected 0, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 }
 
@@ -157,13 +157,13 @@ func TestTriplesObjectPatternWithSubjectFilter(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	obj := term.NewLiteral("shared")
 
-	s.Add(term.Triple{Subject: s1, Predicate: p, Object: obj}, nil)
-	s.Add(term.Triple{Subject: s2, Predicate: p, Object: obj}, nil)
+	s.Add(t.Context(), term.Triple{Subject: s1, Predicate: p, Object: obj}, nil)
+	s.Add(t.Context(), term.Triple{Subject: s2, Predicate: p, Object: obj}, nil)
 
 	// Pattern: object=obj, no subject set — but via TriplePattern only object
 	// This hits the osp branch with sk=="" (no subject filter)
 	count := 0
-	s.Triples(term.TriplePattern{Object: obj}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Object: obj}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return true
 	})
@@ -180,11 +180,11 @@ func TestTriplesObjectPatternEarlyExit(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	obj := term.NewLiteral("shared")
 
-	s.Add(term.Triple{Subject: s1, Predicate: p, Object: obj}, nil)
-	s.Add(term.Triple{Subject: s2, Predicate: p, Object: obj}, nil)
+	s.Add(t.Context(), term.Triple{Subject: s1, Predicate: p, Object: obj}, nil)
+	s.Add(t.Context(), term.Triple{Subject: s2, Predicate: p, Object: obj}, nil)
 
 	count := 0
-	s.Triples(term.TriplePattern{Object: obj}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Object: obj}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return false // early exit
 	})
@@ -201,12 +201,12 @@ func TestTriplesPredPatternWithObjectFilter(t *testing.T) {
 	o1 := term.NewLiteral("v1")
 	o2 := term.NewLiteral("v2")
 
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: o1}, nil)
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: o2}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: o1}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: o2}, nil)
 
 	// Pattern with predicate only — hits pos branch with ok==""
 	count := 0
-	s.Triples(term.TriplePattern{Predicate: &pred}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Predicate: &pred}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return true
 	})
@@ -223,11 +223,11 @@ func TestTriplesPredPatternEarlyExit(t *testing.T) {
 	o1 := term.NewLiteral("v1")
 	o2 := term.NewLiteral("v2")
 
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: o1}, nil)
-	s.Add(term.Triple{Subject: sub, Predicate: pred, Object: o2}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: o1}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: pred, Object: o2}, nil)
 
 	count := 0
-	s.Triples(term.TriplePattern{Predicate: &pred}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Predicate: &pred}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return false
 	})
@@ -241,11 +241,11 @@ func TestTriplesSubjectPatternEarlyExit(t *testing.T) {
 	s := NewMemoryStore()
 	sub, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	s.Add(term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v1")}, nil)
-	s.Add(term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v2")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v1")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v2")}, nil)
 
 	count := 0
-	s.Triples(term.TriplePattern{Subject: sub}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Subject: sub}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return false
 	})
@@ -259,11 +259,11 @@ func TestTriplesAllEarlyExit(t *testing.T) {
 	s := NewMemoryStore()
 	sub, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
-	s.Add(term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v1")}, nil)
-	s.Add(term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v2")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v1")}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p, Object: term.NewLiteral("v2")}, nil)
 
 	count := 0
-	s.Triples(term.TriplePattern{}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return false
 	})
@@ -279,12 +279,12 @@ func TestTriplesSubjectPatternWithObjectFilter(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	o1 := term.NewLiteral("v1")
 	o2 := term.NewLiteral("v2")
-	s.Add(term.Triple{Subject: sub, Predicate: p, Object: o1}, nil)
-	s.Add(term.Triple{Subject: sub, Predicate: p, Object: o2}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p, Object: o1}, nil)
+	s.Add(t.Context(), term.Triple{Subject: sub, Predicate: p, Object: o2}, nil)
 
 	// Subject only set, no predicate, no object — hits spo branch with pk=="" and ok==""
 	count := 0
-	s.Triples(term.TriplePattern{Subject: sub}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Subject: sub}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return true
 	})
@@ -301,7 +301,7 @@ func TestTriplesExactNotFound(t *testing.T) {
 	obj := term.NewLiteral("v")
 	// Don't add the triple — query should return nothing
 	count := 0
-	s.Triples(term.TriplePattern{Subject: sub, Predicate: &pred, Object: obj}, nil)(func(t term.Triple) bool {
+	s.Triples(t.Context(), term.TriplePattern{Subject: sub, Predicate: &pred, Object: obj}, nil)(func(t term.Triple, _ error) bool {
 		count++
 		return true
 	})
@@ -313,7 +313,7 @@ func TestTriplesExactNotFound(t *testing.T) {
 // TestNamespaceNotFound covers Namespace() miss path.
 func TestNamespaceNotFound(t *testing.T) {
 	s := NewMemoryStore()
-	_, ok := s.Namespace("nonexistent")
+	_, ok, _ := s.Namespace(t.Context(), "nonexistent")
 	if ok {
 		t.Error("expected not found for nonexistent prefix")
 	}
@@ -323,7 +323,7 @@ func TestNamespaceNotFound(t *testing.T) {
 func TestPrefixNotFound(t *testing.T) {
 	s := NewMemoryStore()
 	ns, _ := term.NewURIRef("http://example.org/ns#")
-	_, ok := s.Prefix(ns)
+	_, ok, _ := s.Prefix(t.Context(), ns)
 	if ok {
 		t.Error("expected not found for unbound namespace")
 	}

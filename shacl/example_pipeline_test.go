@@ -1,6 +1,7 @@
 package shacl_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -27,15 +28,20 @@ func ExampleCompiledShapes_parseOnce() {
 	         "@id": "https://example.org/place/1", "@type": "Place", "name": "Well 1"}`
 
 	g := rdflibgo.NewGraph()
-	if err := jsonld.Parse(g, strings.NewReader(doc), jsonld.WithDocumentLoader(loader)); err != nil {
+	if err := jsonld.Parse(context.Background(), g, strings.NewReader(doc), jsonld.WithDocumentLoader(loader)); err != nil {
 		fmt.Println(err)
 		return
 	}
-	report := compiled.Validate(shacl.NewGraphFromRDF(g, ""))
+	data, err := shacl.NewGraphFromRDF(context.Background(), g, "")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	report := compiled.Validate(data)
 	fmt.Println("conforms:", report.Conforms)
 
 	if report.Conforms {
-		_ = nq.Serialize(g, os.Stdout)
+		_ = nq.Serialize(context.Background(), g, os.Stdout)
 	}
 	// Unordered output:
 	// conforms: true

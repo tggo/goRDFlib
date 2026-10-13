@@ -12,7 +12,7 @@ import (
 // the default graph, which is not a named graph (SPARQL 1.1 §13.3).
 func TestGraphWithoutNamedGraphsMatchesNothing(t *testing.T) {
 	g := graph.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:a a ex:Tool . ex:b a ex:Person .`)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:a a ex:Tool . ex:b a ex:Person .`)); err != nil {
 		t.Fatal(err)
 	}
 	cases := map[string]int{

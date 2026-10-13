@@ -33,6 +33,10 @@ var ErrMalformedTarget = errors.New("shacl: malformed target")
 // Results are sorted by focus node, then path, constraint component and value,
 // so the same input gives the same report order on every run; see
 // orderResults for how blank nodes are handled.
+//
+// Validate has no error result. If a graph cannot be read from its store the
+// error goes to WithErrorHandler and the report has Err set, Conforms false and
+// no Results (see ValidationReport.Err); use ValidateContext to get the error.
 func Validate(dataGraph, shapesGraph *Graph, opts ...Option) ValidationReport {
 	return Prepare(dataGraph, shapesGraph, opts...).Validate()
 }
@@ -52,8 +56,18 @@ func ValidateContext(ctx context.Context, dataGraph, shapesGraph *Graph, opts ..
 
 // Validate checks the prepared graph without rerunning rules or reparsing shapes.
 // Each call uses its own recursion state and preserves ordinary report behavior.
+//
+// If the run fails (a graph or query could not be read from its store) it
+// returns a report with Err set and Conforms false, and reports the error to
+// WithErrorHandler; see ValidationReport.Err. Use ValidateContext for the error.
 func (p *Prepared) Validate() ValidationReport {
-	report, _ := p.ValidateContext(context.Background())
+	report, err := p.ValidateContext(context.Background())
+	if err != nil {
+		if p.err == nil { // Prepare already reported its own
+			p.ctx.cfg.report(err)
+		}
+		return failedReport(err)
+	}
 	return report
 }
 
@@ -61,6 +75,9 @@ func (p *Prepared) Validate() ValidationReport {
 // The context is checked before each focus node, and once more at the end,
 // because a store that gave up on a read reports it as no match.
 func (p *Prepared) ValidateContext(goctx context.Context) (ValidationReport, error) {
+	if p.err != nil {
+		return ValidationReport{}, p.err
+	}
 	if err := stopped(goctx); err != nil {
 		return ValidationReport{}, err
 	}
@@ -92,7 +109,7 @@ func (p *Prepared) ValidateContext(goctx context.Context) (ValidationReport, err
 			allResults = append(allResults, results...)
 		}
 	}
-	if err := stopped(goctx); err != nil {
+	if err := finished(goctx, ctx); err != nil {
 		return ValidationReport{}, err
 	}
 
@@ -237,6 +254,7 @@ func evalSPARQLValues(ctx *evalContext, v *SPARQLValues, focusNode Term) []Term 
 	}
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
+		ctx.guard.fail(err)
 		return nil
 	}
 	var values []Term
@@ -370,6 +388,7 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 			query := tgt.Select
 			results, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, nil, nil, ctx.sparqlFuncs())
 			if err != nil {
+				ctx.guard.fail(err)
 				// A target that selects nothing is indistinguishable from one
 				// that is broken, and for a rule it turns into an inference
 				// that silently does not happen.

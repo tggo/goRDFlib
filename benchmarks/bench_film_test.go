@@ -30,7 +30,9 @@ func BenchmarkParseNTriples_10k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
 		g := graph.NewGraph()
-		nt.Parse(g, r)
+		if err := nt.Parse(b.Context(), g, r); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -42,7 +44,9 @@ func BenchmarkParseNTriples_100k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
 		g := graph.NewGraph()
-		nt.Parse(g, r)
+		if err := nt.Parse(b.Context(), g, r); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -56,7 +60,9 @@ func BenchmarkParseTurtle_10k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
 		g := graph.NewGraph()
-		turtle.Parse(g, r)
+		if err := turtle.Parse(b.Context(), g, r); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -68,7 +74,9 @@ func BenchmarkParseTurtle_100k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
 		g := graph.NewGraph()
-		turtle.Parse(g, r)
+		if err := turtle.Parse(b.Context(), g, r); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -79,7 +87,9 @@ func BenchmarkSerializeNTriples_10k(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		nt.Serialize(g, &buf)
+		if err := nt.Serialize(b.Context(), g, &buf); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -90,7 +100,9 @@ func BenchmarkSerializeTurtle_10k(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		turtle.Serialize(g, &buf)
+		if err := turtle.Serialize(b.Context(), g, &buf); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -102,7 +114,9 @@ func BenchmarkStoreAdd_100k(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := graph.NewGraph()
-		nt.Parse(g, strings.NewReader(data))
+		if err := nt.Parse(b.Context(), g, strings.NewReader(data)); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -113,7 +127,10 @@ func BenchmarkStoreLookup_AllFilms_100k(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		count := 0
-		for range g.Triples(nil, &rdfType, &fbFilm) {
+		for _, err := range g.Triples(b.Context(), nil, &rdfType, &fbFilm) {
+			if err != nil {
+				b.Fatal(err)
+			}
 			count++
 		}
 	}
@@ -125,7 +142,10 @@ func BenchmarkStoreLookup_FilmsByDirector_100k(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		count := 0
-		for range g.Triples(nil, &fbDirectedBy, &director) {
+		for _, err := range g.Triples(b.Context(), nil, &fbDirectedBy, &director) {
+			if err != nil {
+				b.Fatal(err)
+			}
 			count++
 		}
 	}

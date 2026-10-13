@@ -17,6 +17,7 @@ import (
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/jsonld"
 	"github.com/tggo/goRDFlib/nq"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 	"github.com/tggo/goRDFlib/turtle"
 )
@@ -279,6 +280,31 @@ type Graph struct {
 	// rather than mutated in place, so a reader always sees a complete set.
 	idx   atomic.Pointer[graphIndexes]
 	idxMu sync.Mutex // serialises index construction
+
+	// readErr is the error of the last lazy index build that failed (see Err).
+	errMu   sync.Mutex
+	readErr error
+}
+
+// Err returns the error of the most recent failed attempt to read the wrapped
+// graph's store into the indexes, or nil once a build has succeeded.
+//
+// The read methods (All, Objects, Triples, Len, ...) have no error result. After
+// Add, Merge or InvalidateIndexes the next read rebuilds the indexes from the
+// store; if that fails it answers from what it could read and does not keep it,
+// and the error is recorded here. Every validation entry point builds the
+// indexes first, with its context, and returns the error, so a run never
+// proceeds on a partial graph; Err is for code that reads the graph directly.
+func (g *Graph) Err() error {
+	g.errMu.Lock()
+	defer g.errMu.Unlock()
+	return g.readErr
+}
+
+func (g *Graph) setErr(err error) {
+	g.errMu.Lock()
+	g.readErr = err
+	g.errMu.Unlock()
 }
 
 // NewGraph creates an empty graph with no base URI.
@@ -295,46 +321,48 @@ func wrap(g *graph.Graph, baseURI string) *Graph {
 
 // rdf returns the rdflib graph, building it from src on first use. Safe for
 // concurrent use, like the indexes.
-func (g *Graph) rdf() *graph.Graph {
+func (g *Graph) rdf(ctx context.Context) (*graph.Graph, error) {
 	if rg := g.rg.Load(); rg != nil {
-		return rg
+		return rg, nil
 	}
 	g.rgMu.Lock()
 	defer g.rgMu.Unlock()
 	if rg := g.rg.Load(); rg != nil {
-		return rg
+		return rg, nil
 	}
 	rg := graph.NewGraph(graph.WithBase(g.baseURI))
 	for _, t := range g.src {
-		rg.Add(t.Subject, t.Predicate, t.Object)
+		if err := rg.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
+			return nil, fmt.Errorf("shacl: building the rdflib graph of a streamed graph: %w", err)
+		}
 	}
 	g.rg.Store(rg)
-	return rg
+	return rg, nil
 }
 
 // defaultNamespaces are the bindings every new rdflib graph starts with,
 // reported for a streamed graph without building one.
-var defaultNamespaces = sync.OnceValue(func() map[string]term.URIRef {
-	m := make(map[string]term.URIRef)
-	for prefix, ns := range graph.NewGraph().Namespaces() {
-		m[prefix] = ns
+var defaultNamespaces = sync.OnceValue(func() []store.NamespaceBinding {
+	var out []store.NamespaceBinding
+	// A fresh in-memory graph: reading its namespaces cannot fail.
+	for b, err := range graph.NewGraph().Namespaces(context.Background()) {
+		if err != nil {
+			break
+		}
+		out = append(out, b)
 	}
-	return m
+	return out
 })
 
-// namespaces iterates the prefix bindings, without building the rdflib graph
-// of a streamed one (its parser binds none).
-func (g *Graph) namespaces() func(func(string, term.URIRef) bool) {
-	if rg := g.rg.Load(); rg != nil {
-		return rg.Namespaces()
+// namespaces returns the prefix bindings, without building the rdflib graph
+// of a streamed one (its parser binds none). They are read once, with the
+// indexes (buildIndexes), so this does no store I/O of its own; a graph whose
+// indexes could not be built reports none.
+func (g *Graph) namespaces() []store.NamespaceBinding {
+	if g.rg.Load() == nil {
+		return defaultNamespaces()
 	}
-	return func(yield func(string, term.URIRef) bool) {
-		for prefix, ns := range defaultNamespaces() {
-			if !yield(prefix, ns) {
-				return
-			}
-		}
-	}
+	return g.ensureIndexes().ns
 }
 
 // LoadTurtleFile loads a Turtle file from disk.
@@ -348,7 +376,7 @@ func LoadTurtleFile(path string, opts ...turtle.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
 	parseOpts := append([]turtle.Option{}, opts...)
 	parseOpts = append(parseOpts, turtle.WithBase(base))
-	if err := turtle.Parse(g, f, parseOpts...); err != nil {
+	if err := turtle.Parse(context.Background(), g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return wrap(g, base), nil
@@ -359,7 +387,7 @@ func LoadTurtle(r io.Reader, base string, opts ...turtle.Option) (*Graph, error)
 	g := graph.NewGraph(graph.WithBase(base))
 	parseOpts := append([]turtle.Option{}, opts...)
 	parseOpts = append(parseOpts, turtle.WithBase(base))
-	if err := turtle.Parse(g, r, parseOpts...); err != nil {
+	if err := turtle.Parse(context.Background(), g, r, parseOpts...); err != nil {
 		return nil, err
 	}
 	return wrap(g, base), nil
@@ -381,7 +409,7 @@ func LoadJsonLDFile(path string, opts ...jsonld.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
 	parseOpts := append([]jsonld.Option{}, opts...)
 	parseOpts = append(parseOpts, jsonld.WithBase(base))
-	if err := jsonld.Parse(g, f, parseOpts...); err != nil {
+	if err := jsonld.Parse(context.Background(), g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return wrap(g, base), nil
@@ -421,7 +449,7 @@ func LoadNQuadsFile(path string, opts ...nq.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
 	parseOpts := append([]nq.Option{}, opts...)
 	parseOpts = append(parseOpts, nq.WithBase(base))
-	if err := nq.Parse(g, f, parseOpts...); err != nil {
+	if err := nq.Parse(context.Background(), g, f, parseOpts...); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return wrap(g, base), nil
@@ -432,7 +460,7 @@ func LoadNQuads(r io.Reader, base string, opts ...nq.Option) (*Graph, error) {
 	g := graph.NewGraph(graph.WithBase(base))
 	parseOpts := append([]nq.Option{}, opts...)
 	parseOpts = append(parseOpts, nq.WithBase(base))
-	if err := nq.Parse(g, r, parseOpts...); err != nil {
+	if err := nq.Parse(context.Background(), g, r, parseOpts...); err != nil {
 		return nil, err
 	}
 	return wrap(g, base), nil
@@ -459,8 +487,16 @@ func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
 // index also means every triple in g is materialized into memory at index
 // time — wrapping a graph backed by a large persistent store will hold its
 // full triple set in memory during validation.
-func NewGraphFromRDF(g *graph.Graph, baseURI string) *Graph {
-	return wrap(g, baseURI)
+//
+// Reading g is store I/O, so the index is built here, with ctx, and a store
+// error or a done context is returned instead of a graph that looks empty.
+// After it returns, validation reads only the index.
+func NewGraphFromRDF(ctx context.Context, g *graph.Graph, baseURI string) (*Graph, error) {
+	out := wrap(g, baseURI)
+	if _, err := out.ensureIndexesContext(ctx); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // InvalidateIndexes discards the lazily built SPO/POS indexes, forcing the
@@ -478,6 +514,18 @@ type graphIndexes struct {
 	pos map[ikey]map[ikey][]Term // predicate → object → []subject
 	p   map[ikey][]Triple        // predicate → []Triple
 	n   int                      // number of distinct triples
+	ns  []store.NamespaceBinding // prefix bindings of a wrapped graph
+
+	// reifies holds the rdf:reifies triples whose object is a triple term.
+	// shacl.Term cannot represent a triple term, so spo/pos/p do not see them;
+	// the reifier lookups of SHACL 1.2 read this instead of the store.
+	reifies   []reifyEntry
+	reifiesBy map[ikey][]term.TripleTerm // by reifier
+}
+
+type reifyEntry struct {
+	reifier Term
+	tt      term.TripleTerm
 }
 
 // ensureIndexes returns the indexes, building them on first use.
@@ -486,21 +534,31 @@ type graphIndexes struct {
 // it, so building the indexes lazily has to be safe to race on. Construction is
 // serialised and the finished set published atomically; a second caller that
 // arrives mid-build waits rather than seeing a half-filled map.
+//
+// The build reads the store with context.Background, and a failure leaves the
+// partial index unpublished. Every entry point that has a context builds the
+// indexes first with buildIndexes, so the failure reaches its caller; this form
+// is only the lazy rebuild after Add or Merge, and it records the error (Err).
 func (g *Graph) ensureIndexes() *graphIndexes {
-	return g.ensureIndexesContext(nil)
+	idx, err := g.ensureIndexesContext(context.Background())
+	if err != nil {
+		g.setErr(err)
+	}
+	return idx
 }
 
-// ensureIndexesContext is ensureIndexes reading the wrapped graph with ctx
-// bound to its store. An index built while ctx became done may be missing
-// triples the store abandoned, so it is returned but not kept.
-func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
+// ensureIndexesContext is ensureIndexes reading the wrapped graph with ctx.
+// An index built from a failed or abandoned read may be missing triples, so
+// the error is returned and the index is not kept (the partial one is returned
+// too, for the callers that cannot fail).
+func (g *Graph) ensureIndexesContext(ctx context.Context) (*graphIndexes, error) {
 	if idx := g.idx.Load(); idx != nil {
-		return idx
+		return idx, nil
 	}
 	g.idxMu.Lock()
 	defer g.idxMu.Unlock()
 	if idx := g.idx.Load(); idx != nil {
-		return idx
+		return idx, nil
 	}
 
 	idx := &graphIndexes{
@@ -510,7 +568,16 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 	}
 	// A streamed source may repeat a triple; a graph holds it once.
 	dedup := g.rg.Load() == nil
-	add := func(t term.Triple) bool {
+	add := func(t term.Triple) {
+		if tt, ok := t.Object.(term.TripleTerm); ok && t.Predicate.Value() == RDF+"reifies" {
+			r := fromRDFLib(t.Subject)
+			idx.reifies = append(idx.reifies, reifyEntry{r, tt})
+			if idx.reifiesBy == nil {
+				idx.reifiesBy = make(map[ikey][]term.TripleTerm)
+			}
+			rk := indexKey(r)
+			idx.reifiesBy[rk] = append(idx.reifiesBy[rk], tt)
+		}
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
@@ -524,7 +591,7 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 		if dedup {
 			for _, have := range sp[pk] {
 				if indexKey(have) == ok {
-					return true
+					return
 				}
 			}
 		}
@@ -539,46 +606,45 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) *graphIndexes {
 		po[ok] = append(po[ok], s)
 
 		idx.p[pk] = append(idx.p[pk], Triple{Subject: s, Predicate: p, Object: o})
-		return true
 	}
 	if rg := g.rg.Load(); rg != nil {
-		rg.BindContext(ctx).Triples(nil, nil, nil)(add)
+		for t, err := range rg.Triples(ctx, nil, nil, nil) {
+			if err != nil {
+				return idx, fmt.Errorf("shacl: reading the graph: %w", err)
+			}
+			add(t)
+		}
+		for b, err := range rg.Namespaces(ctx) {
+			if err != nil {
+				return idx, fmt.Errorf("shacl: reading the graph's namespaces: %w", err)
+			}
+			idx.ns = append(idx.ns, b)
+		}
 	} else {
 		for _, t := range g.src {
 			add(t)
 		}
 	}
 
-	if ctx != nil && ctx.Err() != nil {
-		return idx
+	if err := ctx.Err(); err != nil {
+		return idx, err
 	}
 	g.idx.Store(idx)
-	return idx
+	g.setErr(nil)
+	return idx, nil
 }
 
 func (g *Graph) invalidateIndexes() {
 	g.idx.Store(nil)
 }
 
-// Triples returns all triples in the graph.
+// Triples returns all triples in the graph, from its indexes.
 func (g *Graph) Triples() []Triple {
-	var result []Triple
-	if g.rg.Load() == nil {
-		idx := g.ensureIndexes()
-		result = make([]Triple, 0, idx.n)
-		for _, ts := range idx.p {
-			result = append(result, ts...)
-		}
-		return result
+	idx := g.ensureIndexes()
+	result := make([]Triple, 0, idx.n)
+	for _, ts := range idx.p {
+		result = append(result, ts...)
 	}
-	g.rdf().Triples(nil, nil, nil)(func(t term.Triple) bool {
-		result = append(result, Triple{
-			Subject:   fromRDFLib(t.Subject),
-			Predicate: fromRDFLib(t.Predicate),
-			Object:    fromRDFLib(t.Object),
-		})
-		return true
-	})
 	return result
 }
 
@@ -721,29 +787,42 @@ func (g *Graph) RDFList(head Term) []Term {
 
 // Len returns the number of triples in the graph.
 func (g *Graph) Len() int {
-	if g.rg.Load() == nil {
-		return g.ensureIndexes().n
+	return g.ensureIndexes().n
+}
+
+// Add inserts a triple into the graph. The write goes to the wrapped store
+// with ctx; a store error or a done context is returned and the triple is not
+// indexed.
+func (g *Graph) Add(ctx context.Context, s, p, o Term) error {
+	g.invalidateIndexes()
+	rg, err := g.rdf(ctx)
+	if err != nil {
+		return err
 	}
-	return g.rdf().Len()
+	if err := rg.Add(ctx, toSubject(s), toURIRef(p), toTerm(o)); err != nil {
+		return fmt.Errorf("shacl: adding a triple: %w", err)
+	}
+	return nil
 }
 
-// Add inserts a triple into the graph.
-func (g *Graph) Add(s, p, o Term) {
+// Merge adds all triples from other into this graph. other is read from its
+// indexes (build them with ctx first when it wraps a store); the writes go to
+// this graph's store with ctx, and the first error stops the merge.
+func (g *Graph) Merge(ctx context.Context, other *Graph) error {
 	g.invalidateIndexes()
-	sub := toSubject(s)
-	pred := toURIRef(p)
-	obj := toTerm(o)
-	g.rdf().Add(sub, pred, obj)
-}
-
-// Merge adds all triples from other into this graph.
-func (g *Graph) Merge(other *Graph) {
-	g.invalidateIndexes()
-	dst := g.rdf()
-	other.rdf().Triples(nil, nil, nil)(func(t term.Triple) bool {
-		dst.Add(t.Subject.(term.Subject), t.Predicate, t.Object)
-		return true
-	})
+	if _, err := other.ensureIndexesContext(ctx); err != nil {
+		return err
+	}
+	dst, err := g.rdf(ctx)
+	if err != nil {
+		return err
+	}
+	for _, t := range other.Triples() {
+		if err := dst.Add(ctx, toSubject(t.Subject), toURIRef(t.Predicate), toTerm(t.Object)); err != nil {
+			return fmt.Errorf("shacl: merging a graph: %w", err)
+		}
+	}
+	return nil
 }
 
 // BaseURI returns the base URI of the graph.

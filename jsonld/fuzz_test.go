@@ -110,7 +110,7 @@ func FuzzParseProvenance(f *testing.F) {
 		}
 		var seen []record
 
-		err := Parse(g, strings.NewReader(src), WithBase("http://example.org/"),
+		err := Parse(t.Context(), g, strings.NewReader(src), WithBase("http://example.org/"),
 			WithProvenance(func(s rdflibgo.Subject, _ rdflibgo.URIRef, _ rdflibgo.Term, line int) {
 				seen = append(seen, record{subject: s, line: line})
 			}))
@@ -131,7 +131,7 @@ func FuzzParseProvenance(f *testing.F) {
 			// Only a subject the graph actually holds may be reported.
 			if s, ok := r.subject.(term.Subject); ok {
 				found := false
-				g.Triples(s, nil, nil)(func(term.Triple) bool {
+				g.Triples(t.Context(), s, nil, nil)(func(term.Triple, error) bool {
 					found = true
 					return false
 				})

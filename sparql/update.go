@@ -98,7 +98,7 @@ func evalUpdateOp(ec *evalCtx, ds *Dataset, op UpdateOperation, prefixes map[str
 	case *GraphMgmtOp:
 		return evalGraphMgmt(ec, ds, o, prefixes)
 	default:
-		return fmt.Errorf("unknown update operation type: %T", op)
+		return fmt.Errorf("%w: unknown update operation type: %T", ErrUpdateRejected, op)
 	}
 }
 
@@ -124,7 +124,9 @@ func evalInsertData(ec *evalCtx, ds *Dataset, op *InsertDataOp, prefixes map[str
 			if !ok {
 				continue
 			}
-			g.Add(subj, pred, o)
+			if err := g.Add(ec.context(), subj, pred, o); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -149,7 +151,9 @@ func evalDeleteData(ec *evalCtx, ds *Dataset, op *DeleteDataOp, prefixes map[str
 			if !ok {
 				continue
 			}
-			g.Remove(subj, &pred, o)
+			if err := g.Remove(ec.context(), subj, &pred, o); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -158,9 +162,9 @@ func evalDeleteData(ec *evalCtx, ds *Dataset, op *DeleteDataOp, prefixes map[str
 func evalDeleteWhere(ec *evalCtx, ds *Dataset, op *DeleteWhereOp, prefixes map[string]string) error {
 	// Build a WHERE pattern from the quads and use the same quads as template
 	pattern := quadsToPattern(op.Quads, prefixes)
-	namedGraphs, _ := ec.bindNamed(ds.NamedGraphs)
+	namedGraphs := ds.NamedGraphs
 
-	solutions := evalPattern(ec, ec.bind(ds.Default), pattern, prefixes, namedGraphs)
+	solutions := evalPattern(ec, ds.Default, pattern, prefixes, namedGraphs)
 
 	// Instantiate every removal before applying any, so a cancellation during
 	// the WHERE clause or the instantiation leaves the dataset untouched (see
@@ -205,20 +209,22 @@ func evalDeleteWhere(ec *evalCtx, ds *Dataset, op *DeleteWhereOp, prefixes map[s
 		return nil
 	}
 	for _, r := range removals {
-		r.graph.Remove(r.subj, &r.pred, r.obj)
+		if err := r.graph.Remove(ec.context(), r.subj, &r.pred, r.obj); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]string) error {
 	// Determine the query graph
-	queryGraph := ec.bind(ds.Default)
-	namedGraphs, _ := ec.bindNamed(ds.NamedGraphs)
+	queryGraph := ds.Default
+	namedGraphs := ds.NamedGraphs
 
 	if op.With != "" {
 		// WITH <g> makes the named graph the default for pattern matching
 		if ng, ok := ds.NamedGraphs[op.With]; ok {
-			queryGraph = ec.bind(ng)
+			queryGraph = ng
 		} else {
 			queryGraph = rdflibgo.NewGraph()
 		}
@@ -231,16 +237,21 @@ func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]stri
 		for _, uc := range op.Using {
 			if uc.Named {
 				if ng, ok := ds.NamedGraphs[uc.IRI]; ok {
-					usedNamed[uc.IRI] = ec.bind(ng)
+					usedNamed[uc.IRI] = ng
 				}
 			} else {
 				// Merge into default graph
 				if ng, ok := ds.NamedGraphs[uc.IRI]; ok {
-					for tr := range ec.bind(ng).Triples(nil, nil, nil) {
+					for tr, err := range ng.Triples(ec.context(), nil, nil, nil) {
+						if err == nil {
+							err = merged.Add(ec.context(), tr.Subject, tr.Predicate, tr.Object)
+						}
+						if err != nil {
+							return err
+						}
 						if ec.stop() {
 							return nil
 						}
-						merged.Add(tr.Subject, tr.Predicate, tr.Object)
 					}
 				}
 			}
@@ -321,10 +332,14 @@ func evalModify(ec *evalCtx, ds *Dataset, op *ModifyOp, prefixes map[string]stri
 		return nil
 	}
 	for _, d := range deletes {
-		d.graph.Remove(d.subj, &d.pred, d.obj)
+		if err := d.graph.Remove(ec.context(), d.subj, &d.pred, d.obj); err != nil {
+			return err
+		}
 	}
 	for _, i := range inserts {
-		i.graph.Add(i.subj, i.pred, i.obj)
+		if err := i.graph.Add(ec.context(), i.subj, i.pred, i.obj); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -335,25 +350,35 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 	case "CLEAR", "DROP":
 		switch op.Target {
 		case "DEFAULT":
-			clearGraph(ec.bind(ds.Default))
+			if err := clearGraph(ec, ds.Default); err != nil {
+				return err
+			}
 		case "NAMED":
 			for k := range ds.NamedGraphs {
-				clearGraph(ec.bind(ds.NamedGraphs[k]))
+				if err := clearGraph(ec, ds.NamedGraphs[k]); err != nil {
+					return err
+				}
 				if op.Op == "DROP" {
 					delete(ds.NamedGraphs, k)
 				}
 			}
 		case "ALL":
-			clearGraph(ec.bind(ds.Default))
+			if err := clearGraph(ec, ds.Default); err != nil {
+				return err
+			}
 			for k := range ds.NamedGraphs {
-				clearGraph(ec.bind(ds.NamedGraphs[k]))
+				if err := clearGraph(ec, ds.NamedGraphs[k]); err != nil {
+					return err
+				}
 				if op.Op == "DROP" {
 					delete(ds.NamedGraphs, k)
 				}
 			}
 		default:
 			if g, ok := ds.NamedGraphs[op.Target]; ok {
-				clearGraph(ec.bind(g))
+				if err := clearGraph(ec, g); err != nil {
+					return err
+				}
 				if op.Op == "DROP" {
 					delete(ds.NamedGraphs, op.Target)
 				}
@@ -371,7 +396,7 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 	case "LOAD":
 		if ds.Loader == nil {
 			if !op.Silent {
-				return fmt.Errorf("LOAD not supported: no Loader configured on Dataset")
+				return fmt.Errorf("%w: LOAD not supported: no Loader configured on Dataset", ErrUpdateRejected)
 			}
 			return nil
 		}
@@ -383,7 +408,7 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 		}())
 		if err := ds.Loader.Load(ec.context(), target, op.Source); err != nil {
 			if !op.Silent {
-				return fmt.Errorf("LOAD <%s>: %w", op.Source, err)
+				return fmt.Errorf("%w: LOAD <%s>: %w", ErrUpdateRejected, op.Source, err)
 			}
 		}
 
@@ -403,7 +428,9 @@ func evalGraphMgmt(ec *evalCtx, ds *Dataset, op *GraphMgmtOp, prefixes map[strin
 		// Clear source
 		src := getGraph(ec, ds, op.Source)
 		if src != nil {
-			clearGraph(src)
+			if err := clearGraph(ec, src); err != nil {
+				return err
+			}
 			if op.Source != "DEFAULT" {
 				delete(ds.NamedGraphs, op.Source)
 			}
@@ -419,7 +446,7 @@ func transferGraphs(ec *evalCtx, ds *Dataset, srcName, dstName string, replace b
 		if silent {
 			return nil
 		}
-		return fmt.Errorf("source graph %s not found", srcName)
+		return fmt.Errorf("%w: source graph %s not found", ErrUpdateRejected, srcName)
 	}
 
 	// Collect triples first to avoid deadlock when src and dst share a store
@@ -429,56 +456,62 @@ func transferGraphs(ec *evalCtx, ds *Dataset, srcName, dstName string, replace b
 		o rdflibgo.Term
 	}
 	var triples []triple
-	for tr := range src.Triples(nil, nil, nil) {
+	for tr, err := range src.Triples(ec.context(), nil, nil, nil) {
+		if err != nil {
+			return err
+		}
 		triples = append(triples, triple{tr.Subject, tr.Predicate, tr.Object})
 	}
 
 	dst := getOrCreateGraph(ec, ds, dstName)
 	if replace {
-		clearGraph(dst)
+		if err := clearGraph(ec, dst); err != nil {
+			return err
+		}
 	}
 
 	for _, t := range triples {
-		dst.Add(t.s, t.p, t.o)
+		if err := dst.Add(ec.context(), t.s, t.p, t.o); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func getGraph(ec *evalCtx, ds *Dataset, name string) *rdflibgo.Graph {
 	if name == "DEFAULT" {
-		return ec.bind(ds.Default)
+		return ds.Default
 	}
 	if g, ok := ds.NamedGraphs[name]; ok {
-		return ec.bind(g)
+		return g
 	}
 	return nil
 }
 
-// getOrCreateGraph returns the named graph, bound to the evaluation's context.
-// A graph it creates is stored in ds unbound, so the caller's dataset never
-// holds a view tied to one request's context.
+// getOrCreateGraph returns the named graph, creating an in-memory one in ds
+// when it does not exist.
 func getOrCreateGraph(ec *evalCtx, ds *Dataset, name string) *rdflibgo.Graph {
 	if name == "DEFAULT" {
-		return ec.bind(ds.Default)
+		return ds.Default
 	}
 	if g, ok := ds.NamedGraphs[name]; ok {
-		return ec.bind(g)
+		return g
 	}
 	g := rdflibgo.NewGraph()
 	if ds.NamedGraphs == nil {
 		ds.NamedGraphs = make(map[string]*rdflibgo.Graph)
 	}
 	ds.NamedGraphs[name] = g
-	return ec.bind(g)
+	return g
 }
 
-func clearGraph(g *rdflibgo.Graph) {
-	g.Remove(nil, nil, nil)
+func clearGraph(ec *evalCtx, g *rdflibgo.Graph) error {
+	return g.Remove(ec.context(), nil, nil, nil)
 }
 
 func graphForQuad(ec *evalCtx, ds *Dataset, graphName string) *rdflibgo.Graph {
 	if graphName == "" {
-		return ec.bind(ds.Default)
+		return ds.Default
 	}
 	return getOrCreateGraph(ec, ds, graphName)
 }
@@ -500,7 +533,7 @@ func graphForVar(ec *evalCtx, ds *Dataset, name string, sol map[string]rdflibgo.
 // when the quad must be skipped (see graphForVar).
 func graphForQuadSolution(ec *evalCtx, ds *Dataset, graphName string, sol map[string]rdflibgo.Term) *rdflibgo.Graph {
 	if graphName == "" {
-		return ec.bind(ds.Default)
+		return ds.Default
 	}
 	if strings.HasPrefix(graphName, "?") {
 		return graphForVar(ec, ds, graphName[1:], sol)
@@ -515,7 +548,7 @@ func resolveModifyGraph(ec *evalCtx, ds *Dataset, graphName, with string, sol ma
 		if with != "" {
 			return getOrCreateGraph(ec, ds, with)
 		}
-		return ec.bind(ds.Default)
+		return ds.Default
 	}
 	if strings.HasPrefix(graphName, "?") {
 		return graphForVar(ec, ds, graphName[1:], sol)

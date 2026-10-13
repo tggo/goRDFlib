@@ -6,8 +6,6 @@
 package rdflibgo
 
 import (
-	"iter"
-
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/namespace"
 	"github.com/tggo/goRDFlib/paths"
@@ -40,10 +38,12 @@ type (
 type (
 	Store             = store.Store
 	MemoryStore       = store.MemoryStore
-	TripleIterator    = iter.Seq[Triple]
-	TermIterator      = iter.Seq[Term]
-	TermPairIterator  = iter.Seq2[Term, Term]
-	NamespaceIterator = iter.Seq2[string, URIRef]
+	TripleIterator    = store.TripleIterator
+	TermIterator      = store.TermIterator
+	TermPair          = store.TermPair
+	TermPairIterator  = store.TermPairIterator
+	NamespaceBinding  = store.NamespaceBinding
+	NamespaceIterator = store.NamespaceIterator
 )
 
 // --- Namespace types (from namespace/) ---

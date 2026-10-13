@@ -23,12 +23,12 @@ import (
 func TestRDFSClosure_BNodeSubClass(t *testing.T) {
 	g := graph.NewGraph()
 	c := term.NewBNode("c")
-	g.Add(exX, namespace.RDF.Type, c)
-	g.Add(c, namespace.RDFS.SubClassOf, exB)
+	g.Add(t.Context(), exX, namespace.RDF.Type, c)
+	g.Add(t.Context(), c, namespace.RDFS.SubClassOf, exB)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("rdfs9 did not propagate membership out of a blank-node class")
 	}
 }
@@ -41,12 +41,12 @@ func TestRDFSClosure_BNodeSubClass(t *testing.T) {
 func TestRDFSClosure_BNodeSuperClass(t *testing.T) {
 	g := graph.NewGraph()
 	c := term.NewBNode("c")
-	g.Add(exX, namespace.RDF.Type, exA)
-	g.Add(exA, namespace.RDFS.SubClassOf, c)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, c)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, c) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, c)) {
 		t.Error("rdfs9 did not propagate membership into a blank-node class")
 	}
 }
@@ -58,13 +58,13 @@ func TestRDFSClosure_BNodeSuperClass(t *testing.T) {
 func TestRDFSClosure_BNodeSubClassTransitive(t *testing.T) {
 	g := graph.NewGraph()
 	c := term.NewBNode("c")
-	g.Add(exX, namespace.RDF.Type, exA)
-	g.Add(exA, namespace.RDFS.SubClassOf, c)
-	g.Add(c, namespace.RDFS.SubClassOf, exC)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, c)
+	g.Add(t.Context(), c, namespace.RDFS.SubClassOf, exC)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if !g.Contains(exX, namespace.RDF.Type, exC) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exC)) {
 		t.Error("subclass transitive closure did not pass through a blank-node class")
 	}
 }
@@ -74,12 +74,12 @@ func TestRDFSClosure_BNodeSubClassTransitive(t *testing.T) {
 func TestRDFSClosure_LiteralNotAClass(t *testing.T) {
 	g := graph.NewGraph()
 	lit := term.NewLiteral("not a class")
-	g.Add(exX, namespace.RDF.Type, exA)
-	g.Add(exA, namespace.RDFS.SubClassOf, lit)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.RDFS.SubClassOf, lit)
 
-	RDFSClosure(g)
+	RDFSClosure(t.Context(), g)
 
-	if g.Contains(exX, namespace.RDF.Type, lit) {
+	if mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, lit)) {
 		t.Error("a literal was accepted as a superclass")
 	}
 }
@@ -90,13 +90,13 @@ func TestOWLRL_BNodeEquivalentClass(t *testing.T) {
 	t.Run("out of the blank node", func(t *testing.T) {
 		g := graph.NewGraph()
 		c := term.NewBNode("c")
-		g.Add(exX, namespace.RDF.Type, c)
-		g.Add(c, namespace.OWL.EquivalentClass, exB)
+		g.Add(t.Context(), exX, namespace.RDF.Type, c)
+		g.Add(t.Context(), c, namespace.OWL.EquivalentClass, exB)
 
 		if _, err := Expand(g, RDFS|OWLRL); err != nil {
 			t.Fatalf("Expand: %v", err)
 		}
-		if !g.Contains(exX, namespace.RDF.Type, exB) {
+		if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 			t.Error("cax-eqc did not propagate membership out of a blank-node class")
 		}
 	})
@@ -104,13 +104,13 @@ func TestOWLRL_BNodeEquivalentClass(t *testing.T) {
 	t.Run("into the blank node", func(t *testing.T) {
 		g := graph.NewGraph()
 		c := term.NewBNode("c")
-		g.Add(exX, namespace.RDF.Type, exA)
-		g.Add(exA, namespace.OWL.EquivalentClass, c)
+		g.Add(t.Context(), exX, namespace.RDF.Type, exA)
+		g.Add(t.Context(), exA, namespace.OWL.EquivalentClass, c)
 
 		if _, err := Expand(g, RDFS|OWLRL); err != nil {
 			t.Fatalf("Expand: %v", err)
 		}
-		if !g.Contains(exX, namespace.RDF.Type, c) {
+		if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, c)) {
 			t.Error("cax-eqc did not propagate membership into a blank-node class")
 		}
 	})
@@ -139,24 +139,24 @@ func TestOWLRL_AnonymousRestrictionClassifies(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := graph.NewGraph()
 			r := term.NewBNode("r")
-			g.Add(r, namespace.RDF.Type, namespace.OWL.Restriction)
-			g.Add(r, namespace.OWL.OnProperty, exSoldIn)
-			g.Add(r, namespace.OWL.HasValue, exNL)
-			g.Add(r, pred, exSoldInNL)
+			g.Add(t.Context(), r, namespace.RDF.Type, namespace.OWL.Restriction)
+			g.Add(t.Context(), r, namespace.OWL.OnProperty, exSoldIn)
+			g.Add(t.Context(), r, namespace.OWL.HasValue, exNL)
+			g.Add(t.Context(), r, pred, exSoldInNL)
 
-			g.Add(exP1, namespace.RDF.Type, exProduct)
-			g.Add(exP1, exSoldIn, exNL)
-			g.Add(exP2, namespace.RDF.Type, exProduct)
-			g.Add(exP2, exSoldIn, exUK)
+			g.Add(t.Context(), exP1, namespace.RDF.Type, exProduct)
+			g.Add(t.Context(), exP1, exSoldIn, exNL)
+			g.Add(t.Context(), exP2, namespace.RDF.Type, exProduct)
+			g.Add(t.Context(), exP2, exSoldIn, exUK)
 
 			if _, err := Expand(g, RDFS|OWLRL); err != nil {
 				t.Fatalf("Expand: %v", err)
 			}
 
-			if !g.Contains(exP1, namespace.RDF.Type, exSoldInNL) {
+			if !mustV(g.Contains(t.Context(), exP1, namespace.RDF.Type, exSoldInNL)) {
 				t.Error("p1 satisfies the restriction but was not classified")
 			}
-			if g.Contains(exP2, namespace.RDF.Type, exSoldInNL) {
+			if mustV(g.Contains(t.Context(), exP2, namespace.RDF.Type, exSoldInNL)) {
 				t.Error("p2 does not satisfy the restriction but was classified")
 			}
 		})
@@ -172,18 +172,18 @@ func TestOWLRL_AnonymousRestrictionClassifies(t *testing.T) {
 // cax-eqc gives ex:x a ex:B, and rdfs9 must then give ex:x a ex:C.
 func TestExpand_OWLFeedsRDFS(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(exA, namespace.OWL.EquivalentClass, exB)
-	g.Add(exB, namespace.RDFS.SubClassOf, exC)
-	g.Add(exX, namespace.RDF.Type, exA)
+	g.Add(t.Context(), exA, namespace.OWL.EquivalentClass, exB)
+	g.Add(t.Context(), exB, namespace.RDFS.SubClassOf, exC)
+	g.Add(t.Context(), exX, namespace.RDF.Type, exA)
 
 	if _, err := Expand(g, RDFS|OWLRL); err != nil {
 		t.Fatalf("Expand: %v", err)
 	}
 
-	if !g.Contains(exX, namespace.RDF.Type, exB) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exB)) {
 		t.Error("cax-eqc did not infer x rdf:type B")
 	}
-	if !g.Contains(exX, namespace.RDF.Type, exC) {
+	if !mustV(g.Contains(t.Context(), exX, namespace.RDF.Type, exC)) {
 		t.Error("rdfs9 did not run on the type triple that cax-eqc produced")
 	}
 }
@@ -199,11 +199,11 @@ func TestExpand_ReachesFixpoint(t *testing.T) {
 
 	g := graph.NewGraph()
 	r := term.NewBNode("r")
-	g.Add(r, namespace.RDF.Type, namespace.OWL.Restriction)
-	g.Add(r, namespace.OWL.OnProperty, exSoldIn)
-	g.Add(r, namespace.OWL.HasValue, exNL)
-	g.Add(r, namespace.RDFS.SubClassOf, exSoldInNL)
-	g.Add(exX, exSoldIn, exNL)
+	g.Add(t.Context(), r, namespace.RDF.Type, namespace.OWL.Restriction)
+	g.Add(t.Context(), r, namespace.OWL.OnProperty, exSoldIn)
+	g.Add(t.Context(), r, namespace.OWL.HasValue, exNL)
+	g.Add(t.Context(), r, namespace.RDFS.SubClassOf, exSoldInNL)
+	g.Add(t.Context(), exX, exSoldIn, exNL)
 
 	if _, err := Expand(g, RDFS|OWLRL); err != nil {
 		t.Fatalf("first Expand: %v", err)

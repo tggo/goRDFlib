@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -63,23 +64,60 @@ func (x *exchange) update(req *protocolRequest) error {
 	err = func() error {
 		// Deferred, so that a panic in the engine does not leave the lock held.
 		defer h.lock.unlock()
-		ds := *h.backend.updateDataset()
+		base, err := h.backend.updateDataset(ctx)
+		if err != nil {
+			return storeFailure{err}
+		}
+		ds := *base
 		ds.Loader = h.cfg.loader
-		defer h.backend.commit(&ds)
-		return sparql.EvalUpdateContext(ctx, &ds, u)
+		uerr := sparql.EvalUpdateContext(ctx, &ds, u)
+		// Committed whether the update failed or not, and not under the
+		// update's deadline: graphs it created must not be left half saved.
+		cerr := h.backend.commit(context.WithoutCancel(ctx), &ds)
+		if uerr != nil {
+			return uerr
+		}
+		if cerr != nil {
+			return storeFailure{cerr}
+		}
+		return nil
 	}()
 	if err != nil {
+		var sf storeFailure
+		if errors.As(err, &sf) {
+			return httpErrf(http.StatusInternalServerError, "update failed: the store failed: %v", sf.err)
+		}
 		if errors.Is(err, sparql.ErrQueryCancelled) {
 			return evalError(ctx, err)
 		}
 		if errors.Is(err, sparql.ErrTooManySolutions) {
 			return tooManySolutions(err)
 		}
-		return httpErrf(http.StatusBadRequest, "update failed: %v", err)
+		if isRejectedUpdate(err) {
+			return httpErrf(http.StatusBadRequest, "update failed: %v", err)
+		}
+		// The engine returns store errors as they come, so anything it did
+		// not reject by itself is the store's.
+		return httpErrf(http.StatusInternalServerError, "update failed: %v", err)
 	}
 	x.w.Header().Set("Cache-Control", "no-store")
 	x.w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// storeFailure marks an error of the backing store that happened outside the
+// update engine (listing graphs, committing created graphs).
+type storeFailure struct{ err error }
+
+func (e storeFailure) Error() string { return e.err.Error() }
+func (e storeFailure) Unwrap() error { return e.err }
+
+// isRejectedUpdate reports whether err is the engine refusing the request
+// itself (a MOVE from a graph that does not exist, a LOAD that fails or has
+// no Loader) rather than a store failing under it. The engine has no sentinel
+// for these, so they are recognised by the messages it gives them.
+func isRejectedUpdate(err error) bool {
+	return errors.Is(err, sparql.ErrUpdateRejected)
 }
 
 // checkGraphRefs rejects graph management operations whose graph is neither

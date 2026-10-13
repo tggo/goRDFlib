@@ -90,11 +90,11 @@ func TestBlankNodeGraphScope(t *testing.T) {
 	const input = "_:same <urn:p> _:same <urn:graph> ."
 	g := rdflibgo.NewGraph()
 	for range 2 {
-		if err := Parse(g, strings.NewReader(input)); err != nil {
+		if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if g.Len() != 2 {
-		t.Fatalf("independent parses collapsed blank nodes: got %d triples", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Fatalf("independent parses collapsed blank nodes: got %d triples", mustV(g.Len(t.Context())))
 	}
 }

@@ -12,34 +12,42 @@ import (
 // validate — a copy carrying the inferred triples when rules ran, otherwise the
 // caller's graph untouched. Returning the graph rather than mutating in place
 // is what keeps Validate free of side effects on its input.
-func prepareAdvanced(goctx context.Context, dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *Graph) {
+func prepareAdvanced(goctx context.Context, dataGraph, shapesGraph *Graph, cfg *config) (*afContext, *Graph, error) {
 	checkEntailment(shapesGraph, cfg)
 	if !cfg.advanced {
 		reportUnavailableFunctions(shapesGraph, cfg)
-		return nil, dataGraph
+		return nil, dataGraph, nil
 	}
 
 	ctx, err := newAFContext(dataGraph, shapesGraph, cfg)
 	if err != nil {
 		cfg.report(err)
-		return nil, dataGraph
+		return nil, dataGraph, nil
 	}
 	ctx.ctx = goctx
 	cfg.report(ctx.loadErr)
 
 	if !hasRules(shapesGraph) {
-		return ctx, dataGraph
+		return ctx, dataGraph, nil
 	}
 
 	// Rules infer into a copy so that validating a graph never changes it.
 	expanded := NewGraph()
-	expanded.Merge(dataGraph)
+	if err := expanded.Merge(goctx, dataGraph); err != nil {
+		return nil, nil, err
+	}
 	ctx.dataGraph = expanded
 	if _, err := ctx.applyRules(); err != nil && !errors.Is(err, ErrCancelled) {
 		// A stop is not a malformed rule; PrepareContext reports it itself.
 		cfg.report(err)
 	}
-	return ctx, expanded
+	if err := stopped(goctx); err != nil {
+		return nil, nil, err
+	}
+	if err := ctx.failure(); err != nil {
+		return nil, nil, err
+	}
+	return ctx, expanded, nil
 }
 
 // hasRules reports whether the shapes graph attaches any rule to any shape.

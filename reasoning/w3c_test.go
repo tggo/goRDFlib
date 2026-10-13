@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,7 +76,7 @@ func TestW3C_RDFS_Entailment(t *testing.T) {
 			}
 
 			// Apply RDFS closure
-			RDFSClosure(actionGraph)
+			RDFSClosure(t.Context(), actionGraph)
 
 			isPositive := strings.Contains(e.Type, "PositiveEntailmentTest")
 			isNegative := strings.Contains(e.Type, "NegativeEntailmentTest")
@@ -139,11 +140,11 @@ func loadGraph(t *testing.T, path string) *graph.Graph {
 
 	switch ext {
 	case ".nt":
-		if err := nt.Parse(g, f); err != nil {
+		if err := nt.Parse(t.Context(), g, f); err != nil {
 			t.Fatalf("parse error %s: %v", path, err)
 		}
 	case ".ttl":
-		if err := turtle.Parse(g, f, turtle.WithBase(base)); err != nil {
+		if err := turtle.Parse(t.Context(), g, f, turtle.WithBase(base)); err != nil {
 			t.Fatalf("parse error %s: %v", path, err)
 		}
 	default:
@@ -163,7 +164,7 @@ func isSubgraph(sub, super *graph.Graph) bool {
 	var subTriples []tripleT
 	hasBNodes := false
 
-	sub.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	sub.Triples(context.Background(), nil, nil, nil)(func(t term.Triple, _ error) bool {
 		subTriples = append(subTriples, tripleT{t.Subject, t.Predicate, t.Object})
 		if _, ok := t.Subject.(term.BNode); ok {
 			hasBNodes = true
@@ -177,7 +178,7 @@ func isSubgraph(sub, super *graph.Graph) bool {
 	if !hasBNodes {
 		// Fast path: exact match
 		for _, st := range subTriples {
-			if !super.Contains(st.s.(term.Subject), st.p.(term.URIRef), st.o) {
+			if !mustV(super.Contains(context.Background(), st.s.(term.Subject), st.p.(term.URIRef), st.o)) {
 				return false
 			}
 		}
@@ -189,7 +190,7 @@ func isSubgraph(sub, super *graph.Graph) bool {
 	if len(bnodes) == 0 {
 		// No bnodes after all
 		for _, st := range subTriples {
-			if !super.Contains(st.s.(term.Subject), st.p.(term.URIRef), st.o) {
+			if !mustV(super.Contains(context.Background(), st.s.(term.Subject), st.p.(term.URIRef), st.o)) {
 				return false
 			}
 		}
@@ -241,7 +242,7 @@ func collectBNodes(triples []struct{ s, p, o term.Term }) []string {
 
 func collectSuperNodes(g *graph.Graph) []term.Term {
 	seen := make(map[string]term.Term)
-	g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	g.Triples(context.Background(), nil, nil, nil)(func(t term.Triple, _ error) bool {
 		seen[term.TermKey(t.Subject)] = t.Subject
 		seen[term.TermKey(t.Object)] = t.Object
 		return true
@@ -261,7 +262,7 @@ func verifySubgraph(triples []struct{ s, p, o term.Term }, super *graph.Graph, m
 		if !ok {
 			return false
 		}
-		if !super.Contains(subj, t.p.(term.URIRef), o) {
+		if !mustV(super.Contains(context.Background(), subj, t.p.(term.URIRef), o)) {
 			return false
 		}
 	}
@@ -279,8 +280,8 @@ func mapNode(t term.Term, mapping map[string]term.Term) term.Term {
 
 func reportMissing(t *testing.T, sub, super *graph.Graph) {
 	t.Helper()
-	sub.Triples(nil, nil, nil)(func(tr term.Triple) bool {
-		if !super.Contains(tr.Subject, tr.Predicate, tr.Object) {
+	sub.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
+		if !mustV(super.Contains(t.Context(), tr.Subject, tr.Predicate, tr.Object)) {
 			t.Logf("  missing: %s %s %s", tr.Subject.N3(), tr.Predicate.N3(), tr.Object.N3())
 		}
 		return true

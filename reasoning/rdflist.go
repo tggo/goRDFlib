@@ -8,7 +8,7 @@ import (
 
 // collectList walks an RDF collection (rdf:first/rdf:rest/rdf:nil) starting from head
 // and returns all elements. Returns nil if head is not a valid list node.
-func collectList(g *graph.Graph, head term.Term) []term.Term {
+func collectList(stop *stopper, g *graph.Graph, head term.Term) []term.Term {
 	var result []term.Term
 	visited := make(map[string]struct{}) // cycle protection
 
@@ -37,7 +37,7 @@ func collectList(g *graph.Graph, head term.Term) []term.Term {
 
 		// Get rdf:first value
 		var firstVal term.Term
-		g.Triples(node, &firstPred, nil)(func(t term.Triple) bool {
+		stop.triples(g, node, &firstPred, nil, func(t term.Triple) bool {
 			firstVal = t.Object
 			return false // take first
 		})
@@ -48,7 +48,7 @@ func collectList(g *graph.Graph, head term.Term) []term.Term {
 
 		// Get rdf:rest value
 		var restVal term.Term
-		g.Triples(node, &restPred, nil)(func(t term.Triple) bool {
+		stop.triples(g, node, &restPred, nil, func(t term.Triple) bool {
 			restVal = t.Object
 			return false
 		})

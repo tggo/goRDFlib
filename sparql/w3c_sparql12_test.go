@@ -1,6 +1,7 @@
 package sparql_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -352,8 +353,8 @@ func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdfli
 				rdfType := "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
 				turtleStr := prefixes + graphName + " " + rdfType + " " + rdfType + " ."
 				tempG := rdflibgo.NewGraph()
-				if err := turtle.Parse(tempG, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err == nil {
-					for tr := range tempG.Triples(nil, nil, nil) {
+				if err := turtle.Parse(t.Context(), tempG, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err == nil {
+					for tr := range tempG.Triples(t.Context(), nil, nil, nil) {
 						resolvedName = tr.Subject.String()
 						break
 					}
@@ -372,7 +373,7 @@ func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdfli
 				block = trimBlock + " ."
 			}
 			turtleStr := prefixes + block
-			if err := turtle.Parse(ng, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err != nil {
+			if err := turtle.Parse(t.Context(), ng, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err != nil {
 				t.Fatalf("failed to parse GRAPH block in trig: %v", err)
 			}
 		} else {
@@ -386,7 +387,7 @@ func loadTrigFile(t *testing.T, path string) (*rdflibgo.Graph, map[string]*rdfli
 
 			if strings.TrimSpace(block) != "" {
 				turtleStr := prefixes + block
-				if err := turtle.Parse(defaultG, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err != nil {
+				if err := turtle.Parse(t.Context(), defaultG, strings.NewReader(turtleStr), turtle.WithBase(base), turtle.WithPreserveBlankNodeIDs()); err != nil {
 					t.Fatalf("failed to parse default graph in trig: %v", err)
 				}
 			}
@@ -454,7 +455,7 @@ func graphsIsomorphicBnodes(a, b []rdflibgo.Triple) bool {
 
 func collectTriples(g *rdflibgo.Graph) []rdflibgo.Triple {
 	var result []rdflibgo.Triple
-	for t := range g.Triples(nil, nil, nil) {
+	for t := range g.Triples(context.Background(), nil, nil, nil) {
 		result = append(result, t)
 	}
 	return result

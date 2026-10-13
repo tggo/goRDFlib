@@ -3,7 +3,6 @@ package shacl
 import (
 	"context"
 	"github.com/tggo/goRDFlib/sparql"
-	"github.com/tggo/goRDFlib/term"
 )
 
 // Shape represents either a NodeShape or a PropertyShape.
@@ -150,6 +149,11 @@ type recursionGuard struct {
 	// nil means context.Background.
 	ctx context.Context
 
+	// err is the first failure of the run that is not a finding: a query the
+	// engine could not evaluate, which for a store-backed graph means the
+	// store failed. The run returns it instead of a report (see runFailure).
+	err error
+
 	// quick is set while nodeConforms runs: the caller wants only whether a
 	// node conforms, so validation may stop at the first violation and report
 	// it without detail. The results of a quick run are never reported.
@@ -275,7 +279,7 @@ func (ctx *evalContext) sparqlFuncs() map[string]sparql.ContextFunction {
 	if ctx == nil || ctx.af == nil {
 		return nil
 	}
-	return ctx.af.functionsAtDepth(1)
+	return ctx.af.functionsAtDepth(1, ctx.guard.fail)
 }
 
 // parseShapes extracts all NodeShapes and PropertyShapes from the shapes graph.
@@ -581,28 +585,23 @@ func findAnnotations(g *Graph, subject Term) []tripleAnnotation {
 // annotates a triple with the given subject. Returns nil if the reifier doesn't
 // annotate a triple with this subject.
 func extractAnnotatedTriple(g *Graph, reifier, expectedSubject Term) *tripleAnnotation {
-	reifiesPredURI := toURIRef(IRI(RDF + "reifies"))
 	reifierSubj := toSubject(reifier)
 	if reifierSubj == nil {
 		return nil
 	}
 
 	var result *tripleAnnotation
-	g.rdf().Triples(reifierSubj, &reifiesPredURI, nil)(func(t term.Triple) bool {
-		tt, ok := t.Object.(term.TripleTerm)
-		if !ok {
-			return true
-		}
+	// Read from the indexes (see the reifier lookup in shacl12_constraints.go).
+	for _, tt := range g.ensureIndexes().reifiesBy[indexKey(reifier)] {
 		subj := fromRDFLib(tt.Subject())
 		if !subj.Equal(expectedSubject) {
-			return true
+			continue
 		}
-		result = &tripleAnnotation{
+		return &tripleAnnotation{
 			predicate: fromRDFLib(tt.Predicate()),
 			object:    fromRDFLib(tt.Object()),
 		}
-		return false // stop after first match
-	})
+	}
 	return result
 }
 

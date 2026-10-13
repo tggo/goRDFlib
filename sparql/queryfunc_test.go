@@ -248,7 +248,7 @@ func TestBindFunctions_BoundQueryIsConcurrentlyEvaluable(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			g := rdflibgo.NewGraph()
-			if err := turtle.Parse(g, strings.NewReader(extFuncData)); err != nil {
+			if err := turtle.Parse(t.Context(), g, strings.NewReader(extFuncData)); err != nil {
 				t.Error(err)
 				return
 			}

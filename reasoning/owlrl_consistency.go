@@ -18,7 +18,7 @@ func (e *owlrlEngine) checkConsistency() {
 	type spKey struct{ subj, prop string }
 	propObjs := make(map[spKey][]term.Term)
 
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		sk := term.TermKey(t.Subject)
 		pk := term.TermKey(t.Predicate)
 		if pk == term.TermKey(rdfType) {
@@ -43,7 +43,7 @@ func (e *owlrlEngine) checkConsistency() {
 	}
 
 	// --- prp-irp: p a owl:IrreflexiveProperty, x p x → inconsistency ---
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		pk := term.TermKey(t.Predicate)
 		if _, ok := e.irreflexiveProps[pk]; ok {
 			if term.TermKey(t.Subject) == term.TermKey(t.Object) {
@@ -57,13 +57,13 @@ func (e *owlrlEngine) checkConsistency() {
 	})
 
 	// --- prp-asyp: p a owl:AsymmetricProperty, x p y, y p x → inconsistency ---
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		pk := term.TermKey(t.Predicate)
 		if _, ok := e.asymmetricProps[pk]; !ok {
 			return true
 		}
 		if oSubj, ok := t.Object.(term.Subject); ok {
-			if e.g.Contains(oSubj, t.Predicate, t.Subject) {
+			if e.stop.contains(e.g, oSubj, t.Predicate, t.Subject) {
 				// Only report once (for the pair where s < o lexicographically)
 				if term.TermKey(t.Subject) < term.TermKey(t.Object) {
 					e.inconsistencies = append(e.inconsistencies, Inconsistency{
@@ -77,14 +77,14 @@ func (e *owlrlEngine) checkConsistency() {
 	})
 
 	// --- prp-pdw: p1 owl:propertyDisjointWith p2, x p1 y, x p2 y → inconsistency ---
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		pk := term.TermKey(t.Predicate)
 		disjoints, ok := e.propDisjointWith[pk]
 		if !ok {
 			return true
 		}
 		for _, p2 := range disjoints {
-			if e.g.Contains(t.Subject, p2, t.Object) {
+			if e.stop.contains(e.g, t.Subject, p2, t.Object) {
 				// Only report once (for the pair where p1 < p2 lexicographically)
 				if pk < term.TermKey(p2) {
 					e.inconsistencies = append(e.inconsistencies, Inconsistency{

@@ -38,7 +38,7 @@ func (errReader) Read(p []byte) (int, error) { return 0, errors.New("read fail")
 func mustFail(t *testing.T, input string) {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err == nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err == nil {
 		t.Fatal("expected parse error")
 	}
 }
@@ -46,7 +46,7 @@ func mustFail(t *testing.T, input string) {
 func covSerialize(t *testing.T, g *rdflibgo.Graph) string {
 	t.Helper()
 	var buf strings.Builder
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	return buf.String()
@@ -55,7 +55,7 @@ func covSerialize(t *testing.T, g *rdflibgo.Graph) string {
 func covSerializeDS(t *testing.T, ds *graph.Dataset) string {
 	t.Helper()
 	var buf strings.Builder
-	if err := SerializeDataset(ds, &buf); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &buf); err != nil {
 		t.Fatal(err)
 	}
 	return buf.String()
@@ -70,7 +70,7 @@ func TestCovParseDataset(t *testing.T) {
 ex:g1 { ex:s ex:p "named" . }
 `
 	ds := graph.NewDataset()
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -79,11 +79,11 @@ ex:g1 { ex:s ex:p "named" . }
 func TestCovParseWithBase(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	input := `{ <s> <p> "v" . }`
-	if err := Parse(g, strings.NewReader(input), WithBase("http://example.org/")); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input), WithBase("http://example.org/")); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -91,7 +91,7 @@ func TestCovParseWithBase(t *testing.T) {
 func TestCovParseDatasetWithBase(t *testing.T) {
 	ds := graph.NewDataset()
 	input := `{ <s> <p> "v" . }`
-	if err := ParseDataset(ds, strings.NewReader(input), WithBase("http://example.org/")); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input), WithBase("http://example.org/")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -157,8 +157,8 @@ func TestCovSPARQLPrefix(t *testing.T) {
 func TestCovAnnotation(t *testing.T) {
 	g := mustParse(t, `@prefix ex: <http://example.org/> .
 { ex:s ex:p ex:o {| ex:source ex:doc |} . }`)
-	if g.Len() < 2 {
-		t.Errorf("expected at least 2 triples, got %d", g.Len())
+	if mustV(g.Len(t.Context())) < 2 {
+		t.Errorf("expected at least 2 triples, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -354,7 +354,7 @@ func TestCovReadGraphLabel(t *testing.T) {
 GRAPH ex:g1 { ex:s ex:p "v" . }
 GRAPH <http://example.org/g2> { ex:s ex:p "v2" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -365,7 +365,7 @@ func TestCovReadGraphLabelBNode(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 _:g1 { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -431,10 +431,10 @@ func TestCovSerializeWithBase(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 
 	var buf strings.Builder
-	if err := Serialize(g, &buf, WithBase("http://example.org/")); err != nil {
+	if err := Serialize(t.Context(), g, &buf, WithBase("http://example.org/")); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "@base") {
@@ -445,10 +445,10 @@ func TestCovSerializeWithBase(t *testing.T) {
 // TestCovSerializePrefixed covers prefixed name serialization.
 func TestCovSerializePrefixed(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "ex:") {
 		t.Errorf("expected prefixed names, got:\n%s", out)
@@ -458,11 +458,11 @@ func TestCovSerializePrefixed(t *testing.T) {
 // TestCovSerializeNamedGraph covers named graph serialization.
 func TestCovSerializeNamedGraph(t *testing.T) {
 	ds := graph.NewDataset()
-	ds.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	ds.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	ng := ds.Graph(rdflibgo.NewURIRefUnsafe("http://example.org/g1"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	ng.Add(s, p, rdflibgo.NewLiteral("named"))
+	ng.Add(t.Context(), s, p, rdflibgo.NewLiteral("named"))
 
 	out := covSerializeDS(t, ds)
 	if !strings.Contains(out, "ex:g1") || !strings.Contains(out, "{") {
@@ -554,10 +554,10 @@ func TestCovIsValidLocalName(t *testing.T) {
 // TestCovSerializeInvalidLocalName covers fallback to full IRI.
 func TestCovSerializeInvalidLocalName(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/has,comma")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "<http://example.org/has,comma>") {
 		t.Errorf("expected full IRI, got:\n%s", out)
@@ -569,12 +569,12 @@ func TestCovSerializeListCyclic(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	bn1 := rdflibgo.NewBNode("cyc1")
 	bn2 := rdflibgo.NewBNode("cyc2")
-	g.Add(bn1, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
-	g.Add(bn1, rdflibgo.RDF.Rest, bn2)
-	g.Add(bn2, rdflibgo.RDF.First, rdflibgo.NewLiteral("b"))
-	g.Add(bn2, rdflibgo.RDF.Rest, bn1)
+	g.Add(t.Context(), bn1, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), bn1, rdflibgo.RDF.Rest, bn2)
+	g.Add(t.Context(), bn2, rdflibgo.RDF.First, rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), bn2, rdflibgo.RDF.Rest, bn1)
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn1)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn1)
 	covSerialize(t, g)
 }
 
@@ -582,23 +582,23 @@ func TestCovSerializeListCyclic(t *testing.T) {
 func TestCovSerializeListInvalid(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	bn := rdflibgo.NewBNode("l1")
-	g.Add(bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
-	g.Add(bn, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
-	g.Add(bn, rdflibgo.NewURIRefUnsafe("http://example.org/extra"), rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), bn, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), bn, rdflibgo.NewURIRefUnsafe("http://example.org/extra"), rdflibgo.NewLiteral("x"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn)
 	covSerialize(t, g)
 }
 
 // TestCovSerializeTripleTermWithPrefix covers TripleTerm with prefixed names.
 func TestCovSerializeTripleTermWithPrefix(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
 	tt := rdflibgo.NewTripleTerm(s, p, o)
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/asserts"), tt)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/asserts"), tt)
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "<<(") {
 		t.Errorf("expected triple term, got:\n%s", out)
@@ -783,23 +783,23 @@ func TestCovReadBlankNodeLabelEdgeTrig(t *testing.T) {
 // TestCovSerializeWithRDFSLabel covers rdfs:label predicate ordering.
 func TestCovSerializeWithRDFSLabel(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("rdfs", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#"))
-	g.Bind("rdf", rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
+	g.Bind(t.Context(), "rdfs", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#"))
+	g.Bind(t.Context(), "rdf", rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
-	g.Add(s, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("My Class"))
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/extra"), rdflibgo.NewLiteral("x"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
+	g.Add(t.Context(), s, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("My Class"))
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/extra"), rdflibgo.NewLiteral("x"))
 	covSerialize(t, g)
 }
 
 // TestCovSerializeMultiSubjectTrig covers multiple subjects.
 func TestCovSerializeMultiSubjectTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	for i := 0; i < 3; i++ {
 		s := rdflibgo.NewURIRefUnsafe("http://example.org/s" + string(rune('a'+i)))
-		g.Add(s, p, rdflibgo.NewLiteral("v"))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	}
 	covSerialize(t, g)
 }
@@ -810,7 +810,7 @@ func TestCovSerializeBNodeNoPredicatesTrig(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	bn := rdflibgo.NewBNode("nopreds")
-	g.Add(s, p, bn)
+	g.Add(t.Context(), s, p, bn)
 	covSerialize(t, g)
 }
 
@@ -854,7 +854,7 @@ func TestCovSPARQLPrefixErrorTrig(t *testing.T) {
 // TestCovParseReadError covers io.ReadAll error in Parse.
 func TestCovParseReadError(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, errReader{})
+	err := Parse(t.Context(), g, errReader{})
 	if err == nil {
 		t.Error("expected read error")
 	}
@@ -863,7 +863,7 @@ func TestCovParseReadError(t *testing.T) {
 // TestCovParseDatasetReadError covers io.ReadAll error in ParseDataset.
 func TestCovParseDatasetReadError(t *testing.T) {
 	ds := graph.NewDataset()
-	err := ParseDataset(ds, errReader{})
+	err := ParseDataset(t.Context(), ds, errReader{})
 	if err == nil {
 		t.Error("expected read error")
 	}
@@ -875,7 +875,7 @@ func TestCovGRAPHKeyword(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 GRAPH ex:g1 { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -892,7 +892,7 @@ ex:g1 {
 func TestCovParseWithBaseOption(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	input := `<s> <p> "v" .`
-	if err := Parse(g, strings.NewReader(input), WithBase("http://example.org/")); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input), WithBase("http://example.org/")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -917,7 +917,7 @@ func TestCovBracketGraphBlock(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 [] { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -964,7 +964,7 @@ func TestCovSubjectOrGraphBNodeAsGraphLabel(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 _:g1 { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1042,7 +1042,7 @@ func TestCovReadDatatypeIRIFull(t *testing.T) {
 // TestCovResolveIRIInvalidBase covers invalid base IRI.
 func TestCovResolveIRIInvalidBase(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<s> <p> <o> .`), WithBase("://invalid"))
+	err := Parse(t.Context(), g, strings.NewReader(`<s> <p> <o> .`), WithBase("://invalid"))
 	_ = err
 }
 
@@ -1097,10 +1097,10 @@ func TestCovReifiedInnerObjectIRIFullTrig(t *testing.T) {
 // TestCovSerializeRDFTypeShorthandTrig covers "a" shorthand for rdf:type.
 func TestCovSerializeRDFTypeShorthandTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("rdf", rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdf", rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Thing"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Thing"))
 	out := covSerialize(t, g)
 	if !strings.Contains(out, " a ") {
 		t.Errorf("expected 'a' shorthand, got:\n%s", out)
@@ -1110,15 +1110,15 @@ func TestCovSerializeRDFTypeShorthandTrig(t *testing.T) {
 // TestCovSerializeMultiRefBNodeTrig covers bnode referenced multiple times (not inlined).
 func TestCovSerializeMultiRefBNodeTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	bn := rdflibgo.NewBNode("ref1")
 	s1 := rdflibgo.NewURIRefUnsafe("http://example.org/s1")
 	s2 := rdflibgo.NewURIRefUnsafe("http://example.org/s2")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	q := rdflibgo.NewURIRefUnsafe("http://example.org/q")
-	g.Add(bn, p, rdflibgo.NewLiteral("val"))
-	g.Add(s1, q, bn)
-	g.Add(s2, q, bn)
+	g.Add(t.Context(), bn, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s1, q, bn)
+	g.Add(t.Context(), s2, q, bn)
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "_:ref1") {
 		t.Errorf("expected _:ref1, got:\n%s", out)
@@ -1128,7 +1128,7 @@ func TestCovSerializeMultiRefBNodeTrig(t *testing.T) {
 // TestCovSerializeTrackNSTripleTermTrig covers trackNSForTerm with TripleTerm.
 func TestCovSerializeTrackNSTripleTermTrig(t *testing.T) {
 	ds := graph.NewDataset()
-	ds.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	ds.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	defG := ds.DefaultContext()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
@@ -1136,7 +1136,7 @@ func TestCovSerializeTrackNSTripleTermTrig(t *testing.T) {
 	innerP := rdflibgo.NewURIRefUnsafe("http://example.org/b")
 	innerO := rdflibgo.NewURIRefUnsafe("http://example.org/c")
 	tt := rdflibgo.NewTripleTerm(innerS, innerP, innerO)
-	defG.Add(s, p, tt)
+	defG.Add(t.Context(), s, p, tt)
 	out := covSerializeDS(t, ds)
 	if !strings.Contains(out, "ex:") {
 		t.Errorf("expected ex: prefix, got:\n%s", out)
@@ -1146,13 +1146,13 @@ func TestCovSerializeTrackNSTripleTermTrig(t *testing.T) {
 // TestCovSerializePrefixedDatatypeTrig covers literal with prefixed datatype.
 func TestCovSerializePrefixedDatatypeTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("xsd", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#"))
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "xsd", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	xsdType := rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime")
-	g.Add(s, rdflibgo.RDF.Type, xsdType)
-	g.Add(s, p, rdflibgo.NewLiteral("2024-01-01", rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#date"))))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, xsdType)
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("2024-01-01", rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#date"))))
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "xsd:") {
 		t.Errorf("expected xsd: prefix, got:\n%s", out)
@@ -1212,10 +1212,10 @@ func TestCovSerializeIsValidLocalNameTrig(t *testing.T) {
 func TestCovSerializeIsValidListNilPredsTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	bn := rdflibgo.NewBNode("l1")
-	g.Add(bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
-	g.Add(bn, rdflibgo.RDF.Rest, rdflibgo.NewBNode("nonexistent"))
+	g.Add(t.Context(), bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), bn, rdflibgo.RDF.Rest, rdflibgo.NewBNode("nonexistent"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn)
 	covSerialize(t, g)
 }
 
@@ -1223,24 +1223,24 @@ func TestCovSerializeIsValidListNilPredsTrig(t *testing.T) {
 func TestCovSerializeIsValidListMultiFirstTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	bn := rdflibgo.NewBNode("l1")
-	g.Add(bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
-	g.Add(bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("b"))
-	g.Add(bn, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), bn, rdflibgo.RDF.First, rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), bn, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/list"), bn)
 	covSerialize(t, g)
 }
 
 // TestCovSerializeDatasetMultipleNamedGraphs covers multiple named graphs.
 func TestCovSerializeDatasetMultipleNamedGraphs(t *testing.T) {
 	ds := graph.NewDataset()
-	ds.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	ds.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	defG := ds.DefaultContext()
-	defG.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("default"))
+	defG.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("default"))
 	ng1 := ds.Graph(rdflibgo.NewURIRefUnsafe("http://example.org/g1"))
-	ng1.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s1"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("g1"))
+	ng1.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s1"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("g1"))
 	ng2 := ds.Graph(rdflibgo.NewURIRefUnsafe("http://example.org/g2"))
-	ng2.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s2"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("g2"))
+	ng2.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s2"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("g2"))
 	out := covSerializeDS(t, ds)
 	if strings.Count(out, "{") < 3 {
 		t.Errorf("expected at least 3 graph blocks, got:\n%s", out)
@@ -1251,9 +1251,9 @@ func TestCovSerializeDatasetMultipleNamedGraphs(t *testing.T) {
 func TestCovSerializeDatasetWithBase(t *testing.T) {
 	ds := graph.NewDataset()
 	defG := ds.DefaultContext()
-	defG.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	defG.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	var buf strings.Builder
-	if err := SerializeDataset(ds, &buf, WithBase("http://example.org/")); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &buf, WithBase("http://example.org/")); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "@base") {
@@ -1264,13 +1264,13 @@ func TestCovSerializeDatasetWithBase(t *testing.T) {
 // TestCovSerializeTripleTermBNodeSubjectTrig covers tripleTermStr with BNode subject.
 func TestCovSerializeTripleTermBNodeSubjectTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	bn := rdflibgo.NewBNode("ts")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
 	tt := rdflibgo.NewTripleTerm(bn, p, o)
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/q"), tt)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/q"), tt)
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "_:ts") {
 		t.Errorf("expected _:ts in triple term, got:\n%s", out)
@@ -1280,13 +1280,13 @@ func TestCovSerializeTripleTermBNodeSubjectTrig(t *testing.T) {
 // TestCovSerializeInlineBNodeWithRDFTypeTrig covers inline bnode with rdf:type.
 func TestCovSerializeInlineBNodeWithRDFTypeTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("rdf", rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdf", rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	bn := rdflibgo.NewBNode("typed")
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(bn, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Type"))
-	g.Add(s, p, bn)
+	g.Add(t.Context(), bn, rdflibgo.RDF.Type, rdflibgo.NewURIRefUnsafe("http://example.org/Type"))
+	g.Add(t.Context(), s, p, bn)
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "[ a ") {
 		t.Errorf("expected inline bnode with 'a', got:\n%s", out)
@@ -1299,7 +1299,7 @@ func TestCovTrigLabelBNode(t *testing.T) {
 	// A BNode graph label
 	bnID := rdflibgo.NewBNode("glabel")
 	ng := ds.Graph(bnID)
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	out := covSerializeDS(t, ds)
 	if !strings.Contains(out, "_:") {
 		t.Errorf("expected bnode graph label, got:\n%s", out)
@@ -1309,11 +1309,11 @@ func TestCovTrigLabelBNode(t *testing.T) {
 // TestCovSerializeDatasetSortsGraphs covers graph sorting (default first).
 func TestCovSerializeDatasetSortsGraphs(t *testing.T) {
 	ds := graph.NewDataset()
-	ds.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	ds.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	ng := ds.Graph(rdflibgo.NewURIRefUnsafe("http://example.org/named"))
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/ns"), rdflibgo.NewURIRefUnsafe("http://example.org/np"), rdflibgo.NewLiteral("named"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/ns"), rdflibgo.NewURIRefUnsafe("http://example.org/np"), rdflibgo.NewLiteral("named"))
 	defG := ds.DefaultContext()
-	defG.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("default"))
+	defG.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("default"))
 	out := covSerializeDS(t, ds)
 	// Should have both default and named graph blocks
 	if !strings.Contains(out, "ex:named {") {
@@ -1363,7 +1363,7 @@ func TestCovIsAbsoluteIRINonAlphaSchemeTrig(t *testing.T) {
 // TestCovResolveIRIRefParseError covers resolveIRI when ref IRI parse fails.
 func TestCovResolveIRIRefParseErrorTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@base <http://example.org/> .
+	err := Parse(t.Context(), g, strings.NewReader(`@base <http://example.org/> .
 <http://[::> <http://example.org/p> "v" .`))
 	_ = err
 }
@@ -1451,7 +1451,7 @@ func TestCovReadGraphLabelPrefixedWithGRAPH(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 GRAPH ex:g1 { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1462,7 +1462,7 @@ func TestCovReadGraphLabelEmptyBNode(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 GRAPH [] { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1595,7 +1595,7 @@ func TestCovReadGraphLabelIRITrig(t *testing.T) {
 	ds := graph.NewDataset()
 	input := `GRAPH <http://example.org/g1> { <http://example.org/s> <http://example.org/p> "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1606,7 +1606,7 @@ func TestCovReadGraphLabelBNodeLabelTrig(t *testing.T) {
 	input := `@prefix ex: <http://example.org/> .
 GRAPH _:g1 { ex:s ex:p "v" . }
 `
-	if err := ParseDataset(ds, strings.NewReader(input)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1726,10 +1726,10 @@ func TestCovBracketSubjectOrGraphError(t *testing.T) {
 // TestCovSerializePrefixInvalidTrig covers invalid prefix name.
 func TestCovSerializePrefixInvalidTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("1bad", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "1bad", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	out := covSerialize(t, g)
 	if strings.Contains(out, "1bad:") {
 		t.Errorf("should not use invalid prefix, got:\n%s", out)
@@ -1949,7 +1949,7 @@ ex:s ex:p ex:hello\.world .`)
 func TestCovSerializeListStrErrorTrig(t *testing.T) {
 	// Build an RDF list with a triple term that triggers objectStr recursion
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	// Create list: (<<(s p o)>>)
 	innerS := rdflibgo.NewURIRefUnsafe("http://example.org/a")
@@ -1958,12 +1958,12 @@ func TestCovSerializeListStrErrorTrig(t *testing.T) {
 	tt := rdflibgo.NewTripleTerm(innerS, innerP, innerO)
 
 	listHead := rdflibgo.NewBNode("list1")
-	g.Add(listHead, rdflibgo.RDF.First, tt)
-	g.Add(listHead, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), listHead, rdflibgo.RDF.First, tt)
+	g.Add(t.Context(), listHead, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/hasItems")
-	g.Add(s, p, listHead)
+	g.Add(t.Context(), s, p, listHead)
 
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "ex:a") {
@@ -1975,11 +1975,11 @@ func TestCovSerializeListStrErrorTrig(t *testing.T) {
 func TestCovSerializeWritePredicatesEmptyTrig(t *testing.T) {
 	// BNode subject with no predicates triggers writePredicates empty path
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	bn := rdflibgo.NewBNode("empty")
-	g.Add(s, p, bn)
+	g.Add(t.Context(), s, p, bn)
 	// bn is referenced as object but has no predicates itself
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "_:empty") {
@@ -1990,12 +1990,12 @@ func TestCovSerializeWritePredicatesEmptyTrig(t *testing.T) {
 // TestCovSerializeMultipleObjectsSamePred covers multiple objects on same predicate.
 func TestCovSerializeMultipleObjectsSamePredTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("a"))
-	g.Add(s, p, rdflibgo.NewLiteral("b"))
-	g.Add(s, p, rdflibgo.NewLiteral("c"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("c"))
 	out := covSerialize(t, g)
 	if !strings.Contains(out, ",") {
 		t.Errorf("expected comma-separated objects, got:\n%s", out)
@@ -2005,13 +2005,13 @@ func TestCovSerializeMultipleObjectsSamePredTrig(t *testing.T) {
 // TestCovSerializeTripleTermObjError covers tripleTermStr error path via objectStr.
 func TestCovSerializeTripleTermObjErrorTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	innerTT := rdflibgo.NewTripleTerm(s, p, rdflibgo.NewLiteral("inner"))
 	outerTT := rdflibgo.NewTripleTerm(s, p, innerTT)
 	outerP := rdflibgo.NewURIRefUnsafe("http://example.org/q")
-	g.Add(s, outerP, outerTT)
+	g.Add(t.Context(), s, outerP, outerTT)
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "<<(") {
 		t.Errorf("expected nested triple term, got:\n%s", out)
@@ -2022,13 +2022,13 @@ func TestCovSerializeTripleTermObjErrorTrig(t *testing.T) {
 func TestCovMarkListNodesMissedRestTrig(t *testing.T) {
 	// Build a malformed list: first but no rest -> markListNodes breaks on empty rests
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	listHead := rdflibgo.NewBNode("badlist")
-	g.Add(listHead, rdflibgo.RDF.First, rdflibgo.NewLiteral("only"))
+	g.Add(t.Context(), listHead, rdflibgo.RDF.First, rdflibgo.NewLiteral("only"))
 	// No rdf:rest triple — markListNodes should break
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, listHead)
+	g.Add(t.Context(), s, p, listHead)
 	out := covSerialize(t, g)
 	_ = out // just ensure it doesn't panic
 }
@@ -2112,14 +2112,14 @@ ex:s ex:p 3.14 .`)
 func TestCovSerializeDatasetLargeOutputTrig(t *testing.T) {
 	ds := graph.NewDataset()
 	g := ds.DefaultContext()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	for i := 0; i < 20; i++ {
 		si := rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(si, p, rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
+		g.Add(t.Context(), si, p, rdflibgo.NewLiteral(fmt.Sprintf("v%d", i)))
 	}
 	var buf strings.Builder
-	if err := SerializeDataset(ds, &buf); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ex:s0") {
@@ -2130,17 +2130,17 @@ func TestCovSerializeDatasetLargeOutputTrig(t *testing.T) {
 // TestCovSerializeInlineBNodeWithListHead covers inline bnode that is also a list head.
 func TestCovSerializeInlineBNodeWithListHeadTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 
 	// Build a list: _:list -> first: "a", rest: nil
 	listHead := rdflibgo.NewBNode("lst")
-	g.Add(listHead, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
-	g.Add(listHead, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
+	g.Add(t.Context(), listHead, rdflibgo.RDF.First, rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), listHead, rdflibgo.RDF.Rest, rdflibgo.RDF.Nil)
 
 	// Reference the list head from another subject
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/items")
-	g.Add(s, p, listHead)
+	g.Add(t.Context(), s, p, listHead)
 
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "( ") {
@@ -2163,22 +2163,22 @@ func TestCovReadCollectionErrorInObjectTrig(t *testing.T) {
 // TestCovOrderSubjectsBNodeVsURI covers ordering where BNode subjects come after URIs.
 func TestCovOrderSubjectsBNodeVsURITrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Bind("rdfs", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdfs", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#"))
 
 	// Add a class subject (should come first)
 	cls := rdflibgo.NewURIRefUnsafe("http://example.org/MyClass")
-	g.Add(cls, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
-	g.Add(cls, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("My Class"))
+	g.Add(t.Context(), cls, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
+	g.Add(t.Context(), cls, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("My Class"))
 
 	// Add a bnode subject (should come after URIs)
 	bn := rdflibgo.NewBNode("bn1")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(bn, p, rdflibgo.NewLiteral("bnode val"))
+	g.Add(t.Context(), bn, p, rdflibgo.NewLiteral("bnode val"))
 
 	// Add a regular URI subject
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, p, rdflibgo.NewLiteral("uri val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("uri val"))
 
 	out := covSerialize(t, g)
 	// Class should appear, and output should have multiple subjects
@@ -2352,7 +2352,7 @@ func TestCovSerializeObjectStrDefaultBranchTrig(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	o := rdflibgo.NewURIRefUnsafe("http://other.example/o")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "<http://other.example/o>") {
 		t.Errorf("expected full IRI, got:\n%s", out)
@@ -2362,17 +2362,17 @@ func TestCovSerializeObjectStrDefaultBranchTrig(t *testing.T) {
 // TestCovSerializeInlineBNodeMultiPredicate covers inlineBNode with multiple predicates and objects.
 func TestCovSerializeInlineBNodeMultiPredicateTrig2(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	bn := rdflibgo.NewBNode("inner")
-	g.Add(s, p, bn)
+	g.Add(t.Context(), s, p, bn)
 
 	p1 := rdflibgo.NewURIRefUnsafe("http://example.org/name")
 	p2 := rdflibgo.NewURIRefUnsafe("http://example.org/value")
-	g.Add(bn, p1, rdflibgo.NewLiteral("Alice"))
-	g.Add(bn, p2, rdflibgo.NewLiteral("val1"))
-	g.Add(bn, p2, rdflibgo.NewLiteral("val2"))
+	g.Add(t.Context(), bn, p1, rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), bn, p2, rdflibgo.NewLiteral("val1"))
+	g.Add(t.Context(), bn, p2, rdflibgo.NewLiteral("val2"))
 
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "[") {
@@ -2388,10 +2388,10 @@ func TestCovReadBlankNodeLabelInvalidStartTrig(t *testing.T) {
 // TestCovSerializeLocalNameSpecialChars covers local names that aren't valid.
 func TestCovSerializeLocalNameSpecialCharsTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/has,comma")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("v"))
 	out := covSerialize(t, g)
 	// Should fall back to full IRI since "has space" is not a valid local name
 	if !strings.Contains(out, "<http://example.org/has,comma>") {
@@ -2505,13 +2505,13 @@ ex:s ex:p ex:o1, ex:o2 {| ^bad |} .`)
 // TestCovSerializeWritePredicatesMultiWithLabel covers writePredicates with rdfs:label predicate.
 func TestCovSerializeWritePredicatesMultiWithLabelTrig(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Bind("ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
-	g.Bind("rdfs", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#"))
+	g.Bind(t.Context(), "ex", rdflibgo.NewURIRefUnsafe("http://example.org/"))
+	g.Bind(t.Context(), "rdfs", rdflibgo.NewURIRefUnsafe("http://www.w3.org/2000/01/rdf-schema#"))
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
-	g.Add(s, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
-	g.Add(s, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("MyThing"))
+	g.Add(t.Context(), s, rdflibgo.RDF.Type, rdflibgo.RDFS.Class)
+	g.Add(t.Context(), s, rdflibgo.RDFS.Label, rdflibgo.NewLiteral("MyThing"))
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/extra")
-	g.Add(s, p, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("val"))
 	out := covSerialize(t, g)
 	if !strings.Contains(out, "a ") || !strings.Contains(out, "rdfs:label") {
 		t.Errorf("expected rdf:type 'a' and rdfs:label, got:\n%s", out)
@@ -2537,11 +2537,11 @@ func TestResolveIRIBaseEndingInHash(t *testing.T) {
 		t.Run(tc.ref, func(t *testing.T) {
 			g := rdflibgo.NewGraph()
 			input := tc.ref + ` <http://example.org/p> "v" .`
-			if err := Parse(g, strings.NewReader(input), WithBase(base)); err != nil {
+			if err := Parse(t.Context(), g, strings.NewReader(input), WithBase(base)); err != nil {
 				t.Fatalf("parse %q: %v", input, err)
 			}
 			var got string
-			g.Triples(nil, nil, nil)(func(triple rdflibgo.Triple) bool {
+			g.Triples(t.Context(), nil, nil, nil)(func(triple rdflibgo.Triple, _ error) bool {
 				got = triple.Subject.(rdflibgo.URIRef).String()
 				return false
 			})

@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,13 +29,13 @@ func kaseiDataset() *sparql.Dataset {
 	ds := &sparql.Dataset{Default: graph.NewGraph(), NamedGraphs: map[string]*graph.Graph{}}
 	for _, name := range []string{"data1.rdf", "data2.rdf", "data3.rdf"} {
 		g := graph.NewGraph()
-		g.Add(iri(kasei+name), rdfType, foafDocument)
+		g.Add(context.Background(), iri(kasei+name), rdfType, foafDocument)
 		ds.NamedGraphs[kasei+name] = g
 	}
 	// So that query_multiple_dataset can tell the protocol dataset from the
 	// FROM clause: only data2.rdf says something about data1.rdf besides
 	// data1.rdf itself.
-	ds.NamedGraphs[kasei+"data2.rdf"].Add(iri(kasei+"data1.rdf"), iri("http://www.w3.org/2000/01/rdf-schema#seeAlso"), iri(kasei+"data2.rdf"))
+	ds.NamedGraphs[kasei+"data2.rdf"].Add(context.Background(), iri(kasei+"data1.rdf"), iri("http://www.w3.org/2000/01/rdf-schema#seeAlso"), iri(kasei+"data2.rdf"))
 	return ds
 }
 

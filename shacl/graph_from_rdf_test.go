@@ -16,11 +16,14 @@ ex:Alice a ex:Person ;
 	ex:name "Alice" .
 `
 	g := graph.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(src)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(src)); err != nil {
 		t.Fatalf("parse turtle: %v", err)
 	}
 
-	sg := NewGraphFromRDF(g, "http://example.org/")
+	sg, err := NewGraphFromRDF(t.Context(), g, "http://example.org/")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got, want := sg.BaseURI(), "http://example.org/"; got != want {
 		t.Errorf("BaseURI() = %q, want %q", got, want)
@@ -38,7 +41,7 @@ ex:Alice a ex:Person ;
 
 	// Mutating the wrapped graph directly must be picked up after an
 	// explicit InvalidateIndexes call.
-	g.Add(term.NewURIRefUnsafe("http://example.org/Alice"),
+	g.Add(t.Context(), term.NewURIRefUnsafe("http://example.org/Alice"),
 		term.NewURIRefUnsafe("http://example.org/age"),
 		term.NewLiteral("30"))
 	sg.InvalidateIndexes()

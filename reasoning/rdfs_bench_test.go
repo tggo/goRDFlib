@@ -22,16 +22,16 @@ func BenchmarkRDFSClosure_Small(b *testing.B) {
 		prop1 := ns.Term("prop1")
 		prop2 := ns.Term("prop2")
 
-		g.Add(classA, namespace.RDFS.SubClassOf, classB)
-		g.Add(classB, namespace.RDFS.SubClassOf, classC)
-		g.Add(prop1, namespace.RDFS.Domain, classA)
-		g.Add(prop2, namespace.RDFS.Range, classB)
-		g.Add(prop1, namespace.RDFS.SubPropertyOf, prop2)
+		g.Add(b.Context(), classA, namespace.RDFS.SubClassOf, classB)
+		g.Add(b.Context(), classB, namespace.RDFS.SubClassOf, classC)
+		g.Add(b.Context(), prop1, namespace.RDFS.Domain, classA)
+		g.Add(b.Context(), prop2, namespace.RDFS.Range, classB)
+		g.Add(b.Context(), prop1, namespace.RDFS.SubPropertyOf, prop2)
 
 		// 45 instance triples
 		for i := range 45 {
 			s := ns.Term(fmt.Sprintf("inst%d", i))
-			g.Add(s, namespace.RDF.Type, classA)
+			g.Add(b.Context(), s, namespace.RDF.Type, classA)
 		}
 
 		return g
@@ -40,7 +40,7 @@ func BenchmarkRDFSClosure_Small(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		g := buildGraph()
-		RDFSClosure(g)
+		RDFSClosure(b.Context(), g)
 	}
 }
 
@@ -55,13 +55,13 @@ func BenchmarkRDFSClosure_DeepHierarchy(b *testing.B) {
 			classes[i] = ns.Term(fmt.Sprintf("Class%d", i))
 		}
 		for i := 0; i < 9; i++ {
-			g.Add(classes[i], namespace.RDFS.SubClassOf, classes[i+1])
+			g.Add(b.Context(), classes[i], namespace.RDFS.SubClassOf, classes[i+1])
 		}
 
 		// 100 instances of the leaf (Class0)
 		for i := range 100 {
 			s := ns.Term(fmt.Sprintf("inst%d", i))
-			g.Add(s, namespace.RDF.Type, classes[0])
+			g.Add(b.Context(), s, namespace.RDF.Type, classes[0])
 		}
 
 		return g
@@ -70,6 +70,6 @@ func BenchmarkRDFSClosure_DeepHierarchy(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		g := buildGraph()
-		RDFSClosure(g)
+		RDFSClosure(b.Context(), g)
 	}
 }

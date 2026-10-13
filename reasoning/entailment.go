@@ -24,7 +24,8 @@ var ErrUnknownRegime = errors.New("reasoning: unknown entailment regime")
 
 // Expand applies the given entailment regime(s) to the graph, adding inferred triples.
 // Regimes can be combined with |: Expand(g, RDFS|OWLRL).
-// Returns the number of triples added and any error.
+// Returns the number of triples added and any error, including a store error.
+// It uses context.Background(); see ExpandContext to bound the run.
 func Expand(g *graph.Graph, r Regime) (int, error) {
 	n, _, err := ExpandCheck(g, r)
 	return n, err
@@ -47,9 +48,6 @@ func ExpandCheckContext(ctx context.Context, g *graph.Graph, r Regime) (int, []I
 	stop := newStopper(ctx)
 	if stop.poll() {
 		return 0, nil, stop.failure()
-	}
-	if ctx != nil {
-		g = g.BindContext(ctx)
 	}
 	// RDFS is always applied first (OWL RL builds on RDFS).
 	total := newRDFSEngine(g, stop).run()

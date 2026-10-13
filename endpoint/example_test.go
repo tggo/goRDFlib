@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +21,7 @@ import (
 
 func Example() {
 	g := graph.NewGraph()
-	g.Add(term.NewURIRefUnsafe("http://example.org/alice"),
+	g.Add(context.Background(), term.NewURIRefUnsafe("http://example.org/alice"),
 		term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/name"), term.NewLiteral("Alice"))
 
 	h := endpoint.New(&sparql.Dataset{Default: g},

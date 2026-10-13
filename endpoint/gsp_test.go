@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,23 +24,23 @@ func TestGraphStoreIndirectOnTheEndpoint(t *testing.T) {
 
 	wantStatus(t, do(t, newReq(t, "GET", graphURL(ts.URL, g), "", "")), http.StatusNotFound)
 	wantStatus(t, do(t, newReq(t, "PUT", graphURL(ts.URL, g), "application/n-triples", body)), http.StatusCreated)
-	if ds.NamedGraphs[g] == nil || ds.NamedGraphs[g].Len() != 1 {
+	if ds.NamedGraphs[g] == nil || mustV(ds.NamedGraphs[g].Len(t.Context())) != 1 {
 		t.Fatal("PUT did not create the graph in the dataset")
 	}
 	wantStatus(t, do(t, newReq(t, "PUT", graphURL(ts.URL, g), "application/n-triples", body)), http.StatusNoContent)
-	if ds.NamedGraphs[g].Len() != 1 {
-		t.Fatalf("PUT did not replace: %d triples", ds.NamedGraphs[g].Len())
+	if mustV(ds.NamedGraphs[g].Len(t.Context())) != 1 {
+		t.Fatalf("PUT did not replace: %d triples", mustV(ds.NamedGraphs[g].Len(t.Context())))
 	}
 	wantStatus(t, do(t, newReq(t, "POST", graphURL(ts.URL, g), "text/turtle", `<http://example.org/a> <http://example.org/b> "d" .`)), http.StatusOK)
-	if ds.NamedGraphs[g].Len() != 2 {
-		t.Fatalf("POST did not merge: %d triples", ds.NamedGraphs[g].Len())
+	if mustV(ds.NamedGraphs[g].Len(t.Context())) != 2 {
+		t.Fatalf("POST did not merge: %d triples", mustV(ds.NamedGraphs[g].Len(t.Context())))
 	}
 
 	r := do(t, newReq(t, "GET", graphURL(ts.URL, g), "", "", "Accept", "application/n-triples"))
 	wantStatus(t, r, http.StatusOK)
 	out := graph.NewGraph()
-	if err := nt.Parse(out, strings.NewReader(r.body)); err != nil || out.Len() != 2 {
-		t.Fatalf("GET body: err %v, %d triples: %s", err, out.Len(), r.body)
+	if err := nt.Parse(t.Context(), out, strings.NewReader(r.body)); err != nil || mustV(out.Len(t.Context())) != 2 {
+		t.Fatalf("GET body: err %v, %d triples: %s", err, mustV(out.Len(t.Context())), r.body)
 	}
 	if r.header.Get("Vary") != "Accept" {
 		t.Error("GET without Vary: Accept")
@@ -63,7 +64,7 @@ func TestGraphStoreIndirectOnTheEndpoint(t *testing.T) {
 		t.Fatalf("GET ?default body: %s", r.body)
 	}
 	wantStatus(t, do(t, newReq(t, "DELETE", ts.URL+"?default", "", "")), http.StatusOK)
-	if ds.Default.Len() != 0 {
+	if mustV(ds.Default.Len(t.Context())) != 0 {
 		t.Fatal("DELETE ?default did not clear the default graph")
 	}
 	wantStatus(t, do(t, newReq(t, "GET", ts.URL+"?default", "", "")), http.StatusOK)
@@ -104,8 +105,8 @@ func TestGraphStoreErrors(t *testing.T) {
 			}
 		})
 	}
-	if ds.NamedGraphs[ex+"g1"].Len() != 1 {
-		t.Fatalf("a rejected write changed <g1>: %d triples", ds.NamedGraphs[ex+"g1"].Len())
+	if mustV(ds.NamedGraphs[ex+"g1"].Len(t.Context())) != 1 {
+		t.Fatalf("a rejected write changed <g1>: %d triples", mustV(ds.NamedGraphs[ex+"g1"].Len(t.Context())))
 	}
 }
 
@@ -121,7 +122,7 @@ func TestGraphStoreOptionsAndMissingContentType(t *testing.T) {
 	const rdfXML = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://example.org/">
   <rdf:Description rdf:about="http://example.org/x"><ex:p>v</ex:p></rdf:Description></rdf:RDF>`
 	wantStatus(t, do(t, newReq(t, "PUT", graphURL(ts.URL, ex+"xml"), "", rdfXML)), http.StatusCreated)
-	if ds.NamedGraphs[ex+"xml"].Len() != 1 {
+	if mustV(ds.NamedGraphs[ex+"xml"].Len(t.Context())) != 1 {
 		t.Fatal("RDF/XML payload without Content-Type was not parsed")
 	}
 	// An empty body creates an empty graph.
@@ -135,7 +136,7 @@ func TestGraphStoreRelativeIRIsInPayload(t *testing.T) {
 	g := ex + "docs/one"
 	wantStatus(t, do(t, newReq(t, "PUT", graphURL(ts.URL, g), "text/turtle", `<#it> <p> <other> .`)), http.StatusCreated)
 	want := term.Triple{Subject: iri(ex + "docs/one#it"), Predicate: iri(ex + "docs/p"), Object: iri(ex + "docs/other")}
-	if !ds.NamedGraphs[g].Contains(want.Subject, want.Predicate, want.Object) {
+	if !mustV(ds.NamedGraphs[g].Contains(t.Context(), want.Subject, want.Predicate, want.Object)) {
 		t.Fatalf("relative IRIs did not resolve against the graph IRI: %v", triplesOf(ds.NamedGraphs[g]))
 	}
 
@@ -156,7 +157,7 @@ func TestGraphStoreBlankNodesAreMerged(t *testing.T) {
 	wantStatus(t, do(t, newReq(t, "POST", g, "application/n-triples", body)), http.StatusCreated)
 	wantStatus(t, do(t, newReq(t, "POST", g, "application/n-triples", body)), http.StatusOK)
 	// An RDF merge keeps the blank nodes of two documents apart.
-	if n := ds.NamedGraphs[ex+"b"].Len(); n != 2 {
+	if n, _ := ds.NamedGraphs[ex+"b"].Len(t.Context()); n != 2 {
 		t.Fatalf("%d triples after posting the same blank-node document twice, want 2", n)
 	}
 }
@@ -198,7 +199,7 @@ func TestWithoutGraphStore(t *testing.T) {
 
 func triplesOf(g *graph.Graph) []term.Triple {
 	var out []term.Triple
-	for t := range g.Triples(nil, nil, nil) {
+	for t := range g.Triples(context.Background(), nil, nil, nil) {
 		out = append(out, t)
 	}
 	return out

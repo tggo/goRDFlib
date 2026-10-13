@@ -12,7 +12,7 @@ func updateTestDataset(t *testing.T, defaultData string) *Dataset {
 	t.Helper()
 	g := rdflibgo.NewGraph()
 	if defaultData != "" {
-		if err := turtle.Parse(g, strings.NewReader(defaultData)); err != nil {
+		if err := turtle.Parse(t.Context(), g, strings.NewReader(defaultData)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -29,7 +29,7 @@ WHERE { VALUES ?o { 1 } OPTIONAL { GRAPH ?g { <urn:nothing> <urn:p> ?x } } }`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := ds.Default.Len(); n != 1 {
+	if n, _ := ds.Default.Len(t.Context()); n != 1 {
 		t.Errorf("default graph has %d triples, want 1", n)
 	}
 }
@@ -41,7 +41,7 @@ WHERE { VALUES ?o { 2 } OPTIONAL { GRAPH ?g { <urn:nothing> <urn:p> ?x } } }`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := ds.Default.Len(); n != 1 {
+	if n, _ := ds.Default.Len(t.Context()); n != 1 {
 		t.Errorf("default graph has %d triples, want 1", n)
 	}
 	if n := len(ds.NamedGraphs); n != 0 {
@@ -56,7 +56,7 @@ func TestUpdateTemplate_LiteralGraphVarInsertsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := ds.Default.Len(); n != 0 {
+	if n, _ := ds.Default.Len(t.Context()); n != 0 {
 		t.Errorf("default graph has %d triples, want 0", n)
 	}
 }
@@ -68,10 +68,10 @@ func TestUpdateTemplate_BoundGraphVarStillApplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g := ds.NamedGraphs["urn:g"]; g == nil || g.Len() != 1 {
+	if g := ds.NamedGraphs["urn:g"]; g == nil || mustV(g.Len(t.Context())) != 1 {
 		t.Errorf("named graph <urn:g> not written")
 	}
-	if n := ds.Default.Len(); n != 1 {
+	if n, _ := ds.Default.Len(t.Context()); n != 1 {
 		t.Errorf("default graph has %d triples, want 1", n)
 	}
 }

@@ -75,9 +75,9 @@ func TestOWLConstants(t *testing.T) {
 
 func TestNSManagerComputeQName(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))
+	s.Bind(t.Context(), "rdf", term.NewURIRefUnsafe(term.RDFNamespace))
 	mgr := namespace.NewNSManager(s)
-	prefix, ns, local, err := mgr.ComputeQName("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+	prefix, ns, local, err := mgr.ComputeQName(t.Context(), "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,9 +88,9 @@ func TestNSManagerComputeQName(t *testing.T) {
 
 func TestNSManagerQName(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	s.Bind(t.Context(), "foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
 	mgr := namespace.NewNSManager(s)
-	got, err := mgr.QName("http://xmlns.com/foaf/0.1/Person")
+	got, err := mgr.QName(t.Context(), "http://xmlns.com/foaf/0.1/Person")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,9 +101,9 @@ func TestNSManagerQName(t *testing.T) {
 
 func TestNSManagerExpandCURIE(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	s.Bind(t.Context(), "foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
 	mgr := namespace.NewNSManager(s)
-	got, err := mgr.ExpandCURIE("foaf:Person")
+	got, err := mgr.ExpandCURIE(t.Context(), "foaf:Person")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestNSManagerExpandCURIE(t *testing.T) {
 
 func TestNSManagerExpandCURIEUnknown(t *testing.T) {
 	mgr := namespace.NewNSManager(store.NewMemoryStore())
-	_, err := mgr.ExpandCURIE("unknown:term")
+	_, err := mgr.ExpandCURIE(t.Context(), "unknown:term")
 	if err == nil {
 		t.Error("expected error for unknown prefix")
 	}
@@ -125,7 +125,7 @@ func TestNSManagerExpandCURIEUnknown(t *testing.T) {
 
 func TestNSManagerExpandCURIEInvalid(t *testing.T) {
 	mgr := namespace.NewNSManager(store.NewMemoryStore())
-	_, err := mgr.ExpandCURIE("nocolon")
+	_, err := mgr.ExpandCURIE(t.Context(), "nocolon")
 	if err == nil {
 		t.Error("expected error for invalid CURIE")
 	}
@@ -168,7 +168,7 @@ func TestClosedNamespaceBase(t *testing.T) {
 
 func TestNSManagerAutoPrefix(t *testing.T) {
 	mgr := namespace.NewNSManager(store.NewMemoryStore())
-	prefix, _, local, err := mgr.ComputeQName("http://example.org/ns#Thing")
+	prefix, _, local, err := mgr.ComputeQName(t.Context(), "http://example.org/ns#Thing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,12 +196,12 @@ func TestNSManagerBindRaceSafety(t *testing.T) {
 	ns := term.NewURIRefUnsafe("http://example.org/ns#")
 	done := make(chan struct{})
 	for i := 0; i < 10; i++ {
-		go func() { mgr.Bind("ex", ns, false); done <- struct{}{} }()
+		go func() { mgr.Bind(t.Context(), "ex", ns, false); done <- struct{}{} }()
 	}
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	got, ok := s.Namespace("ex")
+	got, ok, _ := s.Namespace(t.Context(), "ex")
 	if !ok {
 		t.Fatal("expected prefix 'ex' to be bound")
 	}
@@ -215,14 +215,14 @@ func TestNSManagerBindOverride(t *testing.T) {
 	mgr := namespace.NewNSManager(s)
 	ns1 := term.NewURIRefUnsafe("http://example.org/ns1#")
 	ns2 := term.NewURIRefUnsafe("http://example.org/ns2#")
-	mgr.Bind("ex", ns1, false)
-	mgr.Bind("ex", ns2, false)
-	got, _ := s.Namespace("ex")
+	mgr.Bind(t.Context(), "ex", ns1, false)
+	mgr.Bind(t.Context(), "ex", ns2, false)
+	got, _, _ := s.Namespace(t.Context(), "ex")
 	if got.Value() != ns1.Value() {
 		t.Errorf("override=false should not replace: got %q", got.Value())
 	}
-	mgr.Bind("ex", ns2, true)
-	got, _ = s.Namespace("ex")
+	mgr.Bind(t.Context(), "ex", ns2, true)
+	got, _, _ = s.Namespace(t.Context(), "ex")
 	if got.Value() != ns2.Value() {
 		t.Errorf("override=true should replace: got %q", got.Value())
 	}
@@ -231,20 +231,20 @@ func TestNSManagerBindOverride(t *testing.T) {
 func TestNSManagerAbsolutize(t *testing.T) {
 	s := store.NewMemoryStore()
 	mgr := namespace.NewNSManager(s)
-	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
-	got := mgr.Absolutize("foaf:Person")
+	s.Bind(t.Context(), "foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	got, _ := mgr.Absolutize(t.Context(), "foaf:Person")
 	if got.Value() != "http://xmlns.com/foaf/0.1/Person" {
 		t.Errorf("got %q", got.Value())
 	}
-	got = mgr.Absolutize("http://example.org/Thing")
+	got, _ = mgr.Absolutize(t.Context(), "http://example.org/Thing")
 	if got.Value() != "http://example.org/Thing" {
 		t.Errorf("got %q", got.Value())
 	}
-	got = mgr.Absolutize("unknown:term")
+	got, _ = mgr.Absolutize(t.Context(), "unknown:term")
 	if got.Value() != "unknown:term" {
 		t.Errorf("got %q", got.Value())
 	}
-	got = mgr.Absolutize("justAString")
+	got, _ = mgr.Absolutize(t.Context(), "justAString")
 	if got.Value() != "justAString" {
 		t.Errorf("got %q", got.Value())
 	}
@@ -266,9 +266,9 @@ func TestSplitURINoSeparator(t *testing.T) {
 
 func TestExpandCURIEEmptyPrefix(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("", term.NewURIRefUnsafe("http://example.org/default/"))
+	s.Bind(t.Context(), "", term.NewURIRefUnsafe("http://example.org/default/"))
 	mgr := namespace.NewNSManager(s)
-	got, err := mgr.ExpandCURIE(":localname")
+	got, err := mgr.ExpandCURIE(t.Context(), ":localname")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestExpandCURIEEmptyPrefix(t *testing.T) {
 
 func TestExpandCURIEEmptyPrefixNotBound(t *testing.T) {
 	mgr := namespace.NewNSManager(store.NewMemoryStore())
-	_, err := mgr.ExpandCURIE(":localname")
+	_, err := mgr.ExpandCURIE(t.Context(), ":localname")
 	if err == nil {
 		t.Error("expected error for unbound empty prefix")
 	}
@@ -290,9 +290,9 @@ func TestExpandCURIEEmptyPrefixNotBound(t *testing.T) {
 
 func TestNSManagerComputeQNameURN(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("isbn", term.NewURIRefUnsafe("urn:isbn:"))
+	s.Bind(t.Context(), "isbn", term.NewURIRefUnsafe("urn:isbn:"))
 	mgr := namespace.NewNSManager(s)
-	prefix, ns, local, err := mgr.ComputeQName("urn:isbn:12345")
+	prefix, ns, local, err := mgr.ComputeQName(t.Context(), "urn:isbn:12345")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,11 +341,11 @@ func TestClosedNamespaceMustTermSuccess(t *testing.T) {
 // must purge the cached entry.
 func TestNSManagerBindCacheInvalidation(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("ex", term.NewURIRefUnsafe("http://example.org/ns#"))
+	s.Bind(t.Context(), "ex", term.NewURIRefUnsafe("http://example.org/ns#"))
 	mgr := namespace.NewNSManager(s)
 
 	// Populate the cache for this URI.
-	qn, err := mgr.QName("http://example.org/ns#Thing")
+	qn, err := mgr.QName(t.Context(), "http://example.org/ns#Thing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,10 +354,10 @@ func TestNSManagerBindCacheInvalidation(t *testing.T) {
 	}
 
 	// Rebind with override=true — this should invalidate the cached entry.
-	mgr.Bind("ex2", term.NewURIRefUnsafe("http://example.org/ns#"), true)
+	mgr.Bind(t.Context(), "ex2", term.NewURIRefUnsafe("http://example.org/ns#"), true)
 
 	// The cache entry should be gone; re-query must use the store.
-	qn2, err := mgr.QName("http://example.org/ns#Thing")
+	qn2, err := mgr.QName(t.Context(), "http://example.org/ns#Thing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestNSManagerBindCacheInvalidation(t *testing.T) {
 // TestNSManagerPrefix covers the 0% Prefix() method.
 func TestNSManagerPrefix(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	s.Bind(t.Context(), "foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
 	mgr := namespace.NewNSManager(s)
 
 	// Known URI — must succeed.
@@ -392,7 +392,7 @@ func TestNSManagerPrefix(t *testing.T) {
 // TestNSManagerQNameError covers the error branch of QName (line 139).
 func TestNSManagerQNameError(t *testing.T) {
 	mgr := namespace.NewNSManager(store.NewMemoryStore())
-	_, err := mgr.QName("noseparator")
+	_, err := mgr.QName(t.Context(), "noseparator")
 	if err == nil {
 		t.Error("QName: expected error for unsplittable URI")
 	}
@@ -401,19 +401,19 @@ func TestNSManagerQNameError(t *testing.T) {
 // TestNSManagerComputeQNameCacheHit covers the cache-hit branch in ComputeQName (line 151).
 func TestNSManagerComputeQNameCacheHit(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))
+	s.Bind(t.Context(), "rdf", term.NewURIRefUnsafe(term.RDFNamespace))
 	mgr := namespace.NewNSManager(s)
 
 	uri := term.RDFNamespace + "type"
 
 	// First call — populates cache.
-	p1, ns1, l1, err := mgr.ComputeQName(uri)
+	p1, ns1, l1, err := mgr.ComputeQName(t.Context(), uri)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Second call — must hit the cache and return identical values.
-	p2, ns2, l2, err := mgr.ComputeQName(uri)
+	p2, ns2, l2, err := mgr.ComputeQName(t.Context(), uri)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,12 +425,13 @@ func TestNSManagerComputeQNameCacheHit(t *testing.T) {
 // TestNSManagerNamespaces covers the 0% Namespaces() method.
 func TestNSManagerNamespaces(t *testing.T) {
 	s := store.NewMemoryStore()
-	s.Bind("foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
-	s.Bind("rdf", term.NewURIRefUnsafe(term.RDFNamespace))
+	s.Bind(t.Context(), "foaf", term.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
+	s.Bind(t.Context(), "rdf", term.NewURIRefUnsafe(term.RDFNamespace))
 	mgr := namespace.NewNSManager(s)
 
 	found := map[string]string{}
-	for prefix, ns := range mgr.Namespaces() {
+	for pair_ := range mgr.Namespaces(t.Context()) {
+		prefix, ns := pair_.Prefix, pair_.Namespace
 		found[prefix] = ns.Value()
 	}
 	if found["foaf"] != "http://xmlns.com/foaf/0.1/" {

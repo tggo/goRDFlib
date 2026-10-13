@@ -1,6 +1,9 @@
 package graph
 
 import (
+	"context"
+	"iter"
+
 	"github.com/tggo/goRDFlib/namespace"
 	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
@@ -37,97 +40,23 @@ func isRDFNil(t term.Term) bool {
 	return false
 }
 
-// Append adds an item to the end of the list.
-func (c *Collection) Append(item term.Term) {
-	end := c.end()
-	if end == nil {
-		// Empty list: set first item on head
-		c.graph.Add(c.head, namespace.RDF.First, item)
-		c.graph.Add(c.head, namespace.RDF.Rest, namespace.RDF.Nil)
-		return
-	}
-
-	// end has rdf:first — create new node and link from end
-	newNode := term.NewBNode()
-	rest := namespace.RDF.Rest
-	c.graph.Remove(end, &rest, nil)
-	c.graph.Add(end, namespace.RDF.Rest, newNode)
-	c.graph.Add(newNode, namespace.RDF.First, item)
-	c.graph.Add(newNode, namespace.RDF.Rest, namespace.RDF.Nil)
-}
-
-// Len returns the number of items in the list.
-func (c *Collection) Len() int {
-	count := 0
-	c.Iter()(func(term.Term) bool {
-		count++
-		return true
-	})
-	return count
-}
-
-// Get returns the item at the given index.
-func (c *Collection) Get(index int) (term.Term, bool) {
-	node := c.getContainer(index)
-	if node == nil {
-		return nil, false
-	}
-	first := namespace.RDF.First
-	val, ok := c.graph.Value(node, &first, nil)
-	return val, ok
-}
-
-// Index returns the position of an item in the list, or -1 if not found.
-// Cycle-safe: uses a visited set to prevent infinite loops on malformed data.
-func (c *Collection) Index(item term.Term) int {
-	i := 0
-	node := c.head
-	firstKey := namespace.RDF.First
-	restKey := namespace.RDF.Rest
-	visited := map[string]struct{}{term.TermKey(node): {}}
-
-	for node != nil {
-		val, ok := c.graph.Value(node, &firstKey, nil)
-		if ok && val.Equal(item) {
-			return i
-		}
-		next, ok := c.graph.Value(node, &restKey, nil)
-		if !ok || isRDFNil(next) {
-			break
-		}
-		subj, ok := next.(term.Subject)
-		if !ok {
-			break
-		}
-		k := term.TermKey(subj)
-		if _, seen := visited[k]; seen {
-			break // cycle detected
-		}
-		visited[k] = struct{}{}
-		node = subj
-		i++
-	}
-	return -1
-}
-
-// Iter iterates over the items in the list.
-// Cycle-safe: uses a visited set to prevent infinite loops on malformed data.
-func (c *Collection) Iter() store.TermIterator {
-	return func(yield func(term.Term) bool) {
-		node := c.head
-		firstKey := namespace.RDF.First
+// nodes yields the list's nodes from the head, stopping at rdf:nil, at a
+// rdf:rest that is missing or not a subject, and at a cycle (a malformed list
+// must not loop forever).
+func (c *Collection) nodes(ctx context.Context) iter.Seq2[term.Subject, error] {
+	return func(yield func(term.Subject, error) bool) {
 		restKey := namespace.RDF.Rest
+		node := c.head
 		visited := map[string]struct{}{term.TermKey(node): {}}
-
-		for node != nil {
-			val, ok := c.graph.Value(node, &firstKey, nil)
-			if !ok {
+		for {
+			if !yield(node, nil) {
 				return
 			}
-			if !yield(val) {
+			next, ok, err := c.graph.Value(ctx, node, &restKey, nil)
+			if err != nil {
+				yield(nil, err)
 				return
 			}
-			next, ok := c.graph.Value(node, &restKey, nil)
 			if !ok || isRDFNil(next) {
 				return
 			}
@@ -137,7 +66,7 @@ func (c *Collection) Iter() store.TermIterator {
 			}
 			k := term.TermKey(subj)
 			if _, seen := visited[k]; seen {
-				return // cycle detected
+				return
 			}
 			visited[k] = struct{}{}
 			node = subj
@@ -145,89 +74,146 @@ func (c *Collection) Iter() store.TermIterator {
 	}
 }
 
+// first returns the rdf:first of node.
+func (c *Collection) first(ctx context.Context, node term.Subject) (term.Term, bool, error) {
+	firstKey := namespace.RDF.First
+	return c.graph.Value(ctx, node, &firstKey, nil)
+}
+
+// Append adds an item to the end of the list.
+func (c *Collection) Append(ctx context.Context, item term.Term) error {
+	end, err := c.end(ctx)
+	if err != nil {
+		return err
+	}
+	g := c.graph
+	if end == nil {
+		// Empty list: set first item on head
+		if err := g.Add(ctx, c.head, namespace.RDF.First, item); err != nil {
+			return err
+		}
+		return g.Add(ctx, c.head, namespace.RDF.Rest, namespace.RDF.Nil)
+	}
+
+	// end has rdf:first. Build the new node first, then switch the old tail's
+	// rdf:rest to it with one Set: a write that fails partway leaves an
+	// unreachable node, never a truncated or dangling list.
+	newNode := term.NewBNode()
+	if err := g.Add(ctx, newNode, namespace.RDF.First, item); err != nil {
+		return err
+	}
+	if err := g.Add(ctx, newNode, namespace.RDF.Rest, namespace.RDF.Nil); err != nil {
+		return err
+	}
+	return g.Set(ctx, end, namespace.RDF.Rest, newNode)
+}
+
+// Len returns the number of items in the list.
+func (c *Collection) Len(ctx context.Context) (int, error) {
+	count := 0
+	for _, err := range c.Iter(ctx) {
+		if err != nil {
+			return 0, err
+		}
+		count++
+	}
+	return count, nil
+}
+
+// Get returns the item at the given index.
+func (c *Collection) Get(ctx context.Context, index int) (term.Term, bool, error) {
+	i := 0
+	for node, err := range c.nodes(ctx) {
+		if err != nil {
+			return nil, false, err
+		}
+		if i == index {
+			return c.first(ctx, node)
+		}
+		i++
+	}
+	return nil, false, nil
+}
+
+// Index returns the position of an item in the list, or -1 if not found.
+// Cycle-safe: a malformed list is walked once.
+func (c *Collection) Index(ctx context.Context, item term.Term) (int, error) {
+	i := 0
+	for node, err := range c.nodes(ctx) {
+		if err != nil {
+			return -1, err
+		}
+		val, ok, err := c.first(ctx, node)
+		if err != nil {
+			return -1, err
+		}
+		if ok && val.Equal(item) {
+			return i, nil
+		}
+		i++
+	}
+	return -1, nil
+}
+
+// Iter iterates over the items in the list.
+// Cycle-safe: a malformed list is walked once.
+func (c *Collection) Iter(ctx context.Context) store.TermIterator {
+	return func(yield func(term.Term, error) bool) {
+		for node, err := range c.nodes(ctx) {
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			val, ok, err := c.first(ctx, node)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			if !ok || !yield(val, nil) {
+				return
+			}
+		}
+	}
+}
+
 // Clear removes all triples belonging to this list from the graph.
-// Cycle-safe: uses a visited set to prevent infinite loops on malformed data.
-func (c *Collection) Clear() {
-	node := c.head
+// Cycle-safe: a malformed list is walked once.
+func (c *Collection) Clear(ctx context.Context) error {
+	// Collect first: removing rdf:rest while walking it would cut the walk.
+	var nodes []term.Subject
+	for node, err := range c.nodes(ctx) {
+		if err != nil {
+			return err
+		}
+		nodes = append(nodes, node)
+	}
 	firstKey := namespace.RDF.First
 	restKey := namespace.RDF.Rest
-	visited := map[string]struct{}{term.TermKey(node): {}}
-
-	for node != nil {
-		c.graph.Remove(node, &firstKey, nil)
-		next, ok := c.graph.Value(node, &restKey, nil)
-		c.graph.Remove(node, &restKey, nil)
-		if !ok || isRDFNil(next) {
-			return
+	for _, node := range nodes {
+		if err := c.graph.Remove(ctx, node, &firstKey, nil); err != nil {
+			return err
 		}
-		subj, ok := next.(term.Subject)
-		if !ok {
-			return
+		if err := c.graph.Remove(ctx, node, &restKey, nil); err != nil {
+			return err
 		}
-		k := term.TermKey(subj)
-		if _, seen := visited[k]; seen {
-			return // cycle detected
-		}
-		visited[k] = struct{}{}
-		node = subj
 	}
+	return nil
 }
 
 // end returns the last node in the list (the one whose rdf:rest is rdf:nil),
 // or nil if the list is empty (head has no rdf:first).
-// Cycle-safe: uses a visited set to prevent infinite loops on malformed data.
-func (c *Collection) end() term.Subject {
-	node := c.head
-	firstKey := namespace.RDF.First
-	restKey := namespace.RDF.Rest
-
+// Cycle-safe: on a cycle it returns the node that closes it.
+func (c *Collection) end(ctx context.Context) (term.Subject, error) {
 	// If head has no rdf:first, the list is empty.
-	if _, ok := c.graph.Value(node, &firstKey, nil); !ok {
-		return nil
+	if _, ok, err := c.first(ctx, c.head); err != nil || !ok {
+		return nil, err
 	}
-
-	visited := map[string]struct{}{term.TermKey(node): {}}
-
-	for {
-		next, ok := c.graph.Value(node, &restKey, nil)
-		if !ok || isRDFNil(next) {
-			return node
+	var last term.Subject
+	for node, err := range c.nodes(ctx) {
+		if err != nil {
+			return nil, err
 		}
-		subj, ok := next.(term.Subject)
-		if !ok {
-			return node
-		}
-		k := term.TermKey(subj)
-		if _, seen := visited[k]; seen {
-			return node // cycle detected, return current
-		}
-		visited[k] = struct{}{}
-		node = subj
+		last = node
 	}
-}
-
-// getContainer navigates to the nth node in the list.
-// Cycle-safe: uses a visited set to prevent infinite loops on malformed data.
-func (c *Collection) getContainer(index int) term.Subject {
-	node := c.head
-	restKey := namespace.RDF.Rest
-	visited := map[string]struct{}{term.TermKey(node): {}}
-
-	for i := 0; i < index; i++ {
-		next, ok := c.graph.Value(node, &restKey, nil)
-		if !ok || isRDFNil(next) {
-			return nil
-		}
-		subj, ok := next.(term.Subject)
-		if !ok {
-			return nil
-		}
-		k := term.TermKey(subj)
-		if _, seen := visited[k]; seen {
-			return nil // cycle detected
-		}
-		visited[k] = struct{}{}
-		node = subj
-	}
-	return node
+	return last, nil
 }

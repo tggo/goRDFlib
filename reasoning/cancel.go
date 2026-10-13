@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
 )
 
 // ErrCancelled is returned, wrapped together with the context's own error,
@@ -18,8 +19,10 @@ var ErrCancelled = errors.New("reasoning: stopped because the context is done")
 // the context.
 const stopCheckInterval = 1024
 
-// stopper tells a closure when its context is done. A nil *stopper never stops;
-// the functions without a context use one. Not safe for concurrent use.
+// stopper tells a closure when it must end: its context is done, or the store
+// failed. It also owns every store access of an engine, so the first failure
+// is recorded in one place and every loop unwinds through halted. Not safe for
+// concurrent use.
 type stopper struct {
 	ctx  context.Context
 	done <-chan struct{}
@@ -28,10 +31,76 @@ type stopper struct {
 }
 
 func newStopper(ctx context.Context) *stopper {
-	if ctx == nil || ctx.Done() == nil {
-		return nil
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	return &stopper{ctx: ctx, done: ctx.Done()}
+}
+
+// fail records the first failure of a store call. A failure caused by the
+// context is reported like any other stop, as ErrCancelled.
+func (s *stopper) fail(op string, err error) {
+	if s.err != nil {
+		return
+	}
+	if cerr := s.ctx.Err(); cerr != nil {
+		s.err = fmt.Errorf("%w: %w", ErrCancelled, cerr)
+		return
+	}
+	s.err = fmt.Errorf("reasoning: %s: %w", op, err)
+}
+
+// triples calls fn for each triple matching the pattern until fn returns
+// false, the closure is stopped, or the store reports an error (recorded).
+func (s *stopper) triples(g *graph.Graph, sub term.Subject, p *term.URIRef, o term.Term, fn func(term.Triple) bool) {
+	if s.err != nil {
+		return
+	}
+	for t, err := range g.Triples(s.ctx, sub, p, o) {
+		if err != nil {
+			s.fail("reading the graph", err)
+			return
+		}
+		if !fn(t) {
+			return
+		}
+	}
+}
+
+// contains reports whether the graph holds the triple; false once stopped.
+func (s *stopper) contains(g *graph.Graph, sub term.Subject, p term.URIRef, o term.Term) bool {
+	if s.err != nil {
+		return false
+	}
+	ok, err := g.Contains(s.ctx, sub, p, o)
+	if err != nil {
+		s.fail("reading the graph", err)
+		return false
+	}
+	return ok
+}
+
+// add writes a triple to the graph; after a failure nothing is written.
+func (s *stopper) add(g *graph.Graph, sub term.Subject, p term.URIRef, o term.Term) {
+	if s.err != nil {
+		return
+	}
+	if err := g.Add(s.ctx, sub, p, o); err != nil {
+		s.fail("adding an inferred triple", err)
+	}
+}
+
+// length returns the graph size, 0 once stopped.
+func (s *stopper) length(g *graph.Graph) int {
+	if s.err != nil {
+		return 0
+	}
+	n, err := g.Len(s.ctx)
+	if err != nil {
+		s.fail("counting triples", err)
+		return 0
+	}
+	return n
 }
 
 // tick counts one triple scanned and reports whether the closure must end.
@@ -77,12 +146,12 @@ func (s *stopper) failure() error {
 	return s.err
 }
 
-// ExpandContext is Expand with a context. The graph is read and written with
-// ctx bound to its store (store.ContextBinder), and the closure stops once ctx
-// is done: it is checked every few thousand triples scanned and before each
+// ExpandContext is Expand with a context. ctx reaches every store read and
+// write, and the closure stops once ctx is done: it is checked every few thousand triples scanned and before each
 // batch of inferred triples is added.
 //
-// A stopped expansion returns the number of triples added so far and an error
+// A store error ends the expansion the same way and is returned wrapped; it is
+// never reported as success. A stopped expansion returns the number of triples added so far and an error
 // matching ErrCancelled and ctx.Err(). The triples added stay in the graph.
 // Each one is a valid entailment, but the graph is not closed.
 func ExpandContext(ctx context.Context, g *graph.Graph, r Regime) (int, error) {

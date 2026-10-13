@@ -180,7 +180,7 @@ func TestRoundTripASK(t *testing.T) {
 // Variables come out in projection order, not sorted or map order.
 func TestVariableOrderIsProjectionOrder(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	g.Add(iri("http://e/s"), iri("http://e/p"), lit("o"))
+	g.Add(t.Context(), iri("http://e/s"), iri("http://e/p"), lit("o"))
 	r, err := sparql.Query(g, `SELECT ?z ?a ?m WHERE { ?a ?m ?z }`)
 	if err != nil {
 		t.Fatal(err)

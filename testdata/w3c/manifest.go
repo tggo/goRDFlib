@@ -1,6 +1,7 @@
 package w3c
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
@@ -68,7 +69,7 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 	defer f.Close()
 
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := turtle.Parse(g, f, turtle.WithBase(base)); err != nil {
+	if err := turtle.Parse(context.Background(), g, f, turtle.WithBase(base)); err != nil {
 		return nil, err
 	}
 
@@ -76,7 +77,7 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 
 	// Extract mf:assumedTestBase if present.
 	assumedBasePred := term.NewURIRefUnsafe(mf + "assumedTestBase")
-	for tr := range g.Triples(nil, &assumedBasePred, nil) {
+	for tr := range g.Triples(context.Background(), nil, &assumedBasePred, nil) {
 		m.AssumedTestBase = tr.Object.(term.URIRef).Value()
 		break
 	}
@@ -84,7 +85,7 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 	// Find the list head from the mf:entries triple.
 	entriesPred := term.NewURIRefUnsafe(mf + "entries")
 	var listSubj term.Subject
-	for tr := range g.Triples(nil, &entriesPred, nil) {
+	for tr := range g.Triples(context.Background(), nil, &entriesPred, nil) {
 		if s, ok := tr.Object.(term.Subject); ok {
 			listSubj = s
 		}
@@ -117,7 +118,7 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 	recognizedDTPred := term.NewURIRefUnsafe(mf + "recognizedDatatypes")
 	unrecognizedDTPred := term.NewURIRefUnsafe(mf + "unrecognizedDatatypes")
 
-	coll.Iter()(func(item term.Term) bool {
+	coll.Iter(context.Background())(func(item term.Term, _ error) bool {
 		subj, ok := item.(term.Subject)
 		if !ok {
 			return true
@@ -125,48 +126,48 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 
 		var e TestEntry
 
-		if v, ok := g.Value(subj, &namePred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &namePred, nil); ok {
 			e.Name = v.(term.Literal).Lexical()
 		}
-		if v, ok := g.Value(subj, &typePred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &typePred, nil); ok {
 			e.Type = v.(term.URIRef).Value()
 		}
 
 		// Check if mf:action is a URI or a blank node (SPARQL tests use blank node)
-		if v, ok := g.Value(subj, &actionPred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &actionPred, nil); ok {
 			switch av := v.(type) {
 			case term.URIRef:
 				e.Action = toFilePath(av.Value())
 			case term.Subject:
 				// SPARQL query manifest: qt:query, qt:data, qt:graphData
-				if qv, ok := g.Value(av, &queryPred, nil); ok {
+				if qv, ok, _ := g.Value(context.Background(), av, &queryPred, nil); ok {
 					e.Query = toFilePath(qv.(term.URIRef).Value())
 				}
-				if dv, ok := g.Value(av, &dataPred, nil); ok {
+				if dv, ok, _ := g.Value(context.Background(), av, &dataPred, nil); ok {
 					e.Data = toFilePath(dv.(term.URIRef).Value())
 				}
-				for gd := range g.Triples(av, &graphDataPred, nil) {
+				for gd := range g.Triples(context.Background(), av, &graphDataPred, nil) {
 					if u, ok := gd.Object.(term.URIRef); ok {
 						e.GraphData = append(e.GraphData, toFilePath(u.Value()))
 					}
 				}
 				// SPARQL update manifest: ut:request, ut:data, ut:graphData
-				if rv, ok := g.Value(av, &utRequest, nil); ok {
+				if rv, ok, _ := g.Value(context.Background(), av, &utRequest, nil); ok {
 					e.Request = toFilePath(rv.(term.URIRef).Value())
 				}
-				if dv, ok := g.Value(av, &utData, nil); ok {
+				if dv, ok, _ := g.Value(context.Background(), av, &utData, nil); ok {
 					e.ActionData = toFilePath(dv.(term.URIRef).Value())
 				}
-				for gd := range g.Triples(av, &utGraphData, nil) {
+				for gd := range g.Triples(context.Background(), av, &utGraphData, nil) {
 					gdNode, ok := gd.Object.(term.Subject)
 					if !ok {
 						continue
 					}
 					var ref NamedGraphRef
-					if gv, ok := g.Value(gdNode, &utGraph, nil); ok {
+					if gv, ok, _ := g.Value(context.Background(), gdNode, &utGraph, nil); ok {
 						ref.Graph = toFilePath(gv.(term.URIRef).Value())
 					}
-					if lv, ok := g.Value(gdNode, &rdfsLabel, nil); ok {
+					if lv, ok, _ := g.Value(context.Background(), gdNode, &rdfsLabel, nil); ok {
 						ref.Label = lv.(term.Literal).Lexical()
 					}
 					e.ActionGraphData = append(e.ActionGraphData, ref)
@@ -175,7 +176,7 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 		}
 
 		// Parse mf:result for update tests (blank node with ut:data, ut:graphData)
-		if v, ok := g.Value(subj, &resultPred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &resultPred, nil); ok {
 			switch rv := v.(type) {
 			case term.URIRef:
 				e.Result = toFilePath(rv.Value())
@@ -185,19 +186,19 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 					e.ResultFalse = true
 				}
 			case term.Subject:
-				if dv, ok := g.Value(rv, &utData, nil); ok {
+				if dv, ok, _ := g.Value(context.Background(), rv, &utData, nil); ok {
 					e.ResultData = toFilePath(dv.(term.URIRef).Value())
 				}
-				for gd := range g.Triples(rv, &utGraphData, nil) {
+				for gd := range g.Triples(context.Background(), rv, &utGraphData, nil) {
 					gdNode, ok := gd.Object.(term.Subject)
 					if !ok {
 						continue
 					}
 					var ref NamedGraphRef
-					if gv, ok := g.Value(gdNode, &utGraph, nil); ok {
+					if gv, ok, _ := g.Value(context.Background(), gdNode, &utGraph, nil); ok {
 						ref.Graph = toFilePath(gv.(term.URIRef).Value())
 					}
-					if lv, ok := g.Value(gdNode, &rdfsLabel, nil); ok {
+					if lv, ok, _ := g.Value(context.Background(), gdNode, &rdfsLabel, nil); ok {
 						ref.Label = lv.(term.Literal).Lexical()
 					}
 					e.ResultGraphData = append(e.ResultGraphData, ref)
@@ -206,15 +207,15 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 		}
 
 		// Parse entailment test fields
-		if v, ok := g.Value(subj, &entailmentRegimePred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &entailmentRegimePred, nil); ok {
 			if lit, ok := v.(term.Literal); ok {
 				e.EntailmentRegime = lit.Lexical()
 			}
 		}
-		if v, ok := g.Value(subj, &recognizedDTPred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &recognizedDTPred, nil); ok {
 			if listHead, ok := v.(term.Subject); ok {
 				c := graph.NewCollection(g, listHead)
-				c.Iter()(func(item term.Term) bool {
+				c.Iter(context.Background())(func(item term.Term, _ error) bool {
 					if u, ok := item.(term.URIRef); ok {
 						e.RecognizedDatatypes = append(e.RecognizedDatatypes, u.Value())
 					}
@@ -222,10 +223,10 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 				})
 			}
 		}
-		if v, ok := g.Value(subj, &unrecognizedDTPred, nil); ok {
+		if v, ok, _ := g.Value(context.Background(), subj, &unrecognizedDTPred, nil); ok {
 			if listHead, ok := v.(term.Subject); ok {
 				c := graph.NewCollection(g, listHead)
-				c.Iter()(func(item term.Term) bool {
+				c.Iter(context.Background())(func(item term.Term, _ error) bool {
 					if u, ok := item.(term.URIRef); ok {
 						e.UnrecognizedDatatypes = append(e.UnrecognizedDatatypes, u.Value())
 					}
@@ -257,13 +258,13 @@ func ParseIncludeManifest(manifestPath string) (*Manifest, error) {
 	defer f.Close()
 
 	g := graph.NewGraph(graph.WithBase(base))
-	if err := turtle.Parse(g, f, turtle.WithBase(base)); err != nil {
+	if err := turtle.Parse(context.Background(), g, f, turtle.WithBase(base)); err != nil {
 		return nil, err
 	}
 
 	includePred := term.NewURIRefUnsafe(mf + "include")
 	var listHead term.Subject
-	for tr := range g.Triples(nil, &includePred, nil) {
+	for tr := range g.Triples(context.Background(), nil, &includePred, nil) {
 		if s, ok := tr.Object.(term.Subject); ok {
 			listHead = s
 		}
@@ -275,7 +276,7 @@ func ParseIncludeManifest(manifestPath string) (*Manifest, error) {
 
 	result := &Manifest{ManifestDir: filepath.Dir(absPath)}
 	coll := graph.NewCollection(g, listHead)
-	coll.Iter()(func(item term.Term) bool {
+	coll.Iter(context.Background())(func(item term.Term, _ error) bool {
 		u, ok := item.(term.URIRef)
 		if !ok {
 			return true

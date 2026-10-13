@@ -21,7 +21,7 @@ func TestInvalidLanguageTagIsASyntaxError(t *testing.T) {
 		`"x"@e1`,
 	} {
 		src := "<http://e/s> <http://e/p> " + lit + " ."
-		err := Parse(rdflibgo.NewGraph(), strings.NewReader(src))
+		err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(src))
 		if err == nil {
 			t.Errorf("%s: accepted an invalid language tag", lit)
 			continue
@@ -32,7 +32,7 @@ func TestInvalidLanguageTagIsASyntaxError(t *testing.T) {
 	}
 	for _, lit := range []string{`"x"@en`, `"x"@en-US`, `"x"@zh-Hant-TW`, `"x"@de-1996`, `"x"@ar--rtl`, `"x"@abcdefgh`} {
 		src := "<http://e/s> <http://e/p> " + lit + " ."
-		if err := Parse(rdflibgo.NewGraph(), strings.NewReader(src)); err != nil {
+		if err := Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(src)); err != nil {
 			t.Errorf("%s: rejected a valid language tag: %v", lit, err)
 		}
 	}

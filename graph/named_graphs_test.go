@@ -18,10 +18,10 @@ func TestDatasetNamedGraphsOnMemoryStore(t *testing.T) {
 	g1 := term.NewURIRefUnsafe("http://e/g1")
 	g2 := term.NewURIRefUnsafe("http://e/g2")
 
-	ds.DefaultContext().Add(s, p, term.NewLiteral("default"))
-	ds.Graph(g1).Add(s, p, term.NewLiteral("one"))
-	ds.Graph(g1).Add(s, p, term.NewLiteral("shared"))
-	ds.Graph(g2).Add(s, p, term.NewLiteral("shared"))
+	ds.DefaultContext().Add(t.Context(), s, p, term.NewLiteral("default"))
+	ds.Graph(g1).Add(t.Context(), s, p, term.NewLiteral("one"))
+	ds.Graph(g1).Add(t.Context(), s, p, term.NewLiteral("shared"))
+	ds.Graph(g2).Add(t.Context(), s, p, term.NewLiteral("shared"))
 
 	for _, tc := range []struct {
 		name string
@@ -32,36 +32,36 @@ func TestDatasetNamedGraphsOnMemoryStore(t *testing.T) {
 		{"g1", ds.Graph(g1), 2},
 		{"g2", ds.Graph(g2), 1},
 	} {
-		if got := tc.g.Len(); got != tc.want {
+		if got, _ := tc.g.Len(t.Context()); got != tc.want {
 			t.Errorf("%s: Len = %d, want %d", tc.name, got, tc.want)
 		}
 	}
-	if !ds.Graph(g2).Contains(s, p, term.NewLiteral("shared")) || ds.Graph(g2).Contains(s, p, term.NewLiteral("one")) {
+	if !mustV(ds.Graph(g2).Contains(t.Context(), s, p, term.NewLiteral("shared"))) || mustV(ds.Graph(g2).Contains(t.Context(), s, p, term.NewLiteral("one"))) {
 		t.Error("g2 sees a triple that belongs to g1 only")
 	}
 
-	if got := ds.Len(); got != 3 {
+	if got, _ := ds.Len(t.Context()); got != 3 {
 		t.Errorf("union Len = %d, want 3 (shared triple counted once)", got)
 	}
 	quads := 0
-	ds.Quads(nil, nil, nil)(func(term.Quad) bool { quads++; return true })
+	ds.Quads(t.Context(), nil, nil, nil)(func(term.Quad, error) bool { quads++; return true })
 	if quads != 4 {
 		t.Errorf("Quads yielded %d, want 4", quads)
 	}
 	ctxs := 0
-	ds.Contexts(nil)(func(term.Term) bool { ctxs++; return true })
+	ds.Contexts(t.Context(), nil)(func(term.Term, error) bool { ctxs++; return true })
 	if ctxs != 2 {
 		t.Errorf("Contexts reported %d graphs, want 2", ctxs)
 	}
 
 	shared := term.NewLiteral("shared")
-	ds.Remove(nil, nil, shared, nil)
-	if ds.Graph(g1).Len() != 1 || ds.Graph(g2).Len() != 0 {
+	ds.Remove(t.Context(), nil, nil, shared, nil)
+	if mustV(ds.Graph(g1).Len(t.Context())) != 1 || mustV(ds.Graph(g2).Len(t.Context())) != 0 {
 		t.Errorf("Remove with a nil context must remove from every graph: g1=%d g2=%d",
-			ds.Graph(g1).Len(), ds.Graph(g2).Len())
+			mustV(ds.Graph(g1).Len(t.Context())), mustV(ds.Graph(g2).Len(t.Context())))
 	}
-	ds.Remove(nil, nil, nil, g1)
-	if ds.DefaultContext().Len() != 1 {
+	ds.Remove(t.Context(), nil, nil, nil, g1)
+	if mustV(ds.DefaultContext().Len(t.Context())) != 1 {
 		t.Error("Remove in g1 touched the default graph")
 	}
 }
@@ -84,17 +84,17 @@ func TestUnnamedGraphUsesDefaultGraphIdentifier(t *testing.T) {
 	bn := term.NewBNode()
 	blank := graph.NewGraph(graph.WithStore(s), graph.WithIdentifier(bn))
 
-	unnamed.Add(term.NewURIRefUnsafe("http://e/a"), p, term.NewLiteral("default"))
-	blank.Add(term.NewURIRefUnsafe("http://e/b"), p, term.NewLiteral("named"))
+	unnamed.Add(t.Context(), term.NewURIRefUnsafe("http://e/a"), p, term.NewLiteral("default"))
+	blank.Add(t.Context(), term.NewURIRefUnsafe("http://e/b"), p, term.NewLiteral("named"))
 
-	if unnamed.Len() != 1 || blank.Len() != 1 {
-		t.Errorf("unnamed=%d blank=%d, want 1 each", unnamed.Len(), blank.Len())
+	if mustV(unnamed.Len(t.Context())) != 1 || mustV(blank.Len(t.Context())) != 1 {
+		t.Errorf("unnamed=%d blank=%d, want 1 each", mustV(unnamed.Len(t.Context())), mustV(blank.Len(t.Context())))
 	}
-	if s.Len(nil) != 1 {
-		t.Errorf("default graph holds %d triples, want 1", s.Len(nil))
+	if mustV(s.Len(t.Context(), nil)) != 1 {
+		t.Errorf("default graph holds %d triples, want 1", mustV(s.Len(t.Context(), nil)))
 	}
 	found := false
-	s.Contexts(nil)(func(c term.Term) bool {
+	s.Contexts(t.Context(), nil)(func(c term.Term, _ error) bool {
 		found = found || c.Equal(bn)
 		return true
 	})

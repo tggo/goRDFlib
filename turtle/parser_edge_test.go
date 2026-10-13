@@ -14,8 +14,8 @@ func TestTurtleParserIRIWithUnicodeEscape(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		<http://example.org/\u0041> ex:p "v" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -24,8 +24,8 @@ func TestTurtleParserLocalNameEscape(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p ex:hello%20world .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -36,7 +36,7 @@ func TestTurtleParserEscapeTab(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != "a\tb" {
 		t.Errorf("got %q", v.String())
 	}
@@ -47,8 +47,8 @@ func TestTurtleParserEscapeSingleQuote(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "it\'s" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -59,7 +59,7 @@ func TestTurtleParserUnicodeEscape8(t *testing.T) {
 	`)
 	s, _ := rdflibgo.NewURIRef("http://example.org/s")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	v, _ := g.Value(s, &p, nil)
+	v, _, _ := g.Value(t.Context(), s, &p, nil)
 	if v.String() != "ABC" {
 		t.Errorf("expected ABC, got %q", v.String())
 	}
@@ -71,8 +71,8 @@ func TestTurtleParserTripleQuotedSingleQuote(t *testing.T) {
 		ex:s ex:p '''multi
 line''' .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -81,8 +81,8 @@ func TestTurtleParserPredicateAsIRI(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s <http://example.org/p> "v" .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -91,8 +91,8 @@ func TestTurtleParserObjectAsIRI(t *testing.T) {
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p <http://example.org/o> .
 	`)
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -102,14 +102,14 @@ func TestTurtleParserBooleanObject(t *testing.T) {
 		ex:s ex:p true .
 		ex:s ex:q false .
 	`)
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserErrorUnterminatedIRI(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`<http://example.org/s`))
+	err := Parse(t.Context(), g, strings.NewReader(`<http://example.org/s`))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -117,7 +117,7 @@ func TestTurtleParserErrorUnterminatedIRI(t *testing.T) {
 
 func TestTurtleParserErrorMissingColon(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@prefix ex <http://example.org/> .`))
+	err := Parse(t.Context(), g, strings.NewReader(`@prefix ex <http://example.org/> .`))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -125,7 +125,7 @@ func TestTurtleParserErrorMissingColon(t *testing.T) {
 
 func TestTurtleParserErrorMissingDot(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "v"`))
+	err := Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p "v"`))
 	if err == nil {
 		t.Error("expected error for missing dot")
 	}
@@ -133,7 +133,7 @@ func TestTurtleParserErrorMissingDot(t *testing.T) {
 
 func TestTurtleParserErrorUnterminatedGroup(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p [`))
+	err := Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p [`))
 	if err == nil {
 		t.Error("expected error for unterminated [")
 	}
@@ -141,7 +141,7 @@ func TestTurtleParserErrorUnterminatedGroup(t *testing.T) {
 
 func TestTurtleParserErrorUnterminatedCollection(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p (`))
+	err := Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p (`))
 	if err == nil {
 		t.Error("expected error for unterminated (")
 	}
@@ -149,7 +149,7 @@ func TestTurtleParserErrorUnterminatedCollection(t *testing.T) {
 
 func TestTurtleParserErrorUnknownDirective(t *testing.T) {
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(`@unknown directive .`))
+	err := Parse(t.Context(), g, strings.NewReader(`@unknown directive .`))
 	if err == nil {
 		t.Error("expected error for unknown directive")
 	}

@@ -36,7 +36,7 @@ func TestGraphIndexKeepsLookalikesApart(t *testing.T) {
 	subjects := make([]Term, len(terms))
 	for i, o := range terms {
 		subjects[i] = IRI(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(subjects[i], pred, o)
+		g.Add(t.Context(), subjects[i], pred, o)
 	}
 	for i, o := range terms {
 		subs := g.Subjects(pred, o)
@@ -54,8 +54,8 @@ func TestGraphIndexKeepsLookalikesApart(t *testing.T) {
 		}
 	}
 	// The same lexical value as a subject: <x> and _:x are two nodes.
-	g.Add(IRI("x"), pred, Literal("iri", "", ""))
-	g.Add(BlankNode("x"), pred, Literal("bnode", "", ""))
+	g.Add(t.Context(), IRI("x"), pred, Literal("iri", "", ""))
+	g.Add(t.Context(), BlankNode("x"), pred, Literal("bnode", "", ""))
 	if got := g.Objects(IRI("x"), pred); len(got) != 1 || got[0].Value() != "iri" {
 		t.Errorf("Objects(<x>, p) = %v", got)
 	}
@@ -75,7 +75,7 @@ func TestGraphIndexAgreesWithScan(t *testing.T) {
 	for round := range 40 {
 		g := NewGraph()
 		for range rng.IntN(40) + 1 {
-			g.Add(subjects[rng.IntN(len(subjects))], preds[rng.IntN(len(preds))], pool[rng.IntN(len(pool))])
+			g.Add(t.Context(), subjects[rng.IntN(len(subjects))], preds[rng.IntN(len(preds))], pool[rng.IntN(len(pool))])
 		}
 		all := g.Triples()
 		same := func(a, b Term) bool { return a.TermKey() == b.TermKey() }

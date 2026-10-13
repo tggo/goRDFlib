@@ -57,10 +57,10 @@ func TestW3CGraphStore(t *testing.T) {
 			t.Error("no Content-Length")
 		}
 		exp, act := graph.NewGraph(), graph.NewGraph()
-		if err := turtle.Parse(exp, strings.NewReader(fill(expected))); err != nil {
+		if err := turtle.Parse(t.Context(), exp, strings.NewReader(fill(expected))); err != nil {
 			t.Fatalf("expected graph: %v", err)
 		}
-		if err := turtle.Parse(act, strings.NewReader(r.body)); err != nil {
+		if err := turtle.Parse(t.Context(), act, strings.NewReader(r.body)); err != nil {
 			t.Fatalf("response is not Turtle: %v\n%s", err, r.body)
 		}
 		testutil.AssertGraphEqual(t, exp, act)

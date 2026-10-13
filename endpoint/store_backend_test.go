@@ -21,11 +21,11 @@ func TestStoreBackend(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	ds := graph.NewDataset(graph.WithStore(st))
-	ds.DefaultContext().Add(iri(ex+"s"), iri(ex+"p"), term.NewLiteral("default"))
-	ds.Graph(iri(ex+"g1")).Add(iri(ex+"s1"), iri(ex+"p"), term.NewLiteral("one"))
+	ds.DefaultContext().Add(t.Context(), iri(ex+"s"), iri(ex+"p"), term.NewLiteral("default"))
+	ds.Graph(iri(ex+"g1")).Add(t.Context(), iri(ex+"s1"), iri(ex+"p"), term.NewLiteral("one"))
 	ts := httptestServer(t, endpoint.NewForStore(ds))
 
-	inStore := func(g string) int { return st.Len(iri(g)) }
+	inStore := func(g string) int { return mustV(st.Len(t.Context(), iri(g))) }
 
 	if !askResult(t, get(t, ts, url.Values{"query": {`ASK { GRAPH <` + ex + `g1> { ?s ?p "one" } ?x ?y "default" }`}})) {
 		t.Fatal("store graphs are not visible to queries")

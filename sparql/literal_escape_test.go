@@ -46,7 +46,7 @@ func TestLiteralEscapesRoundTrip(t *testing.T) {
 			}
 
 			var got []term.Term
-			g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+			g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 				got = append(got, tr.Object)
 				return true
 			})
@@ -83,8 +83,8 @@ func TestLiteralEscapesInFilter(t *testing.T) {
 	g := graph.NewGraph()
 	s := term.NewURIRefUnsafe("http://example.org/s")
 	p := term.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, term.NewLiteral(`he said "hi"`))
-	g.Add(s, p, term.NewLiteral(`he said`))
+	g.Add(t.Context(), s, p, term.NewLiteral(`he said "hi"`))
+	g.Add(t.Context(), s, p, term.NewLiteral(`he said`))
 
 	res, err := sparql.Query(g, `SELECT ?o WHERE { ?s ?p ?o FILTER(?o = "he said \"hi\"") }`)
 	if err != nil {

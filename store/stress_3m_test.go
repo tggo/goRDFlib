@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,7 +97,7 @@ func closer(s interface{ Close() error }) func() {
 
 func ingestStress(s store.Store, quads []term.Quad) {
 	for i := 0; i < len(quads); i += stressBatch {
-		s.AddN(quads[i:min(i+stressBatch, len(quads))])
+		s.AddN(context.Background(), quads[i:min(i+stressBatch, len(quads))])
 	}
 }
 
@@ -133,7 +134,7 @@ func TestStress3M(t *testing.T) {
 				t.Logf("%s heap delta: %.0f MB", bk.name, heapMB()-before)
 			}
 			runtime.KeepAlive(s)
-			if n := s.Len(nil); n != stressN {
+			if n, _ := s.Len(t.Context(), nil); n != stressN {
 				t.Fatalf("Len = %d after ingest, want %d", n, stressN)
 			}
 		})
@@ -215,7 +216,7 @@ func BenchmarkStress3M(b *testing.B) {
 			s := loadStress(b, bk)
 			countMatches := func(p term.TriplePattern) int {
 				n := 0
-				for range s.Triples(p, nil) {
+				for range s.Triples(b.Context(), p, nil) {
 					n++
 				}
 				return n
@@ -240,7 +241,7 @@ func BenchmarkStress3M(b *testing.B) {
 			}
 			b.Run("Len", func(b *testing.B) {
 				for b.Loop() {
-					if n := s.Len(nil); n != stressN {
+					if n, _ := s.Len(b.Context(), nil); n != stressN {
 						b.Fatalf("Len = %d, want %d", n, stressN)
 					}
 				}

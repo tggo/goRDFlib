@@ -39,7 +39,7 @@ func BenchmarkSQLiteAddN1K(b *testing.B) {
 	quads := genQuads(1000)
 	for b.Loop() {
 		s, cleanup := newBenchSQLite(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -48,7 +48,7 @@ func BenchmarkSQLiteAddN10K(b *testing.B) {
 	quads := genQuads(10000)
 	for b.Loop() {
 		s, cleanup := newBenchSQLite(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -57,7 +57,7 @@ func BenchmarkSQLiteAddN100K(b *testing.B) {
 	quads := genQuads(100000)
 	for b.Loop() {
 		s, cleanup := newBenchSQLite(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -66,7 +66,7 @@ func BenchmarkSQLiteDiskAddN10K(b *testing.B) {
 	quads := genQuads(10000)
 	for b.Loop() {
 		s, cleanup := newBenchSQLiteDisk(b)
-		s.AddN(quads)
+		s.AddN(b.Context(), quads)
 		cleanup()
 	}
 }
@@ -74,11 +74,11 @@ func BenchmarkSQLiteDiskAddN10K(b *testing.B) {
 func BenchmarkSQLiteTriplesScan10K(b *testing.B) {
 	s, cleanup := newBenchSQLite(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		for range s.Triples(term.TriplePattern{}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{}, nil) {
 			count++
 		}
 	}
@@ -87,11 +87,11 @@ func BenchmarkSQLiteTriplesScan10K(b *testing.B) {
 func BenchmarkSQLiteTriplesSubject10K(b *testing.B) {
 	s, cleanup := newBenchSQLite(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	subj := term.NewURIRefUnsafe("http://example.org/s42")
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Subject: subj}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Subject: subj}, nil) {
 		}
 	}
 }
@@ -99,11 +99,11 @@ func BenchmarkSQLiteTriplesSubject10K(b *testing.B) {
 func BenchmarkSQLiteTriplesPredicate10K(b *testing.B) {
 	s, cleanup := newBenchSQLite(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	pred := term.NewURIRefUnsafe("http://example.org/p42")
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Predicate: &pred}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Predicate: &pred}, nil) {
 		}
 	}
 }
@@ -111,23 +111,23 @@ func BenchmarkSQLiteTriplesPredicate10K(b *testing.B) {
 func BenchmarkSQLiteLen10K(b *testing.B) {
 	s, cleanup := newBenchSQLite(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	b.ResetTimer()
 	for b.Loop() {
-		s.Len(nil)
+		s.Len(b.Context(), nil)
 	}
 }
 
 func BenchmarkSQLiteExactLookup10K(b *testing.B) {
 	s, cleanup := newBenchSQLite(b)
 	defer cleanup()
-	s.AddN(genQuads(10000))
+	s.AddN(b.Context(), genQuads(10000))
 	subj := term.NewURIRefUnsafe("http://example.org/s5000")
 	pred := term.NewURIRefUnsafe("http://example.org/p0")
 	obj := term.NewLiteral("value_5000")
 	b.ResetTimer()
 	for b.Loop() {
-		for range s.Triples(term.TriplePattern{Subject: subj, Predicate: &pred, Object: obj}, nil) {
+		for range s.Triples(b.Context(), term.TriplePattern{Subject: subj, Predicate: &pred, Object: obj}, nil) {
 		}
 	}
 }

@@ -1,7 +1,8 @@
 package trig
 
 import (
-	"bufio"
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -11,42 +12,61 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
 	iriref "github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
 // Serialize writes the graph in TriG format (single graph, no wrapping block).
-func Serialize(g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
-	cfg := &config{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+// A store error, or a done ctx, is returned with nothing written.
+func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Option) error {
 	ds := graph.NewDataset()
 	defG := ds.DefaultContext()
-	g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
-		defG.Add(t.Subject, t.Predicate, t.Object)
-		return true
-	})
-	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		ds.Bind(prefix, ns)
-		return true
-	})
-	return SerializeDataset(ds, w, opts...)
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return fmt.Errorf("trig: reading triples: %w", err)
+		}
+		if err := defG.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
+			return fmt.Errorf("trig: %w", err)
+		}
+	}
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return fmt.Errorf("trig: reading namespaces: %w", err)
+		}
+		if err := ds.Bind(ctx, b.Prefix, b.Namespace); err != nil {
+			return fmt.Errorf("trig: %w", err)
+		}
+	}
+	return SerializeDataset(ctx, ds, w, opts...)
 }
 
 // SerializeDataset writes the dataset in TriG format.
-func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
+//
+// Everything is read from the stores, and the document rendered, before the
+// first byte reaches w: a store error (or a done ctx) is returned with nothing
+// written, so a failure never leaves a document that looks complete.
+func SerializeDataset(ctx context.Context, ds *graph.Dataset, w io.Writer, opts ...Option) error {
 	cfg := &config{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	bw := bufio.NewWriter(w)
-	defer bw.Flush()
+	// Rendered here and written at the end; see the doc comment.
+	bw := new(bytes.Buffer)
 
 	// Collect all used prefixes across all graphs
 	usedNS := make(map[string]rdflibgo.URIRef)
 	var allGraphs []*graph.Graph
+	triples := make(map[*graph.Graph][]rdflibgo.Triple)
 	defaultCtx := ds.DefaultContext()
+
+	var nss []store.NamespaceBinding
+	for b, err := range ds.Namespaces(ctx) {
+		if err != nil {
+			return fmt.Errorf("trig: reading namespaces: %w", err)
+		}
+		nss = append(nss, b)
+	}
 
 	var badIRI error
 	checkIRIs := func(t rdflibgo.Term) {
@@ -65,16 +85,19 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 		if b, ok := g.Identifier().(rdflibgo.BNode); ok && g.Identifier() != defaultCtx.Identifier() {
 			usage.pinned[b.N3()] = true
 		}
-		g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+		for t, err := range g.Triples(ctx, nil, nil, nil) {
+			if err != nil {
+				return fmt.Errorf("trig: reading triples: %w", err)
+			}
+			triples[g] = append(triples[g], t)
 			usage.add(gk, t)
-			trackNSForTerm(t.Subject, ds, usedNS)
-			trackNSForTerm(t.Predicate, ds, usedNS)
-			trackNSForTerm(t.Object, ds, usedNS)
+			trackNSForTerm(t.Subject, nss, usedNS)
+			trackNSForTerm(t.Predicate, nss, usedNS)
+			trackNSForTerm(t.Object, nss, usedNS)
 			checkIRIs(t.Subject)
 			checkIRIs(t.Predicate)
 			checkIRIs(t.Object)
-			return true
-		})
+		}
 	}
 	for _, ns := range usedNS {
 		checkIRIs(ns)
@@ -118,7 +141,7 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 
 	first := true
 	for _, g := range allGraphs {
-		if g.Len() == 0 {
+		if len(triples[g]) == 0 {
 			continue
 		}
 
@@ -130,7 +153,7 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 		first = false
 
 		ts := newTrigState(g, usedNS, cfg.base, usage)
-		ts.preprocess()
+		ts.preprocess(triples[g])
 		ts.orderSubjects()
 
 		if isDefault {
@@ -146,7 +169,8 @@ func SerializeDataset(ds *graph.Dataset, w io.Writer, opts ...Option) error {
 		fmt.Fprintln(bw, "}")
 	}
 
-	return bw.Flush()
+	_, err := w.Write(bw.Bytes())
+	return err
 }
 
 // bnodeUsage is what the serializer knows about blank nodes across the whole
@@ -282,8 +306,8 @@ func newTrigState(g *graph.Graph, usedNS map[string]rdflibgo.URIRef, base string
 	}
 }
 
-func (ts *trigState) preprocess() {
-	ts.g.Triples(nil, nil, nil)(func(t rdflibgo.Triple) bool {
+func (ts *trigState) preprocess(triples []rdflibgo.Triple) {
+	for _, t := range triples {
 		sk := t.Subject.N3()
 		pk := t.Predicate.N3()
 
@@ -292,8 +316,7 @@ func (ts *trigState) preprocess() {
 		}
 		ts.subjectMap[sk] = t.Subject
 		ts.spoMap[sk][pk] = append(ts.spoMap[sk][pk], t.Object)
-		return true
-	})
+	}
 	ts.detectLists()
 }
 
@@ -676,11 +699,11 @@ func qnameOrFull(u rdflibgo.URIRef, usedNS map[string]rdflibgo.URIRef, base stri
 	return u.N3()
 }
 
-func trackNSForTerm(t rdflibgo.Term, ds *graph.Dataset, usedNS map[string]rdflibgo.URIRef) {
+func trackNSForTerm(t rdflibgo.Term, nss []store.NamespaceBinding, usedNS map[string]rdflibgo.URIRef) {
 	if tt, ok := t.(rdflibgo.TripleTerm); ok {
-		trackNSForTerm(tt.Subject(), ds, usedNS)
-		trackNSForTerm(tt.Predicate(), ds, usedNS)
-		trackNSForTerm(tt.Object(), ds, usedNS)
+		trackNSForTerm(tt.Subject(), nss, usedNS)
+		trackNSForTerm(tt.Predicate(), nss, usedNS)
+		trackNSForTerm(tt.Object(), nss, usedNS)
 		return
 	}
 	u, ok := t.(rdflibgo.URIRef)
@@ -688,13 +711,12 @@ func trackNSForTerm(t rdflibgo.Term, ds *graph.Dataset, usedNS map[string]rdflib
 		return
 	}
 	uri := u.Value()
-	ds.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		nsStr := ns.Value()
-		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(prefix) {
-			usedNS[prefix] = ns
+	for _, b := range nss {
+		nsStr := b.Namespace.Value()
+		if strings.HasPrefix(uri, nsStr) && len(uri) > len(nsStr) && isValidPrefixName(b.Prefix) {
+			usedNS[b.Prefix] = b.Namespace
 		}
-		return true
-	})
+	}
 }
 
 func isValidPrefixName(s string) bool {

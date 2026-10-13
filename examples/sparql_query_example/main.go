@@ -3,7 +3,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	rdf "github.com/tggo/goRDFlib"
@@ -12,12 +14,23 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	g := rdf.NewGraph()
-	g.Bind("foaf", rdf.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/"))
-	g.Bind("ex", rdf.NewURIRefUnsafe("http://example.org/"))
+	if err := g.Bind(ctx, "foaf", rdf.NewURIRefUnsafe("http://xmlns.com/foaf/0.1/")); err != nil {
+		return err
+	}
+	if err := g.Bind(ctx, "ex", rdf.NewURIRefUnsafe("http://example.org/")); err != nil {
+		return err
+	}
 
 	// Build a small social graph
-	turtle.Parse(g, strings.NewReader(`
+	if err := turtle.Parse(ctx, g, strings.NewReader(`
 		@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 		@prefix ex: <http://example.org/> .
 
@@ -33,24 +46,33 @@ func main() {
 		ex:Charlie a foaf:Person ;
 			foaf:name "Charlie" ;
 			foaf:age 35 .
-	`))
+	`)); err != nil {
+		return err
+	}
 
-	fmt.Printf("Loaded %d triples\n", g.Len())
+	n, err := g.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Loaded %d triples\n", n)
 
 	// SELECT query: find all persons
 	fmt.Println("\nAll persons:")
-	result, _ := sparql.Query(g, `
+	result, err := sparql.QueryContext(ctx, g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		SELECT ?name WHERE { ?s a foaf:Person . ?s foaf:name ?name }
 		ORDER BY ?name
 	`)
+	if err != nil {
+		return err
+	}
 	for _, row := range result.Bindings {
 		fmt.Printf("  %s\n", row["name"])
 	}
 
 	// FILTER query: persons over 28
 	fmt.Println("\nPersons over 28:")
-	result, _ = sparql.Query(g, `
+	result, err = sparql.QueryContext(ctx, g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		SELECT ?name ?age WHERE {
 			?s foaf:name ?name .
@@ -59,24 +81,38 @@ func main() {
 		}
 		ORDER BY DESC(?age)
 	`)
+	if err != nil {
+		return err
+	}
 	for _, row := range result.Bindings {
 		fmt.Printf("  %s (age %s)\n", row["name"], row["age"])
 	}
 
 	// ASK query
-	result, _ = sparql.Query(g, `
+	result, err = sparql.QueryContext(ctx, g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		PREFIX ex: <http://example.org/>
 		ASK { ex:Alice foaf:knows ex:Bob }
 	`)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("\nAlice knows Bob? %v\n", result.AskResult)
 
 	// CONSTRUCT query
-	result, _ = sparql.Query(g, `
+	result, err = sparql.QueryContext(ctx, g, `
 		PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:label ?name }
 		WHERE { ?s foaf:name ?name }
 	`)
-	fmt.Printf("\nConstructed graph has %d triples\n", result.Graph.Len())
+	if err != nil {
+		return err
+	}
+	cn, err := result.Graph.Len(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nConstructed graph has %d triples\n", cn)
+	return nil
 }

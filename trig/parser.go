@@ -1,6 +1,7 @@
 package trig
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -19,28 +20,36 @@ import (
 // Named graph information is discarded. Use ParseDataset for named graph support.
 // Blank node labels share one fresh scope across the document's graphs, unless
 // WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
-func Parse(g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
+// A store error, or a done ctx, stops the parse and is returned (wrapped with
+// the line reached); quads added before it stay in g.
+func Parse(ctx context.Context, g *rdflibgo.Graph, r io.Reader, opts ...Option) error {
 	cfg := newConfig(opts)
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
 	p := newTrigParser(cfg, string(data), store.DefaultGraph, func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term, _ rdflibgo.Term) error {
-		g.Add(s, pred, o)
-		return nil
+		return g.Add(ctx, s, pred, o)
 	})
-	p.bind = func(prefix, iri string) { g.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri)) }
-	g.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		p.prefixes[prefix] = ns.Value()
-		return true
-	})
+	p.stop = stream.New(ctx)
+	p.bind = func(prefix, iri string) error {
+		return g.Bind(ctx, prefix, rdflibgo.NewURIRefUnsafe(iri))
+	}
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return fmt.Errorf("trig: reading namespaces: %w", err)
+		}
+		p.prefixes[b.Prefix] = b.Namespace.Value()
+	}
 	return p.parse()
 }
 
 // ParseDataset reads TriG from r and populates ds with named graphs.
 // Blank node labels, including graph names, share one fresh scope per call,
 // unless WithPreserveBlankNodeIDs is set. The base IRI does not affect this scope.
-func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
+// A store error, or a done ctx, stops the parse and is returned (wrapped with
+// the line reached); quads added before it stay in ds.
+func ParseDataset(ctx context.Context, ds *graph.Dataset, r io.Reader, opts ...Option) error {
 	cfg := newConfig(opts)
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -49,29 +58,32 @@ func ParseDataset(ds *graph.Dataset, r io.Reader, opts ...Option) error {
 	def := ds.DefaultContext()
 	p := newTrigParser(cfg, string(data), def.Identifier(), func(s rdflibgo.Subject, pred rdflibgo.URIRef, o rdflibgo.Term, g rdflibgo.Term) error {
 		if g == nil {
-			def.Add(s, pred, o)
-		} else {
-			ds.Graph(g).Add(s, pred, o)
+			return def.Add(ctx, s, pred, o)
 		}
-		return nil
+		return ds.Graph(g).Add(ctx, s, pred, o)
 	})
+	p.stop = stream.New(ctx)
 	// An empty GRAPH block still names a graph of the dataset.
 	p.openGraph = func(g rdflibgo.Term) { ds.Graph(g) }
-	p.bind = func(prefix, iri string) { ds.Bind(prefix, rdflibgo.NewURIRefUnsafe(iri)) }
-	ds.Namespaces()(func(prefix string, ns rdflibgo.URIRef) bool {
-		p.prefixes[prefix] = ns.Value()
-		return true
-	})
+	p.bind = func(prefix, iri string) error {
+		return ds.Bind(ctx, prefix, rdflibgo.NewURIRefUnsafe(iri))
+	}
+	for b, err := range ds.Namespaces(ctx) {
+		if err != nil {
+			return fmt.Errorf("trig: reading namespaces: %w", err)
+		}
+		p.prefixes[b.Prefix] = b.Namespace.Value()
+	}
 	return p.parse()
 }
 
 type trigParser struct {
-	sink       QuadHandler              // receives every quad
-	graphID    rdflibgo.Term            // active graph; nil is the default graph
-	defaultID  rdflibgo.Term            // reported to provenance for the default graph
-	openGraph  func(rdflibgo.Term)      // optional: a GRAPH block was opened
-	bind       func(prefix, iri string) // optional: records a prefix declaration
-	stop       *stream.Stopper          // set by a streaming parse; nil otherwise
+	sink       QuadHandler                    // receives every quad
+	graphID    rdflibgo.Term                  // active graph; nil is the default graph
+	defaultID  rdflibgo.Term                  // reported to provenance for the default graph
+	openGraph  func(rdflibgo.Term)            // optional: a GRAPH block was opened
+	bind       func(prefix, iri string) error // optional: records a prefix declaration
+	stop       *stream.Stopper                // set by a streaming parse; nil otherwise
 	input      string
 	pos        int
 	line       int
@@ -1113,7 +1125,9 @@ func (p *trigParser) directive() error {
 		iri = p.resolveIRI(iri)
 		p.prefixes[prefix] = iri
 		if p.bind != nil {
-			p.bind(prefix, iri)
+			if err := p.bind(prefix, iri); err != nil {
+				return err
+			}
 		}
 		p.skipWS()
 		if !p.expect('.') {
@@ -1165,7 +1179,7 @@ func (p *trigParser) sparqlPrefix() error {
 	iri = p.resolveIRI(iri)
 	p.prefixes[prefix] = iri
 	if p.bind != nil {
-		p.bind(prefix, iri)
+		return p.bind(prefix, iri)
 	}
 	return nil
 }

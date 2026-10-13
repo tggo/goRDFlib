@@ -557,8 +557,8 @@ func TestConstructWithOffset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() != 0 {
-		t.Errorf("expected 0 triples with large offset, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples with large offset, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -574,8 +574,8 @@ func TestConstructWithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() != 1 {
-		t.Errorf("expected 1 triple with LIMIT 1, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple with LIMIT 1, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -816,8 +816,8 @@ func TestConstructNonSubjectPredicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// string literal as subject/predicate should be skipped
-	if r.Graph.Len() != 0 {
-		t.Errorf("expected 0 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -950,7 +950,7 @@ func TestEvalGraphPatternSpecificGraph(t *testing.T) {
 	ng := rdflibgo.NewGraph()
 	ex, _ := rdflibgo.NewURIRef("http://example.org/x")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	ng.Add(ex, p, rdflibgo.NewLiteral("inNamedGraph"))
+	ng.Add(t.Context(), ex, p, rdflibgo.NewLiteral("inNamedGraph"))
 
 	namedGraphs := map[string]*rdflibgo.Graph{
 		"http://example.org/named": ng,
@@ -1094,7 +1094,7 @@ func TestDropNamed(t *testing.T) {
 	ng := rdflibgo.NewGraph()
 	ex1, _ := rdflibgo.NewURIRef("http://example.org/x")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	ng.Add(ex1, p, rdflibgo.NewLiteral("value"))
+	ng.Add(t.Context(), ex1, p, rdflibgo.NewLiteral("value"))
 	ds.NamedGraphs["http://example.org/g1"] = ng
 
 	err := Update(ds, `DROP NAMED`)
@@ -1115,17 +1115,17 @@ func TestClearAll(t *testing.T) {
 	}
 	ex1, _ := rdflibgo.NewURIRef("http://example.org/x")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	ds.Default.Add(ex1, p, rdflibgo.NewLiteral("value"))
+	ds.Default.Add(t.Context(), ex1, p, rdflibgo.NewLiteral("value"))
 	ng := rdflibgo.NewGraph()
-	ng.Add(ex1, p, rdflibgo.NewLiteral("ng-value"))
+	ng.Add(t.Context(), ex1, p, rdflibgo.NewLiteral("ng-value"))
 	ds.NamedGraphs["http://example.org/g1"] = ng
 
 	err := Update(ds, `CLEAR ALL`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Default.Len() != 0 {
-		t.Errorf("expected 0 triples in default, got %d", ds.Default.Len())
+	if mustV(ds.Default.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples in default, got %d", mustV(ds.Default.Len(t.Context())))
 	}
 }
 
@@ -1147,7 +1147,7 @@ func TestInsertDeleteDataNamedGraphTriples(t *testing.T) {
 		t.Fatal(err)
 	}
 	ng := ds.NamedGraphs["http://example.org/g1"]
-	if ng == nil || ng.Len() != 1 {
+	if ng == nil || mustV(ng.Len(t.Context())) != 1 {
 		t.Error("expected 1 triple in named graph")
 	}
 
@@ -1161,8 +1161,8 @@ func TestInsertDeleteDataNamedGraphTriples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ng.Len() != 0 {
-		t.Errorf("expected 0 triples after delete, got %d", ng.Len())
+	if mustV(ng.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples after delete, got %d", mustV(ng.Len(t.Context())))
 	}
 }
 
@@ -1186,13 +1186,13 @@ func TestClearDefault(t *testing.T) {
 	ds := &Dataset{Default: rdflibgo.NewGraph()}
 	ex1, _ := rdflibgo.NewURIRef("http://example.org/x")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	ds.Default.Add(ex1, p, rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), ex1, p, rdflibgo.NewLiteral("v"))
 
 	err := Update(ds, `CLEAR DEFAULT`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Default.Len() != 0 {
+	if mustV(ds.Default.Len(t.Context())) != 0 {
 		t.Error("expected empty default graph")
 	}
 }
@@ -1211,8 +1211,8 @@ func TestEvalUpdateBaseURI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Default.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", ds.Default.Len())
+	if mustV(ds.Default.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(ds.Default.Len(t.Context())))
 	}
 }
 
@@ -1225,7 +1225,7 @@ func TestModifyWithUsing(t *testing.T) {
 	}
 	ex1, _ := rdflibgo.NewURIRef("http://example.org/x")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	ds.Default.Add(ex1, p, rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), ex1, p, rdflibgo.NewLiteral("v"))
 
 	err := Update(ds, `
 		DELETE { <http://example.org/x> <http://example.org/p> ?o }
@@ -1247,7 +1247,7 @@ func TestDeleteWhereGraph(t *testing.T) {
 	ng := rdflibgo.NewGraph()
 	ex1, _ := rdflibgo.NewURIRef("http://example.org/x")
 	p, _ := rdflibgo.NewURIRef("http://example.org/p")
-	ng.Add(ex1, p, rdflibgo.NewLiteral("hello"))
+	ng.Add(t.Context(), ex1, p, rdflibgo.NewLiteral("hello"))
 	ds.NamedGraphs["http://example.org/g1"] = ng
 
 	err := Update(ds, `
@@ -1260,8 +1260,8 @@ func TestDeleteWhereGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ng.Len() != 0 {
-		t.Errorf("expected 0, got %d", ng.Len())
+	if mustV(ng.Len(t.Context())) != 0 {
+		t.Errorf("expected 0, got %d", mustV(ng.Len(t.Context())))
 	}
 }
 
@@ -1431,8 +1431,8 @@ func TestConstructOrderByDesc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph == nil || r.Graph.Len() != 2 {
-		t.Errorf("expected 2 triples, got %d", r.Graph.Len())
+	if r.Graph == nil || mustV(r.Graph.Len(t.Context())) != 2 {
+		t.Errorf("expected 2 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -1722,10 +1722,10 @@ func TestValidateConstructWhereNil(t *testing.T) {
 func TestEvalModifyWithGraphAndUsing(t *testing.T) {
 	g := graph.NewGraph()
 	ex := rdflibgo.NewURIRefUnsafe
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s2"), ex("http://example.org/p"), rdflibgo.NewLiteral("val2"))
+	ng.Add(t.Context(), ex("http://example.org/s2"), ex("http://example.org/p"), rdflibgo.NewLiteral("val2"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -1745,7 +1745,7 @@ func TestEvalModifyWithGraphAndUsing(t *testing.T) {
 	}
 	// Check the named graph was modified
 	count := 0
-	for range ng.Triples(nil, nil, nil) {
+	for range ng.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 1 {
@@ -1758,7 +1758,7 @@ func TestEvalModifyWithUsingClauses(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -1830,10 +1830,10 @@ func TestEvalGraphMgmtLoadNoLoader(t *testing.T) {
 func TestEvalGraphMgmtAddCopyMove(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("default"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("default"))
 
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s2"), ex("http://example.org/p"), rdflibgo.NewLiteral("named"))
+	ng.Add(t.Context(), ex("http://example.org/s2"), ex("http://example.org/p"), rdflibgo.NewLiteral("named"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -1846,7 +1846,7 @@ func TestEvalGraphMgmtAddCopyMove(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaultCount := 0
-	for range g.Triples(nil, nil, nil) {
+	for range g.Triples(t.Context(), nil, nil, nil) {
 		defaultCount++
 	}
 	if defaultCount != 2 {
@@ -1896,7 +1896,7 @@ func TestEvalGraphMgmtMoveSourceSameAsDest(t *testing.T) {
 func TestEvalDeleteWhereNonMatchingTypes(t *testing.T) {
 	g := graph.NewGraph()
 	ex := rdflibgo.NewURIRefUnsafe
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	err := Update(ds, `
@@ -1907,7 +1907,7 @@ func TestEvalDeleteWhereNonMatchingTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for range g.Triples(nil, nil, nil) {
+	for range g.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 0 {
@@ -2346,7 +2346,7 @@ func TestEvalModifyWithUsingNamed(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -2370,7 +2370,7 @@ func TestEvalClearSpecificGraph(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng := graph.NewGraph()
-	ng.Add(ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -2382,7 +2382,7 @@ func TestEvalClearSpecificGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for range ng.Triples(nil, nil, nil) {
+	for range ng.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 0 {
@@ -2394,7 +2394,7 @@ func TestEvalDropSpecificGraph(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng := graph.NewGraph()
-	ng.Add(ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -2427,7 +2427,7 @@ func TestDeleteWhereGraphClause(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -2442,7 +2442,7 @@ func TestDeleteWhereGraphClause(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for range ng.Triples(nil, nil, nil) {
+	for range ng.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 0 {
@@ -2545,8 +2545,8 @@ func TestConstructWithFromClause(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph != nil && r.Graph.Len() != 0 {
-		t.Errorf("CONSTRUCT built %d triples, want none", r.Graph.Len())
+	if r.Graph != nil && mustV(r.Graph.Len(t.Context())) != 0 {
+		t.Errorf("CONSTRUCT built %d triples, want none", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -3203,7 +3203,7 @@ func TestStrAndCasts(t *testing.T) {
 func TestUpdateInsertBnodeVars(t *testing.T) {
 	g := graph.NewGraph()
 	ex := rdflibgo.NewURIRefUnsafe
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	err := Update(ds, `
@@ -3221,8 +3221,8 @@ func TestUpdateInsertBnodeVars(t *testing.T) {
 func TestUpdateDeleteInsertComplex(t *testing.T) {
 	g := graph.NewGraph()
 	ex := rdflibgo.NewURIRefUnsafe
-	g.Add(ex("http://example.org/s1"), ex("http://example.org/status"), rdflibgo.NewLiteral("draft"))
-	g.Add(ex("http://example.org/s2"), ex("http://example.org/status"), rdflibgo.NewLiteral("published"))
+	g.Add(t.Context(), ex("http://example.org/s1"), ex("http://example.org/status"), rdflibgo.NewLiteral("draft"))
+	g.Add(t.Context(), ex("http://example.org/s2"), ex("http://example.org/status"), rdflibgo.NewLiteral("published"))
 
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	err := Update(ds, `
@@ -3539,7 +3539,7 @@ func TestConstructWithAnnotations(t *testing.T) {
 func TestDeleteWhereNamedGraphVarCov(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 	ds := &Dataset{
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g": ng},
@@ -3597,9 +3597,9 @@ func TestUpdateMultipleUsing(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng1 := graph.NewGraph()
-	ng1.Add(ex("http://example.org/a"), ex("http://example.org/p"), rdflibgo.NewLiteral("val1"))
+	ng1.Add(t.Context(), ex("http://example.org/a"), ex("http://example.org/p"), rdflibgo.NewLiteral("val1"))
 	ng2 := graph.NewGraph()
-	ng2.Add(ex("http://example.org/b"), ex("http://example.org/p"), rdflibgo.NewLiteral("val2"))
+	ng2.Add(t.Context(), ex("http://example.org/b"), ex("http://example.org/p"), rdflibgo.NewLiteral("val2"))
 
 	ds := &Dataset{
 		Default: g,
@@ -3730,7 +3730,7 @@ func TestConstructCollectionSyntax(t *testing.T) {
 func TestDeleteWhereWithCov(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 	ds := &Dataset{
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g": ng},
@@ -3773,7 +3773,7 @@ func TestModifyWithVariableGraph(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 	ds := &Dataset{
 		Default:     g,
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g1": ng},
@@ -3998,7 +3998,7 @@ func TestConstructOrderByLimitOffset(t *testing.T) {
 func TestInsertDeleteGraphRef(t *testing.T) {
 	g := graph.NewGraph()
 	ex := rdflibgo.NewURIRefUnsafe
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 	ng := graph.NewGraph()
 	ds := &Dataset{
 		Default:     g,
@@ -4013,7 +4013,7 @@ func TestInsertDeleteGraphRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for range ng.Triples(nil, nil, nil) {
+	for range ng.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 1 {
@@ -4024,7 +4024,7 @@ func TestInsertDeleteGraphRef(t *testing.T) {
 func TestDeleteDataGraphRef(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 	ds := &Dataset{
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g": ng},
@@ -4037,7 +4037,7 @@ func TestDeleteDataGraphRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for range ng.Triples(nil, nil, nil) {
+	for range ng.Triples(t.Context(), nil, nil, nil) {
 		count++
 	}
 	if count != 0 {
@@ -4048,7 +4048,7 @@ func TestDeleteDataGraphRef(t *testing.T) {
 func TestDropNamedGraphs(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	ng := graph.NewGraph()
-	ng.Add(ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g": ng},
@@ -4065,7 +4065,7 @@ func TestDropNamedGraphs(t *testing.T) {
 func TestGraphRefAllDefaultCov(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
-	g.Add(ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("v"))
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	err := Update(ds, `CLEAR DEFAULT`)
 	if err != nil {
@@ -4077,7 +4077,7 @@ func TestModifyWithUsingNamed(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
 	ng := graph.NewGraph()
-	ng.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{
 		Default:     g,
@@ -4100,7 +4100,7 @@ func TestModifyWithUsingNamed(t *testing.T) {
 func TestCreateExistingGraphSilent(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	ng := graph.NewGraph()
-	ng.Add(ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), ex("http://s"), ex("http://p"), rdflibgo.NewLiteral("v"))
 	ds := &Dataset{
 		Default:     graph.NewGraph(),
 		NamedGraphs: map[string]*rdflibgo.Graph{"http://example.org/g": ng},
@@ -4115,7 +4115,7 @@ func TestCreateExistingGraphSilent(t *testing.T) {
 func TestMultipleUpdateOpsSemicolon(t *testing.T) {
 	g := graph.NewGraph()
 	ex := rdflibgo.NewURIRefUnsafe
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	err := Update(ds, `
@@ -4131,7 +4131,7 @@ func TestMultipleUpdateOpsSemicolon(t *testing.T) {
 func TestDeleteWhereVariableGraph(t *testing.T) {
 	ex := rdflibgo.NewURIRefUnsafe
 	g := graph.NewGraph()
-	g.Add(ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), ex("http://example.org/s"), ex("http://example.org/p"), rdflibgo.NewLiteral("val"))
 
 	ds := &Dataset{Default: g, NamedGraphs: map[string]*rdflibgo.Graph{}}
 	err := Update(ds, `
@@ -4306,7 +4306,7 @@ func makeUpdateDataset() *Dataset {
 
 func TestConstructAnnotationsReifier(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT {
@@ -4325,7 +4325,7 @@ func TestConstructAnnotationsReifier(t *testing.T) {
 
 func TestConstructAnnotationsBlock(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT {
@@ -4344,7 +4344,7 @@ func TestConstructAnnotationsBlock(t *testing.T) {
 
 func TestConstructAnnotationsReifierWithBlock(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT {
@@ -4363,7 +4363,7 @@ func TestConstructAnnotationsReifierWithBlock(t *testing.T) {
 
 func TestConstructSemicolonPredList(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT {
@@ -4382,7 +4382,7 @@ func TestConstructSemicolonPredList(t *testing.T) {
 
 func TestConstructCommaObjList(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT {
@@ -4428,7 +4428,7 @@ func TestClearNamedSimple(t *testing.T) {
 func TestClearGraphSpecific(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `CLEAR GRAPH <http://example.org/g>`)
 	if err != nil {
@@ -4439,7 +4439,7 @@ func TestClearGraphSpecific(t *testing.T) {
 func TestDropGraphSpecific(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `DROP GRAPH <http://example.org/g>`)
 	if err != nil {
@@ -4485,7 +4485,7 @@ func TestMoveSameGraphSimple(t *testing.T) {
 func TestDeleteWhereWithGraph(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `DELETE WHERE { GRAPH <http://example.org/g> { <http://example.org/s> <http://example.org/p> ?o } }`)
 	if err != nil {
@@ -4520,7 +4520,7 @@ func TestValidateBindScopeOptional(t *testing.T) {
 
 func TestValidateBindScopeMinusEndToEnd(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	_, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?x WHERE {
@@ -4547,7 +4547,7 @@ func TestValidateBindScopeSubqueryEndToEnd(t *testing.T) {
 
 func TestValidateBindScopeFilter(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	_, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?x WHERE {
@@ -4562,7 +4562,7 @@ func TestValidateBindScopeFilter(t *testing.T) {
 
 func TestNestedAggregateErrorEndToEnd(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	_, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (COUNT(SUM(?o)) AS ?c) WHERE {
@@ -4576,7 +4576,7 @@ func TestNestedAggregateErrorEndToEnd(t *testing.T) {
 
 func TestNoNestedAggsInBinaryExpr(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	_, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (COUNT(?o) + 1 AS ?c) WHERE {
@@ -4590,7 +4590,7 @@ func TestNoNestedAggsInBinaryExpr(t *testing.T) {
 
 func TestValidateStringEscapesLongQuoteEndToEnd(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("multi\nline"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("multi\nline"))
 	r, err := Query(g, "PREFIX ex: <http://example.org/>\nSELECT ?o WHERE {\n\tex:s ex:p ?o .\n\tFILTER(?o = \"\"\"multi\nline\"\"\")\n}")
 	if err != nil {
 		t.Fatal(err)
@@ -4655,8 +4655,8 @@ func TestBnodePropertyListWithPath(t *testing.T) {
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	q := rdflibgo.NewURIRefUnsafe("http://example.org/q")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
-	g.Add(s, p, o)
-	g.Add(o, q, rdflibgo.NewLiteral("val"))
+	g.Add(t.Context(), s, p, o)
+	g.Add(t.Context(), o, q, rdflibgo.NewLiteral("val"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?v WHERE {
@@ -4674,8 +4674,8 @@ func TestBnodePropertyListWithPath(t *testing.T) {
 func TestDeleteWhereWithGraphClause(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1"))
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("2"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("2"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `DELETE WHERE { GRAPH <http://example.org/g> { ?s <http://example.org/p> ?o } }`)
 	if err != nil {
@@ -4686,7 +4686,7 @@ func TestDeleteWhereWithGraphClause(t *testing.T) {
 func TestDeleteWhereWithSimple(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("val"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("val"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `WITH <http://example.org/g> DELETE WHERE { <http://example.org/s> <http://example.org/p> ?o }`)
 	if err != nil {
@@ -4708,7 +4708,7 @@ func TestInsertDataWithGraph(t *testing.T) {
 func TestDeleteDataWithGraph(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `DELETE DATA { GRAPH <http://example.org/g> { <http://example.org/s> <http://example.org/p> "v" } }`)
 	if err != nil {
@@ -4731,7 +4731,7 @@ func TestValidateTripleTermsInUnion(t *testing.T) {
 
 func TestSubqueryInSelectExpr(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?cnt WHERE {
@@ -4748,8 +4748,8 @@ func TestSubqueryInSelectExpr(t *testing.T) {
 
 func TestOrderByAscWithParens(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("3", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("3", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE {
@@ -4766,8 +4766,8 @@ func TestOrderByAscWithParens(t *testing.T) {
 
 func TestGroupConcatSeparatorCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("a"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("b"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (GROUP_CONCAT(?o; SEPARATOR=", ") AS ?all) WHERE {
@@ -4784,7 +4784,7 @@ func TestGroupConcatSeparatorCov(t *testing.T) {
 
 func TestNotExistsBang(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE {
@@ -4841,7 +4841,7 @@ func TestContainsExistsFuncExprCov(t *testing.T) {
 
 func TestUnaryMinusCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("5", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("5", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?neg WHERE {
@@ -4870,7 +4870,7 @@ func TestCachedRegexpCompileCacheHitCov(t *testing.T) {
 
 func TestReadVarDollarCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT $x WHERE {
@@ -4899,9 +4899,9 @@ func TestEvalUpdateOpUnknownCov(t *testing.T) {
 
 func TestModifyWithUsingNamedCov(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/x"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/x"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `
 		DELETE { <http://example.org/s> <http://example.org/p> ?o }
@@ -4918,7 +4918,7 @@ func TestModifyWithUsingNamedCov(t *testing.T) {
 func TestModifyWithWithCov(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("old"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("old"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `
 		WITH <http://example.org/g>
@@ -4933,7 +4933,7 @@ func TestModifyWithWithCov(t *testing.T) {
 
 func TestBaseURIInQueryCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		BASE <http://example.org/>
 		SELECT ?o WHERE {
@@ -4950,8 +4950,8 @@ func TestBaseURIInQueryCov(t *testing.T) {
 
 func TestExistsInBooleanExprCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE {
@@ -5003,7 +5003,7 @@ func TestResultEqualWithBnodesNonMatch(t *testing.T) {
 
 func TestDatePartFromDateCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("2023-05-15", rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#date"))))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -5021,7 +5021,7 @@ func TestDatePartFromDateCov(t *testing.T) {
 
 func TestDateTimeWithoutTZ(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"),
 		rdflibgo.NewLiteral("2023-06-15T10:30:00", rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime"))))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -5039,7 +5039,7 @@ func TestDateTimeWithoutTZ(t *testing.T) {
 
 func TestAnnotationInWhereCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE {
@@ -5054,8 +5054,8 @@ func TestAnnotationInWhereCov(t *testing.T) {
 
 func TestSubQueryWithOrderByLimitCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("2", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("2", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?top WHERE {
@@ -5074,7 +5074,7 @@ func TestNegatedPathInverseOnlyCov(t *testing.T) {
 	g := graph.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	o := rdflibgo.NewURIRefUnsafe("http://example.org/o")
-	g.Add(s, rdflibgo.NewURIRefUnsafe("http://example.org/p1"), o)
+	g.Add(t.Context(), s, rdflibgo.NewURIRefUnsafe("http://example.org/p1"), o)
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE {
@@ -5145,9 +5145,9 @@ func TestParseSRJWithTripleCov(t *testing.T) {
 
 func TestHavingWithExpressionCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T1"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T1"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/c"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T2"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T1"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T1"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/c"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T2"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?type (COUNT(?s) AS ?cnt) WHERE {
@@ -5164,7 +5164,7 @@ func TestHavingWithExpressionCov(t *testing.T) {
 
 func TestCoalesceFunctionCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (COALESCE(?missing, "default") AS ?v) WHERE {
@@ -5181,7 +5181,7 @@ func TestCoalesceFunctionCov(t *testing.T) {
 
 func TestIFFunctionCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("5", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("5", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (IF(?o > 3, "big", "small") AS ?size) WHERE {
@@ -5198,7 +5198,7 @@ func TestIFFunctionCov(t *testing.T) {
 
 func TestInOperatorCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("a"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE {
@@ -5216,7 +5216,7 @@ func TestInOperatorCov(t *testing.T) {
 
 func TestNotInOperatorCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("d"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("d"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE {
@@ -5234,8 +5234,8 @@ func TestNotInOperatorCov(t *testing.T) {
 
 func TestSampleAggregateCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/type"), rdflibgo.NewURIRefUnsafe("http://example.org/T"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (SAMPLE(?s) AS ?sample) WHERE {
@@ -5252,8 +5252,8 @@ func TestSampleAggregateCov(t *testing.T) {
 
 func TestCountDistinctCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (COUNT(DISTINCT ?o) AS ?cnt) WHERE {
@@ -5270,7 +5270,7 @@ func TestCountDistinctCov(t *testing.T) {
 
 func TestCodepointEscapesInIRICov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/caf\u00E9"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/caf\u00E9"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `SELECT ?o WHERE { <http://example.org/caf\u00E9> <http://example.org/p> ?o . }`)
 	if err != nil {
 		t.Fatal(err)
@@ -5340,7 +5340,7 @@ func TestParseSRJWithLangDirCov(t *testing.T) {
 
 func TestLowercaseSelectCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		select ?s where {
@@ -5357,7 +5357,7 @@ func TestLowercaseSelectCov(t *testing.T) {
 
 func TestRegexFunctionCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?n WHERE {
@@ -5375,7 +5375,7 @@ func TestRegexFunctionCov(t *testing.T) {
 
 func TestReplaceFunctionCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hello world"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hello world"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (REPLACE(?o, "world", "there") AS ?r) WHERE {
@@ -5392,7 +5392,7 @@ func TestReplaceFunctionCov(t *testing.T) {
 
 func TestConcatFunctionCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hello"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hello"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (CONCAT(?o, " ", "world") AS ?c) WHERE {
@@ -5412,7 +5412,7 @@ func TestConcatFunctionCov(t *testing.T) {
 func TestInsertDataNonSubjectSkip(t *testing.T) {
 	// Exercise the branch where subject assertion fails (s not Subject)
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	// Insert a triple where subject is a literal (non-Subject) — via direct evalInsertData
 	op := &InsertDataOp{
 		Quads: []QuadPattern{{
@@ -5453,7 +5453,7 @@ func TestInsertDataNonSubjectSkip(t *testing.T) {
 
 func TestDeleteDataNonSubjectSkip(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	// Delete with literal as subject (non-Subject)
 	op := &DeleteDataOp{
 		Quads: []QuadPattern{{
@@ -5494,7 +5494,7 @@ func TestDeleteDataNonSubjectSkip(t *testing.T) {
 
 func TestDeleteWhereNonSubjectSkip(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	// Delete WHERE with literal predicate — should silently skip
 	op := &DeleteWhereOp{
 		Quads: []QuadPattern{{
@@ -5512,7 +5512,7 @@ func TestDeleteWhereNonSubjectSkip(t *testing.T) {
 
 func TestModifyNonSubjectPredSkip(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	// Modify with literal subject in delete template and literal predicate in insert template
 	op := &ModifyOp{
 		Delete: []QuadPattern{{
@@ -5612,7 +5612,7 @@ func TestClearDropNonExistentGraphSilent(t *testing.T) {
 
 func TestEvalQueryWithInitBindings(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hello"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hello"))
 	pq, err := Parse(`PREFIX ex: <http://example.org/> SELECT ?o WHERE { ?s ex:p ?o }`)
 	if err != nil {
 		t.Fatal(err)
@@ -5640,7 +5640,7 @@ func TestEvalQueryUnknownType(t *testing.T) {
 
 func TestConstructWithOffsetBeyondSolutions(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:p ?o } WHERE { ?s ex:p ?o } OFFSET 100
@@ -5648,8 +5648,8 @@ func TestConstructWithOffsetBeyondSolutions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() != 0 {
-		t.Errorf("expected 0 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) != 0 {
+		t.Errorf("expected 0 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -5658,7 +5658,7 @@ func TestConstructWithLimitAndOffset(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 		p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-		g.Add(s, p, rdflibgo.NewLiteral(i))
+		g.Add(t.Context(), s, p, rdflibgo.NewLiteral(i))
 	}
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -5667,8 +5667,8 @@ func TestConstructWithLimitAndOffset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Graph.Len() > 2 {
-		t.Errorf("expected at most 2 triples, got %d", r.Graph.Len())
+	if mustV(r.Graph.Len(t.Context())) > 2 {
+		t.Errorf("expected at most 2 triples, got %d", mustV(r.Graph.Len(t.Context())))
 	}
 }
 
@@ -5697,7 +5697,7 @@ func TestResolveTermRefPrefixedName(t *testing.T) {
 
 func TestEvalGraphPatternNoNamedGraphsCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	gp := &GraphPattern{
 		Name:    "<http://example.org/g>",
 		Pattern: &BGP{Triples: []Triple{{Subject: "?s", Predicate: "?p", Object: "?o"}}},
@@ -5829,7 +5829,7 @@ func TestBoundFunctionNoArgs(t *testing.T) {
 
 func TestSubstrStartBeyondLength(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hi"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("hi"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (SUBSTR(?o, 100) AS ?sub) WHERE { ex:s ex:p ?o }
@@ -6006,7 +6006,7 @@ func TestParseGraphRefAllAll(t *testing.T) {
 func TestConstructAnnotationBlockComma(t *testing.T) {
 	// CONSTRUCT with annotation block containing comma-separated objects
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	_, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ex:s ex:p ex:o1, ex:o2 }
@@ -6098,7 +6098,7 @@ func TestResultsEqualBnodeMismatch(t *testing.T) {
 
 func TestBGPWithPropertyPath(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewURIRefUnsafe("http://example.org/o"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewURIRefUnsafe("http://example.org/o"))
 	tp := Triple{
 		Subject:       "?s",
 		Object:        "?o",
@@ -6114,7 +6114,7 @@ func TestBGPWithPropertyPath(t *testing.T) {
 
 func TestSubqueryPatternEval(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE {
@@ -6141,8 +6141,8 @@ func TestSumAggregateWithError(t *testing.T) {
 
 func TestAvgAggregateDecimal(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/v"), rdflibgo.NewLiteral("1.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/v"), rdflibgo.NewLiteral("2.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/v"), rdflibgo.NewLiteral("1.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/v"), rdflibgo.NewLiteral("2.5", rdflibgo.WithDatatype(rdflibgo.XSDDecimal)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT (AVG(?v) AS ?a) WHERE { ex:s ex:v ?v }
@@ -6194,8 +6194,8 @@ func TestCachedRegexpCompileInvalid(t *testing.T) {
 
 func TestBnodePropertyListInQuery(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/age"), rdflibgo.NewLiteral(30, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("Alice"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/age"), rdflibgo.NewLiteral(30, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name WHERE {
@@ -6235,7 +6235,7 @@ func TestEvalUpdateParseError(t *testing.T) {
 
 func TestSelectReduced(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `SELECT REDUCED ?s WHERE { ?s <http://example.org/p> ?o }`)
 	if err != nil {
 		t.Fatal(err)
@@ -6247,7 +6247,7 @@ func TestSelectReduced(t *testing.T) {
 
 func TestFromNamedClause(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		SELECT ?s
 		FROM <http://example.org/default>
@@ -6264,7 +6264,7 @@ func TestFromNamedClause(t *testing.T) {
 
 func TestConstructWithAnnotationsCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -6283,8 +6283,8 @@ func TestConstructWithAnnotationsCov(t *testing.T) {
 
 func TestGroupByExprAsVar(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/val"), rdflibgo.NewLiteral(1, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/val"), rdflibgo.NewLiteral(2, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/val"), rdflibgo.NewLiteral(1, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/b"), rdflibgo.NewURIRefUnsafe("http://example.org/val"), rdflibgo.NewLiteral(2, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?sv (COUNT(?s) AS ?c)
@@ -6299,7 +6299,7 @@ func TestGroupByExprAsVar(t *testing.T) {
 
 func TestAnnotationBlockInWhere(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?s WHERE {
@@ -6315,7 +6315,7 @@ func TestAnnotationBlockInWhere(t *testing.T) {
 
 func TestValuesUndef(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?x WHERE {
@@ -6332,7 +6332,7 @@ func TestValuesUndef(t *testing.T) {
 func TestDeleteWhereNonSubjectPredSkip(t *testing.T) {
 	// Exercise evalDeleteWhere branches for non-Subject/non-URIRef
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	// WHERE matches, but template has literal subject — skip
 	op := &DeleteWhereOp{
 		Quads: []QuadPattern{{
@@ -6349,7 +6349,7 @@ func TestDeleteWhereNonSubjectPredSkip(t *testing.T) {
 
 func TestModifyDeleteNilResolve(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	op := &ModifyOp{
 		Delete: []QuadPattern{{
 			Triples: []Triple{
@@ -6374,7 +6374,7 @@ func TestModifyDeleteNilResolve(t *testing.T) {
 func TestAPathInNegatedPropertySet(t *testing.T) {
 	// 'a' in negated property set (path)
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `SELECT ?o WHERE { <http://example.org/s> !a ?o }`)
 	if err != nil {
 		t.Fatal(err)
@@ -6387,7 +6387,7 @@ func TestAPathInNegatedPropertySet(t *testing.T) {
 func TestAPathWithModifier(t *testing.T) {
 	// 'a' as path predicate - check path modifier
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), rdflibgo.NewURIRefUnsafe("http://example.org/C"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), rdflibgo.NewURIRefUnsafe("http://example.org/C"))
 	r, err := Query(g, `SELECT ?o WHERE { <http://example.org/s> a ?o }`)
 	if err != nil {
 		t.Fatal(err)
@@ -6413,9 +6413,9 @@ func TestParseUpdateWithSemicolon(t *testing.T) {
 
 func TestTransferGraphsViaUpdate(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s2"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("w"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s2"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("w"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	// ADD source to default
 	err := Update(ds, `ADD <http://example.org/g> TO DEFAULT`)
@@ -6436,8 +6436,8 @@ func TestTransferGraphsViaUpdate(t *testing.T) {
 
 func TestConstructOrderBy(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("b"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("a"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("b"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("a"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:p ?o } WHERE { ?s ex:p ?o } ORDER BY ?o
@@ -6494,7 +6494,7 @@ func TestResolveTermRefNumericLiteral(t *testing.T) {
 func TestEvalQueryASKPushdown(t *testing.T) {
 	// ASK query with simple BGP → extractSimpleBGP
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `ASK { <http://example.org/s> <http://example.org/p> "v" }`)
 	if err != nil {
 		t.Fatal(err)
@@ -6506,12 +6506,12 @@ func TestEvalQueryASKPushdown(t *testing.T) {
 
 func TestClearDefaultViaUpdate(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	err := Update(ds, `CLEAR DEFAULT`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ds.Default.Len() != 0 {
+	if mustV(ds.Default.Len(t.Context())) != 0 {
 		t.Error("expected empty graph after CLEAR DEFAULT")
 	}
 }
@@ -6519,8 +6519,8 @@ func TestClearDefaultViaUpdate(t *testing.T) {
 func TestBnodePropertyListCommaSemicolon(t *testing.T) {
 	// Exercise comma and semicolon in bnode property list triples
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("A"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/age"), rdflibgo.NewLiteral(30, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/name"), rdflibgo.NewLiteral("A"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/a"), rdflibgo.NewURIRefUnsafe("http://example.org/age"), rdflibgo.NewLiteral(30, rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?name ?age WHERE {
@@ -6536,8 +6536,8 @@ func TestBnodePropertyListCommaSemicolon(t *testing.T) {
 func TestAnnotationBlockCommaSemicolon(t *testing.T) {
 	// Exercise comma and semicolon in annotation blocks in WHERE
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v1"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v2"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v1"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v2"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?v WHERE {
@@ -6552,7 +6552,7 @@ func TestAnnotationBlockCommaSemicolon(t *testing.T) {
 
 func TestConstructTemplateCommaSemicolon(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT {
@@ -6570,7 +6570,7 @@ func TestConstructTemplateCommaSemicolon(t *testing.T) {
 
 func TestPostQueryValuesCov(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		SELECT ?s WHERE { ?s <http://example.org/p> ?o }
 		VALUES ?s { <http://example.org/s> }
@@ -6584,8 +6584,8 @@ func TestPostQueryValuesCov(t *testing.T) {
 func TestNegatedPathSet(t *testing.T) {
 	// Negated property set with multiple URIs
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE { ex:s !( ex:p | ex:r ) ?o }
@@ -6601,7 +6601,7 @@ func TestNegatedPathSet(t *testing.T) {
 
 func TestModifyNilResolvesInBothTemplates(t *testing.T) {
 	ds := makeUpdateDataset()
-	ds.Default.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ds.Default.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	// Templates with non-resolvable terms
 	op := &ModifyOp{
 		Delete: []QuadPattern{{
@@ -6628,7 +6628,7 @@ func TestParseQuadPatternGraphInDeleteWhere(t *testing.T) {
 	// Exercise the quad pattern with GRAPH clause in UPDATE
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `DELETE { GRAPH <http://example.org/g> { ?s ?p ?o } } WHERE { GRAPH <http://example.org/g> { ?s ?p ?o } }`)
 	if err != nil {
@@ -6660,8 +6660,8 @@ func TestParseHavingMultipleConditions(t *testing.T) {
 func TestConstructWhereSemicolon(t *testing.T) {
 	// CONSTRUCT template with semicolons
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/q"), rdflibgo.NewLiteral("w"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ?s ex:p ?v ; ex:q ?w }
@@ -6676,7 +6676,7 @@ func TestConstructWhereSemicolon(t *testing.T) {
 func TestConstructAnnotationBlockSemicolon(t *testing.T) {
 	// Annotation block in construct with semicolons
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		CONSTRUCT { ex:s ex:p "v" ; ex:q "w" }
@@ -6729,7 +6729,7 @@ func TestUnknownAggregateType(t *testing.T) {
 
 func TestSubqueryWithNamedGraphs(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
 		SELECT ?o WHERE {
@@ -6746,7 +6746,7 @@ func TestSubqueryWithNamedGraphs(t *testing.T) {
 
 func TestGraphPatternResolvedNonURIRef(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	namedGraphs := map[string]*rdflibgo.Graph{}
 	// Use a prefixed name as graph IRI
 	prefixes := map[string]string{"ex": "http://example.org/"}
@@ -6903,7 +6903,7 @@ func TestXsdDecimalCastFromBNode(t *testing.T) {
 
 func TestTimezoneOffsetNonZero(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/dt"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/dt"),
 		rdflibgo.NewLiteral("2023-01-01T10:00:00+05:30", rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime"))))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -6918,7 +6918,7 @@ func TestTimezoneOffsetNonZero(t *testing.T) {
 
 func TestSecondsWithFraction(t *testing.T) {
 	g := graph.NewGraph()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/dt"),
+	g.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/dt"),
 		rdflibgo.NewLiteral("2023-01-01T10:00:05.123Z", rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/XMLSchema#dateTime"))))
 	r, err := Query(g, `
 		PREFIX ex: <http://example.org/>
@@ -7016,7 +7016,7 @@ func TestSumAggregateHasError(t *testing.T) {
 func TestDropNamedViaUpdate(t *testing.T) {
 	ds := makeUpdateDataset()
 	ng := graph.NewGraph()
-	ng.Add(rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
+	ng.Add(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/s"), rdflibgo.NewURIRefUnsafe("http://example.org/p"), rdflibgo.NewLiteral("v"))
 	ds.NamedGraphs["http://example.org/g"] = ng
 	err := Update(ds, `DROP GRAPH <http://example.org/g>`)
 	if err != nil {

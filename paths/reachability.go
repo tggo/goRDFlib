@@ -77,7 +77,7 @@ func flatten(p Path) (flatSpec, bool) {
 //
 // The zero-length pair is the caller's responsibility in both paths — this
 // function only ever emits pairs at distance >= 1.
-func (p *MulPath) evalViaStore(g *graph.Graph, subj term.Subject, obj term.Term, emit func(term.Term, term.Term) bool) bool {
+func (p *MulPath) evalViaStore(st *stopper, g *graph.Graph, subj term.Subject, obj term.Term, emit func(term.Term, term.Term) bool) bool {
 	if !p.More {
 		return false
 	}
@@ -106,7 +106,7 @@ func (p *MulPath) evalViaStore(g *graph.Graph, subj term.Subject, obj term.Term,
 		return false
 	}
 
-	reached, err := rs.Reachable(store.ReachabilityQuery{
+	reached, err := rs.Reachable(st.ctx, store.ReachabilityQuery{
 		Start:      start,
 		Predicates: spec.preds,
 		Negated:    spec.negated,

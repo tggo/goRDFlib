@@ -50,6 +50,7 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 
 		askResult, err := executeSPARQLAsk(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 		if err != nil {
+			ctx.guard.fail(err)
 			results = append(results, c.result(shape, focusNode, value, nil))
 			continue
 		}
@@ -68,6 +69,7 @@ func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shap
 
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
+		ctx.guard.fail(err)
 		return []ValidationResult{c.result(shape, focusNode, focusNode, nil)}
 	}
 

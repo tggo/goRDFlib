@@ -31,7 +31,7 @@ func TestW3CRDFXML(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer f.Close()
-				if err := rdfxml.Parse(actual, f, rdfxml.WithBase(base)); err != nil {
+				if err := rdfxml.Parse(t.Context(), actual, f, rdfxml.WithBase(base)); err != nil {
 					t.Fatalf("parse action: %v", err)
 				}
 
@@ -41,7 +41,7 @@ func TestW3CRDFXML(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer ef.Close()
-				if err := nt.Parse(expected, ef); err != nil {
+				if err := nt.Parse(t.Context(), expected, ef); err != nil {
 					t.Fatalf("parse result: %v", err)
 				}
 
@@ -55,7 +55,7 @@ func TestW3CRDFXML(t *testing.T) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				g := graph.NewGraph(graph.WithBase(base))
-				if err := rdfxml.Parse(g, f, rdfxml.WithBase(base)); err == nil {
+				if err := rdfxml.Parse(t.Context(), g, f, rdfxml.WithBase(base)); err == nil {
 					t.Error("expected error, got nil")
 				}
 

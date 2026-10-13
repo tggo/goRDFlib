@@ -32,8 +32,8 @@ func cancelGraph(n int) *rdflibgo.Graph {
 	q := term.NewURIRefUnsafe("http://example.org/q")
 	for i := range n {
 		s := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
-		g.Add(s, p, term.NewLiteral(fmt.Sprintf("v%d", i)))
-		g.Add(s, q, term.NewLiteral(fmt.Sprintf("w%d", i)))
+		g.Add(context.Background(), s, p, term.NewLiteral(fmt.Sprintf("v%d", i)))
+		g.Add(context.Background(), s, q, term.NewLiteral(fmt.Sprintf("w%d", i)))
 	}
 	return g
 }
@@ -43,7 +43,7 @@ func chainGraph(n int) *rdflibgo.Graph {
 	g := rdflibgo.NewGraph()
 	next := term.NewURIRefUnsafe("http://example.org/next")
 	for i := range n - 1 {
-		g.Add(term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i)), next,
+		g.Add(context.Background(), term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i)), next,
 			term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/n%d", i+1)))
 	}
 	return g
@@ -185,8 +185,8 @@ func TestQueryContext_SameResultAsQuery(t *testing.T) {
 
 // snapshot returns the dataset's default graph as a set of N-Triples lines.
 func snapshot(g *rdflibgo.Graph) map[string]bool {
-	out := make(map[string]bool, g.Len())
-	for tr := range g.Triples(nil, nil, nil) {
+	out := make(map[string]bool, mustV(g.Len(context.Background())))
+	for tr := range g.Triples(context.Background(), nil, nil, nil) {
 		out[tr.Subject.N3()+" "+tr.Predicate.N3()+" "+tr.Object.N3()] = true
 	}
 	return out
@@ -276,7 +276,7 @@ func TestUpdate_OldAPIStillWorks(t *testing.T) {
 	if err := sparql.EvalUpdate(ds, pu); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 7 {
-		t.Fatalf("graph has %d triples after EvalUpdate, want 7", g.Len())
+	if mustV(g.Len(t.Context())) != 7 {
+		t.Fatalf("graph has %d triples after EvalUpdate, want 7", mustV(g.Len(t.Context())))
 	}
 }

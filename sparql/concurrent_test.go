@@ -1,6 +1,7 @@
 package sparql_test
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -16,7 +17,7 @@ func buildTestGraph(n int) *rdflibgo.Graph {
 		s := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/s%d", i))
 		p := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/p%d", i%10))
 		o := term.NewLiteral(fmt.Sprintf("value_%d", i))
-		g.Add(s, p, o)
+		g.Add(context.Background(), s, p, o)
 	}
 	return g
 }
@@ -192,7 +193,7 @@ SELECT ?s ?o WHERE { ?s ?p ?o } LIMIT 10`
 				s := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/ws%d", base))
 				p := term.NewURIRefUnsafe(fmt.Sprintf("http://example.org/p%d", base%10))
 				o := term.NewLiteral(fmt.Sprintf("write_value_%d", base))
-				g.Add(s, p, o)
+				g.Add(t.Context(), s, p, o)
 			}
 		}()
 	}
@@ -275,7 +276,7 @@ SELECT ?s ?o WHERE { ?s ex:p7 ?o } LIMIT 5`,
 		case "SELECT":
 			rr.bindingLen = len(res.Bindings)
 		case "CONSTRUCT":
-			rr.graphSize = res.Graph.Len()
+			rr.graphSize, _ = res.Graph.Len(t.Context())
 		}
 		ref[i] = rr
 	}
@@ -320,9 +321,9 @@ SELECT ?s ?o WHERE { ?s ex:p7 ?o } LIMIT 5`,
 					case "CONSTRUCT":
 						if res.Graph == nil {
 							t.Errorf("cached goroutine query[%d]: nil CONSTRUCT graph", qi)
-						} else if res.Graph.Len() != rr.graphSize {
+						} else if mustV(res.Graph.Len(t.Context())) != rr.graphSize {
 							t.Errorf("cached goroutine query[%d]: CONSTRUCT graph size mismatch: got %d, want %d",
-								qi, res.Graph.Len(), rr.graphSize)
+								qi, mustV(res.Graph.Len(t.Context())), rr.graphSize)
 						}
 					}
 				}

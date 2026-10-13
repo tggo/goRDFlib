@@ -14,7 +14,7 @@ func BenchmarkTripleTermMatch(b *testing.B) {
 	s := rdflibgo.NewURIRefUnsafe("http://ex/s")
 	p := rdflibgo.NewURIRefUnsafe("http://ex/p")
 	for i := 0; i < 1000; i++ {
-		g.Add(s, p, rdflibgo.NewTripleTerm(
+		g.Add(b.Context(), s, p, rdflibgo.NewTripleTerm(
 			rdflibgo.NewURIRefUnsafe(fmt.Sprintf("http://ex/a%d", i)),
 			rdflibgo.NewURIRefUnsafe("http://ex/q"),
 			rdflibgo.NewLiteral(i),

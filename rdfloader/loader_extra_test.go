@@ -31,8 +31,8 @@ ex:s ex:p ex:o .
 	if err := loader.Load(context.Background(), g, srv.URL+"/data.ttl"); err != nil {
 		t.Fatalf("Load with custom HTTP client failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -53,8 +53,8 @@ ex:s ex:p ex:o .
 	if err := loader.Load(context.Background(), g, srv.URL+"/data.ttl"); err != nil {
 		t.Fatalf("Load with timeout failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -169,8 +169,8 @@ func TestLoadFileNQuads(t *testing.T) {
 	if err := loader.Load(context.Background(), g, "file://"+path); err != nil {
 		t.Fatalf("Load .nq failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -215,8 +215,8 @@ func TestLoadFileRDFXML(t *testing.T) {
 	if err := loader.Load(context.Background(), g, "file://"+path); err != nil {
 		t.Fatalf("Load .rdf failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -240,8 +240,8 @@ func TestLoadFileJSONLD(t *testing.T) {
 	if err := loader.Load(context.Background(), g, "file://"+path); err != nil {
 		t.Fatalf("Load .jsonld failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -260,8 +260,8 @@ func TestLoadHTTPNQuads(t *testing.T) {
 	if err := loader.Load(context.Background(), g, srv.URL+"/data"); err != nil {
 		t.Fatalf("Load HTTP n-quads failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -302,8 +302,8 @@ func TestLoadHTTPRDFXML(t *testing.T) {
 	if err := loader.Load(context.Background(), g, srv.URL+"/data"); err != nil {
 		t.Fatalf("Load HTTP rdf+xml failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -320,8 +320,8 @@ func TestLoadHTTPNTriples(t *testing.T) {
 	if err := loader.Load(context.Background(), g, srv.URL+"/data"); err != nil {
 		t.Fatalf("Load HTTP n-triples failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -343,7 +343,7 @@ func TestLoadHTTPJSONLD(t *testing.T) {
 	if err := loader.Load(context.Background(), g, srv.URL+"/data"); err != nil {
 		t.Fatalf("Load HTTP json-ld failed: %v", err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }

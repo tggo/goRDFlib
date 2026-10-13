@@ -54,7 +54,7 @@ func TestUndeclaredPrefixIsAParseError(t *testing.T) {
 	}
 
 	g := graph.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:a a ex:Tool . ex:b a ex:Person .`)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:a a ex:Tool . ex:b a ex:Person .`)); err != nil {
 		t.Fatal(err)
 	}
 	if res, err := Query(g, `SELECT ?e WHERE { ?e a nosuch:Tool }`); err == nil {

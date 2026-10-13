@@ -27,7 +27,7 @@ func TestTripleTermObjectGrammar(t *testing.T) {
 	}
 	for _, body := range valid {
 		src := prefix + body
-		if err := ParseDataset(graph.NewDataset(), strings.NewReader(src)); err != nil {
+		if err := ParseDataset(t.Context(), graph.NewDataset(), strings.NewReader(src)); err != nil {
 			t.Errorf("rejected valid triple term %q: %v", body, err)
 		}
 	}
@@ -39,7 +39,7 @@ func TestTripleTermObjectGrammar(t *testing.T) {
 	}
 	for _, body := range invalid {
 		src := prefix + body
-		if err := ParseDataset(graph.NewDataset(), strings.NewReader(src)); err == nil {
+		if err := ParseDataset(t.Context(), graph.NewDataset(), strings.NewReader(src)); err == nil {
 			t.Errorf("accepted invalid triple term %q", body)
 		}
 	}

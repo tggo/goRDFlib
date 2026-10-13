@@ -14,7 +14,7 @@ func makeTestGraph(t *testing.T) (*Graph, URIRef, URIRef, Literal) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	o := NewLiteral("hello")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 	return g, s, p, o
 }
 
@@ -26,7 +26,7 @@ func TestGraphSetAtomic(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("initial"))
+	g.Add(t.Context(), s, p, NewLiteral("initial"))
 
 	const iterations = 1000
 	var wg sync.WaitGroup
@@ -36,7 +36,7 @@ func TestGraphSetAtomic(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
-			g.Set(s, p, NewLiteral(i))
+			g.Set(t.Context(), s, p, NewLiteral(i))
 		}
 	}()
 
@@ -46,7 +46,7 @@ func TestGraphSetAtomic(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			count := 0
-			g.Triples(s, &p, nil)(func(Triple) bool {
+			g.Triples(t.Context(), s, &p, nil)(func(Triple, error) bool {
 				count++
 				return true
 			})
@@ -65,20 +65,20 @@ func TestStoreSetMethod(t *testing.T) {
 	s := NewMemoryStore()
 	sub, _ := NewURIRef("http://example.org/s")
 	pred, _ := NewURIRef("http://example.org/p")
-	s.Add(Triple{Subject: sub, Predicate: pred, Object: NewLiteral("old1")}, nil)
-	s.Add(Triple{Subject: sub, Predicate: pred, Object: NewLiteral("old2")}, nil)
-	if s.Len(nil) != 2 {
-		t.Fatalf("expected 2, got %d", s.Len(nil))
+	s.Add(t.Context(), Triple{Subject: sub, Predicate: pred, Object: NewLiteral("old1")}, nil)
+	s.Add(t.Context(), Triple{Subject: sub, Predicate: pred, Object: NewLiteral("old2")}, nil)
+	if mustV(s.Len(t.Context(), nil)) != 2 {
+		t.Fatalf("expected 2, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 
 	// Set should remove both old values and add the new one.
-	s.Set(Triple{Subject: sub, Predicate: pred, Object: NewLiteral("new")}, nil)
-	if s.Len(nil) != 1 {
-		t.Fatalf("expected 1 after Set, got %d", s.Len(nil))
+	s.Set(t.Context(), Triple{Subject: sub, Predicate: pred, Object: NewLiteral("new")}, nil)
+	if mustV(s.Len(t.Context(), nil)) != 1 {
+		t.Fatalf("expected 1 after Set, got %d", mustV(s.Len(t.Context(), nil)))
 	}
 
 	var found Triple
-	s.Triples(TriplePattern{Subject: sub, Predicate: &pred}, nil)(func(tr Triple) bool {
+	s.Triples(t.Context(), TriplePattern{Subject: sub, Predicate: &pred}, nil)(func(tr Triple, _ error) bool {
 		found = tr
 		return false
 	})
@@ -113,13 +113,13 @@ func TestTermKeyStillWorksForLookups(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	o := NewLiteral("hello")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
-	if !g.Contains(s, p, o) {
+	if !mustV(g.Contains(t.Context(), s, p, o)) {
 		t.Error("lookup should work with new termKey")
 	}
-	g.Remove(s, &p, o)
-	if g.Len() != 0 {
+	g.Remove(t.Context(), s, &p, o)
+	if mustV(g.Len(t.Context())) != 0 {
 		t.Error("remove should work with new termKey")
 	}
 }
@@ -132,16 +132,16 @@ func TestCollectionCyclicListIter(t *testing.T) {
 	head := NewBNode("head")
 	node1 := NewBNode("node1")
 
-	g.Add(head, RDF.First, NewLiteral("a"))
-	g.Add(head, RDF.Rest, node1)
-	g.Add(node1, RDF.First, NewLiteral("b"))
-	g.Add(node1, RDF.Rest, head) // cycle!
+	g.Add(t.Context(), head, RDF.First, NewLiteral("a"))
+	g.Add(t.Context(), head, RDF.Rest, node1)
+	g.Add(t.Context(), node1, RDF.First, NewLiteral("b"))
+	g.Add(t.Context(), node1, RDF.Rest, head) // cycle!
 
 	col := NewCollection(g, head)
 
 	// Iter should terminate (not loop forever) and return at most 2 items.
 	count := 0
-	col.Iter()(func(Term) bool {
+	col.Iter(t.Context())(func(Term, error) bool {
 		count++
 		if count > 100 {
 			t.Fatal("infinite loop detected in Iter")
@@ -158,14 +158,14 @@ func TestCollectionCyclicListLen(t *testing.T) {
 	head := NewBNode("head")
 	node1 := NewBNode("node1")
 
-	g.Add(head, RDF.First, NewLiteral("a"))
-	g.Add(head, RDF.Rest, node1)
-	g.Add(node1, RDF.First, NewLiteral("b"))
-	g.Add(node1, RDF.Rest, head)
+	g.Add(t.Context(), head, RDF.First, NewLiteral("a"))
+	g.Add(t.Context(), head, RDF.Rest, node1)
+	g.Add(t.Context(), node1, RDF.First, NewLiteral("b"))
+	g.Add(t.Context(), node1, RDF.Rest, head)
 
 	col := NewCollection(g, head)
-	if col.Len() != 2 {
-		t.Errorf("expected Len=2 for cyclic list, got %d", col.Len())
+	if mustV(col.Len(t.Context())) != 2 {
+		t.Errorf("expected Len=2 for cyclic list, got %d", mustV(col.Len(t.Context())))
 	}
 }
 
@@ -174,19 +174,19 @@ func TestCollectionCyclicListIndex(t *testing.T) {
 	head := NewBNode("head")
 	node1 := NewBNode("node1")
 
-	g.Add(head, RDF.First, NewLiteral("a"))
-	g.Add(head, RDF.Rest, node1)
-	g.Add(node1, RDF.First, NewLiteral("b"))
-	g.Add(node1, RDF.Rest, head)
+	g.Add(t.Context(), head, RDF.First, NewLiteral("a"))
+	g.Add(t.Context(), head, RDF.Rest, node1)
+	g.Add(t.Context(), node1, RDF.First, NewLiteral("b"))
+	g.Add(t.Context(), node1, RDF.Rest, head)
 
 	col := NewCollection(g, head)
-	if col.Index(NewLiteral("a")) != 0 {
+	if mustV(col.Index(t.Context(), NewLiteral("a"))) != 0 {
 		t.Error("Index('a') should be 0")
 	}
-	if col.Index(NewLiteral("b")) != 1 {
+	if mustV(col.Index(t.Context(), NewLiteral("b"))) != 1 {
 		t.Error("Index('b') should be 1")
 	}
-	if col.Index(NewLiteral("c")) != -1 {
+	if mustV(col.Index(t.Context(), NewLiteral("c"))) != -1 {
 		t.Error("Index('c') should be -1 for missing item")
 	}
 }
@@ -196,16 +196,16 @@ func TestCollectionCyclicListClear(t *testing.T) {
 	head := NewBNode("head")
 	node1 := NewBNode("node1")
 
-	g.Add(head, RDF.First, NewLiteral("a"))
-	g.Add(head, RDF.Rest, node1)
-	g.Add(node1, RDF.First, NewLiteral("b"))
-	g.Add(node1, RDF.Rest, head)
+	g.Add(t.Context(), head, RDF.First, NewLiteral("a"))
+	g.Add(t.Context(), head, RDF.Rest, node1)
+	g.Add(t.Context(), node1, RDF.First, NewLiteral("b"))
+	g.Add(t.Context(), node1, RDF.Rest, head)
 
 	col := NewCollection(g, head)
-	col.Clear() // should not loop forever
+	col.Clear(t.Context()) // should not loop forever
 
 	// After clear, the list data should be gone.
-	if g.Contains(head, RDF.First, NewLiteral("a")) {
+	if mustV(g.Contains(t.Context(), head, RDF.First, NewLiteral("a"))) {
 		t.Error("Clear should have removed rdf:first from head")
 	}
 }
@@ -215,14 +215,14 @@ func TestCollectionCyclicListEnd(t *testing.T) {
 	head := NewBNode("head")
 	node1 := NewBNode("node1")
 
-	g.Add(head, RDF.First, NewLiteral("a"))
-	g.Add(head, RDF.Rest, node1)
-	g.Add(node1, RDF.First, NewLiteral("b"))
-	g.Add(node1, RDF.Rest, head)
+	g.Add(t.Context(), head, RDF.First, NewLiteral("a"))
+	g.Add(t.Context(), head, RDF.Rest, node1)
+	g.Add(t.Context(), node1, RDF.First, NewLiteral("b"))
+	g.Add(t.Context(), node1, RDF.Rest, head)
 
 	col := NewCollection(g, head)
 	// end() is unexported; verify cycle-safety via Len() which traverses the list.
-	n := col.Len()
+	n, _ := col.Len(t.Context())
 	if n == 0 {
 		t.Error("Len() should return > 0 for cyclic list with items")
 	}
@@ -235,7 +235,7 @@ func TestCollectionEndReturnsNilForEmpty(t *testing.T) {
 	head := NewBNode("empty")
 	col := NewCollection(g, head)
 
-	n := col.Len()
+	n, _ := col.Len(t.Context())
 	if n != 0 {
 		t.Errorf("Len() should return 0 for empty list, got %d", n)
 	}
@@ -244,12 +244,12 @@ func TestCollectionEndReturnsNilForEmpty(t *testing.T) {
 func TestCollectionAppendToEmpty(t *testing.T) {
 	g := NewGraph()
 	col := NewEmptyCollection(g)
-	col.Append(NewLiteral("first"))
+	col.Append(t.Context(), NewLiteral("first"))
 
-	if col.Len() != 1 {
-		t.Errorf("expected Len=1 after Append, got %d", col.Len())
+	if mustV(col.Len(t.Context())) != 1 {
+		t.Errorf("expected Len=1 after Append, got %d", mustV(col.Len(t.Context())))
 	}
-	val, ok := col.Get(0)
+	val, ok, _ := col.Get(t.Context(), 0)
 	if !ok || val.(Literal).Value() != "first" {
 		t.Errorf("expected 'first', got %v", val)
 	}
@@ -263,11 +263,11 @@ func TestIteratorTypesAreRangeCompatible(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("v"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 
 	// TripleIterator via range
 	count := 0
-	for range g.Triples(s, &p, nil) {
+	for range g.Triples(t.Context(), s, &p, nil) {
 		count++
 	}
 	if count != 1 {
@@ -276,7 +276,7 @@ func TestIteratorTypesAreRangeCompatible(t *testing.T) {
 
 	// TermIterator via range
 	count = 0
-	for range g.Subjects(&p, NewLiteral("v")) {
+	for range g.Subjects(t.Context(), &p, NewLiteral("v")) {
 		count++
 	}
 	if count != 1 {
@@ -285,7 +285,7 @@ func TestIteratorTypesAreRangeCompatible(t *testing.T) {
 
 	// TermPairIterator via range
 	count = 0
-	for range g.PredicateObjects(s) {
+	for range g.PredicateObjects(t.Context(), s) {
 		count++
 	}
 	if count != 1 {
@@ -297,7 +297,7 @@ func TestIteratorTypesAreRangeCompatible(t *testing.T) {
 
 func TestValueRejectsAllNil(t *testing.T) {
 	g, _, _, _ := makeTestGraph(t)
-	val, ok := g.Value(nil, nil, nil)
+	val, ok, _ := g.Value(t.Context(), nil, nil, nil)
 	if ok || val != nil {
 		t.Error("Value(nil, nil, nil) should return (nil, false)")
 	}
@@ -305,7 +305,7 @@ func TestValueRejectsAllNil(t *testing.T) {
 
 func TestValueRejectsAllNonNil(t *testing.T) {
 	g, s, p, o := makeTestGraph(t)
-	val, ok := g.Value(s, &p, o)
+	val, ok, _ := g.Value(t.Context(), s, &p, o)
 	if ok || val != nil {
 		t.Error("Value(s, p, o) with all non-nil should return (nil, false)")
 	}
@@ -313,7 +313,7 @@ func TestValueRejectsAllNonNil(t *testing.T) {
 
 func TestValueRejectsOneNonNil(t *testing.T) {
 	g, s, _, _ := makeTestGraph(t)
-	val, ok := g.Value(s, nil, nil)
+	val, ok, _ := g.Value(t.Context(), s, nil, nil)
 	if ok || val != nil {
 		t.Error("Value with only 1 non-nil should return (nil, false)")
 	}
@@ -321,7 +321,7 @@ func TestValueRejectsOneNonNil(t *testing.T) {
 
 func TestValueAcceptsTwoNonNil(t *testing.T) {
 	g, s, p, o := makeTestGraph(t)
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok || val.N3() != o.N3() {
 		t.Errorf("Value(s, p, nil) should work, got %v, %v", val, ok)
 	}
@@ -334,12 +334,12 @@ func TestSubjectPredicatesReturnType(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	o := NewLiteral("v")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
 	// The return type is TermPairIterator = iter.Seq2[Term, Term]
-	var sp TermPairIterator = g.SubjectPredicates(o)
+	var sp TermPairIterator = g.SubjectPredicates(t.Context(), o)
 	count := 0
-	sp(func(subj, pred Term) bool {
+	sp(func(pair_ TermPair, _ error) bool {
 		count++
 		return true
 	})
@@ -353,11 +353,11 @@ func TestSubjectObjectsReturnType(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	o := NewLiteral("v")
-	g.Add(s, p, o)
+	g.Add(t.Context(), s, p, o)
 
-	var so TermPairIterator = g.SubjectObjects(&p)
+	var so TermPairIterator = g.SubjectObjects(t.Context(), &p)
 	count := 0
-	so(func(_, _ Term) bool {
+	so(func(pair_ TermPair, _ error) bool {
 		count++
 		return true
 	})

@@ -2,6 +2,7 @@ package shacl
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -61,9 +62,13 @@ func executeSPARQL(ctx context.Context, g *Graph, query string, initBindings map
 	}
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
-	result, err := sparql.EvalQueryContext(ctx, g.rdf(), pq, initBindings)
+	rg, err := rdfOf(ctx, g)
 	if err != nil {
 		return nil, err
+	}
+	result, err := sparql.EvalQueryContext(ctx, rg, pq, initBindings)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrQueryFailed, err)
 	}
 	rows := make([]map[string]Term, 0, len(result.Bindings))
 	for _, row := range result.Bindings {
@@ -132,9 +137,13 @@ func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings 
 	}
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
-	result, err := sparql.EvalQueryContext(ctx, g.rdf(), pq, initBindings)
+	rg, err := rdfOf(ctx, g)
 	if err != nil {
 		return false, err
+	}
+	result, err := sparql.EvalQueryContext(ctx, rg, pq, initBindings)
+	if err != nil {
+		return false, fmt.Errorf("%w: %w", ErrQueryFailed, err)
 	}
 	return result.AskResult, nil
 }
@@ -153,15 +162,22 @@ func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBin
 	}
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
-	result, err := sparql.EvalQueryContext(ctx, g.rdf(), pq, initBindings)
+	rg, err := rdfOf(ctx, g)
 	if err != nil {
 		return nil, err
+	}
+	result, err := sparql.EvalQueryContext(ctx, rg, pq, initBindings)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrQueryFailed, err)
 	}
 	if result.Graph == nil {
 		return nil, nil
 	}
 	var out []Triple
-	for t := range result.Graph.Triples(nil, nil, nil) {
+	for t, err := range result.Graph.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrQueryFailed, err)
+		}
 		out = append(out, Triple{
 			Subject:   fromRDFLib(t.Subject),
 			Predicate: fromRDFLib(t.Predicate),
@@ -208,7 +224,8 @@ func writeGraphPrefixes(g *Graph, sb *strings.Builder) {
 	}
 	type binding struct{ prefix, ns string }
 	var bindings []binding
-	for prefix, ns := range g.namespaces() {
+	for _, nb := range g.namespaces() {
+		prefix, ns := nb.Prefix, nb.Namespace
 		if prefix == "" {
 			// The empty prefix is legal in SPARQL, but a shapes file that
 			// declares one rarely uses it in a query; emitting it risks

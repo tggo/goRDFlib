@@ -115,7 +115,7 @@ func (tc dashTestCase) runInferencing(t *testing.T, g *Graph) {
 	}
 
 	data := NewGraph()
-	data.Merge(g)
+	data.Merge(t.Context(), g)
 	added, err := ApplyRules(data, g)
 	if err != nil {
 		t.Fatalf("ApplyRules: %v", err)
@@ -233,7 +233,7 @@ func (tc dashTestCase) runFunction(t *testing.T, g *Graph) {
 	}
 
 	query := dashPrefixes(g) + "SELECT (" + exprs[0].Value() + " AS ?result) WHERE { }"
-	rows, err := executeSPARQL(context.Background(), g, query, nil, nil, af.functionsAtDepth(1))
+	rows, err := executeSPARQL(context.Background(), g, query, nil, nil, af.functionsAtDepth(1, af.fail))
 	if err != nil {
 		t.Fatalf("evaluating %q: %v", exprs[0].Value(), err)
 	}

@@ -38,7 +38,7 @@ func runTrigTests(t *testing.T, m *w3c.Manifest) {
 					t.Fatal(err)
 				}
 				defer f.Close()
-				if err := trig.ParseDataset(actual, f, trig.WithBase(base)); err != nil {
+				if err := trig.ParseDataset(t.Context(), actual, f, trig.WithBase(base)); err != nil {
 					t.Fatalf("parse action: %v", err)
 				}
 
@@ -60,7 +60,7 @@ func runTrigTests(t *testing.T, m *w3c.Manifest) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				ds := graph.NewDataset()
-				if err := trig.ParseDataset(ds, f, trig.WithBase(base)); err != nil {
+				if err := trig.ParseDataset(t.Context(), ds, f, trig.WithBase(base)); err != nil {
 					t.Errorf("expected no error, got: %v", err)
 				}
 
@@ -72,7 +72,7 @@ func runTrigTests(t *testing.T, m *w3c.Manifest) {
 				defer f.Close()
 				base := m.BaseURI(e.Action)
 				ds := graph.NewDataset()
-				if err := trig.ParseDataset(ds, f, trig.WithBase(base)); err == nil {
+				if err := trig.ParseDataset(t.Context(), ds, f, trig.WithBase(base)); err == nil {
 					t.Error("expected error, got nil")
 				}
 

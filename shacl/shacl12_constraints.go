@@ -404,7 +404,6 @@ func listLength(g *Graph, head Term) int {
 // via rdf:reifies with a TripleTerm object. It searches the underlying rdflibgo
 // graph for triples of the form (?r, rdf:reifies, <<(subject predicate object)>>).
 func findReifiers(g *Graph, subject, predicate, object Term) []Term {
-	reifiesPred := term.NewURIRefUnsafe(RDF + "reifies")
 	subj := toTerm(subject)
 	pred := toTerm(predicate)
 	obj := toTerm(object)
@@ -425,13 +424,12 @@ func findReifiers(g *Graph, subject, predicate, object Term) []Term {
 	expectedTT := term.NewTripleTerm(subjAsSubject, predURI, obj)
 
 	var reifiers []Term
-	g.rdf().Triples(nil, &reifiesPred, nil)(func(t term.Triple) bool {
-		if tt, ok := t.Object.(term.TripleTerm); ok {
-			if tt.Equal(expectedTT) {
-				reifiers = append(reifiers, fromRDFLib(t.Subject))
-			}
+	// Read from the indexes, which hold the whole graph already; the rdflib
+	// graph behind it is the store, and this lookup has no error to return.
+	for _, e := range g.ensureIndexes().reifies {
+		if e.tt.Equal(expectedTT) {
+			reifiers = append(reifiers, e.reifier)
 		}
-		return true
-	})
+	}
 	return reifiers
 }

@@ -1,6 +1,7 @@
 package plugin_test
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -78,11 +79,11 @@ func TestFormatFromContent(t *testing.T) {
 
 type mockParser struct{}
 
-func (m *mockParser) Parse(g *graph.Graph, r io.Reader) error { return nil }
+func (m *mockParser) Parse(_ context.Context, g *graph.Graph, r io.Reader) error { return nil }
 
 type mockSerializer struct{}
 
-func (m *mockSerializer) Serialize(g *graph.Graph, w io.Writer) error { return nil }
+func (m *mockSerializer) Serialize(_ context.Context, g *graph.Graph, w io.Writer) error { return nil }
 
 func TestRegisterAndGetParser(t *testing.T) {
 	plugin.RegisterParser("test-format", func() plugin.Parser { return &mockParser{} })

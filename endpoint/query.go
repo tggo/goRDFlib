@@ -95,7 +95,10 @@ func (x *exchange) query(req *protocolRequest) error {
 	case "CONSTRUCT":
 		n := 0
 		if res.Graph != nil {
-			n = res.Graph.Len()
+			var err error
+			if n, err = res.Graph.Len(ctx); err != nil {
+				return httpErrf(http.StatusInternalServerError, "query result cannot be read: %v", err)
+			}
 		}
 		x.rows = n
 		if maxRows > 0 && n > maxRows {
@@ -105,7 +108,7 @@ func (x *exchange) query(req *protocolRequest) error {
 		if g == nil {
 			g = graph.NewGraph()
 		}
-		return x.writeGraph(g, rdfFmt)
+		return x.writeGraph(ctx, g, rdfFmt)
 	case "ASK":
 		x.rows = 1
 	default:
@@ -126,7 +129,10 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 	}
 	defer h.lock.runlock()
 
-	def, named := h.backend.view()
+	def, named, err := h.backend.view(ctx)
+	if err != nil {
+		return nil, storeError(ctx, err)
+	}
 	defaults, nameds := req.defaultGraphs, req.namedGraphs
 	if len(defaults) == 0 && len(nameds) == 0 {
 		// SPARQL 1.1 Protocol §2.1.4: without protocol parameters the dataset
@@ -134,10 +140,9 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 		defaults, nameds = datasetClauses(q, base)
 	}
 	if len(defaults) > 0 || len(nameds) > 0 {
-		var err error
 		def, named, err = datasetFor(ctx, def, named, defaults, nameds)
 		if err != nil {
-			return nil, evalError(ctx, err)
+			return nil, storeError(ctx, err)
 		}
 	}
 	q.NamedGraphs = named
@@ -210,11 +215,16 @@ func datasetFor(ctx context.Context, def *graph.Graph, named map[string]*graph.G
 				continue
 			}
 			seen[iri] = true
-			for t := range g.Triples(nil, nil, nil) {
+			for t, err := range g.Triples(ctx, nil, nil, nil) {
+				if err != nil {
+					return nil, nil, err
+				}
 				if n++; n%1024 == 0 && ctx.Err() != nil {
 					return nil, nil, ctx.Err()
 				}
-				outDef.Add(t.Subject, t.Predicate, t.Object)
+				if err := outDef.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 	}
@@ -254,9 +264,12 @@ func (x *exchange) writeResult(res *sparql.Result, f results.Format) error {
 // writeGraph serializes g in full before sending anything, so a serializer
 // error is reported with a proper status and the response has a
 // Content-Length.
-func (x *exchange) writeGraph(g *graph.Graph, f *rdfFormat) error {
+func (x *exchange) writeGraph(ctx context.Context, g *graph.Graph, f *rdfFormat) error {
 	var buf bytes.Buffer
-	if err := f.serialize(g, &buf); err != nil {
+	if err := f.serialize(ctx, g, &buf); err != nil {
+		if ctx.Err() != nil {
+			return evalError(ctx, err)
+		}
 		return httpErrf(http.StatusInternalServerError,
 			"the graph cannot be written as %s: %v (request another format with the Accept header)", f.mediaType, err)
 	}
@@ -301,4 +314,18 @@ func rdfMediaTypes() []string {
 		out[i] = f.mediaType
 	}
 	return out
+}
+
+// storeError maps an error from reading the backing store to an HTTP error:
+// a deadline or cancellation as evalError does, anything else a 500 that
+// carries the store's message.
+func storeError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return evalError(ctx, err)
+	}
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return err
+	}
+	return httpErrf(http.StatusInternalServerError, "the store failed: %v", err)
 }

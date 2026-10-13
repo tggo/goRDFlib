@@ -23,14 +23,14 @@ func TestIRIRejectsExcludedCharacters(t *testing.T) {
 	for _, pos := range positions {
 		for _, c := range chars {
 			doc := fmt.Sprintf(pos, "x"+c+"y")
-			if err := turtle.Parse(rdflibgo.NewGraph(), strings.NewReader(doc)); err == nil {
+			if err := turtle.Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(doc)); err == nil {
 				t.Errorf("accepted %s", doc)
 			}
 		}
 	}
 	// Allowed: percent-encoding and a UCHAR for an ordinary character.
 	for _, ok := range []string{"<urn:x%22y> <urn:p> <urn:o> .", "<urn:x\\u0041y> <urn:p> <urn:o> ."} {
-		if err := turtle.Parse(rdflibgo.NewGraph(), strings.NewReader(ok)); err != nil {
+		if err := turtle.Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(ok)); err != nil {
 			t.Errorf("rejected %s: %v", ok, err)
 		}
 	}

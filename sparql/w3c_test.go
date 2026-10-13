@@ -1,6 +1,7 @@
 package sparql_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,15 +234,15 @@ func loadDataFile(t *testing.T, g *rdflibgo.Graph, path string) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".ttl":
-		if err := turtle.Parse(g, f, turtle.WithBase(base)); err != nil {
+		if err := turtle.Parse(t.Context(), g, f, turtle.WithBase(base)); err != nil {
 			t.Fatalf("failed to parse turtle data %s: %v", path, err)
 		}
 	case ".rdf", ".xml":
-		if err := rdfxml.Parse(g, f, rdfxml.WithBase(base)); err != nil {
+		if err := rdfxml.Parse(t.Context(), g, f, rdfxml.WithBase(base)); err != nil {
 			t.Fatalf("failed to parse RDF/XML data %s: %v", path, err)
 		}
 	case ".nt", ".nq":
-		if err := nt.Parse(g, f, nt.WithBase(base)); err != nil {
+		if err := nt.Parse(t.Context(), g, f, nt.WithBase(base)); err != nil {
 			t.Fatalf("failed to parse N-Triples data %s: %v", path, err)
 		}
 	default:
@@ -268,14 +269,14 @@ func loadExpectedResult(t *testing.T, path string, g *rdflibgo.Graph) (*sparql.R
 		// Could be CONSTRUCT result or RDF Result Set
 		expected := rdflibgo.NewGraph()
 		base := "file://" + path
-		if err := turtle.Parse(expected, f, turtle.WithBase(base)); err != nil {
+		if err := turtle.Parse(t.Context(), expected, f, turtle.WithBase(base)); err != nil {
 			return nil, err
 		}
 		// Check if it's an RDF Result Set (contains rs:ResultSet)
 		rsType := rdflibgo.NewURIRefUnsafe("http://www.w3.org/2001/sw/DataAccess/tests/result-set#ResultSet")
 		rdfType := rdflibgo.RDF.Type
 		isResultSet := false
-		for range expected.Triples(nil, &rdfType, rsType) {
+		for range expected.Triples(t.Context(), nil, &rdfType, rsType) {
 			isResultSet = true
 			break
 		}
@@ -302,7 +303,7 @@ func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
 	rsType := rdflibgo.NewURIRefUnsafe(rs + "ResultSet")
 	rdfType := rdflibgo.RDF.Type
 	var rsNode rdflibgo.Subject
-	for t := range g.Triples(nil, &rdfType, rsType) {
+	for t := range g.Triples(context.Background(), nil, &rdfType, rsType) {
 		rsNode = t.Subject
 		break
 	}
@@ -312,7 +313,7 @@ func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
 
 	// Get variable names
 	var vars []string
-	for t := range g.Triples(rsNode, &rsResultVar, nil) {
+	for t := range g.Triples(context.Background(), rsNode, &rsResultVar, nil) {
 		if l, ok := t.Object.(rdflibgo.Literal); ok {
 			vars = append(vars, l.Lexical())
 		}
@@ -320,23 +321,23 @@ func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
 
 	// Get solutions
 	var bindings []map[string]rdflibgo.Term
-	for sol := range g.Triples(rsNode, &rsSolution, nil) {
+	for sol := range g.Triples(context.Background(), rsNode, &rsSolution, nil) {
 		solNode, ok := sol.Object.(rdflibgo.Subject)
 		if !ok {
 			continue
 		}
 		row := make(map[string]rdflibgo.Term)
-		for bind := range g.Triples(solNode, &rsBinding, nil) {
+		for bind := range g.Triples(context.Background(), solNode, &rsBinding, nil) {
 			bindNode, ok := bind.Object.(rdflibgo.Subject)
 			if !ok {
 				continue
 			}
 			var varName string
 			var value rdflibgo.Term
-			if v, ok := g.Value(bindNode, &rsVariable, nil); ok {
+			if v, ok, _ := g.Value(context.Background(), bindNode, &rsVariable, nil); ok {
 				varName = v.(rdflibgo.Literal).Lexical()
 			}
-			if v, ok := g.Value(bindNode, &rsValue, nil); ok {
+			if v, ok, _ := g.Value(context.Background(), bindNode, &rsValue, nil); ok {
 				value = v
 			}
 			if varName != "" {

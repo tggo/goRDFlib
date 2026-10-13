@@ -1,6 +1,8 @@
 package reasoning
 
 import (
+	"context"
+
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/namespace"
 	"github.com/tggo/goRDFlib/term"
@@ -8,19 +10,21 @@ import (
 
 // RDFSClosure applies RDFS closure rules to the graph, adding inferred triples.
 // Implements rules rdfs2, rdfs3, rdfs5, rdfs7, rdfs9, rdfs11.
-// Returns the total number of triples added.
+// Returns the total number of triples added; a store error or a done context
+// ends the closure early and is returned (the triples added so far stay).
 //
 // Not safe for concurrent use.
-func RDFSClosure(g *graph.Graph) int {
-	e := newRDFSEngine(g, nil)
-	return e.run()
+func RDFSClosure(ctx context.Context, g *graph.Graph) (int, error) {
+	stop := newStopper(ctx)
+	n := newRDFSEngine(g, stop).run()
+	return n, stop.failure()
 }
 
 // rdfsEngine holds schema indexes and dedup state for RDFS closure computation.
 type rdfsEngine struct {
 	g    *graph.Graph
 	ded  *dedupSet
-	stop *stopper // nil never stops
+	stop *stopper
 
 	// Schema indexes.
 	//
@@ -39,14 +43,14 @@ type rdfsEngine struct {
 func newRDFSEngine(g *graph.Graph, stop *stopper) *rdfsEngine {
 	return &rdfsEngine{
 		g:    g,
-		ded:  newDedupSet(g.Len()),
+		ded:  newDedupSet(stop.length(g)),
 		stop: stop,
 	}
 }
 
 func (e *rdfsEngine) run() int {
 	// Build existing set from all triples
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		e.ded.addNew(t.Subject, t.Predicate, t.Object)
 		return true
 	})
@@ -76,7 +80,10 @@ func (e *rdfsEngine) run() int {
 			if e.stop.tick() {
 				return totalAdded + i
 			}
-			e.g.Add(t.Subject, t.Predicate, t.Object)
+			e.stop.add(e.g, t.Subject, t.Predicate, t.Object)
+			if e.stop.halted() {
+				return totalAdded + i
+			}
 			pk := term.TermKey(t.Predicate)
 			if pk == term.TermKey(namespace.RDFS.SubClassOf) ||
 				pk == term.TermKey(namespace.RDFS.SubPropertyOf) ||
@@ -107,7 +114,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 	subClassPred := namespace.RDFS.SubClassOf
 	subPropPred := namespace.RDFS.SubPropertyOf
 
-	e.g.Triples(nil, &domainPred, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &domainPred, nil, func(t term.Triple) bool {
 		if c, ok := t.Object.(term.Subject); ok {
 			pk := term.TermKey(t.Subject)
 			e.domains[pk] = append(e.domains[pk], c)
@@ -115,7 +122,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 		return true
 	})
 
-	e.g.Triples(nil, &rangePred, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &rangePred, nil, func(t term.Triple) bool {
 		if c, ok := t.Object.(term.Subject); ok {
 			pk := term.TermKey(t.Subject)
 			e.ranges[pk] = append(e.ranges[pk], c)
@@ -123,7 +130,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 		return true
 	})
 
-	e.g.Triples(nil, &subClassPred, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &subClassPred, nil, func(t term.Triple) bool {
 		if c, ok := t.Object.(term.Subject); ok {
 			sk := term.TermKey(t.Subject)
 			e.subClassOf[sk] = append(e.subClassOf[sk], c)
@@ -131,7 +138,7 @@ func (e *rdfsEngine) buildSchemaIndexes() {
 		return true
 	})
 
-	e.g.Triples(nil, &subPropPred, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, &subPropPred, nil, func(t term.Triple) bool {
 		if c, ok := t.Object.(term.URIRef); ok {
 			sk := term.TermKey(t.Subject)
 			e.subPropOf[sk] = append(e.subPropOf[sk], c)
@@ -191,7 +198,7 @@ func (e *rdfsEngine) applyRules() []term.Triple {
 		}
 	}
 
-	e.g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	e.stop.triples(e.g, nil, nil, nil, func(t term.Triple) bool {
 		if e.stop.tick() {
 			return false
 		}

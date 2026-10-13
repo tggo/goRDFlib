@@ -28,7 +28,7 @@ ex:w a ex:Widget .
 func issue21Graph(t *testing.T) *rdflibgo.Graph {
 	t.Helper()
 	g := rdflibgo.NewGraph()
-	if err := turtle.Parse(g, strings.NewReader(issue21Data)); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(issue21Data)); err != nil {
 		t.Fatal(err)
 	}
 	return g

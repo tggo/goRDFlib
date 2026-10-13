@@ -53,7 +53,7 @@ ex:Shape%d a sh:NodeShape ;
 				nodesPerShape := tc.numNodes / tc.numShapes
 				for j := 0; j < nodesPerShape; j++ {
 					node := IRI(fmt.Sprintf("http://example.org/inst_%d_%d", i, j))
-					dataGraph.Add(node, typePred, cls)
+					dataGraph.Add(b.Context(), node, typePred, cls)
 				}
 			}
 
@@ -69,8 +69,8 @@ func BenchmarkEvalPath_Predicate(b *testing.B) {
 	g := NewGraph()
 	pred := IRI(ex + "name")
 	focus := IRI(ex + "node0")
-	g.Add(focus, pred, Literal("Alice", "", ""))
-	g.Add(focus, pred, Literal("Bob", "", ""))
+	g.Add(b.Context(), focus, pred, Literal("Alice", "", ""))
+	g.Add(b.Context(), focus, pred, Literal("Bob", "", ""))
 
 	path := &PropertyPath{Kind: PathPredicate, Pred: pred}
 	b.ResetTimer()
@@ -87,7 +87,7 @@ func BenchmarkEvalPath_TransitiveClose(b *testing.B) {
 			for i := 0; i < chainLen; i++ {
 				from := IRI(fmt.Sprintf("%snode%d", ex, i))
 				to := IRI(fmt.Sprintf("%snode%d", ex, i+1))
-				g.Add(from, pred, to)
+				g.Add(b.Context(), from, pred, to)
 			}
 
 			path := &PropertyPath{

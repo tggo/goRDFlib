@@ -7,6 +7,7 @@ import (
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/paths"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
@@ -92,7 +93,7 @@ func TestInvPathObjNonSubject(t *testing.T) {
 	a, _ := term.NewURIRef("http://example.org/a")
 	p, _ := term.NewURIRef("http://example.org/p")
 	lit := term.NewLiteral("hello")
-	g.Add(a, p, lit)
+	g.Add(t.Context(), a, p, lit)
 
 	inv := paths.Inv(paths.AsPath(p))
 	// obj = literal (not a Subject), so inner Eval gets nil subj; but we pass nil as subj and literal as obj
@@ -149,7 +150,7 @@ func TestSequencePathMidNonSubject(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	q, _ := term.NewURIRef("http://example.org/q")
 	lit := term.NewLiteral("hello")
-	g.Add(a, p, lit) // a -p-> "hello" (literal, not Subject)
+	g.Add(t.Context(), a, p, lit) // a -p-> "hello" (literal, not Subject)
 	// No triple with "hello" as subject, so sequence should yield nothing
 
 	path := paths.Sequence(paths.AsPath(p), paths.AsPath(q))
@@ -180,7 +181,7 @@ func TestAlternativePathEarlyTermination(t *testing.T) {
 
 	path := paths.Alternative(paths.AsPath(p), paths.AsPath(q))
 	count := 0
-	path.Eval(g, a, nil)(func(s, o term.Term) bool {
+	path.Eval(t.Context(), g, a, nil)(func(pair_ store.TermPair, _ error) bool {
 		count++
 		return false // stop after first
 	})
@@ -306,7 +307,7 @@ func TestMulPathEarlyTermination(t *testing.T) {
 
 	path := paths.ZeroOrMore(paths.AsPath(p))
 	count := 0
-	path.Eval(g, a, nil)(func(s, o term.Term) bool {
+	path.Eval(t.Context(), g, a, nil)(func(pair_ store.TermPair, _ error) bool {
 		count++
 		return false // stop after first
 	})
@@ -321,7 +322,7 @@ func TestMulPathEarlyTerminationNoConstraints(t *testing.T) {
 
 	path := paths.ZeroOrMore(paths.AsPath(p))
 	count := 0
-	path.Eval(g, nil, nil)(func(s, o term.Term) bool {
+	path.Eval(t.Context(), g, nil, nil)(func(pair_ store.TermPair, _ error) bool {
 		count++
 		return false
 	})
@@ -365,8 +366,8 @@ func TestMulPathBackwardCycle(t *testing.T) {
 	a, _ := term.NewURIRef("http://example.org/a")
 	b, _ := term.NewURIRef("http://example.org/b")
 	p, _ := term.NewURIRef("http://example.org/p")
-	g.Add(a, p, b)
-	g.Add(b, p, a) // cycle
+	g.Add(t.Context(), a, p, b)
+	g.Add(t.Context(), b, p, a) // cycle
 
 	path := paths.ZeroOrMore(paths.AsPath(p))
 	pairs := collectPairs(g, path, nil, a)
@@ -391,7 +392,7 @@ func TestPathStringIndirect(t *testing.T) {
 	g := graph.NewGraph()
 	a, _ := term.NewURIRef("http://example.org/a")
 	b, _ := term.NewURIRef("http://example.org/b")
-	g.Add(a, p, b)
+	g.Add(t.Context(), a, p, b)
 
 	// Wrap each path type inside ZeroOrMore which requires inner.Eval, not pathString.
 	// To cover pathString we need to call it. Since it's unexported, we can only reach

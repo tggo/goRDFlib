@@ -19,11 +19,11 @@ func TestGraphSubjectsDedup(t *testing.T) {
 	p1, _ := NewURIRef("http://example.org/p1")
 	p2, _ := NewURIRef("http://example.org/p2")
 	o, _ := NewURIRef("http://example.org/o")
-	g.Add(s, p1, o)
-	g.Add(s, p2, o)
+	g.Add(t.Context(), s, p1, o)
+	g.Add(t.Context(), s, p2, o)
 
 	count := 0
-	g.Subjects(nil, o)(func(Term) bool { count++; return true })
+	g.Subjects(t.Context(), nil, o)(func(Term, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 unique subject, got %d", count)
 	}
@@ -35,11 +35,11 @@ func TestGraphPredicatesDedup(t *testing.T) {
 	s2, _ := NewURIRef("http://example.org/s2")
 	p, _ := NewURIRef("http://example.org/p")
 	o, _ := NewURIRef("http://example.org/o")
-	g.Add(s1, p, o)
-	g.Add(s2, p, o)
+	g.Add(t.Context(), s1, p, o)
+	g.Add(t.Context(), s2, p, o)
 
 	count := 0
-	g.Predicates(nil, o)(func(Term) bool { count++; return true })
+	g.Predicates(t.Context(), nil, o)(func(Term, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 unique predicate, got %d", count)
 	}
@@ -51,11 +51,11 @@ func TestGraphObjectsDedup(t *testing.T) {
 	p1, _ := NewURIRef("http://example.org/p1")
 	p2, _ := NewURIRef("http://example.org/p2")
 	o, _ := NewURIRef("http://example.org/o")
-	g.Add(s, p1, o)
-	g.Add(s, p2, o)
+	g.Add(t.Context(), s, p1, o)
+	g.Add(t.Context(), s, p2, o)
 
 	count := 0
-	g.Objects(s, nil)(func(Term) bool { count++; return true })
+	g.Objects(t.Context(), s, nil)(func(Term, error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1 unique object, got %d", count)
 	}
@@ -65,11 +65,11 @@ func TestGraphSubjectPredicatesDedup(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("a"))
-	g.Add(s, p, NewLiteral("b"))
+	g.Add(t.Context(), s, p, NewLiteral("a"))
+	g.Add(t.Context(), s, p, NewLiteral("b"))
 
 	count := 0
-	g.SubjectPredicates(nil)(func(Term, Term) bool { count++; return true })
+	g.SubjectPredicates(t.Context(), nil)(func(pair_ TermPair, _ error) bool { count++; return true })
 	if count < 1 {
 		t.Errorf("expected >=1, got %d", count)
 	}
@@ -79,10 +79,10 @@ func TestGraphSubjectObjectsDedup(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("a"))
+	g.Add(t.Context(), s, p, NewLiteral("a"))
 
 	count := 0
-	g.SubjectObjects(nil)(func(Term, Term) bool { count++; return true })
+	g.SubjectObjects(t.Context(), nil)(func(pair_ TermPair, _ error) bool { count++; return true })
 	if count < 1 {
 		t.Errorf("expected >=1, got %d", count)
 	}
@@ -92,11 +92,11 @@ func TestGraphPredicateObjectsDedup(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("a"))
-	g.Add(s, p, NewLiteral("b"))
+	g.Add(t.Context(), s, p, NewLiteral("a"))
+	g.Add(t.Context(), s, p, NewLiteral("b"))
 
 	count := 0
-	g.PredicateObjects(s)(func(Term, Term) bool { count++; return true })
+	g.PredicateObjects(t.Context(), s)(func(pair_ TermPair, _ error) bool { count++; return true })
 	if count != 2 {
 		t.Errorf("expected 2, got %d", count)
 	}
@@ -133,11 +133,11 @@ func TestLiteralEqFloat32(t *testing.T) {
 func TestCollectionAppendMultiple(t *testing.T) {
 	g := NewGraph()
 	col := NewEmptyCollection(g)
-	col.Append(NewLiteral("a"))
-	col.Append(NewLiteral("b"))
-	col.Append(NewLiteral("c"))
+	col.Append(t.Context(), NewLiteral("a"))
+	col.Append(t.Context(), NewLiteral("b"))
+	col.Append(t.Context(), NewLiteral("c"))
 
-	if v, ok := col.Get(2); !ok || v.String() != "c" {
+	if v, ok, _ := col.Get(t.Context(), 2); !ok || v.String() != "c" {
 		t.Errorf("expected c at index 2, got %v", v)
 	}
 }
@@ -149,9 +149,9 @@ func TestNSManagerBindNoOverride(t *testing.T) {
 	mgr := NewNSManager(store)
 	ns1, _ := NewURIRef("http://example.org/")
 	ns2, _ := NewURIRef("http://other.org/")
-	mgr.Bind("ex", ns1, true)
-	mgr.Bind("ex", ns2, false) // should not override
-	got, _ := store.Namespace("ex")
+	mgr.Bind(t.Context(), "ex", ns1, true)
+	mgr.Bind(t.Context(), "ex", ns2, false) // should not override
+	got, _, _ := store.Namespace(t.Context(), "ex")
 	if got != ns1 {
 		t.Error("should not have overridden")
 	}
@@ -159,7 +159,7 @@ func TestNSManagerBindNoOverride(t *testing.T) {
 
 func TestNSManagerPrefix(t *testing.T) {
 	store := NewMemoryStore()
-	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	store.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
 
 	p, ok := mgr.Prefix("http://example.org/Thing")
@@ -175,11 +175,11 @@ func TestNSManagerPrefix(t *testing.T) {
 
 func TestNSManagerComputeQNameCache(t *testing.T) {
 	store := NewMemoryStore()
-	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	store.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
 
-	p1, _, l1, _ := mgr.ComputeQName("http://example.org/Thing")
-	p2, _, l2, _ := mgr.ComputeQName("http://example.org/Thing")
+	p1, _, l1, _ := mgr.ComputeQName(t.Context(), "http://example.org/Thing")
+	p2, _, l2, _ := mgr.ComputeQName(t.Context(), "http://example.org/Thing")
 	if p1 != p2 || l1 != l2 {
 		t.Error("cached result should match")
 	}
@@ -188,7 +188,7 @@ func TestNSManagerComputeQNameCache(t *testing.T) {
 func TestNSManagerComputeQNameError(t *testing.T) {
 	store := NewMemoryStore()
 	mgr := NewNSManager(store)
-	_, _, _, err := mgr.ComputeQName("noseparator")
+	_, _, _, err := mgr.ComputeQName(t.Context(), "noseparator")
 	if err == nil {
 		t.Error("expected error for URI without # or /")
 	}
@@ -196,10 +196,10 @@ func TestNSManagerComputeQNameError(t *testing.T) {
 
 func TestNamespaceManagerNamespaces95(t *testing.T) {
 	store := NewMemoryStore()
-	store.Bind("ex", NewURIRefUnsafe("http://example.org/"))
+	store.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
 	mgr := NewNSManager(store)
 	count := 0
-	mgr.Namespaces()(func(string, URIRef) bool { count++; return true })
+	mgr.Namespaces(t.Context())(func(pair_ NamespaceBinding, _ error) bool { count++; return true })
 	if count != 1 {
 		t.Errorf("expected 1, got %d", count)
 	}
@@ -209,12 +209,12 @@ func TestNamespaceManagerNamespaces95(t *testing.T) {
 
 func TestNTParserEmpty(t *testing.T) {
 	g := NewGraph()
-	err := nt.Parse(g, strings.NewReader(""))
+	err := nt.Parse(t.Context(), g, strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 0 {
-		t.Errorf("expected 0, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected 0, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -222,12 +222,12 @@ func TestNTParserEmpty(t *testing.T) {
 
 func TestNTParserIRIEscape(t *testing.T) {
 	g := NewGraph()
-	err := nt.Parse(g, strings.NewReader("<http://example.org/\\u0041> <http://example.org/p> \"v\" .\n"))
+	err := nt.Parse(t.Context(), g, strings.NewReader("<http://example.org/\\u0041> <http://example.org/p> \"v\" .\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -235,7 +235,7 @@ func TestNTParserIRIEscape(t *testing.T) {
 
 func TestNQParserErrorBadPredicate(t *testing.T) {
 	g := NewGraph()
-	err := nq.Parse(g, strings.NewReader(`<http://s> "bad" "hello" .`+"\n"))
+	err := nq.Parse(t.Context(), g, strings.NewReader(`<http://s> "bad" "hello" .`+"\n"))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -251,9 +251,9 @@ func TestRDFXMLParserEmptyCollection(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() < 1 {
-		t.Errorf("expected >=1, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) < 1 {
+		t.Errorf("expected >=1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -261,12 +261,12 @@ func TestRDFXMLParserEmptyCollection(t *testing.T) {
 
 func TestJSONLDParserEmptyDoc(t *testing.T) {
 	g := NewGraph()
-	err := jsonld.Parse(g, strings.NewReader(`{}`))
+	err := jsonld.Parse(t.Context(), g, strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 0 {
-		t.Errorf("expected 0, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 0 {
+		t.Errorf("expected 0, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -276,10 +276,10 @@ func TestJSONLDSerializerNoNamespaces(t *testing.T) {
 	g := NewGraph(WithStore(NewMemoryStore()))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("v"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 
 	var buf strings.Builder
-	err := jsonld.Serialize(g, &buf)
+	err := jsonld.Serialize(t.Context(), g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,11 +296,11 @@ func TestMemoryStoreTriplesPredObject(t *testing.T) {
 	s2, _ := NewURIRef("http://example.org/s2")
 	p, _ := NewURIRef("http://example.org/p")
 	o := NewLiteral("v")
-	s.Add(Triple{Subject: s1, Predicate: p, Object: o}, nil)
-	s.Add(Triple{Subject: s2, Predicate: p, Object: o}, nil)
+	s.Add(t.Context(), Triple{Subject: s1, Predicate: p, Object: o}, nil)
+	s.Add(t.Context(), Triple{Subject: s2, Predicate: p, Object: o}, nil)
 
 	count := 0
-	s.Triples(TriplePattern{Predicate: &p, Object: o}, nil)(func(Triple) bool {
+	s.Triples(t.Context(), TriplePattern{Predicate: &p, Object: o}, nil)(func(Triple, error) bool {
 		count++
 		return true
 	})
@@ -315,11 +315,11 @@ func TestMemoryStoreTripleSubjectObject(t *testing.T) {
 	p1, _ := NewURIRef("http://example.org/p1")
 	p2, _ := NewURIRef("http://example.org/p2")
 	o := NewLiteral("v")
-	s.Add(Triple{Subject: sub, Predicate: p1, Object: o}, nil)
-	s.Add(Triple{Subject: sub, Predicate: p2, Object: o}, nil)
+	s.Add(t.Context(), Triple{Subject: sub, Predicate: p1, Object: o}, nil)
+	s.Add(t.Context(), Triple{Subject: sub, Predicate: p2, Object: o}, nil)
 
 	count := 0
-	s.Triples(TriplePattern{Subject: sub, Object: o}, nil)(func(Triple) bool {
+	s.Triples(t.Context(), TriplePattern{Subject: sub, Object: o}, nil)(func(Triple, error) bool {
 		count++
 		return true
 	})

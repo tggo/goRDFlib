@@ -3,7 +3,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 
@@ -12,8 +14,15 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	g := rdf.NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	if err := turtle.Parse(ctx, g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 
 		ex:person ex:parent ex:mom .
@@ -22,7 +31,9 @@ func main() {
 		ex:mom ex:parent ex:gp1 .
 		ex:dad ex:parent ex:gm2 .
 		ex:dad ex:parent ex:gp2 .
-	`))
+	`)); err != nil {
+		return err
+	}
 
 	person, _ := rdf.NewURIRef("http://example.org/person")
 	parent, _ := rdf.NewURIRef("http://example.org/parent")
@@ -30,24 +41,39 @@ func main() {
 
 	// Transitive objects: all ancestors of person (parent+)
 	fmt.Println("All ancestors of person (parent+):")
-	printSorted(collectNames(g, rdf.OneOrMore(rdf.AsPath(parent)), person, nil))
+	names, err := collectNames(ctx, g, rdf.OneOrMore(rdf.AsPath(parent)), person, nil)
+	if err != nil {
+		return err
+	}
+	printSorted(names)
 
 	// Transitive subjects: all descendants of gm1 (^parent+)
 	fmt.Println("\nAll descendants of gm1 (^parent+):")
-	printSorted(collectNames(g, rdf.OneOrMore(rdf.Inv(rdf.AsPath(parent))), gm1, nil))
+	names, err = collectNames(ctx, g, rdf.OneOrMore(rdf.Inv(rdf.AsPath(parent))), gm1, nil)
+	if err != nil {
+		return err
+	}
+	printSorted(names)
 
 	// ZeroOrMore: ancestors including self (parent*)
 	fmt.Println("\nAncestors including self (parent*):")
-	printSorted(collectNames(g, rdf.ZeroOrMore(rdf.AsPath(parent)), person, nil))
+	names, err = collectNames(ctx, g, rdf.ZeroOrMore(rdf.AsPath(parent)), person, nil)
+	if err != nil {
+		return err
+	}
+	printSorted(names)
+	return nil
 }
 
-func collectNames(g *rdf.Graph, path rdf.Path, subj rdf.Subject, obj rdf.Term) []string {
+func collectNames(ctx context.Context, g *rdf.Graph, path rdf.Path, subj rdf.Subject, obj rdf.Term) ([]string, error) {
 	var names []string
-	path.Eval(g, subj, obj)(func(s, o rdf.Term) bool {
-		names = append(names, localName(o))
-		return true
-	})
-	return names
+	for pair, err := range path.Eval(ctx, g, subj, obj) {
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, localName(pair.Second))
+	}
+	return names, nil
 }
 
 func printSorted(names []string) {

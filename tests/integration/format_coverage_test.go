@@ -18,10 +18,10 @@ func TestNTParserUnicodeEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "\u0041BC" .
 `
 	g := NewGraph()
-	nt.Parse(g, strings.NewReader(input))
+	nt.Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	val, ok := g.Value(s, &p, nil)
+	val, ok, _ := g.Value(t.Context(), s, &p, nil)
 	if !ok || val.String() != "ABC" {
 		t.Errorf("expected ABC, got %v", val)
 	}
@@ -31,9 +31,9 @@ func TestNTParserBNodeObject(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> _:b1 .
 `
 	g := NewGraph()
-	nt.Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	nt.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -41,7 +41,7 @@ func TestNTParserErrorMissingDot(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello"
 `
 	g := NewGraph()
-	err := nt.Parse(g, strings.NewReader(input))
+	err := nt.Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for missing dot")
 	}
@@ -51,7 +51,7 @@ func TestNTParserErrorBadSubject(t *testing.T) {
 	input := `"literal" <http://example.org/p> "hello" .
 `
 	g := NewGraph()
-	err := nt.Parse(g, strings.NewReader(input))
+	err := nt.Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for literal as subject")
 	}
@@ -61,7 +61,7 @@ func TestNTParserErrorBadObject(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> .
 `
 	g := NewGraph()
-	err := nt.Parse(g, strings.NewReader(input))
+	err := nt.Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -71,7 +71,7 @@ func TestNTParserErrorBadPredicate(t *testing.T) {
 	input := `<http://example.org/s> "notiri" "hello" .
 `
 	g := NewGraph()
-	err := nt.Parse(g, strings.NewReader(input))
+	err := nt.Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for literal as predicate")
 	}
@@ -83,9 +83,9 @@ func TestNTSerializerBNode(t *testing.T) {
 	g := NewGraph()
 	b := NewBNode("b1")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(b, p, NewLiteral("v"))
+	g.Add(t.Context(), b, p, NewLiteral("v"))
 	var buf strings.Builder
-	nt.Serialize(g, &buf)
+	nt.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "_:b1") {
 		t.Errorf("expected _:b1, got:\n%s", buf.String())
 	}
@@ -95,9 +95,9 @@ func TestNTSerializerUnicodeEscape(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("a\x01b"))
+	g.Add(t.Context(), s, p, NewLiteral("a\x01b"))
 	var buf strings.Builder
-	nt.Serialize(g, &buf)
+	nt.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), `\u0001`) {
 		t.Errorf("expected unicode escape, got:\n%s", buf.String())
 	}
@@ -109,12 +109,12 @@ func TestNQParserBNodeGraph(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello" _:g1 .
 `
 	g := NewGraph()
-	err := nq.Parse(g, strings.NewReader(input))
+	err := nq.Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -123,9 +123,9 @@ func TestNQSerializerWithURIRefIdentifier(t *testing.T) {
 	g := NewGraph(WithIdentifier(id))
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("v"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 	var buf strings.Builder
-	nq.Serialize(g, &buf)
+	nq.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "<http://example.org/g>") {
 		t.Errorf("expected graph context, got:\n%s", buf.String())
 	}
@@ -145,9 +145,9 @@ func TestRDFXMLParserMultipleSubjects(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -164,9 +164,9 @@ func TestRDFXMLParserNestedDescription(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -177,9 +177,9 @@ func TestRDFXMLParserPropertyAttributes(t *testing.T) {
   <rdf:Description rdf:about="http://example.org/s" ex:name="Alice"/>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -190,10 +190,10 @@ func TestRDFXMLParserRDFTypeAttribute(t *testing.T) {
   <rdf:Description rdf:about="http://example.org/s" rdf:type="http://example.org/Person"/>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
 	s, _ := NewURIRef("http://example.org/s")
 	person, _ := NewURIRef("http://example.org/Person")
-	if !g.Contains(s, RDF.Type, person) {
+	if !mustV(g.Contains(t.Context(), s, RDF.Type, person)) {
 		t.Error("expected rdf:type triple")
 	}
 }
@@ -210,12 +210,12 @@ func TestRDFXMLParserCollection(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	err := rdfxml.Parse(g, strings.NewReader(input))
+	err := rdfxml.Parse(t.Context(), g, strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() < 5 {
-		t.Errorf("expected >=5, got %d", g.Len())
+	if mustV(g.Len(t.Context())) < 5 {
+		t.Errorf("expected >=5, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -229,15 +229,15 @@ func TestRDFXMLParserXMLBase(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestRDFXMLParserEmptyInput(t *testing.T) {
 	g := NewGraph()
-	err := rdfxml.Parse(g, strings.NewReader(""))
+	err := rdfxml.Parse(t.Context(), g, strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,9 +253,9 @@ func TestRDFXMLParserRDFID(t *testing.T) {
   </rdf:Description>
 </rdf:RDF>`
 	g := NewGraph()
-	rdfxml.Parse(g, strings.NewReader(input))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	rdfxml.Parse(t.Context(), g, strings.NewReader(input))
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -263,7 +263,7 @@ func TestRDFXMLParserRDFID(t *testing.T) {
 
 func TestTurtleParserEmptyInput(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader(""))
+	err := turtle.Parse(t.Context(), g, strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,86 +271,86 @@ func TestTurtleParserEmptyInput(t *testing.T) {
 
 func TestTurtleParserSingleQuotedString(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p 'hello' .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserDatatypeIRI(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p "42"^^<http://www.w3.org/2001/XMLSchema#integer> .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserSubjectAsBlankNodePropertyList(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		[ ex:name "Alice" ] ex:age 30 .
 	`))
-	if g.Len() != 2 {
-		t.Errorf("expected 2, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 2 {
+		t.Errorf("expected 2, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserSubjectAsCollection(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		( "a" "b" ) ex:type ex:List .
 	`))
-	if g.Len() < 3 {
-		t.Errorf("expected >=3, got %d", g.Len())
+	if mustV(g.Len(t.Context())) < 3 {
+		t.Errorf("expected >=3, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserNegativeNumeric(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:val -5 .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserDecimalNoDot(t *testing.T) {
 	g := NewGraph()
-	err := turtle.Parse(g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p .5 .`))
+	err := turtle.Parse(t.Context(), g, strings.NewReader(`@prefix ex: <http://example.org/> . ex:s ex:p .5 .`))
 	_ = err
 	_ = g
 }
 
 func TestTurtleParserEmptyBlankNode(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@prefix ex: <http://example.org/> .
 		ex:s ex:p [] .
 	`))
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
 func TestTurtleParserBaseResolution(t *testing.T) {
 	g := NewGraph()
-	turtle.Parse(g, strings.NewReader(`
+	turtle.Parse(t.Context(), g, strings.NewReader(`
 		@base <http://example.org/dir/> .
 		<file> <prop> "val" .
 	`))
 	s, _ := NewURIRef("http://example.org/dir/file")
 	p, _ := NewURIRef("http://example.org/dir/prop")
-	if !g.Contains(s, p, NewLiteral("val")) {
+	if !mustV(g.Contains(t.Context(), s, p, NewLiteral("val"))) {
 		t.Error("expected resolved triple")
 	}
 }
@@ -361,10 +361,10 @@ func TestRDFXMLSerializerLang(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, NewLiteral("hello", WithLang("en")))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, NewLiteral("hello", WithLang("en")))
 	var buf strings.Builder
-	rdfxml.Serialize(g, &buf)
+	rdfxml.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), `xml:lang="en"`) {
 		t.Errorf("expected xml:lang, got:\n%s", buf.String())
 	}
@@ -374,10 +374,10 @@ func TestRDFXMLSerializerDatatype(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, NewLiteral("42", WithDatatype(XSDInteger)))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, NewLiteral("42", WithDatatype(XSDInteger)))
 	var buf strings.Builder
-	rdfxml.Serialize(g, &buf)
+	rdfxml.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "rdf:datatype") {
 		t.Errorf("expected rdf:datatype, got:\n%s", buf.String())
 	}
@@ -387,10 +387,10 @@ func TestRDFXMLSerializerBNode(t *testing.T) {
 	g := NewGraph()
 	b := NewBNode("b1")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(b, p, NewLiteral("v"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), b, p, NewLiteral("v"))
 	var buf strings.Builder
-	rdfxml.Serialize(g, &buf)
+	rdfxml.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "rdf:nodeID") {
 		t.Errorf("expected rdf:nodeID, got:\n%s", buf.String())
 	}
@@ -401,10 +401,10 @@ func TestRDFXMLSerializerResourceObject(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	o, _ := NewURIRef("http://example.org/o")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, o)
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, o)
 	var buf strings.Builder
-	rdfxml.Serialize(g, &buf)
+	rdfxml.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "rdf:resource") {
 		t.Errorf("expected rdf:resource, got:\n%s", buf.String())
 	}
@@ -415,10 +415,10 @@ func TestRDFXMLSerializerBNodeObject(t *testing.T) {
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
 	b := NewBNode("obj1")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(s, p, b)
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), s, p, b)
 	var buf strings.Builder
-	rdfxml.Serialize(g, &buf)
+	rdfxml.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "rdf:nodeID") {
 		t.Errorf("expected rdf:nodeID, got:\n%s", buf.String())
 	}
@@ -428,9 +428,9 @@ func TestRDFXMLSerializerBase(t *testing.T) {
 	g := NewGraph()
 	s, _ := NewURIRef("http://example.org/s")
 	p, _ := NewURIRef("http://example.org/p")
-	g.Add(s, p, NewLiteral("v"))
+	g.Add(t.Context(), s, p, NewLiteral("v"))
 	var buf strings.Builder
-	rdfxml.Serialize(g, &buf, rdfxml.WithBase("http://example.org/"))
+	rdfxml.Serialize(t.Context(), g, &buf, rdfxml.WithBase("http://example.org/"))
 	if !strings.Contains(buf.String(), `xml:base="http://example.org/"`) {
 		t.Errorf("expected xml:base, got:\n%s", buf.String())
 	}
@@ -440,7 +440,7 @@ func TestRDFXMLSerializerBase(t *testing.T) {
 
 func TestJSONLDParserInvalidJSON(t *testing.T) {
 	g := NewGraph()
-	err := jsonld.Parse(g, strings.NewReader("not json"))
+	err := jsonld.Parse(t.Context(), g, strings.NewReader("not json"))
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -451,7 +451,7 @@ func TestJSONLDParserInvalidJSON(t *testing.T) {
 func TestTurtleSerializerEmpty(t *testing.T) {
 	g := NewGraph()
 	var buf strings.Builder
-	err := turtle.Serialize(g, &buf)
+	err := turtle.Serialize(t.Context(), g, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,10 +461,10 @@ func TestTurtleSerializerBNodeSubjectNotReferenced(t *testing.T) {
 	g := NewGraph()
 	b := NewBNode()
 	p, _ := NewURIRef("http://example.org/p")
-	g.Bind("ex", NewURIRefUnsafe("http://example.org/"))
-	g.Add(b, p, NewLiteral("v"))
+	g.Bind(t.Context(), "ex", NewURIRefUnsafe("http://example.org/"))
+	g.Add(t.Context(), b, p, NewLiteral("v"))
 	var buf strings.Builder
-	turtle.Serialize(g, &buf)
+	turtle.Serialize(t.Context(), g, &buf)
 	if !strings.Contains(buf.String(), "[]") {
 		t.Errorf("expected [] for unreferenced BNode, got:\n%s", buf.String())
 	}

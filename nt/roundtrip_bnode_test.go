@@ -24,17 +24,17 @@ func TestBlankNodeLabelsStableAcrossRoundtrips(t *testing.T) {
 	}
 	codecs := []codec{
 		{"nt",
-			func(g *rdflibgo.Graph, s string) error { return nt.Parse(g, strings.NewReader(s)) },
+			func(g *rdflibgo.Graph, s string) error { return nt.Parse(t.Context(), g, strings.NewReader(s)) },
 			func(g *rdflibgo.Graph) (string, error) {
 				var b strings.Builder
-				err := nt.Serialize(g, &b)
+				err := nt.Serialize(t.Context(), g, &b)
 				return b.String(), err
 			}},
 		{"turtle",
-			func(g *rdflibgo.Graph, s string) error { return turtle.Parse(g, strings.NewReader(s)) },
+			func(g *rdflibgo.Graph, s string) error { return turtle.Parse(t.Context(), g, strings.NewReader(s)) },
 			func(g *rdflibgo.Graph) (string, error) {
 				var b strings.Builder
-				err := turtle.Serialize(g, &b)
+				err := turtle.Serialize(t.Context(), g, &b)
 				return b.String(), err
 			}},
 	}
@@ -46,10 +46,10 @@ func TestBlankNodeLabelsStableAcrossRoundtrips(t *testing.T) {
 				if err := c.parse(g, doc); err != nil {
 					t.Fatalf("hop %d: %v", hop, err)
 				}
-				if g.Len() != 3 {
-					t.Fatalf("hop %d: %d triples, want 3", hop, g.Len())
+				if mustV(g.Len(t.Context())) != 3 {
+					t.Fatalf("hop %d: %d triples, want 3", hop, mustV(g.Len(t.Context())))
 				}
-				for tr := range g.Triples(nil, nil, nil) {
+				for tr := range g.Triples(t.Context(), nil, nil, nil) {
 					for _, node := range []rdflibgo.Term{tr.Subject, tr.Object} {
 						if bn, ok := node.(rdflibgo.BNode); ok && len(bn.Value()) != width {
 							t.Fatalf("hop %d: blank node label %q is %d bytes, want %d — labels are growing per hop", hop, bn.Value(), len(bn.Value()), width)

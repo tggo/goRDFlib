@@ -31,7 +31,7 @@ func TestBlankNodeParseScope(t *testing.T) {
 			calls := 0
 			opts := []rdfxml.Option{rdfxml.WithProvenance(func(s term.Subject, p term.URIRef, o term.Term, line int) {
 				calls++
-				if !g.Contains(s, p, o) {
+				if !mustV(g.Contains(t.Context(), s, p, o)) {
 					t.Error("callback terms do not identify an inserted triple")
 				}
 				want := 4
@@ -52,7 +52,7 @@ func TestBlankNodeParseScope(t *testing.T) {
 				opts = append(opts, rdfxml.WithPreserveBlankNodeIDs())
 			}
 			for i := 0; i < 2; i++ {
-				if err := rdfxml.Parse(g, strings.NewReader(doc), opts...); err != nil {
+				if err := rdfxml.Parse(t.Context(), g, strings.NewReader(doc), opts...); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -60,10 +60,10 @@ func TestBlankNodeParseScope(t *testing.T) {
 			if preserve {
 				want = 4 // The labelled triples merge, but anonymous nodes stay separate.
 			}
-			if g.Len() != want || idx.Len() != want || calls != 6 {
-				t.Fatalf("graph/index/callback counts = %d/%d/%d, want %d/%d/6", g.Len(), idx.Len(), calls, want, want)
+			if mustV(g.Len(t.Context())) != want || idx.Len() != want || calls != 6 {
+				t.Fatalf("graph/index/callback counts = %d/%d/%d, want %d/%d/6", mustV(g.Len(t.Context())), idx.Len(), calls, want, want)
 			}
-			if got := g.Contains(term.NewBNode("shared"), ex("self"), term.NewBNode("shared")); got != preserve {
+			if got, _ := g.Contains(t.Context(), term.NewBNode("shared"), ex("self"), term.NewBNode("shared")); got != preserve {
 				t.Errorf("raw source label present = %v, preserve = %v", got, preserve)
 			}
 		})
@@ -89,7 +89,7 @@ func TestBlankNodeScopeInTripleTermsAndAnnotations(t *testing.T) {
 			calls := 0
 			opts := []rdfxml.Option{rdfxml.WithProvenance(func(s term.Subject, p term.URIRef, o term.Term, line int) {
 				calls++
-				if !g.Contains(s, p, o) {
+				if !mustV(g.Contains(t.Context(), s, p, o)) {
 					t.Errorf("callback for a triple absent from the output: %s %s %s", s.N3(), p.N3(), o.N3())
 				}
 				want := 7
@@ -104,7 +104,7 @@ func TestBlankNodeScopeInTripleTermsAndAnnotations(t *testing.T) {
 				opts = append(opts, rdfxml.WithPreserveBlankNodeIDs())
 			}
 			for i := 0; i < 2; i++ {
-				if err := rdfxml.Parse(g, strings.NewReader(doc), opts...); err != nil {
+				if err := rdfxml.Parse(t.Context(), g, strings.NewReader(doc), opts...); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -112,10 +112,10 @@ func TestBlankNodeScopeInTripleTermsAndAnnotations(t *testing.T) {
 			if preserve {
 				want = 3
 			}
-			if g.Len() != want || calls != 6 {
-				t.Fatalf("graph/callback counts = %d/%d, want %d/6", g.Len(), calls, want)
+			if mustV(g.Len(t.Context())) != want || calls != 6 {
+				t.Fatalf("graph/callback counts = %d/%d, want %d/6", mustV(g.Len(t.Context())), calls, want)
 			}
-			g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+			g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 				if tr.Predicate == ex("claim") {
 					inner := term.NewTripleTerm(tr.Subject, ex("self"), tr.Subject)
 					if !tr.Object.Equal(inner) {
@@ -123,7 +123,7 @@ func TestBlankNodeScopeInTripleTermsAndAnnotations(t *testing.T) {
 					}
 					reifies := term.NewURIRefUnsafe("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies")
 					annotation := term.NewTripleTerm(tr.Subject, tr.Predicate, tr.Object)
-					if !g.Contains(tr.Subject, reifies, annotation) {
+					if !mustV(g.Contains(t.Context(), tr.Subject, reifies, annotation)) {
 						t.Error("annotation reifier uses a different blank-node identity")
 					}
 				}
@@ -137,7 +137,7 @@ func parseWithProvenance(t *testing.T, doc string) (*graph.Graph, *provenance.In
 	t.Helper()
 	g := graph.NewGraph()
 	idx := provenance.NewIndex()
-	if err := rdfxml.Parse(g, strings.NewReader(doc), rdfxml.WithProvenance(idx.Triple)); err != nil {
+	if err := rdfxml.Parse(t.Context(), g, strings.NewReader(doc), rdfxml.WithProvenance(idx.Triple)); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	return g, idx
@@ -256,13 +256,13 @@ func TestProvenanceIsOptIn(t *testing.T) {
 </rdf:RDF>
 `
 	plain := graph.NewGraph()
-	if err := rdfxml.Parse(plain, strings.NewReader(doc)); err != nil {
+	if err := rdfxml.Parse(t.Context(), plain, strings.NewReader(doc)); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	traced, _ := parseWithProvenance(t, doc)
 
-	if plain.Len() != traced.Len() {
-		t.Errorf("the option changed the graph: %d triples vs %d", plain.Len(), traced.Len())
+	if mustV(plain.Len(t.Context())) != mustV(traced.Len(t.Context())) {
+		t.Errorf("the option changed the graph: %d triples vs %d", mustV(plain.Len(t.Context())), mustV(traced.Len(t.Context())))
 	}
 }
 
@@ -290,7 +290,7 @@ func TestProvenanceEveryTripleIsReported(t *testing.T) {
 	g, idx := parseWithProvenance(t, doc)
 
 	missing := 0
-	g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+	g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 		if _, ok := idx.Line(tr.Subject, tr.Predicate, tr.Object); !ok {
 			t.Errorf("no line for %s %s %s", tr.Subject.N3(), tr.Predicate.N3(), tr.Object.N3())
 			missing++
@@ -298,9 +298,9 @@ func TestProvenanceEveryTripleIsReported(t *testing.T) {
 		return true
 	})
 	if missing > 0 {
-		t.Errorf("%d of %d triples were added without reporting a line", missing, g.Len())
+		t.Errorf("%d of %d triples were added without reporting a line", missing, mustV(g.Len(t.Context())))
 	}
-	if idx.Len() != g.Len() {
-		t.Errorf("index holds %d triples, graph holds %d", idx.Len(), g.Len())
+	if idx.Len() != mustV(g.Len(t.Context())) {
+		t.Errorf("index holds %d triples, graph holds %d", idx.Len(), mustV(g.Len(t.Context())))
 	}
 }

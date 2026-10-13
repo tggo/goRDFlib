@@ -28,7 +28,7 @@ func TestBlankNodeParseScope(t *testing.T) {
 			calls := 0
 			opts := []jsonld.Option{jsonld.WithProvenance(func(s term.Subject, p term.URIRef, o term.Term, line int) {
 				calls++
-				if !g.Contains(s, p, o) {
+				if !mustV(g.Contains(t.Context(), s, p, o)) {
 					t.Error("callback terms do not identify an inserted triple")
 				}
 				if !s.Equal(ex("root")) || line != 2 {
@@ -40,7 +40,7 @@ func TestBlankNodeParseScope(t *testing.T) {
 				opts = append(opts, jsonld.WithPreserveBlankNodeIDs())
 			}
 			for i := 0; i < 2; i++ {
-				if err := jsonld.Parse(g, strings.NewReader(doc), opts...); err != nil {
+				if err := jsonld.Parse(t.Context(), g, strings.NewReader(doc), opts...); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -48,13 +48,13 @@ func TestBlankNodeParseScope(t *testing.T) {
 			if preserve {
 				want = 3 // Compatibility preserves even the expander's anonymous labels.
 			}
-			if g.Len() != want || calls != 2 || idx.Len() != want/3 {
-				t.Fatalf("graph/callback/index counts = %d/%d/%d, want %d/2/%d", g.Len(), calls, idx.Len(), want, want/3)
+			if mustV(g.Len(t.Context())) != want || calls != 2 || idx.Len() != want/3 {
+				t.Fatalf("graph/callback/index counts = %d/%d/%d, want %d/2/%d", mustV(g.Len(t.Context())), calls, idx.Len(), want, want/3)
 			}
-			g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+			g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 				if tr.Predicate == ex("link") {
 					bn, ok := tr.Object.(term.BNode)
-					if !ok || !g.Contains(bn, ex("self"), bn) {
+					if !ok || !mustV(g.Contains(t.Context(), bn, ex("self"), bn)) {
 						t.Error("blank-node reference differs from its declaration")
 					}
 					if line, ok := idx.Line(tr.Subject, tr.Predicate, tr.Object); !ok || line != 2 {
@@ -63,7 +63,7 @@ func TestBlankNodeParseScope(t *testing.T) {
 				}
 				return true
 			})
-			if g.Contains(term.NewBNode("shared"), ex("self"), term.NewBNode("shared")) {
+			if mustV(g.Contains(t.Context(), term.NewBNode("shared"), ex("self"), term.NewBNode("shared"))) {
 				t.Error("JSON-gold should relabel the source ID even in compatibility mode")
 			}
 		})
@@ -79,8 +79,8 @@ func TestProvenanceRelabelledBlankNodeCollision(t *testing.T) {
 ]`
 	for _, opts := range [][]jsonld.Option{nil, {jsonld.WithPreserveBlankNodeIDs()}} {
 		g, idx := parseWithProvenance(t, doc, opts...)
-		if g.Len() != 2 {
-			t.Fatalf("graph has %d triples, want 2 separate nodes", g.Len())
+		if mustV(g.Len(t.Context())) != 2 {
+			t.Fatalf("graph has %d triples, want 2 separate nodes", mustV(g.Len(t.Context())))
 		}
 		if idx.Len() != 0 {
 			t.Errorf("reported %d unverified blank-node source lines", idx.Len())
@@ -93,7 +93,7 @@ func parseWithProvenance(t *testing.T, doc string, opts ...jsonld.Option) (*grap
 	g := graph.NewGraph()
 	idx := provenance.NewIndex()
 	opts = append(opts, jsonld.WithProvenance(idx.Triple))
-	if err := jsonld.Parse(g, strings.NewReader(doc), opts...); err != nil {
+	if err := jsonld.Parse(t.Context(), g, strings.NewReader(doc), opts...); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	return g, idx
@@ -232,7 +232,7 @@ func TestProvenanceSkipsBlankNodes(t *testing.T) {
 	// The blank node's own triple must be absent from the index, not present
 	// with a borrowed line.
 	blanks := 0
-	g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+	g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 		if _, isBlank := tr.Subject.(term.BNode); isBlank {
 			blanks++
 			if line, ok := idx.Line(tr.Subject, tr.Predicate, tr.Object); ok {
@@ -259,7 +259,7 @@ func TestProvenanceExplicitBlankNodeLabel(t *testing.T) {
 `
 	g, idx := parseWithProvenance(t, doc)
 
-	g.Triples(nil, nil, nil)(func(tr term.Triple) bool {
+	g.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
 		line, ok := idx.Line(tr.Subject, tr.Predicate, tr.Object)
 		if ok && line != 1 {
 			t.Errorf("got line %d, want 1 or nothing at all", line)
@@ -278,13 +278,13 @@ func TestProvenanceIsOptIn(t *testing.T) {
 }
 `
 	plain := graph.NewGraph()
-	if err := jsonld.Parse(plain, strings.NewReader(doc)); err != nil {
+	if err := jsonld.Parse(t.Context(), plain, strings.NewReader(doc)); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	traced, idx := parseWithProvenance(t, doc)
 
-	if plain.Len() != traced.Len() {
-		t.Errorf("the option changed the graph: %d triples vs %d", plain.Len(), traced.Len())
+	if mustV(plain.Len(t.Context())) != mustV(traced.Len(t.Context())) {
+		t.Errorf("the option changed the graph: %d triples vs %d", mustV(plain.Len(t.Context())), mustV(traced.Len(t.Context())))
 	}
 	if idx.Len() == 0 {
 		t.Error("nothing was recorded")
@@ -381,7 +381,7 @@ func TestParseDoesNotPanicOnMalformedInput(t *testing.T) {
 				opts = append(opts, jsonld.WithBase(tc.base))
 			}
 			// Must return, not panic. Whether it errors is json-gold's call.
-			err := jsonld.Parse(g, strings.NewReader(tc.doc), opts...)
+			err := jsonld.Parse(t.Context(), g, strings.NewReader(tc.doc), opts...)
 			if err != nil && !errors.Is(err, jsonld.ErrProcessorPanic) {
 				t.Logf("rejected with %v", err)
 			}
@@ -394,7 +394,7 @@ func TestParseDoesNotPanicOnMalformedInput(t *testing.T) {
 // and "report this upstream".
 func TestProcessorPanicIsIdentifiable(t *testing.T) {
 	g := graph.NewGraph()
-	err := jsonld.Parse(g, strings.NewReader(`{"@id":"%"}`), jsonld.WithBase("http://example.org/"))
+	err := jsonld.Parse(t.Context(), g, strings.NewReader(`{"@id":"%"}`), jsonld.WithBase("http://example.org/"))
 	if err == nil {
 		t.Skip("json-gold no longer crashes on this input; the guard is still worth keeping")
 	}
@@ -486,7 +486,7 @@ func TestProvenanceScopedContextIsSilent(t *testing.T) {
 	if line, ok := idx.SubjectLine(scoped); ok && line != 4 {
 		t.Errorf("the scoped node got line %d, which is not where it is written", line)
 	}
-	if g.Len() == 0 {
+	if mustV(g.Len(t.Context())) == 0 {
 		t.Fatal("expected triples")
 	}
 }
@@ -497,8 +497,8 @@ func TestProvenanceMalformedSourceIsSilent(t *testing.T) {
 	for _, doc := range []string{`{"@id": "http://example.org/a"`, `{`, ``, `[1,2`} {
 		g := graph.NewGraph()
 		idx := provenance.NewIndex()
-		err := jsonld.Parse(g, strings.NewReader(doc), jsonld.WithProvenance(idx.Triple))
-		if err == nil && g.Len() == 0 {
+		err := jsonld.Parse(t.Context(), g, strings.NewReader(doc), jsonld.WithProvenance(idx.Triple))
+		if err == nil && mustV(g.Len(t.Context())) == 0 {
 			continue // parsed to nothing, which is fine
 		}
 		if err != nil && idx.Len() != 0 {

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"slices"
@@ -56,14 +57,17 @@ func WithStableSkolemIDs() SkolemOption {
 //
 // Ported from: rdflib.graph.Graph.skolemize (whole-graph form), plus
 // WithStableSkolemIDs.
-func (g *Graph) Skolemize(authority string, opts ...SkolemOption) *Graph {
+func (g *Graph) Skolemize(ctx context.Context, authority string, opts ...SkolemOption) (*Graph, error) {
 	cfg := skolemConfig{basepath: DefaultSkolemBasepath}
 	for _, o := range opts {
 		o(&cfg)
 	}
 	prefix := skolemPrefix(authority, cfg.basepath)
 
-	triples := g.collect()
+	triples, err := g.collect(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var ids map[string]string
 	if cfg.stable {
 		ids = stableBNodeIDs(triples)
@@ -78,18 +82,23 @@ func (g *Graph) Skolemize(authority string, opts ...SkolemOption) *Graph {
 		return term.NewURIRefUnsafe(prefix + id)
 	}
 
-	out := g.emptyCopy()
-	for _, t := range triples {
-		out.Add(skolemSubject(t.Subject, mint), t.Predicate, skolemTerm(t.Object, mint))
+	out, err := g.emptyCopy(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	for _, t := range triples {
+		if err := out.Add(ctx, skolemSubject(t.Subject, mint), t.Predicate, skolemTerm(t.Object, mint)); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // DeSkolemize returns a copy of g in which every IRI under authority +
 // basepath is replaced by a blank node, the same IRI always by the same node.
 //
 // Ported from: rdflib.graph.Graph.de_skolemize
-func (g *Graph) DeSkolemize(authority string, opts ...SkolemOption) *Graph {
+func (g *Graph) DeSkolemize(ctx context.Context, authority string, opts ...SkolemOption) (*Graph, error) {
 	cfg := skolemConfig{basepath: DefaultSkolemBasepath}
 	for _, o := range opts {
 		o(&cfg)
@@ -108,11 +117,20 @@ func (g *Graph) DeSkolemize(authority string, opts ...SkolemOption) *Graph {
 		}
 		return b
 	}
-	out := g.emptyCopy()
-	for _, t := range g.collect() {
-		out.Add(unmint(t.Subject).(term.Subject), t.Predicate, unmint(t.Object))
+	triples, err := g.collect(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	out, err := g.emptyCopy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range triples {
+		if err := out.Add(ctx, unmint(t.Subject).(term.Subject), t.Predicate, unmint(t.Object)); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func skolemPrefix(authority, basepath string) string {
@@ -125,22 +143,28 @@ func skolemPrefix(authority, basepath string) string {
 	return authority + basepath
 }
 
-func (g *Graph) collect() []term.Triple {
+func (g *Graph) collect(ctx context.Context) ([]term.Triple, error) {
 	var out []term.Triple
-	g.Triples(nil, nil, nil)(func(t term.Triple) bool {
+	for t, err := range g.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, t)
-		return true
-	})
-	return out
+	}
+	return out, nil
 }
 
-func (g *Graph) emptyCopy() *Graph {
+func (g *Graph) emptyCopy(ctx context.Context) (*Graph, error) {
 	out := NewGraph(WithIdentifier(g.Identifier()))
-	g.Namespaces()(func(prefix string, ns term.URIRef) bool {
-		out.Bind(prefix, ns)
-		return true
-	})
-	return out
+	for b, err := range g.Namespaces(ctx) {
+		if err != nil {
+			return nil, err
+		}
+		if err := out.Bind(ctx, b.Prefix, b.Namespace); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func skolemSubject(s term.Subject, mint func(term.BNode) term.URIRef) term.Subject {

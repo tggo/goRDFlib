@@ -192,8 +192,8 @@ func newNamer(graphs ...*Graph) namer {
 		if g == nil {
 			continue
 		}
-		for prefix, ns := range g.namespaces() {
-			add(prefix, ns.Value())
+		for _, nb := range g.namespaces() {
+			add(nb.Prefix, nb.Namespace.Value())
 		}
 	}
 	add("sh", SH)

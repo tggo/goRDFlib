@@ -63,10 +63,10 @@ func loadBoth(t *testing.T, doc string) (streamed, eager *Graph) {
 		t.Fatal(err)
 	}
 	g := graph.NewGraph(graph.WithBase("http://example.org/base/"))
-	if err := jsonld.Parse(g, strings.NewReader(doc), append(opts, jsonld.WithBase("http://example.org/base/"))...); err != nil {
+	if err := jsonld.Parse(t.Context(), g, strings.NewReader(doc), append(opts, jsonld.WithBase("http://example.org/base/"))...); err != nil {
 		t.Fatal(err)
 	}
-	return streamed, NewGraphFromRDF(g, "http://example.org/base/")
+	return streamed, mustV(NewGraphFromRDF(t.Context(), g, "http://example.org/base/"))
 }
 
 func tripleKeys(ts []Triple) []string {
@@ -177,13 +177,13 @@ ex:S a sh:NodeShape ; sh:targetClass ex:Person ;
 func TestStreamedGraphAddAndMerge(t *testing.T) {
 	streamed, _ := loadBoth(t, streamedDocs[0])
 	n := streamed.Len()
-	streamed.Add(IRI("http://example.org/a"), IRI("http://example.org/new"), Literal("v", "", ""))
+	streamed.Add(t.Context(), IRI("http://example.org/a"), IRI("http://example.org/new"), Literal("v", "", ""))
 	if streamed.Len() != n+1 || !streamed.Has(ptr(IRI("http://example.org/a")), ptr(IRI("http://example.org/new")), nil) {
 		t.Errorf("Add on a streamed graph lost or hid the triple: Len %d -> %d", n, streamed.Len())
 	}
 	other, _ := loadBoth(t, streamedDocs[2])
 	merged := NewGraph()
-	merged.Merge(other)
+	merged.Merge(t.Context(), other)
 	if merged.Len() != other.Len() {
 		t.Errorf("Merge from a streamed graph: %d triples, want %d", merged.Len(), other.Len())
 	}
@@ -222,7 +222,11 @@ func TestStreamedGraphDeduplicates(t *testing.T) {
 	if got := g.Objects(fromRDFLib(s), fromRDFLib(p)); len(got) != 2 {
 		t.Errorf("Objects = %v, want 2", got)
 	}
-	if g.rdf().Len() != 2 {
-		t.Errorf("built rdflib graph has %d triples, want 2", g.rdf().Len())
+	rg, err := g.rdf(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := mustV(rg.Len(t.Context())); n != 2 {
+		t.Errorf("built rdflib graph has %d triples, want 2", n)
 	}
 }

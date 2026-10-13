@@ -1,6 +1,7 @@
 package nq_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,14 +30,14 @@ func NtToNq(ntData, graphURN string) (string, error) {
 	g := rdflibgo.NewGraph(rdflibgo.WithIdentifier(graphIRI))
 
 	// Parse N-Triples into the named graph.
-	if err := nt.Parse(g, strings.NewReader(ntData)); err != nil {
+	if err := nt.Parse(context.Background(), g, strings.NewReader(ntData)); err != nil {
 		return "", fmt.Errorf("parsing N-Triples: %w", err)
 	}
 
 	// Serialize as N-Quads — the graph identifier is automatically
 	// included as the 4th element of each quad.
 	var buf strings.Builder
-	if err := nq.Serialize(g, &buf); err != nil {
+	if err := nq.Serialize(context.Background(), g, &buf); err != nil {
 		return "", fmt.Errorf("serializing N-Quads: %w", err)
 	}
 	return buf.String(), nil
@@ -65,7 +66,7 @@ func Example_errorHandlerSkip() {
 <http://example.org/s3> <http://example.org/p> "also good" .
 `
 	g := rdflibgo.NewGraph()
-	err := nt.Parse(g, strings.NewReader(ntData), nt.WithErrorHandler(
+	err := nt.Parse(context.Background(), g, strings.NewReader(ntData), nt.WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			fmt.Printf("skipping line %d: %v\n", lineNum, err)
 			return "", false
@@ -75,7 +76,7 @@ func Example_errorHandlerSkip() {
 		fmt.Println("error:", err)
 		return
 	}
-	fmt.Printf("parsed %d triples\n", g.Len())
+	fmt.Printf("parsed %d triples\n", mustV(g.Len(context.Background())))
 	// Output:
 	// skipping line 2: line 2: subject: line 2: invalid character in IRI
 	// parsed 2 triples
@@ -87,7 +88,7 @@ func Example_errorHandlerRetry() {
 	ntData := `<http://example.org/s> <http://example.org/p> <http://example.org/o with space> .
 `
 	g := rdflibgo.NewGraph()
-	err := nt.Parse(g, strings.NewReader(ntData), nt.WithErrorHandler(
+	err := nt.Parse(context.Background(), g, strings.NewReader(ntData), nt.WithErrorHandler(
 		func(lineNum int, line string, err error) (string, bool) {
 			fixed := strings.ReplaceAll(line, "o with space", "o%20with%20space")
 			return fixed, true
@@ -97,7 +98,7 @@ func Example_errorHandlerRetry() {
 		fmt.Println("error:", err)
 		return
 	}
-	fmt.Printf("parsed %d triples\n", g.Len())
+	fmt.Printf("parsed %d triples\n", mustV(g.Len(context.Background())))
 	// Output:
 	// parsed 1 triples
 }
@@ -108,12 +109,12 @@ func Example_ntToNqDefaultGraph() {
 	ntData := `<http://example.org/s> <http://example.org/p> "value" .
 `
 	g := rdflibgo.NewGraph()
-	if err := nt.Parse(g, strings.NewReader(ntData)); err != nil {
+	if err := nt.Parse(context.Background(), g, strings.NewReader(ntData)); err != nil {
 		fmt.Println("error:", err)
 		return
 	}
 	var buf strings.Builder
-	if err := nq.Serialize(g, &buf); err != nil {
+	if err := nq.Serialize(context.Background(), g, &buf); err != nil {
 		fmt.Println("error:", err)
 		return
 	}
@@ -136,7 +137,7 @@ func Example_provenance() {
 	prov := map[string]int{}
 
 	g := rdflibgo.NewGraph()
-	err := nt.Parse(g, strings.NewReader(doc), nt.WithProvenance(
+	err := nt.Parse(context.Background(), g, strings.NewReader(doc), nt.WithProvenance(
 		func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, lineNum int) {
 			prov[key(s, p, o)] = lineNum
 		}))
@@ -163,7 +164,7 @@ func Example_lineTooLong() {
 	big := strings.Repeat("x", 100*1024)
 	doc := `<http://example.org/s> <http://example.org/p> "` + big + `" .` + "\n"
 
-	err := nq.Parse(rdflibgo.NewGraph(), strings.NewReader(doc))
+	err := nq.Parse(context.Background(), rdflibgo.NewGraph(), strings.NewReader(doc))
 	fmt.Println(err)
 	fmt.Println("is ErrLineTooLong:", errors.Is(err, nq.ErrLineTooLong))
 

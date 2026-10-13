@@ -31,7 +31,7 @@ func TestStringEscapes_InPatternsAndUpdates(t *testing.T) {
 	if err := Update(ds, `INSERT DATA { <urn:s> <urn:p> 'it\'s\f' }`); err != nil {
 		t.Fatal(err)
 	}
-	if !ds.Default.Contains(rdflibgo.NewURIRefUnsafe("urn:s"), rdflibgo.NewURIRefUnsafe("urn:p"), rdflibgo.NewLiteral("it's\f")) {
+	if !mustV(ds.Default.Contains(t.Context(), rdflibgo.NewURIRefUnsafe("urn:s"), rdflibgo.NewURIRefUnsafe("urn:p"), rdflibgo.NewLiteral("it's\f"))) {
 		t.Error(`INSERT DATA 'it\'s\f' did not store "it's\f"`)
 	}
 	res, err := Query(ds.Default, `SELECT ?s WHERE { ?s <urn:p> "it's\f" }`)

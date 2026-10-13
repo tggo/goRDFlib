@@ -1,6 +1,7 @@
 package endpoint_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,9 +23,9 @@ func iri(s string) term.URIRef { return term.NewURIRefUnsafe(s) }
 // graph with one triple.
 func fixture() *sparql.Dataset {
 	def := graph.NewGraph()
-	def.Add(iri(ex+"s"), iri(ex+"p"), term.NewLiteral("default"))
+	def.Add(context.Background(), iri(ex+"s"), iri(ex+"p"), term.NewLiteral("default"))
 	g1 := graph.NewGraph()
-	g1.Add(iri(ex+"s1"), iri(ex+"p"), term.NewLiteral("one"))
+	g1.Add(context.Background(), iri(ex+"s1"), iri(ex+"p"), term.NewLiteral("one"))
 	return &sparql.Dataset{Default: def, NamedGraphs: map[string]*graph.Graph{ex + "g1": g1}}
 }
 

@@ -50,7 +50,7 @@ func stmtKey(g Term, s Subject, p URIRef, o Term) string {
 
 func graphKeys(g *Graph) []string {
 	var keys []string
-	g.Triples(nil, nil, nil)(func(t Triple) bool {
+	g.Triples(context.Background(), nil, nil, nil)(func(t Triple, _ error) bool {
 		keys = append(keys, stmtKey(nil, t.Subject, t.Predicate, t.Object))
 		return true
 	})
@@ -65,7 +65,7 @@ func datasetKeys(ds *graph.Dataset) []string {
 		if g == ds.DefaultContext() {
 			id = nil
 		}
-		g.Triples(nil, nil, nil)(func(t Triple) bool {
+		g.Triples(context.Background(), nil, nil, nil)(func(t Triple, _ error) bool {
 			keys = append(keys, stmtKey(id, t.Subject, t.Predicate, t.Object))
 			return true
 		})
@@ -79,7 +79,7 @@ var streamFormats = []streamFormat{
 		name: "nt", ext: []string{".nt"},
 		parse: func(r io.Reader) ([]string, error) {
 			g := NewGraph()
-			err := nt.Parse(g, r)
+			err := nt.Parse(context.Background(), g, r)
 			return graphKeys(g), err
 		},
 		stream: func(ctx context.Context, r io.Reader, emit func(string) error) error {
@@ -92,7 +92,7 @@ var streamFormats = []streamFormat{
 		name: "nq", ext: []string{".nq"},
 		parse: func(r io.Reader) ([]string, error) {
 			g := NewGraph()
-			err := nq.Parse(g, r)
+			err := nq.Parse(context.Background(), g, r)
 			return graphKeys(g), err
 		},
 		stream: func(ctx context.Context, r io.Reader, emit func(string) error) error {
@@ -105,7 +105,7 @@ var streamFormats = []streamFormat{
 		name: "turtle", ext: []string{".ttl"},
 		parse: func(r io.Reader) ([]string, error) {
 			g := NewGraph()
-			err := turtle.Parse(g, r, turtle.WithBase("http://example/base/"))
+			err := turtle.Parse(context.Background(), g, r, turtle.WithBase("http://example/base/"))
 			return graphKeys(g), err
 		},
 		stream: func(ctx context.Context, r io.Reader, emit func(string) error) error {
@@ -118,7 +118,7 @@ var streamFormats = []streamFormat{
 		name: "trig", ext: []string{".trig"},
 		parse: func(r io.Reader) ([]string, error) {
 			ds := graph.NewDataset()
-			err := trig.ParseDataset(ds, r, trig.WithBase("http://example/base/"))
+			err := trig.ParseDataset(context.Background(), ds, r, trig.WithBase("http://example/base/"))
 			return datasetKeys(ds), err
 		},
 		stream: func(ctx context.Context, r io.Reader, emit func(string) error) error {
@@ -131,7 +131,7 @@ var streamFormats = []streamFormat{
 		name: "rdfxml", ext: []string{".rdf"},
 		parse: func(r io.Reader) ([]string, error) {
 			g := NewGraph()
-			err := rdfxml.Parse(g, r, rdfxml.WithBase("http://example/base/"))
+			err := rdfxml.Parse(context.Background(), g, r, rdfxml.WithBase("http://example/base/"))
 			return graphKeys(g), err
 		},
 		stream: func(ctx context.Context, r io.Reader, emit func(string) error) error {
@@ -291,16 +291,25 @@ func TestStreamNilHandler(t *testing.T) {
 // Prefix bindings still reach the graph through Parse after the sink refactor.
 func TestParseStillBindsPrefixes(t *testing.T) {
 	g := NewGraph()
-	if err := turtle.Parse(g, strings.NewReader("@prefix zz: <http://zz.example/> .\nzz:a zz:b zz:c .")); err != nil {
+	if err := turtle.Parse(t.Context(), g, strings.NewReader("@prefix zz: <http://zz.example/> .\nzz:a zz:b zz:c .")); err != nil {
 		t.Fatal(err)
 	}
 	ds := graph.NewDataset()
-	if err := trig.ParseDataset(ds, strings.NewReader("@prefix yy: <http://yy.example/> .\nyy:g { yy:a yy:b yy:c }\nyy:empty { }")); err != nil {
+	if err := trig.ParseDataset(t.Context(), ds, strings.NewReader("@prefix yy: <http://yy.example/> .\nyy:g { yy:a yy:b yy:c }\nyy:empty { }")); err != nil {
 		t.Fatal(err)
 	}
 	found := map[string]bool{}
-	g.Namespaces()(func(p string, _ URIRef) bool { found["g:"+p] = true; return true })
-	ds.Namespaces()(func(p string, _ URIRef) bool { found["ds:"+p] = true; return true })
+	for _, nsIt := range []struct {
+		label string
+		it    NamespaceIterator
+	}{{"g:", g.Namespaces(t.Context())}, {"ds:", ds.Namespaces(t.Context())}} {
+		for b, err := range nsIt.it {
+			if err != nil {
+				t.Fatal(err)
+			}
+			found[nsIt.label+b.Prefix] = true
+		}
+	}
 	if !found["g:zz"] || !found["ds:yy"] {
 		t.Errorf("prefixes not bound: %v", found)
 	}

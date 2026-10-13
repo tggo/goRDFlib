@@ -31,7 +31,7 @@ func TestClassConstraint(t *testing.T) {
 	g := NewGraph()
 	node := IRI(ex + "n1")
 	cls := IRI(ex + "Person")
-	g.Add(node, IRI(RDFType), cls)
+	g.Add(t.Context(), node, IRI(RDFType), cls)
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -427,7 +427,7 @@ func TestEqualsConstraint(t *testing.T) {
 	g := NewGraph()
 	focus := IRI(ex + "n1")
 	pred := IRI(ex + "name")
-	g.Add(focus, pred, Literal("Alice", "", ""))
+	g.Add(t.Context(), focus, pred, Literal("Alice", "", ""))
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -454,7 +454,7 @@ func TestDisjointConstraint(t *testing.T) {
 	g := NewGraph()
 	focus := IRI(ex + "n1")
 	pred := IRI(ex + "name")
-	g.Add(focus, pred, Literal("Alice", "", ""))
+	g.Add(t.Context(), focus, pred, Literal("Alice", "", ""))
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -476,7 +476,7 @@ func TestLessThanConstraint(t *testing.T) {
 	g := NewGraph()
 	focus := IRI(ex + "n1")
 	pred := IRI(ex + "maxAge")
-	g.Add(focus, pred, intLit("30"))
+	g.Add(t.Context(), focus, pred, intLit("30"))
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -501,7 +501,7 @@ func TestLessThanOrEqualsConstraint(t *testing.T) {
 	g := NewGraph()
 	focus := IRI(ex + "n1")
 	pred := IRI(ex + "maxAge")
-	g.Add(focus, pred, intLit("30"))
+	g.Add(t.Context(), focus, pred, intLit("30"))
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -721,9 +721,9 @@ func TestClosedConstraint(t *testing.T) {
 	agePred := IRI(ex + "age")
 	secretPred := IRI(ex + "secret")
 
-	g.Add(focus, namePred, Literal("Alice", "", ""))
-	g.Add(focus, agePred, intLit("30"))
-	g.Add(focus, IRI(RDFType), IRI(ex+"Person"))
+	g.Add(t.Context(), focus, namePred, Literal("Alice", "", ""))
+	g.Add(t.Context(), focus, agePred, intLit("30"))
+	g.Add(t.Context(), focus, IRI(RDFType), IRI(ex+"Person"))
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -739,7 +739,7 @@ func TestClosedConstraint(t *testing.T) {
 	}
 
 	// add disallowed predicate
-	g.Add(focus, secretPred, Literal("hidden", "", ""))
+	g.Add(t.Context(), focus, secretPred, Literal("hidden", "", ""))
 	if r := c.Evaluate(ctx, s, focus, []Term{focus}); len(r) == 0 {
 		t.Error("disallowed predicate should fail")
 	}
@@ -751,7 +751,7 @@ func TestPropertyConstraint(t *testing.T) {
 	t.Parallel()
 	g := NewGraph()
 	focus := IRI(ex + "alice")
-	g.Add(focus, IRI(ex+"name"), Literal("Alice", "", ""))
+	g.Add(t.Context(), focus, IRI(ex+"name"), Literal("Alice", "", ""))
 
 	ctx := testCtx(g)
 	s := testShape()
@@ -776,7 +776,7 @@ func TestPropertyConstraint(t *testing.T) {
 
 	// Change to IRI value
 	g2 := NewGraph()
-	g2.Add(focus, IRI(ex+"name"), IRI(ex+"AliceName"))
+	g2.Add(t.Context(), focus, IRI(ex+"name"), IRI(ex+"AliceName"))
 	ctx2 := testCtx(g2)
 	ctx2.shapesMap[inner.ID.String()] = inner
 
@@ -857,7 +857,7 @@ func TestLessThanConstraint_IRIFallback(t *testing.T) {
 	g := NewGraph()
 	focus := IRI(ex + "n1")
 	pred := IRI(ex + "other")
-	g.Add(focus, pred, IRI(ex+"bbb"))
+	g.Add(t.Context(), focus, pred, IRI(ex+"bbb"))
 
 	ctx := testCtx(g)
 	s := testShape()

@@ -67,7 +67,7 @@ The `store.Store` interface (13 methods) has four implementations:
 - SQLiteStore: relational schema with 3 SQL indexes, WAL mode, inspectable with sqlite3 CLI
 - SPARQLStore: translates Store methods to SPARQL queries/updates over HTTP
 - The default graph is `store.DefaultGraph`; a BNode context is a named graph in every store except sparqlstore (see the conventions below)
-- Write ops silently ignore errors (store.Store interface constraint)
+- Every Store method takes `ctx` and returns an error (v0.9, issue #52); a store never swallows a backend error and refuses a done context
 
 ### store/storetest (shared conformance suite)
 - `storetest.Run(t, Config{New: ...})` is the executable half of the
@@ -116,26 +116,33 @@ The `store.Store` interface (13 methods) has four implementations:
 - `TriplesWithLimit` with `limit <= 0` means **no limit**. SQLite spells that as
   a negative LIMIT; passing 0 through returned nothing, which is the opposite.
 
-### context.Context reaching stores (issue #35, `store.ContextBinder`)
-- `store.Store` takes no `context.Context`, and adding one would break every
-  backend including the satellites. A store opts in with
-  `BindContext(ctx) Store`, a **view** over the same data. Engines bind, they
-  never change the Store interface.
-- The view must keep the receiver's optional interfaces (Queryable, Snapshot,
-  Cardinality, Reachability); engines type-assert on the store they get, so a
-  view that drops one silently loses the pushdown. storetest checks it.
-- Queries bind once at entry (`evalCtx.bindQuery`, before the snapshot
-  redirect). Updates bind **where a graph is taken from the Dataset**
-  (`ec.bind`, `getOrCreateGraph`), because operations create and drop entries
-  in `Dataset.NamedGraphs`: a bound copy of the map would lose them, and a
-  bound view stored in the caller's map would outlive the request (and break
-  `endpoint`'s `g.Store() == st` commit check). Guard:
-  `TestUpdateContextReachesStore`.
-- A bound store that gives up on a read looks like "no match" (Store has no
-  errors). So a query that used one polls once more before returning, SHACL
-  checks after every focus node and at the end, and a stopped run returns an
-  error, never a partial result. Prepared must not cache targets selected
-  while the context was done.
+### errors and context.Context on every store call (issues #35, #52, v0.9)
+- Every `store.Store`/`graph.Graph` method that reads or writes takes `ctx`
+  first and returns an error; iterators are `iter.Seq2[T, error]` and fail with
+  one `(zero, err)` pair. Contract table: MIGRATION.md "v0.8.x → v0.9.0".
+  `ContextBinder`/`BindContext` (the #35 workaround) are gone.
+- A store refuses a call made with a done context (`ctx.Err()` first, no side
+  effects): storetest `DoneContext`. Badger polls ctx every 1024 scanned
+  entries, since a Badger iteration cannot be interrupted otherwise.
+- `storetest.FailingStore` (`Fail`, `FailReadsAfter`) is how every layer proves
+  a store error reaches its caller. Each package has such a test; a new layer
+  needs one.
+- Engines have no error results internally, so a store error travels like a
+  cancellation: sparql `ec.fail(err)`, paths/reasoning `stopper.fail`. Every
+  loop unwinds through `stop()`, the entry point returns it, never a partial
+  result. sparql `failure()` wraps only the context's own error in
+  `ErrQueryCancelled`; a store error is returned as it is.
+- `NewGraph` binds the default prefixes only over a MemoryStore (a constructor
+  has no error to report a failed write); other stores call `BindDefaults`.
+- Serializers read everything from the store before writing; a store error
+  writes nothing. `nq.Writer.WriteGraph` streams, so on error the output must
+  be discarded.
+- A test spy implementing an **optional** interface with the old signature
+  still compiles and is silently no longer detected. When a store interface
+  changes, grep for the old method shapes.
+- `TestUpdateContextReachesStore` / `TestQueryContextReachesStore` /
+  `TestDatasetClauseContextReachesStore` (`sparql/context_store_test.go`)
+  check that the caller's ctx reaches every store call.
 - A query stopped by its context is never reported through `WithErrorHandler`
   (`config.report` filters it): it is not a malformed target or rule.
 - SHACL carries the context on `recursionGuard.ctx`, because the guard is the
@@ -150,14 +157,15 @@ The `store.Store` interface (13 methods) has four implementations:
   already counts its unemitted triples as known.
 
 ### store.ReachabilityStore + paths pushdown
-- `Reachable(q) ([]term.Term, error)` returns every node reachable in **>= 1**
+- `Reachable(ctx, q) ([]term.Term, error)` returns every node reachable in **>= 1**
   steps. Start is in the result only if a cycle leads back to it. Literals count
   as reachable nodes. Cycles must terminate.
 - The result is **fully materialized on purpose**: a backend that cannot finish
   must return an error and no partial result, because `paths.MulPath` falls back
   to a local traversal and a partially yielded stream cannot be un-yielded. Any
-  error means "compute this yourself"; `ErrReachabilityUnsupported` is the
-  expected way to decline.
+  error means "compute this yourself" — except the context's own error, which
+  ends the traversal; `ErrReachabilityUnsupported` is the expected way to
+  decline.
 - `paths/reachability.go:flatten` decides what is pushable: `URIRefPath`,
   `InvPath`, `NegatedPath`, and an `AlternativePath` whose arms agree on
   direction and polarity. Sequences and nested repetitions stay local. `?` is
@@ -190,6 +198,9 @@ The `store.Store` interface (13 methods) has four implementations:
   pragmas now travel in the DSN (`dsnWithPragmas`).
 
 ### store/sparqlstore (details)
+- Every HTTP call uses the method's ctx; remote/HTTP errors are returned.
+  A write without an update URL is `ErrNoUpdateEndpoint` (it used to be a
+  silent no-op).
 - `Server` is deprecated and delegates to `endpoint`; it answers updates with 204
   and serves named graphs and triple terms (the conformance exemptions for both
   are gone).
@@ -218,7 +229,9 @@ The `store.Store` interface (13 methods) has four implementations:
 - W3C manifests `protocol` (34/34) and `http-rdf-update` (19/19) run from the
   manifests themselves; four GSP manifest defects are worked around and
   commented in `w3c_gsp_test.go`.
-- Status decisions: 422 for `WithMaxResultRows` (fail, never truncate), 503
+- Status decisions: 500 when the store fails (query, update, GSP; GSP GET
+  serializes into a buffer first, so never a truncated 200); 400 for
+  `sparql.ErrUpdateRejected`; 422 for `WithMaxResultRows` (fail, never truncate), 503
   without Retry-After for timeouts (incl. waiting for the lock), 501 DESCRIBE,
   499 in the hook on client disconnect.
 - SELECT/ASK are evaluated fully, then `results.Write` pre-checks every value
@@ -568,7 +581,7 @@ The `store.Store` interface (13 methods) has four implementations:
   it) — Jena's dynamic dataset, RDF4J and rdflib all behave this way, and an
   error here would be the outlier. What it must never do is answer from the
   graph the clause excluded, which is the bug that stood for years.
-- `applyDatasetClause` runs **after `bindQuery` and `snapshotQueryGraphs`**.
+- `applyDatasetClause` runs **after `snapshotQueryGraphs`**.
   The merge is a read like any other: before them it reached the store with a
   context the caller never gave (a `sparqlstore` FROM graph would fetch on
   `context.Background()`, ignoring the query deadline) and outside the read

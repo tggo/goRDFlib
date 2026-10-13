@@ -19,10 +19,10 @@ func TestSerializeDirLangLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("مرحبا", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("مرحبا", rdflibgo.WithLang("ar"), rdflibgo.WithDir("rtl")))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -36,10 +36,10 @@ func TestSerializeEscapedString(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("line1\nline2\ttab\\slash\"quote"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("line1\nline2\ttab\\slash\"quote"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -63,10 +63,10 @@ func TestSerializeSupplementaryPlaneChar(t *testing.T) {
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
 	// U+1F600 = 😀
-	g.Add(s, p, rdflibgo.NewLiteral("\U0001F600"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("\U0001F600"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -80,10 +80,10 @@ func TestSerializeControlChar(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("before\x01after"))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("before\x01after"))
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -102,7 +102,7 @@ func TestParseErrorMalformedIRI(t *testing.T) {
 	}
 	for _, input := range inputs {
 		g := rdflibgo.NewGraph()
-		err := Parse(g, strings.NewReader(input))
+		err := Parse(t.Context(), g, strings.NewReader(input))
 		if err == nil {
 			t.Errorf("expected parse error for %q, got nil", input)
 		}
@@ -113,7 +113,7 @@ func TestParseErrorMalformedIRI(t *testing.T) {
 func TestParseInvalidLangTag(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello"@123bad .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for invalid language tag")
 	}
@@ -123,7 +123,7 @@ func TestParseInvalidLangTag(t *testing.T) {
 func TestParseInvalidDirLangTag(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello"@en--bad .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for invalid direction in lang tag")
 	}
@@ -133,11 +133,11 @@ func TestParseInvalidDirLangTag(t *testing.T) {
 func TestParseDirLangTag(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "مرحبا"@ar--rtl .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -145,11 +145,11 @@ func TestParseDirLangTag(t *testing.T) {
 func TestParseTripleTerm(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <<( <http://example.org/a> <http://example.org/b> <http://example.org/c> )>> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -157,7 +157,7 @@ func TestParseTripleTerm(t *testing.T) {
 func TestSerializeEmptyGraph(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() != 0 {
@@ -169,12 +169,12 @@ func TestSerializeEmptyGraph(t *testing.T) {
 func TestRoundTripTripleTerm(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <<( <http://example.org/a> <http://example.org/b> <http://example.org/c> )>> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -187,7 +187,7 @@ func TestRoundTripTripleTerm(t *testing.T) {
 func TestParseUnknownEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello\x" .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for unknown escape \\x")
 	}
@@ -197,7 +197,7 @@ func TestParseUnknownEscape(t *testing.T) {
 func TestParseRelativeIRISubject(t *testing.T) {
 	input := `<relative> <http://example.org/p> "hello" .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for relative IRI subject")
 	}
@@ -207,11 +207,11 @@ func TestParseRelativeIRISubject(t *testing.T) {
 func TestParseBNodeSubject(t *testing.T) {
 	input := `_:b1 <http://example.org/p> "hello" .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -219,11 +219,11 @@ func TestParseBNodeSubject(t *testing.T) {
 func TestParseCommentLine(t *testing.T) {
 	input := "# comment\n\n<http://example.org/s> <http://example.org/p> \"hello\" .\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -231,7 +231,7 @@ func TestParseCommentLine(t *testing.T) {
 func TestParseSurrogateInUEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello\uD800world" .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for surrogate in \\u escape")
 	}
@@ -241,7 +241,7 @@ func TestParseSurrogateInUEscape(t *testing.T) {
 func TestParseSurrogateInUUEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello\U0000D800world" .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for surrogate in \\U escape")
 	}
@@ -251,7 +251,7 @@ func TestParseSurrogateInUUEscape(t *testing.T) {
 func TestParseTruncatedUEscape(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello\u00" .` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for truncated \\u escape")
 	}
@@ -261,7 +261,7 @@ func TestParseTruncatedUEscape(t *testing.T) {
 func TestParseUnterminatedString(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello` + "\n"
 	g := rdflibgo.NewGraph()
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	if err == nil {
 		t.Error("expected error for unterminated string")
 	}
@@ -271,11 +271,11 @@ func TestParseUnterminatedString(t *testing.T) {
 func TestParseIRIWithEscape(t *testing.T) {
 	input := `<http://example.org/\u0073> <http://example.org/p> "hello" .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1 triple, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1 triple, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -288,18 +288,18 @@ func TestSerializeTripleTermRoundTrip(t *testing.T) {
 	b := rdflibgo.NewURIRefUnsafe("http://example.org/b")
 	c := rdflibgo.NewURIRefUnsafe("http://example.org/c")
 	tt := rdflibgo.NewTripleTerm(a, b, c)
-	g.Add(s, p, tt)
+	g.Add(t.Context(), s, p, tt)
 
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(buf.String())); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(buf.String())); err != nil {
 		t.Fatal(err)
 	}
-	if g2.Len() != 1 {
-		t.Errorf("round-trip: expected 1, got %d", g2.Len())
+	if mustV(g2.Len(t.Context())) != 1 {
+		t.Errorf("round-trip: expected 1, got %d", mustV(g2.Len(t.Context())))
 	}
 }
 
@@ -309,10 +309,10 @@ func TestSerializeMultipleTriples(t *testing.T) {
 	s1 := rdflibgo.NewURIRefUnsafe("http://example.org/b")
 	s2 := rdflibgo.NewURIRefUnsafe("http://example.org/a")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s1, p, rdflibgo.NewLiteral("v1"))
-	g.Add(s2, p, rdflibgo.NewLiteral("v2"))
+	g.Add(t.Context(), s1, p, rdflibgo.NewLiteral("v1"))
+	g.Add(t.Context(), s2, p, rdflibgo.NewLiteral("v2"))
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -325,11 +325,11 @@ func TestSerializeMultipleTriples(t *testing.T) {
 func TestParseBNodeObject(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> _:b1 .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -337,11 +337,11 @@ func TestParseBNodeObject(t *testing.T) {
 func TestParseTypedLiteral(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -350,9 +350,9 @@ func TestSerializeTypedLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("42", rdflibgo.WithDatatype(rdflibgo.XSDInteger)))
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "^^<") {
@@ -364,11 +364,11 @@ func TestSerializeTypedLiteral(t *testing.T) {
 func TestParseLangLiteral(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> "hello"@en .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
-	if g.Len() != 1 {
-		t.Errorf("expected 1, got %d", g.Len())
+	if mustV(g.Len(t.Context())) != 1 {
+		t.Errorf("expected 1, got %d", mustV(g.Len(t.Context())))
 	}
 }
 
@@ -377,9 +377,9 @@ func TestSerializeLangLiteral(t *testing.T) {
 	g := rdflibgo.NewGraph()
 	s := rdflibgo.NewURIRefUnsafe("http://example.org/s")
 	p := rdflibgo.NewURIRefUnsafe("http://example.org/p")
-	g.Add(s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
+	g.Add(t.Context(), s, p, rdflibgo.NewLiteral("hello", rdflibgo.WithLang("en")))
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "@en") {
@@ -392,7 +392,7 @@ func TestParseTripleTermAsSubject(t *testing.T) {
 	input := `<<( <http://example.org/a> <http://example.org/b> <http://example.org/c> )>> <http://example.org/p> "v" .` + "\n"
 	g := rdflibgo.NewGraph()
 	// In N-Triples 1.2, triple terms can be subjects — this should parse
-	err := Parse(g, strings.NewReader(input))
+	err := Parse(t.Context(), g, strings.NewReader(input))
 	// Either parses or errors depending on spec version; just exercise the path
 	_ = err
 }
@@ -401,7 +401,7 @@ func TestParseTripleTermAsSubject(t *testing.T) {
 func TestParseTripleTermBNodeInner(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <<( _:b1 <http://example.org/q> <http://example.org/r> )>> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -410,7 +410,7 @@ func TestParseTripleTermBNodeInner(t *testing.T) {
 func TestParseTripleTermLiteralInner(t *testing.T) {
 	input := `<http://example.org/s> <http://example.org/p> <<( <http://example.org/a> <http://example.org/b> "val" )>> .` + "\n"
 	g := rdflibgo.NewGraph()
-	if err := Parse(g, strings.NewReader(input)); err != nil {
+	if err := Parse(t.Context(), g, strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -19,8 +19,8 @@ func TestAssertGraphEqualWithBNodes(t *testing.T) {
 	// Same structure, different bnode labels
 	b1 := term.NewBNode()
 	b2 := term.NewBNode()
-	g1.Add(b1, p, o)
-	g2.Add(b2, p, o)
+	g1.Add(t.Context(), b1, p, o)
+	g2.Add(t.Context(), b2, p, o)
 
 	testutil.AssertGraphEqual(t, g1, g2)
 }
@@ -34,15 +34,15 @@ func TestAssertGraphEqualWithMultipleBNodes(t *testing.T) {
 	// Two bnodes with different connections
 	b1a := term.NewBNode()
 	b1b := term.NewBNode()
-	g1.Add(b1a, p, term.NewLiteral("a"))
-	g1.Add(b1b, p, term.NewLiteral("b"))
-	g1.Add(b1a, q, b1b)
+	g1.Add(t.Context(), b1a, p, term.NewLiteral("a"))
+	g1.Add(t.Context(), b1b, p, term.NewLiteral("b"))
+	g1.Add(t.Context(), b1a, q, b1b)
 
 	b2a := term.NewBNode()
 	b2b := term.NewBNode()
-	g2.Add(b2a, p, term.NewLiteral("a"))
-	g2.Add(b2b, p, term.NewLiteral("b"))
-	g2.Add(b2a, q, b2b)
+	g2.Add(t.Context(), b2a, p, term.NewLiteral("a"))
+	g2.Add(t.Context(), b2b, p, term.NewLiteral("b"))
+	g2.Add(t.Context(), b2a, q, b2b)
 
 	testutil.AssertGraphEqual(t, g1, g2)
 }
@@ -55,16 +55,16 @@ func TestAssertGraphEqualBNodesMismatch(t *testing.T) {
 
 	b1a := term.NewBNode()
 	b1b := term.NewBNode()
-	g1.Add(b1a, p, term.NewLiteral("a"))
-	g1.Add(b1b, p, term.NewLiteral("b"))
-	g1.Add(b1a, q, b1b)
+	g1.Add(t.Context(), b1a, p, term.NewLiteral("a"))
+	g1.Add(t.Context(), b1b, p, term.NewLiteral("b"))
+	g1.Add(t.Context(), b1a, q, b1b)
 
 	// Different structure
 	b2a := term.NewBNode()
 	b2b := term.NewBNode()
-	g2.Add(b2a, p, term.NewLiteral("a"))
-	g2.Add(b2b, p, term.NewLiteral("b"))
-	g2.Add(b2b, q, b2a) // reversed link
+	g2.Add(t.Context(), b2a, p, term.NewLiteral("a"))
+	g2.Add(t.Context(), b2b, p, term.NewLiteral("b"))
+	g2.Add(t.Context(), b2b, q, b2a) // reversed link
 
 	mockT := &testing.T{}
 	testutil.AssertGraphEqual(mockT, g1, g2)
@@ -80,12 +80,12 @@ func TestAssertGraphEqualBNodeCountMismatch(t *testing.T) {
 
 	b1 := term.NewBNode()
 	b2 := term.NewBNode()
-	g1.Add(b1, p, term.NewLiteral("a"))
-	g1.Add(b2, p, term.NewLiteral("b"))
+	g1.Add(t.Context(), b1, p, term.NewLiteral("a"))
+	g1.Add(t.Context(), b2, p, term.NewLiteral("b"))
 
 	b3 := term.NewBNode()
-	g2.Add(b3, p, term.NewLiteral("a"))
-	g2.Add(b3, p, term.NewLiteral("b")) // same bnode, not 2
+	g2.Add(t.Context(), b3, p, term.NewLiteral("a"))
+	g2.Add(t.Context(), b3, p, term.NewLiteral("b")) // same bnode, not 2
 
 	mockT := &testing.T{}
 	testutil.AssertGraphEqual(mockT, g1, g2)
@@ -97,9 +97,9 @@ func TestAssertGraphEqualDifferentSize(t *testing.T) {
 	g2 := graph.NewGraph()
 	p, _ := term.NewURIRef("http://example.org/p")
 	b1 := term.NewBNode()
-	g1.Add(b1, p, term.NewLiteral("a"))
-	g1.Add(b1, p, term.NewLiteral("b"))
-	g2.Add(term.NewBNode(), p, term.NewLiteral("a"))
+	g1.Add(t.Context(), b1, p, term.NewLiteral("a"))
+	g1.Add(t.Context(), b1, p, term.NewLiteral("b"))
+	g2.Add(t.Context(), term.NewBNode(), p, term.NewLiteral("a"))
 
 	mockT := &testing.T{}
 	testutil.AssertGraphEqual(mockT, g1, g2)
@@ -137,12 +137,12 @@ func TestAssertGraphEqualBNodeAsObject(t *testing.T) {
 	q, _ := term.NewURIRef("http://example.org/q")
 
 	b1 := term.NewBNode()
-	g1.Add(s, p, b1)
-	g1.Add(b1, q, term.NewLiteral("v"))
+	g1.Add(t.Context(), s, p, b1)
+	g1.Add(t.Context(), b1, q, term.NewLiteral("v"))
 
 	b2 := term.NewBNode()
-	g2.Add(s, p, b2)
-	g2.Add(b2, q, term.NewLiteral("v"))
+	g2.Add(t.Context(), s, p, b2)
+	g2.Add(t.Context(), b2, q, term.NewLiteral("v"))
 
 	testutil.AssertGraphEqual(t, g1, g2)
 }
@@ -154,8 +154,8 @@ func TestAssertGraphEqualNoBNodes(t *testing.T) {
 	p, _ := term.NewURIRef("http://example.org/p")
 	o := term.NewLiteral("v")
 
-	g1.Add(s, p, o)
-	g2.Add(s, p, o)
+	g1.Add(t.Context(), s, p, o)
+	g2.Add(t.Context(), s, p, o)
 
 	testutil.AssertGraphEqual(t, g1, g2)
 }
@@ -170,13 +170,13 @@ func TestAssertGraphEqualWithTripleTermBNodes(t *testing.T) {
 	// TripleTerm containing a bnode
 	b1 := term.NewBNode()
 	tt1 := term.NewTripleTerm(b1, p, term.NewLiteral("inner"))
-	g1.Add(s, q, tt1)
-	g1.Add(b1, p, term.NewLiteral("outer"))
+	g1.Add(t.Context(), s, q, tt1)
+	g1.Add(t.Context(), b1, p, term.NewLiteral("outer"))
 
 	b2 := term.NewBNode()
 	tt2 := term.NewTripleTerm(b2, p, term.NewLiteral("inner"))
-	g2.Add(s, q, tt2)
-	g2.Add(b2, p, term.NewLiteral("outer"))
+	g2.Add(t.Context(), s, q, tt2)
+	g2.Add(t.Context(), b2, p, term.NewLiteral("outer"))
 
 	testutil.AssertGraphEqual(t, g1, g2)
 }
@@ -190,13 +190,13 @@ func TestAssertGraphEqualTripleTermBNodeMismatch(t *testing.T) {
 
 	b1 := term.NewBNode()
 	tt1 := term.NewTripleTerm(b1, p, term.NewLiteral("a"))
-	g1.Add(s, q, tt1)
-	g1.Add(b1, p, term.NewLiteral("outer"))
+	g1.Add(t.Context(), s, q, tt1)
+	g1.Add(t.Context(), b1, p, term.NewLiteral("outer"))
 
 	b2 := term.NewBNode()
 	tt2 := term.NewTripleTerm(b2, p, term.NewLiteral("b")) // different inner object
-	g2.Add(s, q, tt2)
-	g2.Add(b2, p, term.NewLiteral("outer"))
+	g2.Add(t.Context(), s, q, tt2)
+	g2.Add(t.Context(), b2, p, term.NewLiteral("outer"))
 
 	mockT := &testing.T{}
 	testutil.AssertGraphEqual(mockT, g1, g2)
@@ -211,8 +211,8 @@ func TestAssertGraphEqualNoBNodesMismatch(t *testing.T) {
 	s, _ := term.NewURIRef("http://example.org/s")
 	p, _ := term.NewURIRef("http://example.org/p")
 
-	g1.Add(s, p, term.NewLiteral("a"))
-	g2.Add(s, p, term.NewLiteral("b"))
+	g1.Add(t.Context(), s, p, term.NewLiteral("a"))
+	g2.Add(t.Context(), s, p, term.NewLiteral("b"))
 
 	mockT := &testing.T{}
 	testutil.AssertGraphEqual(mockT, g1, g2)

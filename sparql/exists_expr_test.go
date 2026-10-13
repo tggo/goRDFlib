@@ -48,7 +48,7 @@ func TestExists_InOrderBy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !res.Graph.Contains(rdflibgo.NewURIRefUnsafe(first), rdflibgo.NewURIRefUnsafe("urn:seen"), rdflibgo.NewLiteral(1)) {
+		if !mustV(res.Graph.Contains(t.Context(), rdflibgo.NewURIRefUnsafe(first), rdflibgo.NewURIRefUnsafe("urn:seen"), rdflibgo.NewLiteral(1))) {
 			t.Errorf("CONSTRUCT ORDER BY %s(EXISTS) LIMIT 1 did not keep <%s>", dir, first)
 		}
 	}

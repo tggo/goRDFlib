@@ -100,7 +100,7 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 	switch p := pattern.(type) {
 	case *BGP:
 		empty := map[string]rdflibgo.Term{}
-		return eachBGPSolution(ec, g, orderBGP(g, p.Triples, empty, prefixes), empty, prefixes, yield)
+		return eachBGPSolution(ec, g, orderBGP(ec, g, p.Triples, empty, prefixes), empty, prefixes, yield)
 
 	case *JoinPattern:
 		return eachSolution(ec, g, p.Left, prefixes, namedGraphs, func(lb map[string]rdflibgo.Term) bool {
@@ -110,7 +110,7 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 			if r, ok := p.Right.(*BGP); ok {
 				// What evalPatternWithBindings does for a BGP, streamed: its
 				// solutions already contain lb.
-				return eachBGPSolution(ec, g, orderBGP(g, r.Triples, lb, prefixes), lb, prefixes, yield)
+				return eachBGPSolution(ec, g, orderBGP(ec, g, r.Triples, lb, prefixes), lb, prefixes, yield)
 			}
 			for _, rb := range evalPatternWithBindings(ec, g, p.Right, lb, prefixes, namedGraphs) {
 				if ec.produced(1) || !yield(mergeBindings(lb, rb)) {
@@ -127,7 +127,7 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 			}
 			if o, ok := p.Optional.(*BGP); ok {
 				matched := false
-				if !eachBGPSolution(ec, g, orderBGP(g, o.Triples, mb, prefixes), mb, prefixes, func(b map[string]rdflibgo.Term) bool {
+				if !eachBGPSolution(ec, g, orderBGP(ec, g, o.Triples, mb, prefixes), mb, prefixes, func(b map[string]rdflibgo.Term) bool {
 					matched = true
 					return yield(b)
 				}) {

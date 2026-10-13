@@ -2,6 +2,7 @@ package trig
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -16,9 +17,9 @@ var chainNext = rdflibgo.NewURIRefUnsafe("http://example.org/next")
 func blankChainDataset(n int) *graph.Dataset {
 	ds := graph.NewDataset()
 	g := ds.DefaultContext()
-	g.Add(rdflibgo.NewURIRefUnsafe("http://example.org/root"), chainNext, rdflibgo.NewBNode("b0"))
+	g.Add(context.Background(), rdflibgo.NewURIRefUnsafe("http://example.org/root"), chainNext, rdflibgo.NewBNode("b0"))
 	for i := range n {
-		g.Add(rdflibgo.NewBNode(fmt.Sprintf("b%d", i)), chainNext, rdflibgo.NewBNode(fmt.Sprintf("b%d", i+1)))
+		g.Add(context.Background(), rdflibgo.NewBNode(fmt.Sprintf("b%d", i)), chainNext, rdflibgo.NewBNode(fmt.Sprintf("b%d", i+1)))
 	}
 	return ds
 }
@@ -33,14 +34,14 @@ func TestSerializeDeepBlankNodeChainTrig(t *testing.T) {
 	}
 	ds := blankChainDataset(n)
 	var b bytes.Buffer
-	if err := SerializeDataset(ds, &b); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &b); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(b.String(), fmt.Sprintf("_:b%d", maxNestDepth)) {
 		t.Errorf("nesting was not cut at %d", maxNestDepth)
 	}
 	ds2 := graph.NewDataset()
-	if err := ParseDataset(ds2, strings.NewReader(b.String())); err != nil {
+	if err := ParseDataset(t.Context(), ds2, strings.NewReader(b.String())); err != nil {
 		t.Fatalf("output does not parse: %v", err)
 	}
 	assertChainTrig(t, ds2.DefaultContext(), n)
@@ -51,13 +52,13 @@ func TestSerializeDeepBlankNodeChainTrig(t *testing.T) {
 // has the same signature, and its backtracking search is exponential on them.
 func assertChainTrig(t *testing.T, g *rdflibgo.Graph, n int) {
 	t.Helper()
-	if g.Len() != n+1 {
-		t.Fatalf("got %d triples, want %d", g.Len(), n+1)
+	if mustV(g.Len(t.Context())) != n+1 {
+		t.Fatalf("got %d triples, want %d", mustV(g.Len(t.Context())), n+1)
 	}
 	var node rdflibgo.Subject = rdflibgo.NewURIRefUnsafe("http://example.org/root")
 	seen := make(map[string]bool, n+1)
 	for i := 0; i <= n; i++ {
-		next, ok := g.Value(node, &chainNext, nil)
+		next, ok, _ := g.Value(t.Context(), node, &chainNext, nil)
 		b, isBNode := next.(rdflibgo.BNode)
 		if !ok || !isBNode || seen[b.Value()] {
 			t.Fatalf("link %d: got %v", i, next)
@@ -73,32 +74,32 @@ func TestSerializeDeepNestedListsTrig(t *testing.T) {
 	const levels = 3 * maxNestDepth
 	src := "@prefix ex: <http://example.org/> .\nex:root ex:next " + strings.Repeat("( ", levels) + strings.Repeat(") ", levels) + ".\n"
 	ds := graph.NewDataset()
-	if err := ParseDataset(ds, strings.NewReader(src)); err != nil {
+	if err := ParseDataset(t.Context(), ds, strings.NewReader(src)); err != nil {
 		t.Fatal(err)
 	}
 	var b bytes.Buffer
-	if err := SerializeDataset(ds, &b); err != nil {
+	if err := SerializeDataset(t.Context(), ds, &b); err != nil {
 		t.Fatal(err)
 	}
 	ds2 := graph.NewDataset()
-	if err := ParseDataset(ds2, strings.NewReader(b.String())); err != nil {
+	if err := ParseDataset(t.Context(), ds2, strings.NewReader(b.String())); err != nil {
 		t.Fatalf("output does not parse: %v\n%s", err, b.String())
 	}
 	g := ds2.DefaultContext()
-	if g.Len() != ds.DefaultContext().Len() {
-		t.Fatalf("got %d triples, want %d", g.Len(), ds.DefaultContext().Len())
+	if mustV(g.Len(t.Context())) != mustV(ds.DefaultContext().Len(t.Context())) {
+		t.Fatalf("got %d triples, want %d", mustV(g.Len(t.Context())), mustV(ds.DefaultContext().Len(t.Context())))
 	}
 	// Walk root -> list -> first -> first ... down to the innermost ().
-	node, _ := g.Value(rdflibgo.NewURIRefUnsafe("http://example.org/root"), &chainNext, nil)
+	node, _, _ := g.Value(t.Context(), rdflibgo.NewURIRefUnsafe("http://example.org/root"), &chainNext, nil)
 	for i := 1; i < levels; i++ {
 		s, ok := node.(rdflibgo.BNode)
 		if !ok {
 			t.Fatalf("level %d: got %v", i, node)
 		}
-		if rest, _ := g.Value(s, &rdflibgo.RDF.Rest, nil); rest != rdflibgo.RDF.Nil {
+		if rest, _, _ := g.Value(t.Context(), s, &rdflibgo.RDF.Rest, nil); rest != rdflibgo.RDF.Nil {
 			t.Fatalf("level %d: rest %v", i, rest)
 		}
-		node, _ = g.Value(s, &rdflibgo.RDF.First, nil)
+		node, _, _ = g.Value(t.Context(), s, &rdflibgo.RDF.First, nil)
 	}
 	if node != rdflibgo.RDF.Nil {
 		t.Fatalf("innermost: got %v, want rdf:nil", node)

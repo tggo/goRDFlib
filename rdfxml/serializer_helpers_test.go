@@ -17,7 +17,7 @@ import (
 func serializeWellFormed(t *testing.T, g *rdflibgo.Graph) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := Serialize(g, &buf); err != nil {
+	if err := Serialize(t.Context(), g, &buf); err != nil {
 		t.Fatalf("Serialize: %v", err)
 	}
 	out := buf.String()
@@ -74,7 +74,7 @@ func assertRoundTrip(t *testing.T, g *rdflibgo.Graph) string {
 	t.Helper()
 	out := serializeWellFormed(t, g)
 	g2 := rdflibgo.NewGraph()
-	if err := Parse(g2, strings.NewReader(out)); err != nil {
+	if err := Parse(t.Context(), g2, strings.NewReader(out)); err != nil {
 		t.Fatalf("output does not reparse: %v\n%s", err, out)
 	}
 	testutil.AssertGraphEqual(t, g, g2)

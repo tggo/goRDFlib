@@ -1,6 +1,7 @@
 package nq_test
 
 import (
+	"context"
 	"os"
 	"strings"
 
@@ -23,11 +24,11 @@ func ExampleWriter_namedGraphs() {
 	for graphIRI, doc := range docs {
 		id, _ := rdflibgo.NewURIRef(graphIRI)
 		g := rdflibgo.NewGraph(rdflibgo.WithIdentifier(id))
-		if err := jsonld.Parse(g, strings.NewReader(doc)); err != nil {
+		if err := jsonld.Parse(context.Background(), g, strings.NewReader(doc)); err != nil {
 			panic(err)
 		}
-		sk := g.Skolemize("https://example.org", rdflibgo.WithStableSkolemIDs())
-		if err := w.WriteGraph(sk); err != nil {
+		sk, _ := g.Skolemize(context.Background(), "https://example.org", rdflibgo.WithStableSkolemIDs())
+		if err := w.WriteGraph(context.Background(), sk); err != nil {
 			panic(err)
 		}
 	}
