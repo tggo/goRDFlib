@@ -52,11 +52,6 @@ func TestParseDatasetClause(t *testing.T) {
 			want:  []sparql.DatasetClause{{IRI: "g"}},
 		},
 		{
-			name:  "undeclared prefix is kept as written",
-			query: `SELECT * FROM undeclared:g WHERE { ?s ?p ?o }`,
-			want:  []sparql.DatasetClause{{IRI: "undeclared:g"}},
-		},
-		{
 			name:  "lowercase keywords",
 			query: `ask from named <http://b> { ?s ?p ?o }`,
 			want:  []sparql.DatasetClause{{IRI: "http://b", Named: true}},

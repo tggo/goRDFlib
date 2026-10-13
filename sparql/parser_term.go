@@ -418,7 +418,7 @@ func preprocessCodepointEscapes(input string) string {
 // datasetIRI turns the token of a FROM [NAMED] clause into the IRI to record
 // on ParsedQuery.DatasetClause: a prefixed name is expanded, and a relative
 // IRI is resolved against the query's own BASE when it declares one. A token
-// that is neither (an undeclared prefix, a variable) is kept as written, so
+// that is neither (an undeclared prefix, a variable) is kept as written (only a variable now: an undeclared prefix is a parse error), so
 // that a caller sees what the query said instead of nothing.
 func (p *sparqlParser) datasetIRI(tok, base string) string {
 	s := tok

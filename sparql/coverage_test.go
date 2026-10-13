@@ -3189,6 +3189,7 @@ func TestConcat(t *testing.T) {
 func TestStrAndCasts(t *testing.T) {
 	g := makeSPARQLGraph(t)
 	r, err := Query(g, `
+		PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 		SELECT (STR(42) AS ?s) (xsd:string(42) AS ?xs) WHERE {}
 	`)
 	if err != nil {
@@ -3859,6 +3860,7 @@ func TestExtractTimezoneFunc(t *testing.T) {
 func TestXSDCasts(t *testing.T) {
 	g := makeSPARQLGraph(t)
 	r, err := Query(g, `
+		PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 		SELECT (xsd:integer("42") AS ?i)
 		       (xsd:decimal("3.14") AS ?d)
 		       (xsd:float("1.5") AS ?f)

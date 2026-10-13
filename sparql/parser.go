@@ -8,7 +8,11 @@ func Parse(input string) (*ParsedQuery, error) {
 		pos:      0,
 		prefixes: make(map[string]string),
 	}
-	return p.parse()
+	q, err := p.parse()
+	if p.undeclaredPrefix != nil { // the likelier cause of any later error
+		return nil, p.undeclaredPrefix
+	}
+	return q, err
 }
 
 // ParseUpdate parses a SPARQL Update request string.
@@ -18,7 +22,11 @@ func ParseUpdate(input string) (*ParsedUpdate, error) {
 		pos:      0,
 		prefixes: make(map[string]string),
 	}
-	return p.parseUpdate()
+	u, err := p.parseUpdate()
+	if p.undeclaredPrefix != nil { // the likelier cause of any later error
+		return nil, p.undeclaredPrefix
+	}
+	return u, err
 }
 
 type sparqlParser struct {
@@ -28,6 +36,11 @@ type sparqlParser struct {
 	bnodeCount      int
 	reifierTriples  []Triple // pending rdf:reifies triples from reified triple syntax
 	tripleTermError error    // deferred error from triple term validation
+	// undeclaredPrefix is the first prefixed name whose prefix the prologue
+	// did not declare (SPARQL 1.1 §4.1.1: a query error). It is deferred
+	// because the term readers return strings, not errors; Parse and
+	// ParseUpdate report it once parsing has otherwise succeeded.
+	undeclaredPrefix error
 }
 
 func (p *sparqlParser) parse() (*ParsedQuery, error) {

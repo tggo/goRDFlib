@@ -309,6 +309,9 @@ func (p *sparqlParser) readPNameNS() (string, bool) {
 	}
 	if p.pos < len(p.input) && p.input[p.pos] == ':' && p.input[p.pos-1] != '.' {
 		prefix := p.input[start:p.pos]
+		if _, ok := p.prefixes[prefix]; !ok && p.undeclaredPrefix == nil {
+			p.undeclaredPrefix = fmt.Errorf("sparql parse error at pos %d: %w %q", start, ErrUndeclaredPrefix, prefix)
+		}
 		p.pos++
 		return prefix, true
 	}

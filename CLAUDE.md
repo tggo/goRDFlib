@@ -459,9 +459,10 @@ The `store.Store` interface (13 methods) has four implementations:
   Reading while another goroutine calls `Add`/`Merge` is not safe.
 - SPARQL queries from a shapes graph get that graph's own `@prefix` declarations
   as a fallback (`writeGraphPrefixes`), because shapes files routinely rely on
-  them instead of `sh:declare`. An unresolved prefix does not error — it matches
-  like a wildcard, which is why a missing declaration shows up as wildly too
-  many results rather than as a failure.
+  them instead of `sh:declare`. An unresolved prefix is
+  `sparql.ErrUndeclaredPrefix` (issue #49); a SPARQL constraint whose query
+  fails to parse produces a violation. It used to match like a wildcard, so a
+  missing declaration showed up as wildly too many results.
 - `parseShapes` reads Core targets only. Every AF pass must follow it with
   `addAFTargets` (`afContext.evalCtx` and `Validate` both do), or a shape whose
   only target is `sh:target` gets an empty focus node set. It once did that for
