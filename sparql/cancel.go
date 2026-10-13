@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/paths"
 )
 
 // Cancellation.
@@ -174,6 +175,10 @@ func sortSolutions(ec *evalCtx, solutions []map[string]rdflibgo.Term, cmp func(a
 // Like EvalQuery, it never mutates q.
 func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
 	ec := newEvalCtx(ctx)
+	// A query only reads, so every property path in it can share the answers
+	// of a ReachabilityStore: one round trip per distinct start node, not per
+	// row (tggo/rdflibgo-mongostore#3).
+	ec.ctx = paths.WithReachabilityCache(ec.ctx)
 	if ec.poll() {
 		return nil, ec.failure()
 	}

@@ -106,7 +106,10 @@ func (p *MulPath) evalViaStore(st *stopper, g *graph.Graph, subj term.Subject, o
 		return false
 	}
 
-	reached, err := rs.Reachable(st.ctx, store.ReachabilityQuery{
+	if st.reach == nil {
+		st.reach = &reachCache{}
+	}
+	reached, err := st.reach.reachable(st.ctx, rs, store.ReachabilityQuery{
 		Start:      start,
 		Predicates: spec.preds,
 		Negated:    spec.negated,

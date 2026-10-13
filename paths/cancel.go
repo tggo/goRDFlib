@@ -29,10 +29,13 @@ type stopper struct {
 	done <-chan struct{}
 	n    uint32
 	err  error
+	// reach caches Reachable answers for this traversal, or for the
+	// evaluation the context belongs to (WithReachabilityCache).
+	reach *reachCache
 }
 
 func newStopper(ctx context.Context) *stopper {
-	return &stopper{ctx: ctx, done: ctx.Done()}
+	return &stopper{ctx: ctx, done: ctx.Done(), reach: reachCacheIn(ctx)}
 }
 
 // stop counts one traversal step and reports whether the traversal must end.

@@ -172,6 +172,14 @@ The `store.Store` interface (13 methods) has four implementations:
   never pushed — it is not transitive.
 - Pushdown needs **one endpoint bound**. With both unbound it would be one round
   trip per node, so it stays local.
+- `Reachable` answers are cached per (start, query, graph) for one read-only
+  evaluation (`paths/reach_cache.go`): per `Eval` call on the stopper, and per
+  SPARQL query via `paths.WithReachabilityCache`, which `EvalQueryContext`
+  installs. `rdf:type/rdfs:subClassOf*` otherwise asks once per typed node
+  (mongostore#3: 340 round trips for 20 classes). Updates must not install
+  it: a later operation reads what an earlier one wrote. Errors are never
+  cached. Guards: `TestReachableAskedOncePerStartNode`,
+  `TestQuerySharesReachabilityAnswers`.
 - MemoryStore implements `Reachable` even though it has no network to save. That
   is deliberate: it makes every property path in the W3C suite exercise the
   pushdown path, which is the only thing keeping it honest.
