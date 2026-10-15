@@ -5,6 +5,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	"github.com/tggo/goRDFlib/internal/iricache"
 	"github.com/tggo/goRDFlib/term"
 
 	"github.com/piprate/json-gold/ld"
@@ -30,32 +31,83 @@ type statement struct {
 // that could trip the text path's line-length cap also leaves the fast path,
 // unless unbounded lines were requested.
 func datasetStatements(ds *ld.RDFDataset, preserve, unbounded bool) (stmts []statement, ok bool) {
+	return newConverter(preserve, unbounded).statements(ds)
+}
+
+// converter turns json-gold datasets into statements. Parse uses one per
+// document; a NodeParser keeps one for its whole stream, which is why the
+// blank-node labeller and the vocabulary cache are pluggable. Not safe for
+// concurrent use.
+type converter struct {
+	// bnode maps a json-gold label, without "_:", to a node. Both the fast
+	// and the text path go through it, so they agree on identity.
+	bnode     func(label string) rdflibgo.BNode
+	unbounded bool
+	// iris remembers the IRIs of one dataset; statements clears it.
+	iris map[string]rdflibgo.URIRef
+	// vocab, when set, shares predicates and datatypes across datasets
+	// (issue #53). Without it they go through iris like every other IRI.
+	vocab *iricache.Cache
+}
+
+// newConverter is the converter for one Parse call.
+func newConverter(preserve, unbounded bool) *converter {
+	return &converter{
+		bnode:     bnodes.New(preserve).Label,
+		unbounded: unbounded,
+		iris:      make(map[string]rdflibgo.URIRef, 64),
+	}
+}
+
+func (c *converter) iri(v string) (rdflibgo.URIRef, bool) {
+	if u, hit := c.iris[v]; hit {
+		return u, true
+	}
+	if !absoluteIRI(v) {
+		return rdflibgo.URIRef{}, false
+	}
+	u, err := rdflibgo.NewURIRef(v)
+	if err != nil {
+		return rdflibgo.URIRef{}, false
+	}
+	c.iris[v] = u
+	return u, true
+}
+
+// vocabIRI is iri for a predicate or datatype.
+func (c *converter) vocabIRI(v string) (rdflibgo.URIRef, bool) {
+	if c.vocab == nil {
+		return c.iri(v)
+	}
+	if u, hit := c.vocab.Get(v); hit {
+		return u, true
+	}
+	if !absoluteIRI(v) {
+		return rdflibgo.URIRef{}, false
+	}
+	u, err := rdflibgo.NewURIRef(v)
+	if err != nil {
+		return rdflibgo.URIRef{}, false
+	}
+	c.vocab.Put(u)
+	return u, true
+}
+
+// statements is datasetStatements for this converter.
+func (c *converter) statements(ds *ld.RDFDataset) (stmts []statement, ok bool) {
+	clear(c.iris)
 	n := 0
 	for _, qs := range ds.Graphs {
 		n += len(qs)
 	}
 	stmts = make([]statement, 0, n)
-	scope := bnodes.New(preserve)
-	iris := make(map[string]rdflibgo.URIRef, 64)
-	iri := func(v string) (rdflibgo.URIRef, bool) {
-		if u, hit := iris[v]; hit {
-			return u, true
-		}
-		if !absoluteIRI(v) {
-			return rdflibgo.URIRef{}, false
-		}
-		u, err := rdflibgo.NewURIRef(v)
-		if err != nil {
-			return rdflibgo.URIRef{}, false
-		}
-		iris[v] = u
-		return u, true
-	}
+	iri := c.iri
+	unbounded := c.unbounded
 	bnode := func(v string) (rdflibgo.BNode, bool) {
 		if !simpleBNodeLabel(v) {
 			return rdflibgo.BNode{}, false
 		}
-		return scope.Label(v[2:]), true
+		return c.bnode(v[2:]), true
 	}
 	for _, qs := range ds.Graphs {
 		for _, q := range qs {
@@ -79,7 +131,7 @@ func datasetStatements(ds *ld.RDFDataset, preserve, unbounded bool) (stmts []sta
 			// A blank-node predicate (generalized RDF) is not an ld.IRI, so its
 			// value is empty here and fails the absolute-IRI check below.
 			pn, _ := q.Predicate.(ld.IRI)
-			p, good := iri(pn.Value)
+			p, good := c.vocabIRI(pn.Value)
 			if !good {
 				return nil, false
 			}
@@ -110,7 +162,7 @@ func datasetStatements(ds *ld.RDFDataset, preserve, unbounded bool) (stmts []sta
 					o = rdflibgo.NewLiteral(on.Value)
 				default:
 					// Checked like any other IRI, as the N-Quads parser does.
-					dt, good := iri(on.Datatype)
+					dt, good := c.vocabIRI(on.Datatype)
 					if !good {
 						return nil, false
 					}

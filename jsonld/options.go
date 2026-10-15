@@ -22,6 +22,8 @@ type config struct {
 	provenance           ProvenanceHandler
 	preserveBlankNodeIDs bool
 	expandContext        any
+	nodeErrorHandler     NodeErrorHandler // ParseNodes
+	maxNodeSize          int              // ParseNodes
 	// forceTextPath is set by tests to bypass the direct dataset conversion
 	// (see addDataset) so both paths can be compared.
 	forceTextPath bool

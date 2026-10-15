@@ -110,18 +110,23 @@ func parse(r io.Reader, cfg *config, out sink) error {
 	return addDataset(out, ds, cfg, src)
 }
 
+// addDataset is addDatasetWith for one Parse call.
+func addDataset(out sink, ds *ld.RDFDataset, cfg *config, src []byte) error {
+	return addDatasetWith(out, ds, cfg, newConverter(cfg.preserveBlankNodeIDs, cfg.unbounded), src)
+}
+
 // addDataset adds the RDF json-gold produced to g. It builds terms directly
 // from the dataset (datasetStatements) when every node is one the N-Quads
 // parser would accept unchanged, and otherwise serializes the dataset to
 // N-Quads and runs parseNQuadsInto, which owns all error, skip and
 // line-length behavior. cfg.forceTextPath (tests only) takes the second route
 // unconditionally.
-func addDataset(out sink, ds *ld.RDFDataset, cfg *config, src []byte) error {
+func addDatasetWith(out sink, ds *ld.RDFDataset, cfg *config, conv *converter, src []byte) error {
 	if err := dropEmptyNodes(ds, cfg); err != nil {
 		return err
 	}
 	if !cfg.forceTextPath {
-		if stmts, ok := datasetStatements(ds, cfg.preserveBlankNodeIDs, cfg.unbounded); ok {
+		if stmts, ok := conv.statements(ds); ok {
 			if len(stmts) == 0 {
 				return nil
 			}
@@ -137,7 +142,7 @@ func addDataset(out sink, ds *ld.RDFDataset, cfg *config, src []byte) error {
 	if sb.Len() == 0 {
 		return nil
 	}
-	return parseNQuadsInto(out, sb.String(), cfg, src)
+	return parseNQuadsWith(out, sb.String(), cfg, conv, src)
 }
 
 // errEmptyNode is the reason given for a statement dropEmptyNodes removes.
@@ -198,10 +203,15 @@ func describeQuad(q *ld.Quad) string {
 // has been read, so a failed parse leaves g as it was. Provenance is reported
 // for the same statements after they are added.
 func parseNQuadsInto(out sink, nqStr string, cfg *config, src []byte) error {
+	return parseNQuadsWith(out, nqStr, cfg, newConverter(cfg.preserveBlankNodeIDs, cfg.unbounded), src)
+}
+
+// parseNQuadsWith is parseNQuadsInto with the blank-node labels of conv: the
+// N-Quads parser keeps json-gold's labels and conv maps them, exactly as the
+// fast path does.
+func parseNQuadsWith(out sink, nqStr string, cfg *config, conv *converter, src []byte) error {
 	nqOpts := make([]nq.Option, 0, 4)
-	if cfg.preserveBlankNodeIDs {
-		nqOpts = append(nqOpts, nq.WithPreserveBlankNodeIDs())
-	}
+	nqOpts = append(nqOpts, nq.WithPreserveBlankNodeIDs())
 	if cfg.unbounded {
 		nqOpts = append(nqOpts, nq.WithUnboundedLines())
 	}
@@ -223,6 +233,12 @@ func parseNQuadsInto(out sink, nqStr string, cfg *config, src []byte) error {
 	// One statement per N-Quads line.
 	stmts := make([]statement, 0, strings.Count(nqStr, "\n")+1)
 	collect := func(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, _ rdflibgo.Term) error {
+		if b, ok := s.(rdflibgo.BNode); ok {
+			s = conv.bnode(b.Value())
+		}
+		if b, ok := o.(rdflibgo.BNode); ok {
+			o = conv.bnode(b.Value())
+		}
 		stmts = append(stmts, statement{s, p, o})
 		return nil
 	}

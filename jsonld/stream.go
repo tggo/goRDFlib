@@ -29,6 +29,9 @@ var ErrNilHandler = errors.New("jsonld: ParseStream handler must not be nil")
 // what a caller that indexes the triples itself (shacl.LoadJsonLD) or writes
 // them straight out does not need. A triple repeated in the document may be
 // delivered more than once; a graph would hold it once.
+//
+// For newline-delimited node objects sharing one context, ParseNodesStream
+// does stream the input side.
 func ParseStream(r io.Reader, h TripleHandler, opts ...Option) error {
 	return ParseStreamContext(context.Background(), r, h, opts...)
 }

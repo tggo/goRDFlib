@@ -344,6 +344,26 @@ RDF/XML triples: 144 MB live through a graph, under 1 MB streamed). Turtle and
 TriG still read the whole input before parsing. JSON-LD expands the whole
 document and delivers its triples only once that succeeded.
 
+#### Streaming JSON-LD nodes
+
+For newline-delimited JSON, one node object per line with one shared
+`@context`, `jsonld.ParseNodes` processes the context once and converts the
+nodes in batches of 256, so memory is bounded by a batch rather than by the
+input (50k nodes: 16 MB peak heap, against 373 MB for one `@graph` document
+and 35 MB for hand-made batches of 1000 `Parse` calls, at the same speed).
+Blank node identifiers are scoped to the stream, as to one document.
+
+```go
+err := jsonld.ParseNodes(ctx, g, f, json.RawMessage(`{"@vocab": "https://schema.org/"}`),
+    jsonld.WithNodeErrorHandler(func(line int, node []byte, err error) error {
+        log.Printf("skipping line %d: %v", line, err)
+        return nil
+    }))
+```
+
+`ParseNodesStream` delivers to a handler instead; `NewNodeParser` with
+`ParseNode`/`Flush` takes nodes from any source.
+
 #### Streaming N-Quads output
 
 `nq.Serialize` buffers and sorts a whole graph. To write statements as they are

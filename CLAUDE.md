@@ -372,7 +372,8 @@ The `store.Store` interface (13 methods) has four implementations:
 ### streaming parse (issue #45, `internal/stream`)
 - nt, nq, turtle, trig and rdfxml have `ParseStream(r, h, opts...)` and
   `ParseStreamContext(ctx, r, h, opts...)`; every parser option applies. JSON-LD
-  has none (the algorithm needs the whole document).
+  has none for a document (the algorithm needs all of it); see the node
+  streaming section below for NDJSON.
 - The parsers emit through a **sink**, never a graph: `Parse` is a sink that
   calls `g.Add`, prefix declarations go through an optional `bind` hook, and
   TriG's `openGraph` hook keeps an empty `GRAPH` block creating its graph in
@@ -387,6 +388,26 @@ The `store.Store` interface (13 methods) has four implementations:
   under 1 MB.
 - Guard: `TestStreamMatchesParseOnW3CCorpus` (every W3C file of the five
   formats: same statements, same success/failure as Parse).
+
+### jsonld/ node streaming (issue #53, `nodes.go`, `nodes_ndjson.go`)
+- `NodeParser`/`ParseNodes`: one shared context, processed once; each node
+  is expanded and flattened into **its own** node map (GenerateNodeMap can
+  fail after writing part of a node, so a failed node must not touch the
+  batch), then merged into a batch; `GraphToRDF` runs once per 256 nodes.
+  Per node it was 5x slower: json-gold memoises IRI validity per
+  `GraphToRDF` call only, so `IsURL`'s regexp ran per predicate per node.
+- One `ld.IdentifierIssuer` for the stream: that is what keeps `_:x` one node
+  across lines and anonymous labels unique. Blank labels are mapped with a
+  per-parser prefix + json-gold's counter (`streamLabeler`), never a table —
+  `bnodes.Scope` would remember every anonymous node of the stream.
+- The converter (`dataset.go`) takes the labeller; the text path parses with
+  preserved labels and remaps through it, so both paths agree on identity.
+- Provenance: the position of the first node of the batch that *describes*
+  the subject (`lineOf`, keyed by the TermKey the converter will produce).
+- Guards: `TestParseNodesMatchesParse` (== one `@graph` document),
+  `...AcrossBatches`, `...BothPathsAgree`, `...ProcessesContextOnce`
+  (remote context loaded once). `BenchmarkParseNodes` compares with one
+  document and with hand-made batches.
 
 ### blank node scoping (internal/bnodes, PR #28)
 - Every parser gives blank node labels a **fresh scope per Parse call** (RDF 1.1
