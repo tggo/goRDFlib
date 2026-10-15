@@ -125,6 +125,9 @@ func addDatasetWith(out sink, ds *ld.RDFDataset, cfg *config, conv *converter, s
 	if err := dropEmptyNodes(ds, cfg); err != nil {
 		return err
 	}
+	if err := checkJSONLiterals(ds); err != nil {
+		return err
+	}
 	if !cfg.forceTextPath {
 		if stmts, ok := conv.statements(ds); ok {
 			if len(stmts) == 0 {
@@ -147,6 +150,39 @@ func addDatasetWith(out sink, ds *ld.RDFDataset, cfg *config, conv *converter, s
 
 // errEmptyNode is the reason given for a statement dropEmptyNodes removes.
 var errEmptyNode = fmt.Errorf("%w: an ill-formed IRI in a list left json-gold with no node", term.ErrInvalidIRI)
+
+// ErrUnsupportedJSONLiteral is returned when the document holds a JSON
+// literal ("@type": "@json") whose value json-gold cannot convert. Its
+// canonicaliser accepts only a JSON object; for an array, a string or null
+// it used to put its own error message into the graph as
+// the literal's value, with no error. Wrapping the value in an object is the
+// workaround.
+var ErrUnsupportedJSONLiteral = errors.New("jsonld: the JSON-LD processor cannot convert a JSON literal (@type @json) holding an array, a string or null; wrap the value in an object")
+
+// jsonLiteralFailures are the messages json-gold writes into an rdf:JSON
+// literal's value instead of reporting an error (ld/node.go, objectToRDF).
+// A real canonical JSON value starts with one of {["0-9tfn-, so none of
+// these can be one.
+var jsonLiteralFailures = []string{"JSON Canonicalization error ", "JSON Marshal error "}
+
+// checkJSONLiterals turns json-gold's in-band JSON literal failures into
+// ErrUnsupportedJSONLiteral.
+func checkJSONLiterals(ds *ld.RDFDataset) error {
+	for _, qs := range ds.Graphs {
+		for _, q := range qs {
+			l, ok := q.Object.(ld.Literal)
+			if !ok || l.Datatype != ld.RDFJSONLiteral {
+				continue
+			}
+			for _, prefix := range jsonLiteralFailures {
+				if strings.HasPrefix(l.Value, prefix) {
+					return fmt.Errorf("%w (%s)", ErrUnsupportedJSONLiteral, l.Value)
+				}
+			}
+		}
+	}
+	return nil
+}
 
 // dropEmptyNodes removes the statements json-gold produced with a missing
 // node. An ill-formed IRI as a list element, such as {"@list": [{"@id":

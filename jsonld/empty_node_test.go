@@ -60,3 +60,24 @@ func TestTrailingDataIsAnError(t *testing.T) {
 		t.Errorf("trailing whitespace rejected: %v", err)
 	}
 }
+
+// TestUnsupportedJSONLiteralIsAnError: json-gold stored its own error text
+// as the value of a JSON literal it could not canonicalise.
+func TestUnsupportedJSONLiteralIsAnError(t *testing.T) {
+	for _, v := range []string{`[1, 2]`, `"text"`, `null`} {
+		doc := `{"@id": "http://e/s", "http://e/p": {"@value": ` + v + `, "@type": "@json"}}`
+		g := rdflibgo.NewGraph()
+		err := Parse(t.Context(), g, strings.NewReader(doc))
+		if !errors.Is(err, ErrUnsupportedJSONLiteral) {
+			t.Errorf("%s: error = %v, want ErrUnsupportedJSONLiteral", v, err)
+		}
+		if n, _ := g.Len(t.Context()); n != 0 {
+			t.Errorf("%s: %d triples added", v, n)
+		}
+	}
+	doc := `{"@id": "http://e/s", "http://e/p": {"@value": {"b": 1, "a": [2]}, "@type": "@json"}}`
+	g := rdflibgo.NewGraph()
+	if err := Parse(t.Context(), g, strings.NewReader(doc)); err != nil {
+		t.Fatalf("an object JSON literal: %v", err)
+	}
+}
