@@ -656,6 +656,15 @@ The `store.Store` interface (13 methods) has four implementations:
   every insert: -45% memory and -13..31% time on loads. Lookups yield `*t`;
   never hand out the pointer, the three indexes share it.
 
+- The two inner index levels are `smallMap`s (`store/memory_smallmap.go`): a
+  slice up to 8 entries, a Go map beyond. Nested Go maps cost ~1400 B/triple
+  on unique-literal data because a singleton map still allocates an 8-slot
+  group; now ~400 (issue #53). Guard: `TestMemoryStoreFootprint` (budget 600).
+  Bound lookups pay ~5 ns for it; loads are ~20% faster.
+- `URIRef`/`BNode` store only their key; the value is `key[2:]`. One string
+  per term, 16-byte struct. Never build one as a struct literal without the
+  key — `Defrag` did, and its result had `TermKey == ""` (a store wildcard).
+
 ### store stress numbers (README "Store Stress Test")
 - Ingest and heap delta come from `TestStress3M` (one run). Reads come from
   `BenchmarkStress3M`, which loads each backend once per process and repeats

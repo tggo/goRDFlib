@@ -138,8 +138,8 @@ func (m *MemoryStore) Reachable(ctx context.Context, q ReachabilityQuery) ([]ter
 			nk := term.TermKey(node)
 			if q.Inverse {
 				// osp: object → subject → predicate → triple
-				for sk, byPred := range idx.osp[nk] {
-					for pk, t := range byPred {
+				for sk, byPred := range idx.osp[nk].all() {
+					for pk, t := range byPred.all() {
 						if !matches(pk) {
 							continue
 						}
@@ -157,11 +157,11 @@ func (m *MemoryStore) Reachable(ctx context.Context, q ReachabilityQuery) ([]ter
 				continue
 			}
 			// spo: subject → predicate → object → triple
-			for pk, byObj := range idx.spo[nk] {
+			for pk, byObj := range idx.spo[nk].all() {
 				if !matches(pk) {
 					continue
 				}
-				for ok, t := range byObj {
+				for ok, t := range byObj.all() {
 					if !emitted[ok] {
 						emitted[ok] = true
 						result = append(result, t.Object)
