@@ -117,6 +117,9 @@ func parse(r io.Reader, cfg *config, out sink) error {
 // line-length behavior. cfg.forceTextPath (tests only) takes the second route
 // unconditionally.
 func addDataset(out sink, ds *ld.RDFDataset, cfg *config, src []byte) error {
+	if err := dropEmptyNodes(ds, cfg); err != nil {
+		return err
+	}
 	if !cfg.forceTextPath {
 		if stmts, ok := datasetStatements(ds, cfg.preserveBlankNodeIDs, cfg.unbounded); ok {
 			if len(stmts) == 0 {
@@ -126,13 +129,61 @@ func addDataset(out sink, ds *ld.RDFDataset, cfg *config, src []byte) error {
 		}
 	}
 	var sb strings.Builder
-	if err := (&ld.NQuadRDFSerializer{}).SerializeTo(&sb, ds); err != nil {
+	if err := guard("serializing expanded RDF", func() error {
+		return (&ld.NQuadRDFSerializer{}).SerializeTo(&sb, ds)
+	}); err != nil {
 		return fmt.Errorf("json-ld: serializing expanded RDF: %w", err)
 	}
 	if sb.Len() == 0 {
 		return nil
 	}
 	return parseNQuadsInto(out, sb.String(), cfg, src)
+}
+
+// errEmptyNode is the reason given for a statement dropEmptyNodes removes.
+var errEmptyNode = fmt.Errorf("%w: an ill-formed IRI in a list left json-gold with no node", term.ErrInvalidIRI)
+
+// dropEmptyNodes removes the statements json-gold produced with a missing
+// node. An ill-formed IRI as a list element, such as {"@list": [{"@id":
+// "%"}]}, converts to no node at all, and json-gold still emits the
+// rdf:first statement for it; its N-Quads serializer then panicked on the
+// nil. The statement is one with an ill-formed IRI (JSON-LD 1.1 API §8.1),
+// so it is dropped and reported like the others, or fails WithStrictIRIs.
+func dropEmptyNodes(ds *ld.RDFDataset, cfg *config) error {
+	for name, qs := range ds.Graphs {
+		kept := qs[:0]
+		for _, q := range qs {
+			if q.Subject != nil && q.Predicate != nil && q.Object != nil {
+				kept = append(kept, q)
+				continue
+			}
+			if cfg.strictIRIs {
+				return fmt.Errorf("json-ld: %s: %w", describeQuad(q), errEmptyNode)
+			}
+			if cfg.skipHandler != nil {
+				cfg.skipHandler(describeQuad(q), errEmptyNode)
+			}
+		}
+		ds.Graphs[name] = kept
+	}
+	return nil
+}
+
+// describeQuad renders a quad for a SkipHandler, with "?" for a missing node.
+func describeQuad(q *ld.Quad) string {
+	part := func(n ld.Node) string {
+		switch v := n.(type) {
+		case nil:
+			return "?"
+		case ld.IRI:
+			return "<" + v.Value + ">"
+		case ld.BlankNode:
+			return v.Attribute
+		default:
+			return fmt.Sprintf("%q", n.GetValue())
+		}
+	}
+	return part(q.Subject) + " " + part(q.Predicate) + " " + part(q.Object) + " ."
 }
 
 // parseNQuadsInto parses the expanded N-Quads into g.

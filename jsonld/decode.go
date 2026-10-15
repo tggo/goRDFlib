@@ -20,8 +20,20 @@ var ErrInvalidJSON = errors.New("jsonld: input is not valid JSON")
 func decodeDocument(r io.Reader) (any, error) {
 	lr := &newlineReader{r: r}
 	var doc any
-	err := json.NewDecoder(lr).Decode(&doc)
+	dec := json.NewDecoder(lr)
+	err := dec.Decode(&doc)
 	if err == nil {
+		// Anything but whitespace after the value is an error: the decoder
+		// stops at the end of the first value, so two concatenated
+		// documents, or a line "0,{...}", silently lost everything after it.
+		if _, terr := dec.Token(); !errors.Is(terr, io.EOF) {
+			if terr != nil && lr.err != nil && errors.Is(terr, lr.err) {
+				return nil, fmt.Errorf("jsonld: reading input: %w", terr)
+			}
+			line, col := lr.position(dec.InputOffset() - 1)
+			return nil, fmt.Errorf("%w: unexpected data after the JSON value at line %d, column %d",
+				ErrInvalidJSON, line, col)
+		}
 		return doc, nil
 	}
 	var syn *json.SyntaxError
