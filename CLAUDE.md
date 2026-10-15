@@ -389,6 +389,20 @@ The `store.Store` interface (13 methods) has four implementations:
 - Guard: `TestStreamMatchesParseOnW3CCorpus` (every W3C file of the five
   formats: same statements, same success/failure as Parse).
 
+### jsonld/ W3C toRdf suite (`w3c_test.go`, submodule `testdata/w3c/json-ld-api`)
+- 411 pass; 19 are JSON-LD 1.0 only; 37 are json-gold limitations in
+  `w3cKnown`, grouped with reasons (net/url IRI resolution, JSON literal
+  canonicalisation, no rdfDirection, missing context errors). None is in our
+  conversion. A known test that starts passing **fails the run** — remove it.
+- Parse flattens named graphs, so the expected N-Quads are flattened too;
+  graph names are not checked. A local loader maps the suite's base URL to
+  the checkout; nothing is fetched.
+- json-gold writes "JSON Canonicalization error …" *as the value* of an
+  rdf:JSON literal it cannot canonicalise (anything but an object).
+  `checkJSONLiterals` turns that into `ErrUnsupportedJSONLiteral`.
+- `testutil.Isomorphic` exists for probing a test expected to fail without
+  failing the run (AssertGraphEqual marks the T).
+
 ### jsonld/ node streaming (issue #53, `nodes.go`, `nodes_ndjson.go`)
 - `NodeParser`/`ParseNodes`: one shared context, processed once; each node
   is expanded and flattened into **its own** node map (GenerateNodeMap can

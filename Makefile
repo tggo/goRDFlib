@@ -29,7 +29,7 @@ test-w3c:
 	@echo "================================================"
 	@echo ""
 	@# Leaf subtests only; see internal/w3cstat for why parents are not counted.
-	@go test ./sparql/ ./sparql/results/ ./endpoint/ ./nt/ ./nq/ ./turtle/ ./trig/ ./rdfxml/ ./shacl/ ./reasoning/ \
+	@go test ./sparql/ ./sparql/results/ ./endpoint/ ./nt/ ./nq/ ./turtle/ ./trig/ ./rdfxml/ ./jsonld/ ./shacl/ ./reasoning/ \
 		-run 'TestW3C' -json -count=1 -timeout 600s | go run ./internal/w3cstat
 
 # Run everything: race tests + W3C conformance + benchmarks
@@ -87,6 +87,7 @@ test-fuzz:
 		"jsonld:FuzzScanIDPositions" \
 		"jsonld:FuzzLineIndex" \
 		"jsonld:FuzzParseProvenance" \
+		"jsonld:FuzzParseNodes" \
 		"rdfxml:FuzzParseProvenance" \
 		"shacl:FuzzSourceLines" \
 		"shacl:FuzzSourceLinesNeverInvent" \

@@ -4,7 +4,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/tggo/goRDFlib.svg)](https://pkg.go.dev/github.com/tggo/goRDFlib)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tggo/goRDFlib)](https://goreportcard.com/report/github.com/tggo/goRDFlib)
 ![Coverage](https://img.shields.io/badge/Coverage-93.7%25-brightgreen)
-![W3C Tests](https://img.shields.io/badge/W3C_Tests-2462%2F2462-brightgreen)
+![W3C Tests](https://img.shields.io/badge/W3C_Tests-2873%2F2873-brightgreen)
 ![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-328%2F328-brightgreen)
 ![W3C SPARQL Update](https://img.shields.io/badge/W3C_SPARQL_1.1_Update-157%2F157-brightgreen)
 ![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-234%2F234-brightgreen)
@@ -19,6 +19,7 @@
 ![W3C TriG](https://img.shields.io/badge/W3C_TriG-356%2F356-brightgreen)
 ![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-60%2F60-brightgreen)
 ![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-427%2F427-brightgreen)
+![W3C JSON-LD toRdf](https://img.shields.io/badge/W3C_JSON--LD_toRdf-411%2F448-yellowgreen)
 ![SPARQL Protocol](https://img.shields.io/badge/SPARQL_Protocol-99.7%25_coverage-brightgreen)
 ![Badger Store](https://img.shields.io/badge/Badger_Store-persistent_KV-blue)
 ![SQLite Store](https://img.shields.io/badge/SQLite_Store-persistent_SQL-blue)
@@ -26,7 +27,7 @@
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
-> **Note:** This project is in active development. The core API is stabilizing but may still change. All 2462 W3C conformance tests that run pass (`make test-w3c`); 29 RDFS entailment tests that need datatype semantics are skipped. Fuzz-tested for robustness.
+> **Note:** This project is in active development. The core API is stabilizing but may still change. All 2873 W3C conformance tests that run pass (`make test-w3c`); 29 RDFS entailment tests that need datatype semantics are skipped, and 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold). Fuzz-tested for robustness.
 
 ## About
 
@@ -303,7 +304,7 @@ All formats include both parser and serializer:
 | N-Triples 1.2 | yes | yes | 70/70 + 29/29 RDF 1.2 (100%) |
 | N-Quads 1.2 | yes | yes | 87/87 + 27/27 RDF 1.2 (100%) |
 | RDF/XML 1.2 | yes | yes | 166/166 + 30/30 RDF 1.2 (100%) |
-| JSON-LD | yes | yes | via [piprate/json-gold](https://github.com/piprate/json-gold) |
+| JSON-LD 1.1 | yes | yes | toRdf 411/448 via [piprate/json-gold](https://github.com/piprate/json-gold); the 37 others are json-gold limitations, listed with reasons in `jsonld/w3c_test.go` |
 
 All parsers support RDF 1.2 features: triple terms (`<<( s p o )>>`), reified triples, annotations (`{| p o |}`), directional language tags, and `rdf:parseType="Triple"` (RDF/XML).
 
@@ -1028,6 +1029,7 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | N-Quads 1.2 | 27 | 27 | 100% |
 | RDF/XML 1.1 | 166 | 166 | 100% |
 | RDF/XML 1.2 | 30 | 30 | 100% |
+| JSON-LD 1.1 toRdf | 467 | 411 | 19 skipped: JSON-LD 1.0 only; 37 skipped: json-gold limitations, each with its reason in `jsonld/w3c_test.go` |
 | SHACL Core | 98 | 98 | 100% |
 | SHACL-SPARQL | 22 | 22 | 100% |
 | SHACL 1.2 Core | 132 | 132 | 100% |
@@ -1035,7 +1037,7 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | SHACL 1.2 Node Expressions | 65 | 65 | 100% |
 | SHACL 1.2 Rules (SRL) | 86 | 86 | 100% |
 | RDF 1.1 Semantics (RDFS entailment) | 39 | 10 | 29 skipped: need datatype semantics |
-| **Total** | **2491** | **2462** | **0 failed, 29 skipped** |
+| **Total** | **2958** | **2873** | **0 failed, 85 skipped** |
 
 Counts are leaf test cases from `go test -json`, produced by `make test-w3c`.
 

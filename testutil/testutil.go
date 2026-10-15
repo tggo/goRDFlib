@@ -57,14 +57,45 @@ func testContext(t *testing.T) context.Context {
 // cannot be read.
 func collectTriples(t *testing.T, g *graph.Graph) []triple {
 	t.Helper()
+	ts, err := readTriples(testContext(t), g)
+	if err != nil {
+		t.Fatalf("reading graph: %v", err)
+	}
+	return ts
+}
+
+func readTriples(ctx context.Context, g *graph.Graph) ([]triple, error) {
 	var ts []triple
-	for tr, err := range g.Triples(testContext(t), nil, nil, nil) {
+	for tr, err := range g.Triples(ctx, nil, nil, nil) {
 		if err != nil {
-			t.Fatalf("reading graph: %v", err)
+			return nil, err
 		}
 		ts = append(ts, triple{tr.Subject, tr.Predicate, tr.Object})
 	}
-	return ts
+	return ts, nil
+}
+
+// Isomorphic reports whether two graphs hold the same triples up to
+// blank-node relabelling — AssertGraphEqual's check, for a caller that must
+// not fail a test on a mismatch (a conformance runner probing a test it
+// expects to fail). Like AssertGraphEqual it is exponential on long chains
+// of look-alike blank nodes.
+func Isomorphic(ctx context.Context, a, b *graph.Graph) (bool, error) {
+	at, err := readTriples(ctx, a)
+	if err != nil {
+		return false, err
+	}
+	bt, err := readTriples(ctx, b)
+	if err != nil {
+		return false, err
+	}
+	if len(at) != len(bt) {
+		return false, nil
+	}
+	if !hasBNodes(at) && !hasBNodes(bt) {
+		return mapsEqual(tripleSet(at), tripleSet(bt)), nil
+	}
+	return isomorphic(at, bt), nil
 }
 
 func hasBNodes(ts []triple) bool {

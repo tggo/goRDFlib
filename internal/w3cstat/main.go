@@ -43,6 +43,7 @@ var suites = []struct {
 	{"N-Quads 1.2", []string{"nq.TestW3CNQuads12"}},
 	{"RDF/XML 1.1", []string{"rdfxml.TestW3CRDFXML"}},
 	{"RDF/XML 1.2", []string{"rdfxml.TestW3CRDFXML12"}},
+	{"JSON-LD 1.1 toRdf", []string{"jsonld.TestW3CToRDF"}},
 	{"SHACL Core", []string{"shacl.TestW3CCoreTests"}},
 	{"SHACL-SPARQL", []string{"shacl.TestW3CSPARQLTests"}},
 	{"SHACL 1.2 Core", []string{"shacl.TestW3CSHACL12CoreTests"}},

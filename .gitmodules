@@ -11,3 +11,6 @@
 	path = testdata/w3c/data-shapes
 	url = https://github.com/w3c/data-shapes.git
 	branch = gh-pages
+[submodule "testdata/w3c/json-ld-api"]
+	path = testdata/w3c/json-ld-api
+	url = https://github.com/w3c/json-ld-api.git
