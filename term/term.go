@@ -47,24 +47,37 @@ type Predicate = URIRef
 
 // URIRef represents an IRI reference.
 // Ported from: rdflib.term.URIRef
+//
+// Only the TermKey ("U:" + IRI) is stored; the IRI is a substring of it. One
+// string per IRI instead of two, and a 16-byte struct (issue #53).
 type URIRef struct {
-	value string
-	key   string // cached TermKey
+	key string
 }
+
+// uriKey builds a URIRef key.
+func uriKey(value string) string { return "U:" + value }
 
 func (u URIRef) subject()         {}
 func (u URIRef) termType() string { return "URIRef" }
 
 // Value returns the IRI string.
-func (u URIRef) Value() string { return u.value }
+func (u URIRef) Value() string { return u.value() }
+
+// value strips the "U:" from the key; the zero URIRef has an empty value.
+func (u URIRef) value() string {
+	if u.key == "" {
+		return ""
+	}
+	return u.key[2:]
+}
 
 // String returns the IRI string.
-func (u URIRef) String() string { return u.value }
+func (u URIRef) String() string { return u.value() }
 
 // Equal returns true if other is a URIRef with the same value.
 func (u URIRef) Equal(other Term) bool {
 	if o, ok := other.(URIRef); ok {
-		return u.value == o.value
+		return u.value() == o.value()
 	}
 	return false
 }
@@ -73,25 +86,25 @@ func (u URIRef) Equal(other Term) bool {
 // If a NamespaceManager is provided and can abbreviate the IRI, the prefixed form is returned.
 func (u URIRef) N3(ns ...NamespaceManager) string {
 	if len(ns) > 0 && ns[0] != nil {
-		if prefix, ok := ns[0].Prefix(u.value); ok {
+		if prefix, ok := ns[0].Prefix(u.value()); ok {
 			return prefix
 		}
 	}
-	return "<" + u.value + ">"
+	return "<" + u.value() + ">"
 }
 
 // Defrag returns a new URIRef without the fragment identifier.
 func (u URIRef) Defrag() URIRef {
-	if i := strings.Index(u.value, "#"); i >= 0 {
-		return URIRef{value: u.value[:i]}
+	if i := strings.Index(u.value(), "#"); i >= 0 {
+		return NewURIRefUnsafe(u.value()[:i])
 	}
 	return u
 }
 
 // Fragment returns the fragment identifier (without #), or empty string.
 func (u URIRef) Fragment() string {
-	if i := strings.Index(u.value, "#"); i >= 0 {
-		return u.value[i+1:]
+	if i := strings.Index(u.value(), "#"); i >= 0 {
+		return u.value()[i+1:]
 	}
 	return ""
 }
@@ -126,12 +139,12 @@ func ValidIRI(s string) bool {
 // NewURIRefUnsafe creates a URIRef without validation.
 // Use for trusted/internal IRIs only. For user-provided input, use NewURIRef.
 func NewURIRefUnsafe(value string) URIRef {
-	return URIRef{value: value, key: "U:" + value}
+	return URIRef{key: uriKey(value)}
 }
 
 // MustURIRef is like NewURIRefUnsafe but exported for cross-package use.
 func MustURIRef(value string) URIRef {
-	return URIRef{value: value, key: "U:" + value}
+	return URIRef{key: uriKey(value)}
 }
 
 // NewURIRef creates a new URIRef, validating that it contains no forbidden
@@ -141,7 +154,7 @@ func NewURIRef(value string) (URIRef, error) {
 	if !isValidIRI(value) {
 		return URIRef{}, fmt.Errorf("%w: %q contains forbidden characters", ErrInvalidIRI, value)
 	}
-	return URIRef{value: value, key: "U:" + value}, nil
+	return URIRef{key: uriKey(value)}, nil
 }
 
 // NewURIRefWithBase creates a new URIRef by resolving value against a base IRI.
@@ -165,31 +178,40 @@ func NewURIRefWithBase(value, base string) (URIRef, error) {
 
 // BNode represents a blank node.
 // Ported from: rdflib.term.BNode
+//
+// Only the TermKey ("B:" + label) is stored, as for URIRef.
 type BNode struct {
-	value string
-	key   string // cached TermKey
+	key string
 }
 
 func (b BNode) subject()         {}
 func (b BNode) termType() string { return "BNode" }
 
 // Value returns the blank node identifier.
-func (b BNode) Value() string { return b.value }
+func (b BNode) Value() string { return b.value() }
+
+// value strips the "B:" from the key; the zero BNode has an empty value.
+func (b BNode) value() string {
+	if b.key == "" {
+		return ""
+	}
+	return b.key[2:]
+}
 
 // String returns the blank node identifier.
-func (b BNode) String() string { return b.value }
+func (b BNode) String() string { return b.value() }
 
 // Equal returns true if other is a BNode with the same identifier.
 func (b BNode) Equal(other Term) bool {
 	if o, ok := other.(BNode); ok {
-		return b.value == o.value
+		return b.value() == o.value()
 	}
 	return false
 }
 
 // N3 returns the N-Triples representation: _:id.
 func (b BNode) N3(ns ...NamespaceManager) string {
-	return "_:" + b.value
+	return "_:" + b.value()
 }
 
 // Skolemize returns a URIRef that deterministically represents this blank node.
@@ -206,7 +228,7 @@ func (b BNode) Skolemize(authority string, basepath ...string) URIRef {
 			bp += "/"
 		}
 	}
-	return NewURIRefUnsafe(authority + bp + b.value)
+	return NewURIRefUnsafe(authority + bp + b.value())
 }
 
 // NewBNode creates a new BNode with a unique auto-generated identifier.
@@ -220,7 +242,7 @@ func NewBNode(id ...string) BNode {
 		u := uuid.New()
 		v = "N" + hex.EncodeToString(u[:])
 	}
-	return BNode{value: v, key: "B:" + v}
+	return BNode{key: "B:" + v}
 }
 
 // --- Variable ---

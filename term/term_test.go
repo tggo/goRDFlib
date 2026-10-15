@@ -276,3 +276,11 @@ func BenchmarkTermKey(b *testing.B) {
 		TermKey(u)
 	}
 }
+
+func TestDefragKeepsTermKey(t *testing.T) {
+	u := NewURIRefUnsafe("http://example.org/a#frag").Defrag()
+	want := NewURIRefUnsafe("http://example.org/a")
+	if u != want || TermKey(u) != "U:http://example.org/a" {
+		t.Fatalf("Defrag = %#v (key %q), want %#v", u, TermKey(u), want)
+	}
+}
