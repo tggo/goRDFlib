@@ -10,6 +10,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	"github.com/tggo/goRDFlib/internal/iricache"
 )
 
 // ErrInvalidIRI marks a line that failed to parse because an IRI contained a
@@ -29,6 +30,9 @@ type LineParser struct {
 	Pos        int
 	LineNum    int
 	BlankNodes bnodes.Scope
+	// IRIs shares predicate and datatype URIRefs across the lines of one
+	// parse; nil caches nothing.
+	IRIs *iricache.Cache
 }
 
 // SkipSpaces advances past spaces and tabs.
@@ -156,6 +160,9 @@ func (p *LineParser) ReadPredicate() (rdflibgo.URIRef, error) {
 	if err != nil {
 		return rdflibgo.URIRef{}, fmt.Errorf("line %d: predicate: %w", p.LineNum, err)
 	}
+	if u, ok := p.IRIs.Get(iri); ok {
+		return u, nil
+	}
 	if !isAbsoluteIRI(iri) {
 		return rdflibgo.URIRef{}, fmt.Errorf("line %d: predicate: %w", p.LineNum, ErrRelativeIRI)
 	}
@@ -163,6 +170,7 @@ func (p *LineParser) ReadPredicate() (rdflibgo.URIRef, error) {
 	if verr != nil {
 		return rdflibgo.URIRef{}, fmt.Errorf("line %d: predicate: %w", p.LineNum, verr)
 	}
+	p.IRIs.Put(validated)
 	return validated, nil
 }
 
@@ -369,16 +377,20 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 		if err != nil {
 			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, err)
 		}
-		if !isAbsoluteIRI(dt) {
+		dtIRI, cached := p.IRIs.Get(dt)
+		if !cached && !isAbsoluteIRI(dt) {
 			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, ErrRelativeIRI)
 		}
 		// The same check as every other IRI position: IRIREF excludes
 		// <>"{}|^`\ as well as spaces and controls, and ReadIRI only rejects
 		// the latter. Without it a datatype such as <urn:x|y> was accepted
 		// here and then refused by the serializer.
-		dtIRI, verr := rdflibgo.NewURIRef(dt)
-		if verr != nil {
-			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, verr)
+		if !cached {
+			var verr error
+			if dtIRI, verr = rdflibgo.NewURIRef(dt); verr != nil {
+				return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, verr)
+			}
+			p.IRIs.Put(dtIRI)
 		}
 		opts = append(opts, rdflibgo.WithDatatype(dtIRI))
 	}

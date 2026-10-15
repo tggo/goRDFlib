@@ -10,6 +10,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	"github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/internal/iricache"
 	"github.com/tggo/goRDFlib/internal/stream"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -48,6 +49,7 @@ func newParser(cfg *config, sink TripleHandler) *rdfxmlParser {
 		base:       cfg.base,
 		provenance: cfg.provenance,
 		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
+		iris:       iricache.New(),
 		usedIDs:    make(map[string]bool),
 		nsPrefixes: make(map[string]string),
 	}
@@ -60,6 +62,7 @@ type rdfxmlParser struct {
 	provenance    ProvenanceHandler
 	dec           *xml.Decoder // the decoder currently being read, for source positions
 	bnodes        bnodes.Scope
+	iris          *iricache.Cache   // vocabIRI
 	usedIDs       map[string]bool   // track rdf:ID values for uniqueness
 	nsPrefixes    map[string]string // prefix → namespace URI (in-scope)
 	nsPrefixOrder []string          // insertion order of prefixes
@@ -187,6 +190,22 @@ func (p *rdfxmlParser) iri(s string) rdflibgo.URIRef {
 		p.err = fmt.Errorf("rdf/xml: line %d, column %d: %w", line, col, err)
 	}
 	return rdflibgo.NewURIRefUnsafe(s)
+}
+
+// vocabIRI is iri for the positions whose IRIs repeat — property and
+// typed-node element names, datatypes — sharing one URIRef per IRI across
+// the parse (issue #53). An invalid IRI is never cached, so it still
+// reaches iri and its error.
+func (p *rdfxmlParser) vocabIRI(s string) rdflibgo.URIRef {
+	if u, ok := p.iris.Get(s); ok {
+		return u
+	}
+	u, err := rdflibgo.NewURIRef(s)
+	if err != nil {
+		return p.iri(s)
+	}
+	p.iris.Put(u)
+	return u
 }
 
 func (p *rdfxmlParser) parse(r io.Reader) error {
@@ -325,7 +344,7 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 
 	// Emit rdf:type for typed nodes.
 	if elemURI != rdfNS+"Description" {
-		p.add(subj, rdflibgo.RDF.Type, p.iri(elemURI))
+		p.add(subj, rdflibgo.RDF.Type, p.vocabIRI(elemURI))
 	}
 
 	// Process property attributes on node element.
@@ -355,7 +374,7 @@ func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElemen
 			return nil, fmt.Errorf("rdf/xml: %s not allowed as property attribute", attrURI)
 		}
 		litOpts := p.langOpts(lang, its)
-		p.add(subj, p.iri(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
+		p.add(subj, p.vocabIRI(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
 	}
 
 	// Parse child property elements.
@@ -393,7 +412,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 		return fmt.Errorf("rdf/xml: %s not allowed as property element name", predURI)
 	}
 
-	pred := p.iri(predURI)
+	pred := p.vocabIRI(predURI)
 	lang := parentLang
 
 	savedBase := p.base
@@ -606,7 +625,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 			text := textContent.String()
 			var opts []rdflibgo.LiteralOption
 			if datatype != "" {
-				opts = append(opts, rdflibgo.WithDatatype(p.iri(p.resolve(datatype))))
+				opts = append(opts, rdflibgo.WithDatatype(p.vocabIRI(p.resolve(datatype))))
 			} else {
 				opts = p.langOpts(lang, its)
 			}
@@ -674,7 +693,7 @@ func (p *rdfxmlParser) emitPropertyAttrs(subj rdflibgo.Subject, attrs []xml.Attr
 			continue
 		}
 		litOpts := p.langOpts(lang, its)
-		p.add(subj, p.iri(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
+		p.add(subj, p.vocabIRI(attrURI), rdflibgo.NewLiteral(attr.Value, litOpts...))
 	}
 }
 

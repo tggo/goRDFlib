@@ -9,6 +9,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	"github.com/tggo/goRDFlib/internal/iricache"
 	"github.com/tggo/goRDFlib/internal/ntsyntax"
 	"github.com/tggo/goRDFlib/internal/stream"
 )
@@ -61,6 +62,7 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 		o(&cfg)
 	}
 	scope := bnodes.New(cfg.preserveBlankNodeIDs)
+	iris := iricache.New()
 	// A handler error (a failing store, or the caller's callback) aborts the
 	// parse: it says nothing about the line, so the error handler must not see
 	// it and offer a retry.
@@ -91,7 +93,7 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 		if line == "" || line[0] == '#' {
 			continue
 		}
-		if err := parseNTLine(line, lineNum, h, cfg.provenance, scope); err != nil {
+		if err := parseNTLine(line, lineNum, h, cfg.provenance, scope, iris); err != nil {
 			if hErr != nil {
 				return err
 			}
@@ -100,7 +102,7 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 			}
 			fixedLine, retry := cfg.errorHandler(lineNum, line, err)
 			if retry {
-				if err2 := parseNTLine(fixedLine, lineNum, h, cfg.provenance, scope); err2 != nil {
+				if err2 := parseNTLine(fixedLine, lineNum, h, cfg.provenance, scope, iris); err2 != nil {
 					return fmt.Errorf("line %d: retry failed: %w", lineNum, err2)
 				}
 			}
@@ -109,8 +111,8 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 	return nil
 }
 
-func parseNTLine(line string, lineNum int, h TripleHandler, prov ProvenanceHandler, scope bnodes.Scope) error {
-	p := &ntsyntax.LineParser{Line: line, Pos: 0, LineNum: lineNum, BlankNodes: scope}
+func parseNTLine(line string, lineNum int, h TripleHandler, prov ProvenanceHandler, scope bnodes.Scope, iris *iricache.Cache) error {
+	p := &ntsyntax.LineParser{Line: line, Pos: 0, LineNum: lineNum, BlankNodes: scope, IRIs: iris}
 
 	subj, err := p.ReadSubject()
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	"github.com/tggo/goRDFlib/internal/iricache"
 	"github.com/tggo/goRDFlib/internal/stream"
 	"github.com/tggo/goRDFlib/store"
 )
@@ -66,6 +67,7 @@ func newTrigParser(cfg *config, input string, defaultID rdflibgo.Term, sink Quad
 		prefixes:   make(map[string]string),
 		provenance: cfg.provenance,
 		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
+		iris:       iricache.New(),
 		maxDepth:   cfg.maxDepth(),
 	}
 }

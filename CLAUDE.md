@@ -739,6 +739,13 @@ The `store.Store` interface (13 methods) has four implementations:
   column (`decodeDocument`, which counts newlines as it reads instead of
   buffering the document). It used to be encoding/json's bare message. A read
   failure is not this error; it wraps the reader's error.
+- Predicate and datatype IRIs go through a per-parse `internal/iricache`
+  (nt/nq/turtle/trig; rdfxml also typed-node names), so a repeated IRI is one
+  URIRef (issue #53). Subjects/objects are not cached on purpose: mostly
+  distinct, they would fill the bounded cache (4096) and keep predicates out.
+  A hit skips validation, so only `Put` what passed it. The JSON-LD fast path
+  has its own unbounded per-document map. Guards: `TestParseSharesRepeatedIRIs`
+  in each parser package.
 - JSON-LD parsing adds to the graph only on success and drops ill-formed IRIs by
   default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
   json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.

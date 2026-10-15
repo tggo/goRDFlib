@@ -11,6 +11,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/bnodes"
 	iriref "github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/internal/iricache"
 	"github.com/tggo/goRDFlib/internal/stream"
 )
 
@@ -53,6 +54,7 @@ func newParser(cfg *config, input string, sink TripleHandler) *turtleParser {
 		prefixes:   make(map[string]string),
 		provenance: cfg.provenance,
 		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
+		iris:       iricache.New(),
 		maxDepth:   cfg.maxDepth(),
 	}
 }
@@ -69,7 +71,8 @@ type turtleParser struct {
 	prefixes   map[string]string // prefix -> namespace URI
 	provenance ProvenanceHandler
 	bnodes     bnodes.Scope
-	depth      int // current nesting of [ ( << {| ; see enter
+	iris       *iricache.Cache // predicates and datatypes, issue #53
+	depth      int             // current nesting of [ ( << {| ; see enter
 	maxDepth   int
 }
 
@@ -397,13 +400,13 @@ func (p *turtleParser) readPredicate() (rdflibgo.URIRef, error) {
 		if err != nil {
 			return rdflibgo.URIRef{}, err
 		}
-		return rdflibgo.NewURIRefUnsafe(p.resolveIRI(iri)), nil
+		return p.iris.Intern(p.resolveIRI(iri)), nil
 	}
 	uri, err := p.readPrefixedName()
 	if err != nil {
 		return rdflibgo.URIRef{}, err
 	}
-	return rdflibgo.NewURIRefUnsafe(uri), nil
+	return p.iris.Intern(uri), nil
 }
 
 // readObject parses an object term.
@@ -741,7 +744,7 @@ done:
 		if dt == rdflibgo.RDFLangString.Value() || dt == rdflibgo.RDFDirLangString.Value() {
 			return rdflibgo.Literal{}, p.errorf("datatype <%s> requires a language tag; write \"...\"@lang instead", dt)
 		}
-		lopts = append(lopts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt)))
+		lopts = append(lopts, rdflibgo.WithDatatype(p.iris.Intern(dt)))
 	}
 
 	return rdflibgo.NewLiteral(value, lopts...), nil
