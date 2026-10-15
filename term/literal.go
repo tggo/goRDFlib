@@ -14,6 +14,11 @@ type Literal struct {
 	lang     string
 	dir      string // "" | "ltr" | "rtl" (RDF 1.2 base direction)
 	datatype URIRef
+	// key is the cached TermKey ("L:" + N3), built once by NewLiteral. When
+	// the lexical form needs no escaping, lexical is a substring of key, so a
+	// large literal is held once, not once here and once per store key
+	// (issue #53). The zero Literal has no key; TermKey computes it then.
+	key string
 }
 
 func (l Literal) termType() string { return "Literal" }
@@ -100,7 +105,75 @@ func NewLiteral(value any, opts ...LiteralOption) Literal {
 		lit.dir = ""
 	}
 
+	lit.key = literalKey(lit)
+	lit.lexical = shareLexical(lit.key, lit.lexical)
 	return lit
+}
+
+// literalKey returns "L:" + l.N3() in a single allocation. NewLiteral runs it
+// for every literal, including the ones SPARQL builds per row, so the
+// concatenations in N3 were measurable. FuzzLiteralKey holds it to N3.
+func literalKey(l Literal) string {
+	if strings.Contains(l.lexical, "\n") {
+		return "L:" + l.N3() // """…""" form: rare, not worth a second encoder
+	}
+	switch l.datatype {
+	case XSDInteger, XSDDouble, XSDDecimal, XSDBoolean:
+		return "L:" + l.N3() // may be shorthand; one concatenation either way
+	}
+	escape := strings.ContainsAny(l.lexical, "\\\"\r\t")
+	size := 2 + 1 + len(l.lexical) + 1
+	if escape {
+		size += len(l.lexical) // upper bound: every byte escaped
+	}
+	dt := ""
+	switch {
+	case l.lang != "":
+		size += 1 + len(l.lang)
+		if l.dir != "" {
+			size += 2 + len(l.dir)
+		}
+	case l.datatype != (URIRef{}) && l.datatype != XSDString:
+		dt = l.datatype.Value()
+		size += 4 + len(dt)
+	}
+	var b strings.Builder
+	b.Grow(size)
+	b.WriteString(`L:"`)
+	if escape {
+		literalEscaper.WriteString(&b, l.lexical)
+	} else {
+		b.WriteString(l.lexical)
+	}
+	b.WriteByte('"')
+	switch {
+	case l.lang != "":
+		b.WriteByte('@')
+		b.WriteString(l.lang)
+		if l.dir != "" {
+			b.WriteString("--")
+			b.WriteString(l.dir)
+		}
+	case dt != "":
+		b.WriteString("^^<")
+		b.WriteString(dt)
+		b.WriteByte('>')
+	}
+	return b.String()
+}
+
+// shareLexical returns lexical as a substring of key when the key holds it
+// verbatim: unquoted shorthand at 2, "…" at 3. Otherwise the lexical form
+// was escaped and lexical is returned as it is. A multi-line literal is
+// always escaped (the """ form writes \n too), so it is held twice; sharing
+// it would need a different key format, which is stored by Badger and SQLite.
+func shareLexical(key, lexical string) string {
+	for _, off := range [...]int{2, 3} {
+		if end := off + len(lexical); end <= len(key) && key[off:end] == lexical {
+			return key[off:end]
+		}
+	}
+	return lexical
 }
 
 // Lexical returns the lexical form.

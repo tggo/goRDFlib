@@ -10,6 +10,9 @@ func TermKey(t Term) string {
 	case BNode:
 		return v.key
 	case Literal:
+		if v.key != "" {
+			return v.key
+		}
 		return "L:" + v.N3()
 	case TripleTerm:
 		return v.key

@@ -101,7 +101,19 @@ var builtins = map[string]builtin{
 	"STRLANGDIR": {3, 3, fnStrLangDir},
 }
 
-func boolTerm(b bool) rdflibgo.Term { return rdflibgo.NewLiteral(b) }
+// trueTerm and falseTerm are boxed once: every FILTER row produces one, and a
+// fresh literal per row costs a key build and two allocations.
+var (
+	trueTerm  rdflibgo.Term = rdflibgo.NewLiteral(true)
+	falseTerm rdflibgo.Term = rdflibgo.NewLiteral(false)
+)
+
+func boolTerm(b bool) rdflibgo.Term {
+	if b {
+		return trueTerm
+	}
+	return falseTerm
+}
 
 func isIRI(t rdflibgo.Term) bool {
 	_, ok := t.(rdflibgo.URIRef)

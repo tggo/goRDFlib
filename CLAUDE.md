@@ -664,6 +664,12 @@ The `store.Store` interface (13 methods) has four implementations:
 - `URIRef`/`BNode` store only their key; the value is `key[2:]`. One string
   per term, 16-byte struct. Never build one as a struct literal without the
   key — `Defrag` did, and its result had `TermKey == ""` (a store wildcard).
+- `Literal` caches its key (`literalKey`, one allocation, held to `"L:"+N3`
+  by `FuzzLiteralKey`); an unescaped lexical form is a substring of it, so a
+  large WKT literal is held once. A multi-line one is still held twice (the
+  `"""` form escapes `\n`; changing that changes the Badger/SQLite key
+  format). `NewLiteral` now pays for the key: never build a literal per row
+  when a shared one will do (`sparql.boolTerm` returns two package vars).
 
 ### store stress numbers (README "Store Stress Test")
 - Ingest and heap delta come from `TestStress3M` (one run). Reads come from
