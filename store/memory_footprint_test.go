@@ -50,8 +50,9 @@ func TestMemoryStoreFootprint(t *testing.T) {
 		t.Skip("allocates ~100 MB")
 	}
 	// Index overhead only (terms are allocated before the measurement).
-	// Nested Go maps cost ~1400 B/triple here; smallMap inner levels ~400.
-	const budget = 600
+	// Nested Go maps cost ~1400 B/triple here; smallMap inner levels ~400;
+	// a singleton level held as its triple (top, node) ~160.
+	const budget = 250
 	got, total := heapPerTriple(t, 200_000)
 	t.Logf("%.0f bytes/triple in the index, %.0f with terms", got, total)
 	if got > budget {

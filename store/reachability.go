@@ -137,39 +137,36 @@ func (m *MemoryStore) Reachable(ctx context.Context, q ReachabilityQuery) ([]ter
 		for _, node := range frontier {
 			nk := term.TermKey(node)
 			if q.Inverse {
-				// osp: object → subject → predicate → triple
-				for sk, byPred := range idx.osp[nk].all() {
-					for pk, t := range byPred.all() {
-						if !matches(pk) {
-							continue
-						}
-						if !emitted[sk] {
-							emitted[sk] = true
-							result = append(result, t.Subject)
-						}
-						if !expanded[sk] {
-							expanded[sk] = true
-							next = append(next, t.Subject)
-						}
-						break // one traversable edge to sk is enough
+				// osp: every triple with node as object
+				for t := range idx.osp.under(nk) {
+					if !matches(term.TermKey(t.Predicate)) {
+						continue
+					}
+					sk := term.TermKey(t.Subject)
+					if !emitted[sk] {
+						emitted[sk] = true
+						result = append(result, t.Subject)
+					}
+					if !expanded[sk] {
+						expanded[sk] = true
+						next = append(next, t.Subject)
 					}
 				}
 				continue
 			}
-			// spo: subject → predicate → object → triple
-			for pk, byObj := range idx.spo[nk].all() {
-				if !matches(pk) {
+			// spo: every triple with node as subject
+			for t := range idx.spo.under(nk) {
+				if !matches(term.TermKey(t.Predicate)) {
 					continue
 				}
-				for ok, t := range byObj.all() {
-					if !emitted[ok] {
-						emitted[ok] = true
-						result = append(result, t.Object)
-					}
-					if !expanded[ok] {
-						expanded[ok] = true
-						next = append(next, t.Object)
-					}
+				ok := term.TermKey(t.Object)
+				if !emitted[ok] {
+					emitted[ok] = true
+					result = append(result, t.Object)
+				}
+				if !expanded[ok] {
+					expanded[ok] = true
+					next = append(next, t.Object)
 				}
 			}
 		}

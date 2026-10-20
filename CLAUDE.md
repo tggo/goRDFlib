@@ -696,6 +696,14 @@ The `store.Store` interface (13 methods) has four implementations:
   on unique-literal data because a singleton map still allocates an 8-slot
   group; now ~400 (issue #53). Guard: `TestMemoryStoreFootprint` (budget 600).
   Bound lookups pay ~5 ns for it; loads are ~20% faster.
+- A singleton level is not a level: `top`/`node` (`memory_index.go`) hold
+  the triple itself until a second one arrives, and `delete` folds a level
+  back when one is left. The second/third keys come from the triple via
+  `keyAt` (every TermKey is cached, so no allocation). Index ~385 -> ~160
+  B/triple; the #53 1M repro 610 -> 423 MB, below the reporter's
+  dictionary+postings store (506 MB) while keeping direct bound-key lookups.
+  Guard: `TestMemoryIndexAgreesWithSet` (random add/remove vs a set, every
+  pattern shape and Cardinality, through promotion and folding).
 - `URIRef`/`BNode` store only their key; the value is `key[2:]`. One string
   per term, 16-byte struct. Never build one as a struct literal without the
   key — `Defrag` did, and its result had `TermKey == ""` (a store wildcard).
