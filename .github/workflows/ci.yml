@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.26']
+        go-version: ['1.26', '1.27']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,6 +20,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+          # Always the newest patch of the branch (security releases), not
+          # whatever version the runner happens to have cached.
+          check-latest: true
 
       - name: Run tests
         run: go test ./... -short -count=1 -timeout 300s
@@ -65,7 +68,8 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.27'
+          check-latest: true
 
       - name: Check out ${{ matrix.repo }}
         id: clone
