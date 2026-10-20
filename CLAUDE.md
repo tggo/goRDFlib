@@ -694,7 +694,7 @@ The `store.Store` interface (13 methods) has four implementations:
 - The two inner index levels are `smallMap`s (`store/memory_smallmap.go`): a
   slice up to 8 entries, a Go map beyond. Nested Go maps cost ~1400 B/triple
   on unique-literal data because a singleton map still allocates an 8-slot
-  group; now ~400 (issue #53). Guard: `TestMemoryStoreFootprint` (budget 600).
+  group; now ~400 (issue #53). Guard: `TestMemoryStoreFootprint` (budget 250).
   Bound lookups pay ~5 ns for it; loads are ~20% faster.
 - A singleton level is not a level: `top`/`node` (`memory_index.go`) hold
   the triple itself until a second one arrives, and `delete` folds a level
