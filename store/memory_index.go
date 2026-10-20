@@ -32,8 +32,10 @@ const (
 	posO
 )
 
-// keyAt returns the TermKey of t's term at pos. It does not allocate: every
-// term kind a store holds caches its key.
+// keyAt returns the TermKey of t's term at pos. It is the key the triple was
+// inserted under, since both come from TermKey of the same term. Terms built
+// by their constructors cache the key, so this does not allocate; a
+// hand-built Literal recomputes it, which is slower but still the same key.
 func keyAt(t *term.Triple, pos uint8) string {
 	switch pos {
 	case posS:

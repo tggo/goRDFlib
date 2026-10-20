@@ -19,14 +19,18 @@ func TestMemoryIndexAgreesWithSet(t *testing.T) {
 	subj := make([]term.URIRef, 12)
 	pred := make([]term.URIRef, 3)
 	obj := make([]term.Term, 12)
+	for i := range pred {
+		pred[i] = term.NewURIRefUnsafe(fmt.Sprintf("urn:p%d", i))
+	}
 	for i := range subj {
 		subj[i] = term.NewURIRefUnsafe(fmt.Sprintf("urn:s%d", i))
 		obj[i] = term.NewLiteral(fmt.Sprintf("o%d", i))
 	}
 	obj[0], obj[1] = subj[0], subj[1] // objects that are also subjects
-	for i := range pred {
-		pred[i] = term.NewURIRefUnsafe(fmt.Sprintf("urn:p%d", i))
-	}
+	obj[2] = term.NewBNode("b")
+	obj[3] = term.NewLiteral("o3", term.WithLang("en"))
+	obj[4] = term.NewLiteral(4)
+	obj[5] = term.NewTripleTerm(subj[2], pred[0], subj[3])
 
 	s := NewMemoryStore()
 	want := map[string]term.Triple{}
@@ -92,8 +96,61 @@ func TestMemoryIndexAgreesWithSet(t *testing.T) {
 				t.Fatalf("step %d mask %d: cardinality %d, want %d", step, mask, c, exp)
 			}
 		}
+		for _, inverse := range []bool{false, true} {
+			q := ReachabilityQuery{Start: probe.Subject, Predicates: []term.URIRef{probe.Predicate}, Inverse: inverse}
+			got, err := s.Reachable(ctx, q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if exp := naiveReachable(want, q); !sameKeys(got, exp) {
+				t.Fatalf("step %d inverse %v: Reachable %v, want %v", step, inverse, got, exp)
+			}
+		}
 	}
 	if n, _ := s.Len(ctx, nil); n != len(want) {
 		t.Fatalf("Len %d, want %d", n, len(want))
 	}
+}
+
+// naiveReachable is a breadth-first search over the model set.
+func naiveReachable(set map[string]term.Triple, q ReachabilityQuery) map[string]bool {
+	out := map[string]bool{}
+	frontier := []string{term.TermKey(q.Start)}
+	seen := map[string]bool{frontier[0]: true}
+	for len(frontier) > 0 {
+		var next []string
+		for _, n := range frontier {
+			for _, tr := range set {
+				if tr.Predicate != q.Predicates[0] {
+					continue
+				}
+				from, to := term.TermKey(tr.Subject), term.TermKey(tr.Object)
+				if q.Inverse {
+					from, to = to, from
+				}
+				if from != n {
+					continue
+				}
+				out[to] = true
+				if !seen[to] {
+					seen[to] = true
+					next = append(next, to)
+				}
+			}
+		}
+		frontier = next
+	}
+	return out
+}
+
+func sameKeys(got []term.Term, want map[string]bool) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for _, g := range got {
+		if !want[term.TermKey(g)] {
+			return false
+		}
+	}
+	return true
 }
