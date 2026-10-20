@@ -115,6 +115,12 @@ func TestStress3M(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping stress test in short mode")
 	}
+	if raceEnabled {
+		// It measures ingest speed and heap, which -race distorts 10-20x;
+		// under -race the Badger and SQLite runs alone take over 20 minutes.
+		// Races are covered by the TestConcurrentReadWrite_* tests.
+		t.Skip("skipping 3M-triple stress under -race")
+	}
 	quads := sharedStressQuads()
 	for _, bk := range stressBackends {
 		t.Run(bk.name, func(t *testing.T) {
@@ -210,6 +216,12 @@ func TestMain(m *testing.M) {
 func BenchmarkStress3M(b *testing.B) {
 	if testing.Short() {
 		b.Skip("skipping stress benchmark in short mode")
+	}
+	if raceEnabled {
+		// It measures ingest speed and heap, which -race distorts 10-20x;
+		// under -race the Badger and SQLite runs alone take over 20 minutes.
+		// Races are covered by the TestConcurrentReadWrite_* tests.
+		b.Skip("skipping 3M-triple stress under -race")
 	}
 	for _, bk := range stressBackends {
 		b.Run(bk.name, func(b *testing.B) {
