@@ -132,7 +132,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			p.pos += 6
 			flushTriples()
 			p.skipWS()
-			expr, err := p.parseExpr()
+			expr, err := p.parseConstraint()
 			if err != nil {
 				return nil, err
 			}
