@@ -25,6 +25,15 @@ func (p *sparqlParser) parseExpr() (Expr, error) {
 	return p.parseOrExpr()
 }
 
+// parseConstraint parses the constraint of a FILTER (SPARQL 1.1 rule [69]
+// Constraint ::= BrackettedExpression | BuiltInCall | FunctionCall). Unlike
+// parseExpr it never reads a binary operator after the call, so in
+// `FILTER bound(?x) <s> <p> ?o` the '<' that opens the next triple's IRI is not
+// taken for less-than. A leading '!' is still accepted, as before.
+func (p *sparqlParser) parseConstraint() (Expr, error) {
+	return p.parseUnaryExpr()
+}
+
 func (p *sparqlParser) parseOrExpr() (Expr, error) {
 	left, err := p.parseAndExpr()
 	if err != nil {
