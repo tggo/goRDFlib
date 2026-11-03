@@ -714,7 +714,7 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 			if ec.stop() {
 				return nil
 			}
-			opt := evalPatternWithBindings(ec, g, p.Optional, mb, prefixes, namedGraphs)
+			opt := optionalMatches(ec, g, p.Optional, mb, mb, prefixes, namedGraphs)
 			if len(opt) > 0 {
 				for _, ob := range opt {
 					result = append(result, mergeBindings(mb, ob))
@@ -996,7 +996,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 			if ec.stop() {
 				return nil
 			}
-			opt := evalPatternWithBindings(ec, g, p.Optional, mergeBindings(pre, mb), prefixes, namedGraphs)
+			opt := optionalMatches(ec, g, p.Optional, mb, mergeBindings(pre, mb), prefixes, namedGraphs)
 			if len(opt) > 0 {
 				for _, ob := range opt {
 					result = append(result, mergeBindings(mb, ob))
@@ -1147,6 +1147,50 @@ func projectedBindings(q *ParsedQuery, pre map[string]rdflibgo.Term) map[string]
 		}
 	}
 	return inner
+}
+
+// optionalMatches returns the right-side rows of OPTIONAL { opt } that join
+// with the left row mb. inner is what the right side is evaluated with (mb,
+// plus the initial bindings on the pre-bound path).
+//
+// A FILTER at the top level of the OPTIONAL's group is the condition of the
+// LeftJoin (SPARQL 1.1 §18.2.2), evaluated over the merged solution, so it
+// sees the left side's variables: OPTIONAL { ?z ex:p ?y FILTER (?y = ?o) }
+// with ?o bound on the left (#58). Evaluating it inside the right side, as
+// any other group, hides the left row from it — the rule for a join's right
+// side (§18.2.1, W3C bind10), not for this.
+func optionalMatches(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, mb, inner map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+	var conds []Expr
+	for {
+		f, ok := opt.(*FilterPattern)
+		if !ok {
+			break
+		}
+		conds = append(conds, f.Expr)
+		opt = f.Pattern
+	}
+	rows := evalPatternWithBindings(ec, g, opt, inner, prefixes, namedGraphs)
+	if len(conds) == 0 {
+		return rows
+	}
+	kept := rows[:0]
+	for _, r := range rows {
+		if ec.stop() {
+			return nil
+		}
+		merged := mergeBindings(mb, r)
+		ok := true
+		for _, c := range conds {
+			if !effectiveBooleanValue(evalExprWithGraph(ec, c, merged, prefixes, g, namedGraphs)) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			kept = append(kept, r)
+		}
+	}
+	return kept
 }
 
 // --- BGP evaluation ---

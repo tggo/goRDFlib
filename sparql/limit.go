@@ -135,7 +135,7 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 				}
 				return matched || (!ec.produced(1) && yield(mb))
 			}
-			opt := evalPatternWithBindings(ec, g, p.Optional, mb, prefixes, namedGraphs)
+			opt := optionalMatches(ec, g, p.Optional, mb, mb, prefixes, namedGraphs)
 			if len(opt) == 0 {
 				return !ec.produced(1) && yield(mb)
 			}

@@ -119,10 +119,19 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 				left = &UnionPattern{Left: left, Right: right}
 				p.skipWS()
 			}
-			if result == nil {
-				result = left
-			} else {
+			switch {
+			case result != nil:
 				result = &JoinPattern{Left: result, Right: left}
+			case isFilter(left):
+				// { { … FILTER … } }: the inner group's FILTER is local to
+				// it. Returned bare it would be this group's outermost
+				// FilterPattern, which reads as this group's own FILTER — and
+				// an OPTIONAL lifts its group's own FILTERs into the LeftJoin
+				// (optionalMatches). Joining it to the empty group keeps it
+				// nested; the join with {} changes no solution.
+				result = &JoinPattern{Left: &BGP{}, Right: left}
+			default:
+				result = left
 			}
 			continue
 		}
@@ -583,4 +592,9 @@ func (p *sparqlParser) parseValues() (*ValuesPattern, error) {
 	}
 
 	return &ValuesPattern{Vars: vars, Values: values}, nil
+}
+
+func isFilter(p Pattern) bool {
+	_, ok := p.(*FilterPattern)
+	return ok
 }

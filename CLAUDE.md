@@ -502,6 +502,13 @@ The `store.Store` interface (13 methods) has four implementations:
   sees an outer `?f` (#57). Not `evalPatternWithBindings`, which hides the
   row from expressions (right for a join's right side, `bind10`). Also ~500x
   faster for a FILTER inside EXISTS: the inner pattern is bound, not scanned.
+- **A FILTER at the top level of an OPTIONAL is the LeftJoin condition**
+  (§18.2.2): `optionalMatches` peels the group's own FilterPatterns and
+  evaluates them over left+right, so they see the left side (#58). All three
+  OPTIONAL paths use it. The parser makes a group's own FILTERs its
+  outermost FilterPatterns, so a lone nested `{ … FILTER }` is joined to `{}`
+  (`isFilter`) — returned bare, its local FILTER would be lifted. Guard:
+  `TestOptionalFilterSeesLeftSide` (incl. `nested group`).
 - The COUNT store pushdown is skipped under initial bindings and for
   `COUNT(?v)` with `?v` not in the pattern; both counted the bare pattern.
 - A SPARQL constraint whose query does not parse still yields a violation per
