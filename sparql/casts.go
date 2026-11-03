@@ -128,8 +128,14 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 				return rdflibgo.NewLiteral(formatRat(r), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 			}
 		}
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return rdflibgo.NewLiteral(formatDecimal(f), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		// A float or double converts through its shortest representation;
+		// NaN and INF have no decimal value (XPath casting: FOCA0002). A
+		// string must be in the decimal lexical space, which ParseFloat's
+		// "1_0", "0x10" and "Inf" are not.
+		if dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDFloat {
+			if f, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
+				return rdflibgo.NewLiteral(formatDecimal(f), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+			}
 		}
 		return nil
 
@@ -150,16 +156,14 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 			} else {
 				s = "false"
 			}
-		} else if isIntegral(val) {
-			if v, err := strconv.ParseInt(s, 10, 64); err == nil {
-				s = strconv.FormatInt(v, 10)
-			}
-		} else if dt == rdflibgo.XSDDecimal {
-			if f, err := strconv.ParseFloat(s, 64); err == nil {
-				if f == float64(int64(f)) {
-					s = strconv.FormatInt(int64(f), 10)
+		} else if isIntegral(val) || dt == rdflibgo.XSDDecimal {
+			// The canonical form of the exact value (XPath casting to
+			// xs:string), which is also what STR() of a computed one is.
+			if n, ok := numericOf(val); ok {
+				if n.kind == numInteger {
+					s = n.i.String()
 				} else {
-					s = strconv.FormatFloat(f, 'f', -1, 64)
+					s = formatRat(n.exact())
 				}
 			}
 		} else if dt == rdflibgo.XSDDouble || dt == rdflibgo.XSDFloat {

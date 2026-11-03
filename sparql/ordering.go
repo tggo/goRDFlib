@@ -47,19 +47,21 @@ func compareTermValues(a, b rdflibgo.Term) int {
 	la, okA := a.(rdflibgo.Literal)
 	lb, okB := b.(rdflibgo.Literal)
 	if okA && okB {
-		fa, errA := strconv.ParseFloat(la.Lexical(), 64)
-		fb, errB := strconv.ParseFloat(lb.Lexical(), 64)
-		if errA == nil && errB == nil && isNumericDatatype(la.Datatype()) && isNumericDatatype(lb.Datatype()) {
-			if math.IsNaN(fa) || math.IsNaN(fb) {
+		// A sort compares each value many times. Integers and decimals of at
+		// most 15 characters (so at most 15 digits) are exact in float64, and
+		// comparing their floats is what this did before decimals were exact.
+		if c, ok := compareShortNumbers(la, lb); ok {
+			return c
+		}
+		na, okNA := numericOf(la)
+		nb, okNB := numericOf(lb)
+		if okNA && okNB {
+			if math.IsNaN(na.f) || math.IsNaN(nb.f) {
 				return strings.Compare(a.N3(), b.N3())
 			}
-			if fa < fb {
-				return -1
-			}
-			if fa > fb {
-				return 1
-			}
-			return 0
+			// Exact for integers and decimals, so ORDER BY, MIN and MAX agree
+			// with = and < on values float64 cannot tell apart.
+			return compareNumbers(na, nb)
 		}
 		// Date/dateTime comparison
 		if isDateDatatype(la.Datatype()) && isDateDatatype(lb.Datatype()) {
@@ -143,4 +145,35 @@ func parseDateTime(s string, dt rdflibgo.URIRef) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// compareShortNumbers orders two integer or decimal literals of at most 15
+// characters by float64, which is exact for them. It declines anything else.
+func compareShortNumbers(a, b rdflibgo.Literal) (int, bool) {
+	la, lb := a.Lexical(), b.Lexical()
+	if len(la) > 15 || len(lb) > 15 {
+		return 0, false
+	}
+	// Only xsd:integer and xsd:decimal, and only well-formed lexical forms:
+	// ParseFloat also takes "1e5", "Inf" and "1_0", which numericOf (and so
+	// FILTER) rejects, and a derived type has a range to check.
+	if !shortNumberLexical(a) || !shortNumberLexical(b) {
+		return 0, false
+	}
+	fa, errA := strconv.ParseFloat(la, 64)
+	fb, errB := strconv.ParseFloat(lb, 64)
+	if errA != nil || errB != nil {
+		return 0, false
+	}
+	return cmpFloat(fa, fb), true
+}
+
+func shortNumberLexical(l rdflibgo.Literal) bool {
+	switch l.Datatype() {
+	case rdflibgo.XSDInteger:
+		return isIntegerLexical(l.Lexical())
+	case rdflibgo.XSDDecimal:
+		return isDecimalLexical(l.Lexical())
+	}
+	return false
 }

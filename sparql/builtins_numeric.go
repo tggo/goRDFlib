@@ -19,15 +19,37 @@ func fnAbs(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term {
 	case numInteger:
 		n.i = new(big.Int).Abs(n.i)
 	case numDecimal:
-		n.r = new(big.Rat).Abs(n.r)
+		n.r = new(big.Rat).Abs(n.exact())
 	}
 	n.f = math.Abs(n.f)
 	return numericLiteral(n)
 }
 
+// roundMode names ROUND, CEIL or FLOOR. It carries the float function and
+// selects the exact one for a decimal.
+type roundMode int
+
+const (
+	roundHalfUp roundMode = iota // XPath fn:round
+	roundCeil
+	roundFloor
+)
+
+func (m roundMode) float(f float64) float64 {
+	switch m {
+	case roundCeil:
+		return math.Ceil(f)
+	case roundFloor:
+		return math.Floor(f)
+	}
+	return xpathRound(f)
+}
+
 // roundLike applies ROUND, CEIL or FLOOR. An integer is returned unchanged;
-// other types keep their type (XPath fn:round, fn:ceiling, fn:floor).
-func roundLike(t rdflibgo.Term, f func(float64) float64) rdflibgo.Term {
+// other types keep their type (XPath fn:round, fn:ceiling, fn:floor). A
+// decimal is rounded exactly, on the rational: it may carry more digits than
+// a float64 holds.
+func roundLike(t rdflibgo.Term, m roundMode) rdflibgo.Term {
 	n, ok := numericOf(t)
 	if !ok {
 		return nil
@@ -35,32 +57,29 @@ func roundLike(t rdflibgo.Term, f func(float64) float64) rdflibgo.Term {
 	switch n.kind {
 	case numInteger:
 	case numDecimal:
-		// Exactly, on the rational: a decimal may carry more digits than a
-		// float64 holds.
-		n.r = roundRat(n.r, f)
+		n.r = roundRat(n.exact(), m)
 	default:
-		n.f = f(n.f)
+		n.f = m.float(n.f)
 	}
 	return numericLiteral(n)
 }
 
-// roundRat applies the float rounding function f (xpathRound, mathCeil or
-// mathFloor) to r exactly; f only says which one it is.
-func roundRat(r *big.Rat, f func(float64) float64) *big.Rat {
+// roundRat rounds r to an integer exactly.
+func roundRat(r *big.Rat, m roundMode) *big.Rat {
 	floor := func(x *big.Rat) *big.Int {
-		q, m := new(big.Int).QuoRem(x.Num(), x.Denom(), new(big.Int))
-		if m.Sign() < 0 {
+		q, rem := new(big.Int).QuoRem(x.Num(), x.Denom(), new(big.Int))
+		if rem.Sign() < 0 {
 			q.Sub(q, big.NewInt(1))
 		}
 		return q
 	}
 	var i *big.Int
-	switch {
-	case f(-0.5) == -1: // floor
+	switch m {
+	case roundFloor:
 		i = floor(r)
-	case f(0.5) == 1 && f(0.4) == 1: // ceil
+	case roundCeil:
 		i = new(big.Int).Neg(floor(new(big.Rat).Neg(r)))
-	default: // round half towards positive infinity
+	default: // half towards positive infinity
 		i = floor(new(big.Rat).Add(r, big.NewRat(1, 2)))
 	}
 	return new(big.Rat).SetInt(i)
@@ -75,9 +94,6 @@ func xpathRound(f float64) float64 {
 	}
 	return math.Floor(f + 0.5)
 }
-
-func mathCeil(f float64) float64  { return math.Ceil(f) }
-func mathFloor(f float64) float64 { return math.Floor(f) }
 
 // dateTimeArg returns the lexical form of a literal whose datatype a date/time
 // accessor accepts: xsd:dateTime always, xsd:date for YEAR/MONTH/DAY and

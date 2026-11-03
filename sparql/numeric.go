@@ -3,6 +3,7 @@ package sparql
 import (
 	"math"
 	"math/big"
+	"math/bits"
 	"strconv"
 	"strings"
 
@@ -86,21 +87,74 @@ type numeric struct {
 	kind numKind
 	f    float64  // the value, for every kind
 	i    *big.Int // the exact value when kind == numInteger
-	r    *big.Rat // the exact value when kind == numDecimal
+	r    *big.Rat // the exact value of a computed decimal
+	lex  string   // the lexical form of a decimal literal, parsed on demand
+	// fexact is set when f represents the value exactly enough to compare: an
+	// integer within ±2^53, or a decimal of at most 15 significant digits
+	// (which float64 round-trips, so distinct values stay distinct and in
+	// order). Comparisons of two such values skip big arithmetic, which made
+	// a decimal FILTER three times slower.
+	fexact bool
 }
 
 // exact returns the exact value of an integer or decimal. xsd:decimal is
 // arbitrary precision (XSD 1.1 §3.3.3); float64 kept 16 significant digits,
 // so 12345678901234567.5 + 1 came out as ...68.0.
 func (n numeric) exact() *big.Rat {
-	if n.r != nil {
+	switch {
+	case n.r != nil:
 		return n.r
-	}
-	if n.i != nil {
+	case n.i != nil:
 		return new(big.Rat).SetInt(n.i)
+	case n.lex != "":
+		if r, ok := new(big.Rat).SetString(decimalForRat(n.lex)); ok {
+			return r
+		}
 	}
 	r, _ := new(big.Rat).SetString(strconv.FormatFloat(n.f, 'f', -1, 64))
 	return r
+}
+
+// compareNumbers orders two numeric values of kind integer or decimal
+// exactly, and any other pair by float64 (SPARQL 1.1 §17.3 promotes them to
+// float or double). NaN is the caller's to handle.
+func compareNumbers(a, b numeric) int {
+	switch {
+	case a.kind == numInteger && b.kind == numInteger:
+		return a.i.Cmp(b.i)
+	case a.kind <= numDecimal && b.kind <= numDecimal && !(a.fexact && b.fexact):
+		return a.exact().Cmp(b.exact())
+	}
+	return cmpFloat(a.f, b.f)
+}
+
+// maxDecimalBits bounds the numerator and denominator of a computed
+// decimal. Exact arithmetic grows without limit — fourteen nested
+// ?v * ?v took 20 s and a 148 KB result — so a larger result is an error,
+// as an overflow is in implementations with fixed-size decimals. 4096 bits
+// is about 1200 significant digits.
+const maxDecimalBits = 4096
+
+// minNormalFloat64 is the smallest positive normal float64, 2^-1022.
+const minNormalFloat64 = 2.2250738585072014e-308
+
+// significantDigits counts the digits of a decimal lexical form, ignoring
+// sign, point and leading zeros (trailing fractional zeros count; that only
+// makes the estimate conservative).
+func significantDigits(lex string) int {
+	n, leading := 0, true
+	for i := 0; i < len(lex); i++ {
+		c := lex[i]
+		if c < '0' || c > '9' {
+			continue
+		}
+		if leading && c == '0' {
+			continue
+		}
+		leading = false
+		n++
+	}
+	return n
 }
 
 // numericOf returns the value of a numeric literal. It returns false when t is
@@ -132,17 +186,21 @@ func numericOf(t rdflibgo.Term) (numeric, bool) {
 			return numeric{}, false
 		}
 		f, _ := new(big.Float).SetInt(i).Float64()
-		return numeric{kind: numInteger, f: f, i: i}, true
+		return numeric{kind: numInteger, f: f, i: i, fexact: i.BitLen() <= 53}, true
 	case numDecimal:
 		if !isDecimalLexical(lex) {
 			return numeric{}, false
 		}
-		r, ok := new(big.Rat).SetString(decimalForRat(lex))
-		if !ok {
+		f, err := strconv.ParseFloat(lex, 64)
+		if err != nil && !isRangeErr(err) {
 			return numeric{}, false
 		}
-		f, _ := r.Float64()
-		return numeric{kind: numDecimal, f: f, r: r}, true
+		// float64 round-trips 15 significant digits only within its normal
+		// range: below it (0.000…01, 400 zeros) the value underflows to 0 or
+		// a denormal, and two distinct decimals would compare equal.
+		sig := significantDigits(lex)
+		fexact := sig == 0 || (sig <= 15 && math.Abs(f) >= minNormalFloat64)
+		return numeric{kind: numDecimal, f: f, lex: lex, fexact: fexact}, true
 	default:
 		f, ok := parseDoubleLexical(lex)
 		if !ok {
@@ -273,6 +331,11 @@ func numericArithmetic(op string, a, b numeric) rdflibgo.Term {
 		}
 		return numericLiteral(numeric{kind: numInteger, i: r})
 	}
+	if kind == numDecimal && op != "/" {
+		if s, ok := scaledArithmetic(op, a, b); ok {
+			return rdflibgo.NewLiteral(s, rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		}
+	}
 	if kind == numDecimal {
 		x, y := a.exact(), b.exact()
 		r := new(big.Rat)
@@ -288,6 +351,17 @@ func numericArithmetic(op string, a, b numeric) rdflibgo.Term {
 				return nil
 			}
 			r.Quo(x, y)
+			if r.Num().BitLen() > maxDecimalBits || r.Denom().BitLen() > maxDecimalBits {
+				return nil
+			}
+			if finiteDigits(r.Denom()) < 0 {
+				// No finite expansion: keep what formatRat would write, so
+				// the denominator does not compound in a chain of divisions.
+				r.SetString(r.FloatString(decimalDigits))
+			}
+		}
+		if r.Num().BitLen() > maxDecimalBits || r.Denom().BitLen() > maxDecimalBits {
+			return nil
 		}
 		return numericLiteral(numeric{kind: numDecimal, r: r})
 	}
@@ -342,21 +416,152 @@ func formatRat(r *big.Rat) string {
 // finiteDigits returns the number of fractional digits of a fraction with
 // denominator d, or -1 when it has no finite decimal expansion (d has a
 // prime factor other than 2 and 5).
+//
+// d = 2^a · 5^b. a is the trailing zero bits; b is computed from the bit
+// length of 5^b and checked with one exponentiation, never by dividing out
+// the 5s one by one (that was quadratic: 3 s on a 200,000-digit literal).
 func finiteDigits(d *big.Int) int {
-	two, five := big.NewInt(2), big.NewInt(5)
-	n := new(big.Int).Set(d)
-	m := new(big.Int)
-	var twos, fives int
-	for n.Cmp(big.NewInt(1)) > 0 {
-		if m.Mod(n, two).Sign() == 0 {
-			n.Quo(n, two)
-			twos++
-		} else if m.Mod(n, five).Sign() == 0 {
-			n.Quo(n, five)
-			fives++
-		} else {
-			return -1
+	twos := d.TrailingZeroBits()
+	n := new(big.Int).Rsh(d, twos)
+	if n.BitLen() <= 1 {
+		return int(twos)
+	}
+	// 5^b has bit length floor(b·log2 5) + 1, so b is within one of this.
+	guess := int(float64(n.BitLen()-1) / math.Log2(5))
+	p := new(big.Int)
+	for _, b := range []int{guess, guess + 1, guess - 1} {
+		if b < 1 {
+			continue
+		}
+		p.Exp(big.NewInt(5), big.NewInt(int64(b)), nil)
+		if p.Cmp(n) == 0 {
+			return max(int(twos), b)
 		}
 	}
-	return max(twos, fives)
+	return -1
+}
+
+// scaled is a decimal as an int64 mantissa and a count of fractional digits:
+// m / 10^scale. It is the fast path for the decimals queries mostly hold —
+// big.Rat made SUM(?v * 1.5 + 0.25) four times slower — and is used only
+// when every step provably fits in an int64.
+type scaled struct {
+	m     int64
+	scale int
+}
+
+// maxScaledDigits keeps |m| < 10^17, so aligning two operands (at most 17
+// more digits of scale, see scaledArithmetic) and adding stays in range.
+const maxScaledDigits = 17
+
+var pow10 = func() (p [19]int64) {
+	p[0] = 1
+	for i := 1; i < len(p); i++ {
+		p[i] = p[i-1] * 10
+	}
+	return
+}()
+
+// scaledOf returns n as a scaled decimal when it is an integer or a decimal
+// literal of at most maxScaledDigits digits.
+func scaledOf(n numeric) (scaled, bool) {
+	switch {
+	case n.kind == numInteger:
+		if n.i.IsInt64() {
+			if v := n.i.Int64(); v > -pow10[maxScaledDigits] && v < pow10[maxScaledDigits] {
+				return scaled{m: v}, true
+			}
+		}
+	case n.kind == numDecimal && n.r == nil && n.lex != "":
+		lex := strings.TrimPrefix(n.lex, "+")
+		neg := strings.HasPrefix(lex, "-")
+		lex = strings.TrimPrefix(lex, "-")
+		intPart, frac, _ := strings.Cut(lex, ".")
+		if len(intPart)+len(frac) > maxScaledDigits {
+			return scaled{}, false
+		}
+		var m int64
+		for _, c := range intPart + frac {
+			m = m*10 + int64(c-'0')
+		}
+		if neg {
+			m = -m
+		}
+		return scaled{m: m, scale: len(frac)}, true
+	}
+	return scaled{}, false
+}
+
+// scaledArithmetic computes a + b, a - b or a * b on scaled decimals and
+// returns the canonical lexical form, or false when an operand is not small
+// or the result could overflow; the caller then uses big.Rat.
+func scaledArithmetic(op string, a, b numeric) (string, bool) {
+	x, ok := scaledOf(a)
+	if !ok {
+		return "", false
+	}
+	y, ok := scaledOf(b)
+	if !ok {
+		return "", false
+	}
+	var r scaled
+	switch op {
+	case "*":
+		hi, lo := bits.Mul64(uint64(abs64(x.m)), uint64(abs64(y.m)))
+		if hi != 0 || lo > math.MaxInt64 || x.scale+y.scale > len(pow10)-1 {
+			return "", false
+		}
+		r = scaled{m: int64(lo), scale: x.scale + y.scale}
+		if (x.m < 0) != (y.m < 0) {
+			r.m = -r.m
+		}
+	default:
+		for x.scale < y.scale {
+			if abs64(x.m) >= pow10[maxScaledDigits] {
+				return "", false
+			}
+			x.m *= 10
+			x.scale++
+		}
+		for y.scale < x.scale {
+			if abs64(y.m) >= pow10[maxScaledDigits] {
+				return "", false
+			}
+			y.m *= 10
+			y.scale++
+		}
+		if op == "-" {
+			y.m = -y.m
+		}
+		r = scaled{m: x.m + y.m, scale: x.scale}
+	}
+	return r.String(), true
+}
+
+func abs64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// String writes s in the canonical xsd:decimal form, as formatRat does.
+func (s scaled) String() string {
+	neg := s.m < 0
+	digits := strconv.FormatUint(uint64(abs64(s.m)), 10)
+	if s.scale > 0 {
+		if len(digits) <= s.scale {
+			digits = strings.Repeat("0", s.scale-len(digits)+1) + digits
+		}
+		cut := len(digits) - s.scale
+		intPart, frac := digits[:cut], strings.TrimRight(digits[cut:], "0")
+		digits = intPart
+		if frac != "" {
+			digits += "." + frac
+		}
+	}
+	if neg && digits != "0" {
+		digits = "-" + digits
+	}
+	return digits
 }

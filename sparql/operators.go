@@ -103,7 +103,7 @@ func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
 		case numInteger:
 			n.i = new(big.Int).Neg(n.i)
 		case numDecimal:
-			n.r = new(big.Rat).Neg(n.r)
+			n.r = new(big.Rat).Neg(n.exact())
 		}
 		n.f = -n.f
 		return numericLiteral(n)
@@ -135,7 +135,9 @@ func ebv(t rdflibgo.Term) (bool, bool) {
 		if !ok {
 			return false, true
 		}
-		if n.kind <= numDecimal {
+		if n.kind <= numDecimal && n.f == 0 {
+			// Exact only when it matters: a decimal below float64's range
+			// (1e-400) parses to 0 and is not false.
 			return n.exact().Sign() != 0, true
 		}
 		return n.f != 0 && !math.IsNaN(n.f), true
@@ -212,11 +214,8 @@ func literalsEqual(a, b rdflibgo.Literal) (bool, bool) {
 	na, aNum := numericOf(a)
 	nb, bNum := numericOf(b)
 	if aNum && bNum {
-		if na.kind == numInteger && nb.kind == numInteger {
-			return na.i.Cmp(nb.i) == 0, true
-		}
 		if na.kind <= numDecimal && nb.kind <= numDecimal {
-			return na.exact().Cmp(nb.exact()) == 0, true
+			return compareNumbers(na, nb) == 0, true
 		}
 		return na.f == nb.f, true // NaN != NaN
 	}
@@ -344,11 +343,8 @@ func valueCompare(a, b rdflibgo.Term) (int, bool) {
 	case spaceNumeric:
 		na, _ := numericOf(la)
 		nb, _ := numericOf(lb)
-		if na.kind == numInteger && nb.kind == numInteger {
-			return na.i.Cmp(nb.i), true
-		}
 		if na.kind <= numDecimal && nb.kind <= numDecimal {
-			return na.exact().Cmp(nb.exact()), true
+			return compareNumbers(na, nb), true
 		}
 		if math.IsNaN(na.f) || math.IsNaN(nb.f) {
 			return cmpUnordered, true

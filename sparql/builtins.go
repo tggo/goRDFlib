@@ -59,9 +59,9 @@ var builtins = map[string]builtin{
 
 	// §17.4.4 functions on numerics
 	"ABS":   {1, 1, fnAbs},
-	"ROUND": {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return roundLike(a[0], xpathRound) }},
-	"CEIL":  {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return roundLike(a[0], mathCeil) }},
-	"FLOOR": {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return roundLike(a[0], mathFloor) }},
+	"ROUND": {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return roundLike(a[0], roundHalfUp) }},
+	"CEIL":  {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return roundLike(a[0], roundCeil) }},
+	"FLOOR": {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return roundLike(a[0], roundFloor) }},
 
 	// §17.4.5 functions on dates and times
 	"YEAR":     {1, 1, func(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term { return datePart(a[0], "year") }},

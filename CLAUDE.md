@@ -857,6 +857,20 @@ The `store.Store` interface (13 methods) has four implementations:
   (`big.Rat`), canonical XSD 1.1 form (`formatRat`: "178", not "178.0"),
   18 fractional digits for a non-terminating quotient (Oxigraph's choice).
   Guard: `TestDecimalArithmeticIsExact`.
+- Exact decimals have three costs a review caught, each guarded:
+  - **Growth**: computed decimals over `maxDecimalBits` (4096) are an error;
+    nested `?v*?v` grew without bound (20 s). `finiteDigits` gets the power
+    of 5 from the bit length plus one `Exp` — dividing out 2s/5s one by one
+    was quadratic (3 s on a 200k-digit literal). `TestDecimalGrowthIsBounded`.
+  - **Speed**: decimals parse lazily (`numeric.lex`); `fexact` lets two
+    values of <= 15 significant digits **within float64's normal range**
+    compare as floats (a 1e-400 decimal underflows to 0); `scaledArithmetic`
+    does + - * on int64 mantissas, held to big.Rat by
+    `FuzzScaledMatchesRat`; `compareShortNumbers` only for well-formed
+    xsd:integer/xsd:decimal. `BenchmarkDecimal`: filter +7%, sum +20%,
+    orderby +17% against float64.
+  - **Every path**: ORDER BY/MIN/MAX, `xsd:string` and casts are exact too;
+    NaN/INF/"1_0" do not cast to decimal. `TestDecimalEdges`.
 
 ### sparql/ expression semantics
 - A nil term means "error" throughout the evaluator. Built-ins get arguments
