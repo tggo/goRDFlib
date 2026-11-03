@@ -490,6 +490,20 @@ The `store.Store` interface (13 methods) has four implementations:
   `sh:values`, AF target parameters via `Target.Bindings`); only `$PATH` is
   text. Guards: `TestPreBoundVisibleInEveryScope`,
   `TestSPARQLConstraint_ThisInNestedScopes`, `..._BlankCurrentShape`.
+- A **subquery** sees only the initial bindings of variables it projects
+  (`ec.subqueryPre`; `SELECT *` = its in-scope variables), since any other is
+  a different variable of the same name (§18.2.1). SHACL sets
+  `ParsedQuery.PreBindSubqueries` to substitute into every subquery, which is
+  its definition of pre-binding and what shapes relying on the old textual
+  splice need. Guards: `TestPreBoundDoesNotReachUnprojectedSubquery`,
+  `TestSPARQLConstraint_ThisInUnprojectedSubSelect`.
+- **EXISTS substitutes the row** (§18.6): its pattern runs through
+  `evalPatternPreBound`, so `NOT EXISTS { ?r ex:at ?t FILTER (?t = ?f) }`
+  sees an outer `?f` (#57). Not `evalPatternWithBindings`, which hides the
+  row from expressions (right for a join's right side, `bind10`). Also ~500x
+  faster for a FILTER inside EXISTS: the inner pattern is bound, not scanned.
+- The COUNT store pushdown is skipped under initial bindings and for
+  `COUNT(?v)` with `?v` not in the pattern; both counted the bare pattern.
 - A SPARQL constraint whose query does not parse still yields a violation per
   focus node (fail closed) and reports `ErrMalformedConstraint` through
   `WithErrorHandler` once per constraint per run (`guard.malformed`), so a

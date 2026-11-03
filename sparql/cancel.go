@@ -58,6 +58,8 @@ type evalCtx struct {
 	// that its own row does not bind. Rows reach those places without the
 	// pre-bound values, so the lookup falls back to this instead.
 	pre map[string]rdflibgo.Term
+	// substitute is ParsedQuery.PreBindSubqueries of the query evaluated.
+	substitute bool
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
@@ -183,6 +185,7 @@ func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, in
 	ec := newEvalCtx(ctx)
 	if len(initBindings) > 0 {
 		ec.pre = initBindings
+		ec.substitute = q.PreBindSubqueries
 	}
 	// A query only reads, so every property path in it can share the answers
 	// of a ReachabilityStore: one round trip per distinct start node, not per

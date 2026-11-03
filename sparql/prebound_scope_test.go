@@ -54,3 +54,51 @@ func TestPreBoundVisibleInEveryScope(t *testing.T) {
 		})
 	}
 }
+
+// A subquery that does not project a pre-bound variable has its own variable
+// of that name (SPARQL 1.1 §18.2.1): the initial binding must not reach it.
+// The first version of evalCtx.pre leaked into every subquery.
+func TestPreBoundDoesNotReachUnprojectedSubquery(t *testing.T) {
+	ctx := t.Context()
+	g := graph.NewGraph()
+	a := term.NewURIRefUnsafe("urn:a")
+	b := term.NewURIRefUnsafe("urn:b")
+	p := term.NewURIRefUnsafe("urn:p")
+	for _, tr := range [][2]term.URIRef{{a, b}, {b, a}} {
+		if err := g.Add(ctx, tr[0], p, tr[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, c := range map[string]struct {
+		q    string
+		rows int
+		sub  bool // PreBindSubqueries
+	}{
+		"bound":           {`SELECT ?s2 WHERE { { SELECT ?s2 WHERE { ?s2 <urn:p> ?o2 FILTER(!bound(?x)) } } }`, 2, false},
+		"compare":         {`SELECT ?s2 WHERE { { SELECT ?s2 WHERE { ?s2 <urn:p> ?o2 FILTER(?o2 != ?x) } } }`, 0, false}, // ?x unbound: an error
+		"bind":            {`SELECT ?s2 WHERE { { SELECT ?s2 ?w WHERE { ?s2 <urn:p> ?o2 BIND(?x AS ?w) } } FILTER(!bound(?w)) }`, 2, false},
+		"count":           {`SELECT ?c WHERE { { SELECT (COUNT(?x) AS ?c) WHERE { ?s2 <urn:p> ?o2 } } FILTER(?c = 0) }`, 1, false},
+		"count star":      {`SELECT ?n WHERE { { SELECT (COUNT(*) AS ?n) WHERE { ?x <urn:p> ?o } } FILTER(?n = 1) }`, 1, true},
+		"star":            {`SELECT ?s2 WHERE { { SELECT * WHERE { ?s2 <urn:p> ?o2 FILTER(!bound(?x)) } } }`, 2, false},
+		"star in scope":   {`SELECT ?o WHERE { { SELECT * WHERE { ?x <urn:p> ?o } } }`, 1, false},
+		"projected":       {`SELECT ?x WHERE { { SELECT ?x WHERE { ?x <urn:p> ?o } } }`, 1, false},
+		"substitute":      {`SELECT ?s2 WHERE { { SELECT ?s2 WHERE { ?s2 <urn:p> ?o2 FILTER(?o2 != ?x) } } }`, 1, true},
+		"substitute bgp":  {`SELECT ?o WHERE { { SELECT ?o WHERE { ?x <urn:p> ?o } } }`, 1, true},
+		"no substitution": {`SELECT ?o WHERE { { SELECT ?o WHERE { ?x <urn:p> ?o } } }`, 2, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pq, err := Parse(c.q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pq.PreBindSubqueries = c.sub
+			res, err := EvalQuery(g, pq, map[string]term.Term{"x": a})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Bindings) != c.rows {
+				t.Errorf("%d rows, want %d: %v", len(res.Bindings), c.rows, res.Bindings)
+			}
+		})
+	}
+}

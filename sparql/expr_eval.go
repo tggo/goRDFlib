@@ -55,7 +55,12 @@ func evalExprWithGraph(ec *evalCtx, expr Expr, bindings map[string]rdflibgo.Term
 		if g == nil {
 			return nil // no active graph to evaluate the pattern against
 		}
-		exists := len(evalPatternWithBindings(ec, g, e.Pattern, bindings, prefixes, namedGraphs)) > 0
+		// EXISTS substitutes the current row into its pattern (SPARQL 1.1
+		// §18.6, substitute), so a FILTER inside it sees an outer variable:
+		// NOT EXISTS { ?r ex:at ?t FILTER (?t = ?f) } with ?f bound outside.
+		// evalPatternWithBindings hides the row from expressions, which is
+		// right for a join's right side (§18.2.1) but not here (#57).
+		exists := len(evalPatternPreBound(ec, g, e.Pattern, bindings, prefixes, namedGraphs)) > 0
 		if e.Not {
 			exists = !exists
 		}

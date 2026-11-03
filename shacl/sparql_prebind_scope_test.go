@@ -40,3 +40,37 @@ ex:other rdfs:label "other" .
 		t.Errorf("%d results, want 0: $currentShape matched a node other than the shape", len(r.Results))
 	}
 }
+
+// A sub-SELECT that uses $this without projecting it. SHACL defines
+// pre-binding as substitution (§5.3.1), and while $this was spliced into the
+// text such shapes worked, so they must keep working as a binding.
+func TestSPARQLConstraint_ThisInUnprojectedSubSelect(t *testing.T) {
+	for name, c := range map[string]struct {
+		sel  string
+		want []string
+	}{
+		"filter": {`SELECT $this ?value WHERE { { SELECT ?value WHERE { $this <http://example.org/p> ?value } } FILTER (?value > 3) }`, []string{"b"}},
+		"count":  {`SELECT $this WHERE { { SELECT (COUNT(*) AS ?n) WHERE { $this <http://example.org/p> ?v } } FILTER (?n = 1) }`, []string{"a", "b"}},
+	} {
+		g := afGraph(t, `
+ex:a a ex:T ; ex:p 1 .
+ex:b a ex:T ; ex:p 5 .
+ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+    sh:sparql [ sh:select """`+c.sel+`""" ] .
+`)
+		r := Validate(g, g)
+		got := map[string]bool{}
+		for _, res := range r.Results {
+			got[res.FocusNode.Value()] = true
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("%s: focus nodes %v, want %v", name, got, c.want)
+			continue
+		}
+		for _, w := range c.want {
+			if !got[ex+w] {
+				t.Errorf("%s: focus nodes %v, want %v", name, got, c.want)
+			}
+		}
+	}
+}

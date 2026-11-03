@@ -57,6 +57,7 @@ func executeSPARQL(ctx context.Context, g *Graph, query string, initBindings map
 	if err != nil {
 		return nil, err
 	}
+	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
@@ -132,6 +133,7 @@ func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings 
 	if err != nil {
 		return false, err
 	}
+	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
@@ -160,6 +162,7 @@ func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBin
 	if err != nil {
 		return nil, err
 	}
+	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
 	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	rg, err := rdfOf(ctx, g)

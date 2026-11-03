@@ -30,6 +30,13 @@ type ParsedQuery struct {
 	// the dataset itself, translate the query, or reject a clause it cannot
 	// honor. NamedGraphs, by contrast, is data the caller supplies.
 	DatasetClause []DatasetClause
+
+	// PreBindSubqueries makes the initial bindings of EvalQuery visible in
+	// every subquery, whether it projects the variable or not: a textual
+	// substitution of the values into the whole query, which is how SHACL
+	// defines pre-binding (§5.3.1). Off, a subquery sees only the initial
+	// bindings of the variables it projects (SPARQL 1.1 §18.2.1).
+	PreBindSubqueries bool
 }
 
 // DatasetClause is a FROM [NAMED] <iri> clause of a query. Prefixed names are

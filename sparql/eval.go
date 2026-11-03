@@ -305,10 +305,13 @@ func isAggregateFuncName(name string) bool {
 func evalAggregation(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
 	// Pushdown: simple COUNT(*) or COUNT(?var) over a single unfiltered BGP
 	// with no GROUP BY → use store.Count to avoid materializing all results.
-	if len(q.GroupBy) == 0 && len(q.ProjectExprs) == 1 {
+	// The store counts the bare pattern, so not with initial bindings (they
+	// restrict it), and COUNT(?var) only for a variable of the pattern (any
+	// other is unbound in every row and counts 0).
+	if len(q.GroupBy) == 0 && len(q.ProjectExprs) == 1 && len(ec.pre) == 0 {
 		pe := q.ProjectExprs[0]
 		if fe, ok := pe.Expr.(*FuncExpr); ok && fe.Name == "COUNT" && !fe.Distinct {
-			if tp := extractSimpleBGP(q.Where); tp != nil {
+			if tp := extractSimpleBGP(q.Where); tp != nil && countsPatternRows(fe, tp) {
 				if qs, okQ := g.Store().(store.QueryableStore); okQ {
 					pat := buildStorePattern(tp, q.Prefixes)
 					cnt, err := qs.Count(ec.context(), pat, g.Identifier())
@@ -825,7 +828,13 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 			}
 			subQ.NamedGraphs = ng
 		}
-		subResult, err := evalQuery(ec, g, &subQ, nil)
+		// The subquery's own variables are not the outer query's: it sees no
+		// initial binding unless they are substituted into every scope.
+		inner := ec.subqueryPre(p.Query)
+		saved := ec.pre
+		ec.pre = inner
+		subResult, err := evalQuery(ec, g, &subQ, inner)
+		ec.pre = saved
 		if err != nil || subResult == nil {
 			return nil
 		}
@@ -1067,11 +1076,8 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 	case *SubqueryPattern:
 		// A FILTER or BIND inside a sub-SELECT observes a pre-bound value
 		// like one in the outer query does, so the value is passed into the
-		// subquery. Only for variables it projects: a variable it does not
-		// project is a different variable that merely shares the name
-		// (SPARQL 1.1 §18.2.1), and SHACL §5.3.1 requires a subquery to
-		// project each pre-bound variable it uses for the same reason.
-		inner := projectedBindings(p.Query, pre)
+		// subquery — for the variables it projects (see subqueryPre).
+		inner := ec.subqueryPre(p.Query)
 		if len(inner) == 0 {
 			return evalPatternWithBindings(ec, g, pattern, pre, prefixes, namedGraphs)
 		}
@@ -1079,7 +1085,10 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		if namedGraphs != nil {
 			subQ.NamedGraphs = maps.Clone(namedGraphs)
 		}
+		saved := ec.pre
+		ec.pre = inner
 		res, err := evalQuery(ec, g, &subQ, inner)
+		ec.pre = saved
 		if err != nil || res == nil || res.Type != "SELECT" {
 			return nil
 		}
@@ -1098,12 +1107,38 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 	}
 }
 
+// subqueryPre returns the initial bindings a subquery q sees. A variable it
+// does not project is a different variable that merely shares the name
+// (SPARQL 1.1 §18.2.1), so by default it sees only the ones it projects. With
+// ParsedQuery.PreBindSubqueries every initial binding is substituted into it,
+// projected or not, which is how SHACL defines pre-binding (§5.3.1).
+func (ec *evalCtx) subqueryPre(q *ParsedQuery) map[string]rdflibgo.Term {
+	if ec.substitute {
+		return ec.pre
+	}
+	inner := projectedBindings(q, ec.pre)
+	if len(inner) == 0 {
+		return nil
+	}
+	return inner
+}
+
 // projectedBindings returns the pre-bound values of the variables q projects
 // as plain variables; all of them for SELECT *. A variable computed by a
 // projection expression is not pre-bound inside q: q assigns it.
 func projectedBindings(q *ParsedQuery, pre map[string]rdflibgo.Term) map[string]rdflibgo.Term {
 	if q.Variables == nil && len(q.ProjectExprs) == 0 {
-		return pre
+		// SELECT * projects the variables in scope in its pattern, not
+		// every name the caller bound.
+		scope := orderedVars{seen: map[string]bool{}}
+		addInScopeVars(q.Where, &scope)
+		inner := make(map[string]rdflibgo.Term, len(pre))
+		for _, v := range scope.order {
+			if t, ok := pre[v]; ok {
+				inner[v] = t
+			}
+		}
+		return inner
 	}
 	inner := make(map[string]rdflibgo.Term, len(q.Variables))
 	for _, v := range q.Variables {
@@ -1589,6 +1624,24 @@ func formatDecimal(f float64) string {
 // extractSimpleBGP returns the single triple pattern if the WHERE clause is
 // a single BGP with one non-path triple whose terms can be fully resolved
 // (no variable-containing triple term patterns). Returns nil otherwise.
+// countsPatternRows reports whether COUNT(fe) over the one-pattern BGP tp
+// equals the number of triples tp matches: COUNT(*), or COUNT(?v) with ?v a
+// variable of tp.
+func countsPatternRows(fe *FuncExpr, tp *Triple) bool {
+	if fe.Star {
+		return true
+	}
+	if len(fe.Args) != 1 {
+		return false
+	}
+	v, ok := fe.Args[0].(*VarExpr)
+	if !ok {
+		return false
+	}
+	n := "?" + v.Name
+	return tp.Subject == n || tp.Predicate == n || tp.Object == n
+}
+
 func extractSimpleBGP(p Pattern) *Triple {
 	bgp, ok := p.(*BGP)
 	if !ok || len(bgp.Triples) != 1 {
