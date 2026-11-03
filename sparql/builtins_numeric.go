@@ -15,8 +15,11 @@ func fnAbs(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term {
 	if !ok {
 		return nil
 	}
-	if n.kind == numInteger {
+	switch n.kind {
+	case numInteger:
 		n.i = new(big.Int).Abs(n.i)
+	case numDecimal:
+		n.r = new(big.Rat).Abs(n.r)
 	}
 	n.f = math.Abs(n.f)
 	return numericLiteral(n)
@@ -29,10 +32,38 @@ func roundLike(t rdflibgo.Term, f func(float64) float64) rdflibgo.Term {
 	if !ok {
 		return nil
 	}
-	if n.kind != numInteger {
+	switch n.kind {
+	case numInteger:
+	case numDecimal:
+		// Exactly, on the rational: a decimal may carry more digits than a
+		// float64 holds.
+		n.r = roundRat(n.r, f)
+	default:
 		n.f = f(n.f)
 	}
 	return numericLiteral(n)
+}
+
+// roundRat applies the float rounding function f (xpathRound, mathCeil or
+// mathFloor) to r exactly; f only says which one it is.
+func roundRat(r *big.Rat, f func(float64) float64) *big.Rat {
+	floor := func(x *big.Rat) *big.Int {
+		q, m := new(big.Int).QuoRem(x.Num(), x.Denom(), new(big.Int))
+		if m.Sign() < 0 {
+			q.Sub(q, big.NewInt(1))
+		}
+		return q
+	}
+	var i *big.Int
+	switch {
+	case f(-0.5) == -1: // floor
+		i = floor(r)
+	case f(0.5) == 1 && f(0.4) == 1: // ceil
+		i = new(big.Int).Neg(floor(new(big.Rat).Neg(r)))
+	default: // round half towards positive infinity
+		i = floor(new(big.Rat).Add(r, big.NewRat(1, 2)))
+	}
+	return new(big.Rat).SetInt(i)
 }
 
 // xpathRound rounds half towards positive infinity, as XPath fn:round does:

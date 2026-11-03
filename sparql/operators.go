@@ -99,8 +99,11 @@ func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
 		if !ok {
 			return nil
 		}
-		if n.kind == numInteger {
+		switch n.kind {
+		case numInteger:
 			n.i = new(big.Int).Neg(n.i)
+		case numDecimal:
+			n.r = new(big.Rat).Neg(n.r)
 		}
 		n.f = -n.f
 		return numericLiteral(n)
@@ -131,6 +134,9 @@ func ebv(t rdflibgo.Term) (bool, bool) {
 		n, ok := numericOf(l)
 		if !ok {
 			return false, true
+		}
+		if n.kind <= numDecimal {
+			return n.exact().Sign() != 0, true
 		}
 		return n.f != 0 && !math.IsNaN(n.f), true
 	case isSimpleOrXSDString(l):
@@ -208,6 +214,9 @@ func literalsEqual(a, b rdflibgo.Literal) (bool, bool) {
 	if aNum && bNum {
 		if na.kind == numInteger && nb.kind == numInteger {
 			return na.i.Cmp(nb.i) == 0, true
+		}
+		if na.kind <= numDecimal && nb.kind <= numDecimal {
+			return na.exact().Cmp(nb.exact()) == 0, true
 		}
 		return na.f == nb.f, true // NaN != NaN
 	}
@@ -337,6 +346,9 @@ func valueCompare(a, b rdflibgo.Term) (int, bool) {
 		nb, _ := numericOf(lb)
 		if na.kind == numInteger && nb.kind == numInteger {
 			return na.i.Cmp(nb.i), true
+		}
+		if na.kind <= numDecimal && nb.kind <= numDecimal {
+			return na.exact().Cmp(nb.exact()), true
 		}
 		if math.IsNaN(na.f) || math.IsNaN(nb.f) {
 			return cmpUnordered, true

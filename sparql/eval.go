@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math/big"
 	"net/url"
 	"slices"
 	"strconv"
@@ -1648,19 +1649,15 @@ func isDecimal(t rdflibgo.Term) bool {
 	return false
 }
 
+// formatDecimal writes a float64 (a double or float cast to xsd:decimal) in
+// canonical decimal form, through its shortest decimal representation: 0.1
+// is "0.1", not the binary expansion 0.1000000000000000055….
 func formatDecimal(f float64) string {
-	// Use limited precision to avoid float64 artifacts like 11.100000000000001
-	s := strconv.FormatFloat(f, 'f', 10, 64)
-	// Trim trailing zeros but keep at least one decimal place
-	if strings.Contains(s, ".") {
-		s = strings.TrimRight(s, "0")
-		if strings.HasSuffix(s, ".") {
-			s += "0"
-		}
-	} else {
-		s += ".0"
+	r, ok := new(big.Rat).SetString(strconv.FormatFloat(f, 'f', -1, 64))
+	if !ok {
+		return strconv.FormatFloat(f, 'f', -1, 64)
 	}
-	return s
+	return formatRat(r)
 }
 
 // --- QueryableStore pushdown helpers ---

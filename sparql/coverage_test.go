@@ -422,8 +422,8 @@ func TestIsDecimalFalseNonDecimal(t *testing.T) {
 func TestFormatDecimalNoDecimalPoint(t *testing.T) {
 	// This tests the branch where FormatFloat returns no "."
 	result := formatDecimal(10.0)
-	if result != "10.0" {
-		t.Errorf("expected 10.0, got %s", result)
+	if result != "10" {
+		t.Errorf("expected 10, got %s", result)
 	}
 }
 
@@ -3480,15 +3480,15 @@ func TestResolveTermRefDoubleLiteral(t *testing.T) {
 
 func TestFormatDecimalZero(t *testing.T) {
 	r := formatDecimal(0.0)
-	if r != "0.0" {
-		t.Errorf("expected 0.0, got %s", r)
+	if r != "0" {
+		t.Errorf("expected 0, got %s", r)
 	}
 }
 
 func TestFormatDecimalWholeNumber(t *testing.T) {
 	r := formatDecimal(5.0)
-	if r != "5.0" {
-		t.Errorf("expected 5.0, got %s", r)
+	if r != "5" {
+		t.Errorf("expected 5, got %s", r)
 	}
 }
 
@@ -4969,8 +4969,8 @@ func TestExistsInBooleanExprCov(t *testing.T) {
 
 func TestFormatDecimalZeroCov(t *testing.T) {
 	result := formatDecimal(0.0)
-	if result != "0.0" {
-		t.Errorf("expected 0.0, got %s", result)
+	if result != "0" {
+		t.Errorf("expected 0, got %s", result)
 	}
 }
 
@@ -5761,9 +5761,11 @@ func TestResolveTripleTermPatternBranches(t *testing.T) {
 
 func TestFormatDecimalNoDecimalPointCov(t *testing.T) {
 	// Test formatDecimal when input has no decimal point (integer-like float)
+	// Canonical xsd:decimal (XSD 1.1 §3.3.3.2) has no decimal point for an
+	// integral value.
 	r := formatDecimal(42.0)
-	if !strings.Contains(r, ".") {
-		t.Errorf("expected decimal point in result, got %q", r)
+	if r != "42" {
+		t.Errorf("expected 42, got %q", r)
 	}
 }
 
@@ -6772,8 +6774,8 @@ func TestEvalAggExprIRIExpr(t *testing.T) {
 func TestFormatDecimalInteger(t *testing.T) {
 	// formatDecimal with an integer value (no decimal point initially)
 	r := formatDecimal(100)
-	if !strings.Contains(r, ".") {
-		t.Errorf("expected decimal point, got %q", r)
+	if r != "100" {
+		t.Errorf("expected 100, got %q", r)
 	}
 }
 

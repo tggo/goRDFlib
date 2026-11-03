@@ -86,6 +86,21 @@ type numeric struct {
 	kind numKind
 	f    float64  // the value, for every kind
 	i    *big.Int // the exact value when kind == numInteger
+	r    *big.Rat // the exact value when kind == numDecimal
+}
+
+// exact returns the exact value of an integer or decimal. xsd:decimal is
+// arbitrary precision (XSD 1.1 §3.3.3); float64 kept 16 significant digits,
+// so 12345678901234567.5 + 1 came out as ...68.0.
+func (n numeric) exact() *big.Rat {
+	if n.r != nil {
+		return n.r
+	}
+	if n.i != nil {
+		return new(big.Rat).SetInt(n.i)
+	}
+	r, _ := new(big.Rat).SetString(strconv.FormatFloat(n.f, 'f', -1, 64))
+	return r
 }
 
 // numericOf returns the value of a numeric literal. It returns false when t is
@@ -122,11 +137,12 @@ func numericOf(t rdflibgo.Term) (numeric, bool) {
 		if !isDecimalLexical(lex) {
 			return numeric{}, false
 		}
-		f, err := strconv.ParseFloat(lex, 64)
-		if err != nil && !isRangeErr(err) {
+		r, ok := new(big.Rat).SetString(decimalForRat(lex))
+		if !ok {
 			return numeric{}, false
 		}
-		return numeric{kind: numDecimal, f: f}, true
+		f, _ := r.Float64()
+		return numeric{kind: numDecimal, f: f, r: r}, true
 	default:
 		f, ok := parseDoubleLexical(lex)
 		if !ok {
@@ -211,10 +227,10 @@ func numericLiteral(n numeric) rdflibgo.Term {
 	case numInteger:
 		return rdflibgo.NewLiteral(n.i.String(), rdflibgo.WithDatatype(rdflibgo.XSDInteger))
 	case numDecimal:
-		if math.IsNaN(n.f) || math.IsInf(n.f, 0) {
+		if n.r == nil && (math.IsNaN(n.f) || math.IsInf(n.f, 0)) {
 			return nil
 		}
-		return rdflibgo.NewLiteral(formatDecimal(n.f), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+		return rdflibgo.NewLiteral(formatRat(n.exact()), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 	case numFloat:
 		return rdflibgo.NewLiteral(formatFloatLexical(float64(float32(n.f)), 32), rdflibgo.WithDatatype(rdflibgo.XSDFloat))
 	default:
@@ -257,8 +273,23 @@ func numericArithmetic(op string, a, b numeric) rdflibgo.Term {
 		}
 		return numericLiteral(numeric{kind: numInteger, i: r})
 	}
-	if op == "/" && kind == numDecimal && b.f == 0 {
-		return nil
+	if kind == numDecimal {
+		x, y := a.exact(), b.exact()
+		r := new(big.Rat)
+		switch op {
+		case "+":
+			r.Add(x, y)
+		case "-":
+			r.Sub(x, y)
+		case "*":
+			r.Mul(x, y)
+		case "/":
+			if y.Sign() == 0 {
+				return nil
+			}
+			r.Quo(x, y)
+		}
+		return numericLiteral(numeric{kind: numDecimal, r: r})
 	}
 	var r float64
 	switch op {
@@ -272,4 +303,60 @@ func numericArithmetic(op string, a, b numeric) rdflibgo.Term {
 		r = a.f / b.f
 	}
 	return numericLiteral(numeric{kind: kind, f: r})
+}
+
+// decimalDigits is how many fractional digits a decimal that has no finite
+// expansion (1/3) is written with. XSD leaves it to the implementation (at
+// least 18 digits of the value must be supported); Oxigraph writes 18.
+const decimalDigits = 18
+
+// decimalForRat adapts an xsd:decimal lexical form for big.Rat.SetString,
+// which rejects a leading '+' and a trailing '.' ("1." is a valid decimal).
+func decimalForRat(lex string) string {
+	lex = strings.TrimPrefix(lex, "+")
+	if strings.HasSuffix(lex, ".") {
+		lex += "0"
+	}
+	return lex
+}
+
+// formatRat writes r in the canonical xsd:decimal form of XSD 1.1
+// (§3.3.3.2): no leading '+', no leading or trailing zeros, and no decimal
+// point for an integral value ("178", not "178.0"). A value with no finite
+// decimal expansion is rounded to decimalDigits fractional digits.
+func formatRat(r *big.Rat) string {
+	digits := decimalDigits
+	if d := finiteDigits(r.Denom()); d >= 0 {
+		digits = d
+	}
+	s := r.FloatString(digits)
+	if strings.Contains(s, ".") {
+		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	}
+	if s == "-0" {
+		s = "0"
+	}
+	return s
+}
+
+// finiteDigits returns the number of fractional digits of a fraction with
+// denominator d, or -1 when it has no finite decimal expansion (d has a
+// prime factor other than 2 and 5).
+func finiteDigits(d *big.Int) int {
+	two, five := big.NewInt(2), big.NewInt(5)
+	n := new(big.Int).Set(d)
+	m := new(big.Int)
+	var twos, fives int
+	for n.Cmp(big.NewInt(1)) > 0 {
+		if m.Mod(n, two).Sign() == 0 {
+			n.Quo(n, two)
+			twos++
+		} else if m.Mod(n, five).Sign() == 0 {
+			n.Quo(n, five)
+			fives++
+		} else {
+			return -1
+		}
+	}
+	return max(twos, fives)
 }

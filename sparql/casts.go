@@ -2,6 +2,7 @@ package sparql
 
 import (
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -112,13 +113,20 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		dt := lit.Datatype()
 		if dt == rdflibgo.XSDBoolean {
 			if effectiveBooleanValue(val) {
-				return rdflibgo.NewLiteral("1.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+				return rdflibgo.NewLiteral("1", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 			}
-			return rdflibgo.NewLiteral("0.0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+			return rdflibgo.NewLiteral("0", rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
 		}
 		// Reject scientific notation strings (not valid xsd:decimal)
 		if !isNumericDatatype(dt) && strings.ContainsAny(s, "eE") {
 			return nil
+		}
+		// An integer, decimal or decimal-shaped string converts exactly; a
+		// float or double through its shortest representation.
+		if (!isNumericDatatype(dt) || dt == rdflibgo.XSDDecimal || isIntegral(val)) && isDecimalLexical(strings.TrimSpace(s)) {
+			if r, ok := new(big.Rat).SetString(decimalForRat(strings.TrimSpace(s))); ok {
+				return rdflibgo.NewLiteral(formatRat(r), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))
+			}
 		}
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
 			return rdflibgo.NewLiteral(formatDecimal(f), rdflibgo.WithDatatype(rdflibgo.XSDDecimal))

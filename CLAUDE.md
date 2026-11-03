@@ -842,6 +842,22 @@ The `store.Store` interface (13 methods) has four implementations:
   default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
   json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.
 
+### sparql/ differential corpus (`testdata/sparql-diff`)
+- `generate.py` builds queries from real constructs (OPTIONAL+FILTER, EXISTS,
+  MINUS, subqueries, aggregates, paths, arithmetic) over an awkward
+  `data.ttl`, runs each in **Oxigraph and rdflib**, and keeps a query only
+  when both agree (`queries.json`); disagreements go to
+  `disagreements.json`. `TestDifferentialAgainstReferences` compares terms
+  **exactly** (lexical form, datatype, language), unlike the W3C runner,
+  which matches numbers by value. Fixed seed; Python only to regenerate.
+- No xsd:double in `data.ttl`: both engines rewrite a double's lexical form
+  ("4.0e0" → "4" / "4.0"), so its results cannot be compared exactly.
+- First run found that xsd:decimal was float64 cut to ten digits
+  (`12345678901234567.5 + 1` → `…68.0`). Decimal is now exact: `numeric.r`
+  (`big.Rat`), canonical XSD 1.1 form (`formatRat`: "178", not "178.0"),
+  18 fractional digits for a non-terminating quotient (Oxigraph's choice).
+  Guard: `TestDecimalArithmeticIsExact`.
+
 ### sparql/ expression semantics
 - A nil term means "error" throughout the evaluator. Built-ins get arguments
   already checked for unbound; only FILTER turns an error into false.

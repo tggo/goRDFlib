@@ -1,0 +1,3521 @@
+[
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT DISTINCT ?half ?ln ?nf ?s ?sc WHERE { ?s ex:score ?sc . OPTIONAL { ?s ex:name ?ln FILTER (lang(?ln) = \"uk\") } { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } BIND (ROUND(?sc / 2) AS ?half) }",
+  "oxigraph": {
+   "vars": [
+    "half",
+    "ln",
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "half": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "half": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "half": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "half",
+    "ln",
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "half": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "half": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "half": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "half": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?in ?k ?n ?nf ?s WHERE { ?s ex:name ?n . OPTIONAL { ?s ex:knows ?k FILTER (?k != ?s) } { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } ?s ^ex:knows ?in . }",
+  "oxigraph": {
+   "vars": [
+    "in",
+    "k",
+    "n",
+    "nf",
+    "s"
+   ],
+   "rows": [
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "n": {
+      "type": "literal",
+      "value": "dave"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Bob",
+      "lang": "en"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "in",
+    "k",
+    "n",
+    "nf",
+    "s"
+   ],
+   "rows": [
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Bob",
+      "lang": "en"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "k": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "n": {
+      "type": "literal",
+      "value": "dave"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "in": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Erin",
+      "lang": "en"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?s WHERE { ?s ex:age ?a . BIND (?a * 2 AS ?a2x) }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?ln ?nf ?s ?sc WHERE { ?s ex:score ?sc . OPTIONAL { ?s ex:name ?ln FILTER (lang(?ln) = \"uk\") } { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } }",
+  "oxigraph": {
+   "vars": [
+    "ln",
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "ln",
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?ln ?o ?s ?third WHERE { ?s ex:knows ?o . ?s ex:age ?a . BIND (?a / 3 AS ?third) OPTIONAL { ?s ex:name ?ln FILTER (lang(?ln) = \"uk\") } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "ln",
+    "o",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     },
+     "third": {
+      "type": "literal",
+      "value": "17.333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "third": {
+      "type": "literal",
+      "value": "13.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "third": {
+      "type": "literal",
+      "value": "8.333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "ln",
+    "o",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "third": {
+      "type": "literal",
+      "value": "8.333333333333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "third": {
+      "type": "literal",
+      "value": "13.66666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     },
+     "third": {
+      "type": "literal",
+      "value": "17.33333333333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?nf ?s ?sc WHERE { ?s ex:score ?sc . { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } }",
+  "oxigraph": {
+   "vars": [
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?half ?s ?sc WHERE { ?s ex:age ?a . ?s ex:score ?sc . BIND (ROUND(?sc / 2) AS ?half) BIND (?a * 2 AS ?a2x) }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "half",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "half": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "half": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "half": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "half",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "half": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "half": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "half": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?s ?sc WHERE { ?s ex:age ?a . ?s ex:score ?sc . BIND (?a * 2 AS ?a2x) }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?nf ?os ?s ?sc WHERE { ?s ex:score ?sc . OPTIONAL { { ?s ex:score ?os FILTER (?os > 5) } } MINUS { ?s ex:age ?m FILTER (?m < 20) } { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } }",
+  "oxigraph": {
+   "vars": [
+    "nf",
+    "os",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "os": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "nf",
+    "os",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "os": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?nf ?s ?sc WHERE { ?s ex:score ?sc . FILTER (!bound(?e)) { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } }",
+  "oxigraph": {
+   "vars": [
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "nf",
+    "s",
+    "sc"
+   ],
+   "rows": [
+    {
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    },
+    {
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "sc": {
+      "type": "literal",
+      "value": "4",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?k2 ?ka ?ln ?o ?s ?third WHERE { ?s ex:age ?a . ?s ex:knows ?o . OPTIONAL { ?s ex:name ?ln FILTER (lang(?ln) = \"uk\") } BIND (?a / 3 AS ?third) OPTIONAL { ?s ex:knows ?k2 . ?k2 ex:age ?ka FILTER (?ka > ?a) } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "k2",
+    "ka",
+    "ln",
+    "o",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     },
+     "third": {
+      "type": "literal",
+      "value": "17.333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "third": {
+      "type": "literal",
+      "value": "13.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "k2": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "ka": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "third": {
+      "type": "literal",
+      "value": "8.333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "k2": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "ka": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "k2": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "ka": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "k2",
+    "ka",
+    "ln",
+    "o",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "k2": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "ka": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "k2": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "ka": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "k2": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "ka": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ln": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "third": {
+      "type": "literal",
+      "value": "8.333333333333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "third": {
+      "type": "literal",
+      "value": "13.66666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     },
+     "third": {
+      "type": "literal",
+      "value": "17.33333333333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?oldest ?s WHERE { ?s a ex:Person . ?s ex:age ?a . BIND (?a * 2 AS ?a2x) FILTER NOT EXISTS { ?s ex:email ?x } { SELECT (MAX(?ma) AS ?oldest) WHERE { ?p ex:age ?ma } } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "oldest",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "oldest": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "oldest": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "oldest",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "oldest": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "oldest": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?s WHERE { ?s ex:age ?a . BIND (?a * 2 AS ?a2x) FILTER NOT EXISTS { ?s ex:email ?x } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?fn ?o ?s ?third WHERE { ?s ex:age ?a . ?s ex:knows ?o . ?s ex:knows/ex:name ?fn . BIND (?a / 3 AS ?third) FILTER EXISTS { ?o ex:knows ?s } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "fn",
+    "o",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "dave"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "third": {
+      "type": "literal",
+      "value": "13.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Bob",
+      "lang": "en"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "fn",
+    "o",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Bob",
+      "lang": "en"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "third": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "third": {
+      "type": "literal",
+      "value": "13.66666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "fn": {
+      "type": "literal",
+      "value": "dave"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?dist ?n ?os ?s WHERE { ?s ex:name ?n . ?s ex:age ?a . BIND (ABS(?a - 40) AS ?dist) BIND (?a * 2 AS ?a2x) OPTIONAL { { ?s ex:score ?os FILTER (?os > 5) } } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "dist",
+    "n",
+    "os",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "12",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Frank"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "23",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "15",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "15",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Bob",
+      "lang": "en"
+     },
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "os": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "dist",
+    "n",
+    "os",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "10",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Alice"
+     },
+     "os": {
+      "type": "literal",
+      "value": "7.5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "15",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Bob",
+      "lang": "en"
+     },
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "15",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Боб",
+      "lang": "uk"
+     },
+     "os": {
+      "type": "literal",
+      "value": "9",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "23",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "dist": {
+      "type": "literal",
+      "value": "12",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "n": {
+      "type": "literal",
+      "value": "Frank"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?s ?third WHERE { ?s ex:age ?a . ?s a ex:Person . BIND (?a / 3 AS ?third) FILTER NOT EXISTS { ?s ex:knows ?x . ?x ex:age ?xa FILTER (?xa < ?a) } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "third": {
+      "type": "literal",
+      "value": "8.333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "s",
+    "third"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "third": {
+      "type": "literal",
+      "value": "8.333333333333333333333333333",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "third": {
+      "type": "literal",
+      "value": "5.666666666666666666666666667",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT ?a ?a2x ?ce ?nf ?o ?s WHERE { ?s ex:age ?a . ?s ex:knows ?o . BIND (COALESCE(?e, \"none\") AS ?ce) BIND (?a * 2 AS ?a2x) { SELECT ?s (COUNT(?f) AS ?nf) WHERE { ?s ex:knows ?f } GROUP BY ?s } }",
+  "oxigraph": {
+   "vars": [
+    "a",
+    "a2x",
+    "ce",
+    "nf",
+    "o",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    }
+   ]
+  },
+  "rdflib": {
+   "vars": [
+    "a",
+    "a2x",
+    "ce",
+    "nf",
+    "o",
+    "s"
+   ],
+   "rows": [
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "30",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "60",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "25",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "50",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/bob"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "41",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "82",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/alice"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/carol"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "17",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "34",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/dave"
+     }
+    },
+    {
+     "a": {
+      "type": "literal",
+      "value": "52",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "a2x": {
+      "type": "literal",
+      "value": "104",
+      "datatype": "http://www.w3.org/2001/XMLSchema#decimal"
+     },
+     "ce": {
+      "type": "literal",
+      "value": "none"
+     },
+     "nf": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     },
+     "o": {
+      "type": "uri",
+      "value": "http://example.org/erin"
+     },
+     "s": {
+      "type": "uri",
+      "value": "http://example.org/frank"
+     }
+    }
+   ]
+  }
+ }
+]

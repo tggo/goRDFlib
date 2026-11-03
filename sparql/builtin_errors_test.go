@@ -93,7 +93,7 @@ SELECT (ROUND(-2.5) AS ?roundHalf)
        (YEAR("2011-01-10T14:45:13Z"^^xsd:dateTime) AS ?year)
        (isIRI(<urn:x>) AS ?isiri) {}`)
 	checkRow(t, got, map[string]string{
-		"roundHalf":  "-2.0",
+		"roundHalf":  `"-2"^^<http://www.w3.org/2001/XMLSchema#decimal>`,
 		"absType":    "<http://www.w3.org/2001/XMLSchema#integer>",
 		"abs":        "2",
 		"ceilType":   "<http://www.w3.org/2001/XMLSchema#float>",

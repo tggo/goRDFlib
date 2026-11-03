@@ -1,0 +1,22 @@
+@prefix ex: <http://example.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Small on purpose, and awkward on purpose: integers and decimals (no double:
+# engines rewrite its lexical form, so results could not be compared exactly),
+# language-tagged and plain strings, a missing value per property, blank
+# nodes, a cycle and a self-loop in ex:knows, and an untyped node.
+
+ex:alice a ex:Person ; ex:name "Alice" ; ex:age 30 ; ex:score 7.5 ;
+    ex:email "alice@example.org" ; ex:knows ex:bob, ex:carol ;
+    ex:born "1995-04-01"^^xsd:date ; ex:address [ ex:city "Kyiv"@uk ; ex:zip "01001" ] .
+ex:bob a ex:Person ; ex:name "Bob"@en, "Боб"@uk ; ex:age 25 ; ex:score 9 ;
+    ex:knows ex:carol ; ex:born "2000-12-31"^^xsd:date .
+ex:carol a ex:Person, ex:Admin ; ex:name "Carol" ; ex:age "41"^^xsd:decimal ; ex:score 4 ;
+    ex:email "carol@example.org" ; ex:knows ex:alice ; ex:address [ ex:city "Lviv"@uk ] .
+ex:dave a ex:Person ; ex:name "dave" ; ex:age 17 ;
+    ex:knows ex:dave .
+ex:erin a ex:Person ; ex:name "Erin"@en ; ex:score 9 ; ex:email "erin@example.org" .
+ex:frank ex:name "Frank" ; ex:age 52 ; ex:knows ex:erin .
+
+ex:Admin ex:label "Administrator"@en .
+ex:Person ex:label "Person"@en, "Особа"@uk .
