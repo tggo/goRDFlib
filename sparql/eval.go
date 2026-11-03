@@ -3,6 +3,7 @@ package sparql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
@@ -1063,11 +1064,54 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		}
 		return result
 
+	case *SubqueryPattern:
+		// A FILTER or BIND inside a sub-SELECT observes a pre-bound value
+		// like one in the outer query does, so the value is passed into the
+		// subquery. Only for variables it projects: a variable it does not
+		// project is a different variable that merely shares the name
+		// (SPARQL 1.1 §18.2.1), and SHACL §5.3.1 requires a subquery to
+		// project each pre-bound variable it uses for the same reason.
+		inner := projectedBindings(p.Query, pre)
+		if len(inner) == 0 {
+			return evalPatternWithBindings(ec, g, pattern, pre, prefixes, namedGraphs)
+		}
+		subQ := *p.Query
+		if namedGraphs != nil {
+			subQ.NamedGraphs = maps.Clone(namedGraphs)
+		}
+		res, err := evalQuery(ec, g, &subQ, inner)
+		if err != nil || res == nil || res.Type != "SELECT" {
+			return nil
+		}
+		var compatible []map[string]rdflibgo.Term
+		for _, r := range res.Bindings {
+			if isCompatible(pre, r) {
+				compatible = append(compatible, r)
+			}
+		}
+		return compatible
+
 	default:
-		// VALUES, GRAPH and sub-SELECT carry no expression that could observe a
-		// pre-bound value, so restricting their results is equivalent.
+		// VALUES and GRAPH carry no expression that could observe a pre-bound
+		// value, so restricting their results is equivalent.
 		return evalPatternWithBindings(ec, g, pattern, pre, prefixes, namedGraphs)
 	}
+}
+
+// projectedBindings returns the pre-bound values of the variables q projects
+// as plain variables; all of them for SELECT *. A variable computed by a
+// projection expression is not pre-bound inside q: q assigns it.
+func projectedBindings(q *ParsedQuery, pre map[string]rdflibgo.Term) map[string]rdflibgo.Term {
+	if q.Variables == nil && len(q.ProjectExprs) == 0 {
+		return pre
+	}
+	inner := make(map[string]rdflibgo.Term, len(q.Variables))
+	for _, v := range q.Variables {
+		if t, ok := pre[v]; ok {
+			inner[v] = t
+		}
+	}
+	return inner
 }
 
 // --- BGP evaluation ---

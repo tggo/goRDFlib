@@ -471,6 +471,16 @@ The `store.Store` interface (13 methods) has four implementations:
   kind (`preBindThis`), never spliced into the text: an IRI written into a
   sub-SELECT's projection or GROUP BY is not SPARQL, so every IRI focus node
   made the rule malformed (#55). Guard: `TestAF_SPARQLRule_ThisInSubSelect`.
+  SPARQL constraints and components do the same (`preBindTerm` binds every
+  kind; only `$PATH` is still textual, it sits in path position). The engine
+  passes pre-bound values into a sub-SELECT for the variables it projects
+  (`projectedBindings`), or a FILTER in it never sees them (W3C
+  `pre-binding-007`). Guard: `TestSPARQLConstraint_ThisInSubSelect`.
+- A SPARQL constraint whose query does not parse still yields a violation per
+  focus node (fail closed) and reports `ErrMalformedConstraint` through
+  `WithErrorHandler` once per constraint per run (`guard.malformed`), so a
+  broken shape is distinguishable from bad data (#54). Guard:
+  `TestSPARQLConstraint_ParseErrorIsReported`.
 - Recursion is bounded in three places (`maxFunctionDepth`, `afExprMaxDepth`,
   `ruleIterationLimit`) — all three are reachable with legal input.
 - Reference suite: `testdata/dash-af/` (DASH), run by `shacl/af_dash_test.go`.

@@ -17,6 +17,15 @@ import (
 // no error return, so this reaches the caller through WithErrorHandler.
 var ErrMalformedTarget = errors.New("shacl: malformed target")
 
+// ErrMalformedConstraint is reported when the query of a SPARQL-based
+// constraint (sh:sparql, or the validator of a SPARQL-based constraint
+// component) does not parse. The constraint still produces a violation for
+// each focus node, because a constraint that cannot be evaluated must not
+// look satisfied; this error is what tells such a violation apart from one
+// the data caused. It is reported through WithErrorHandler once per
+// constraint per run.
+var ErrMalformedConstraint = errors.New("shacl: malformed SPARQL constraint")
+
 // Validate validates dataGraph against shapesGraph and returns a validation report.
 //
 // With no options this is SHACL Core plus SHACL-SPARQL and SHACL 1.2, which is

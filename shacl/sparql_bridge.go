@@ -350,12 +350,12 @@ func isVarChar(c byte) bool {
 // query text is a fresh, query-scoped node rather than a reference to a
 // specific data-graph node (SPARQL 1.1 §4.1.4); textual substitution of a
 // blank node therefore cannot scope a triple pattern to that focus node.
-func preBindTerm(textual map[string]string, initial map[string]term.Term, name string, t Term) {
-	if t.Kind() == TermBlankNode {
-		initial[name] = toTerm(t)
-		return
-	}
-	textual[name] = termToSPARQL(t)
+//
+// Every kind is bound that way, not only blank nodes: an IRI or literal
+// written into the text of a sub-SELECT's projection or GROUP BY is not
+// SPARQL, which made the whole constraint fail to parse (#55).
+func preBindTerm(_ map[string]string, initial map[string]term.Term, name string, t Term) {
+	initial[name] = toTerm(t)
 }
 
 // termToSPARQL converts a shacl Term to a SPARQL term string suitable for

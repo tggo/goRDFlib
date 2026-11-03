@@ -61,6 +61,7 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, namedGraphs, ctx.sparqlFuncs())
 	if err != nil {
 		ctx.guard.fail(err)
+		ctx.reportMalformed(c, c.Node, err)
 		r := makeResult(shape, focusNode, focusNode, c.ComponentIRI())
 		r.SourceConstraint = c.Node
 		if msgs := resultMessages(nil, func() map[string]Term {

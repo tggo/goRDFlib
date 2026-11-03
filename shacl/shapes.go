@@ -165,6 +165,11 @@ type recursionGuard struct {
 	// values is a stack of the one-element value-node slices that node
 	// shapes pass to their constraints (see pushSingle).
 	values []Term
+
+	// malformed holds the constraints whose query failed to parse in this
+	// run, so ErrMalformedConstraint is reported once per constraint and not
+	// once per focus node.
+	malformed map[any]struct{}
 }
 
 // guardScanDepth is the stack depth up to which the guard scans instead of
