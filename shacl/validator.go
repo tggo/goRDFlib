@@ -249,21 +249,16 @@ func evalSPARQLValues(ctx *evalContext, v *SPARQLValues, focusNode Term) []Term 
 	} else {
 		return nil
 	}
-	// Pre-bind $this. IRI/literal focus nodes are substituted textually; a
-	// blank-node focus node must be bound via initial bindings, since its
-	// label cannot be referenced in SPARQL query text (see preBindTerm).
-	var initBindings map[string]term.Term
-	if focusNode.Kind() == TermBlankNode {
-		query = replaceVar(query, "$this", "?this")
-		initBindings = map[string]term.Term{"this": toTerm(focusNode)}
-	} else {
-		thisVal := termToSPARQL(focusNode)
-		query = replaceVar(query, "$this", thisVal)
-		query = replaceVar(query, "?this", thisVal)
-	}
+	// $this is an initial binding for every kind of focus node (see
+	// preBindTerm), never spliced into the text.
+	query = replaceVar(query, "$this", "?this")
+	initBindings := map[string]term.Term{"this": toTerm(focusNode)}
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
 		ctx.guard.fail(err)
+		// No value nodes reads like a property with no values; without the
+		// report a broken sh:values would pass every constraint quietly.
+		ctx.reportMalformed(v, IRI(SH+"values"), err)
 		return nil
 	}
 	var values []Term
@@ -395,7 +390,7 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 			}
 		case TargetSPARQL:
 			query := tgt.Select
-			results, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, nil, nil, ctx.sparqlFuncs())
+			results, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, tgt.Bindings, nil, ctx.sparqlFuncs())
 			if err != nil {
 				ctx.guard.fail(err)
 				// A target that selects nothing is indistinguishable from one

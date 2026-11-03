@@ -24,7 +24,10 @@ func evalExprWithGraph(ec *evalCtx, expr Expr, bindings map[string]rdflibgo.Term
 	}
 	switch e := expr.(type) {
 	case *VarExpr:
-		return bindings[e.Name]
+		if t, ok := bindings[e.Name]; ok || ec == nil {
+			return t
+		}
+		return ec.pre[e.Name]
 	case *LiteralExpr:
 		return e.Value
 	case *IRIExpr:

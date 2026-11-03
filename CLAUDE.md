@@ -476,6 +476,16 @@ The `store.Store` interface (13 methods) has four implementations:
   passes pre-bound values into a sub-SELECT for the variables it projects
   (`projectedBindings`), or a FILTER in it never sees them (W3C
   `pre-binding-007`). Guard: `TestSPARQLConstraint_ThisInSubSelect`.
+- Initial bindings are constants in **every** scope: `evalCtx.pre` is the
+  fallback for a variable an expression's row does not bind. Rows reach
+  EXISTS, GRAPH, OPTIONAL's right side and subqueries without them, so
+  without it `FILTER NOT EXISTS { FILTER($this = ...) }` saw `$this` unbound
+  — invisible while SHACL spliced values into the text, a false violation
+  per focus node once it bound them. Every SHACL pre-binding is a binding
+  now (`$this`, `$value`, `$currentShape`, `$shapesGraph`, parameters,
+  `sh:values`, AF target parameters via `Target.Bindings`); only `$PATH` is
+  text. Guards: `TestPreBoundVisibleInEveryScope`,
+  `TestSPARQLConstraint_ThisInNestedScopes`, `..._BlankCurrentShape`.
 - A SPARQL constraint whose query does not parse still yields a violation per
   focus node (fail closed) and reports `ErrMalformedConstraint` through
   `WithErrorHandler` once per constraint per run (`guard.malformed`), so a

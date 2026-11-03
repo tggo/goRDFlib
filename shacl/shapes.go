@@ -2,7 +2,9 @@ package shacl
 
 import (
 	"context"
+
 	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/term"
 )
 
 // Shape represents either a NodeShape or a PropertyShape.
@@ -38,6 +40,9 @@ type Target struct {
 	Kind   TargetKind
 	Value  Term
 	Select string // SPARQL query for TargetSPARQL
+	// Bindings pre-binds the parameters of a SHACL-AF target type to the
+	// values its instance gives. Read-only once the shapes are parsed.
+	Bindings map[string]term.Term
 }
 
 // TargetKind distinguishes the different SHACL target types.

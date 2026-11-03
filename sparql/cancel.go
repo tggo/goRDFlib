@@ -52,6 +52,12 @@ type evalCtx struct {
 	// budget is the WithMaxSolutions bound (0: none) and built the solutions
 	// counted against it so far; see produced.
 	budget, built int
+	// pre holds the caller's initial bindings. They are constants substituted
+	// into the query (SHACL §5.3.1 pre-binding), so an expression anywhere —
+	// inside EXISTS, GRAPH, the right side of OPTIONAL, a subquery — sees one
+	// that its own row does not bind. Rows reach those places without the
+	// pre-bound values, so the lookup falls back to this instead.
+	pre map[string]rdflibgo.Term
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
@@ -175,6 +181,9 @@ func sortSolutions(ec *evalCtx, solutions []map[string]rdflibgo.Term, cmp func(a
 // Like EvalQuery, it never mutates q.
 func EvalQueryContext(ctx context.Context, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[string]rdflibgo.Term) (*Result, error) {
 	ec := newEvalCtx(ctx)
+	if len(initBindings) > 0 {
+		ec.pre = initBindings
+	}
 	// A query only reads, so every property path in it can share the answers
 	// of a ReachabilityStore: one round trip per distinct start node, not per
 	// row (tggo/rdflibgo-mongostore#3).

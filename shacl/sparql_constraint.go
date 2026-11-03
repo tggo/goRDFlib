@@ -40,9 +40,9 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 	if shape.Path != nil && shape.Path.Kind == PathPredicate {
 		bindings["PATH"] = termToSPARQL(shape.Path.Pred)
 	}
-	bindings["currentShape"] = termToSPARQL(shape.ID)
+	preBindTerm(bindings, initBindings, "currentShape", shape.ID)
 	if ctx.shapesGraph != nil && ctx.shapesGraph.baseURI != "" {
-		bindings["shapesGraph"] = "<" + ctx.shapesGraph.baseURI + ">"
+		initBindings["shapesGraph"] = term.NewURIRefUnsafe(ctx.shapesGraph.baseURI)
 	}
 
 	query := preBindQuery(fullQuery, bindings)

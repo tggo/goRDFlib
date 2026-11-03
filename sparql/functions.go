@@ -48,6 +48,9 @@ func evalFuncWithGraph(ec *evalCtx, name string, args []Expr, bindings map[strin
 		if len(args) == 1 {
 			if v, ok := args[0].(*VarExpr); ok {
 				_, exists := bindings[v.Name]
+				if !exists && ec != nil {
+					_, exists = ec.pre[v.Name]
+				}
 				return rdflibgo.NewLiteral(exists)
 			}
 		}

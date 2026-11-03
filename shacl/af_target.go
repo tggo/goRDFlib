@@ -1,6 +1,10 @@
 package shacl
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/tggo/goRDFlib/term"
+)
 
 // SHACL-AF custom targets (§4).
 //
@@ -30,7 +34,7 @@ func (ctx *afContext) loadAFTargets() (map[string][]Target, error) {
 	var firstErr error
 
 	for _, t := range g.All(nil, &pred, nil) {
-		query, err := ctx.resolveTarget(t.Object)
+		query, bindings, err := ctx.resolveTarget(t.Object)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -41,23 +45,23 @@ func (ctx *afContext) loadAFTargets() (map[string][]Target, error) {
 			continue
 		}
 		key := t.Subject.String()
-		targets[key] = append(targets[key], Target{Kind: TargetSPARQL, Select: query})
+		targets[key] = append(targets[key], Target{Kind: TargetSPARQL, Select: query, Bindings: bindings})
 	}
 	return targets, firstErr
 }
 
 // resolveTarget turns one sh:target value into a SELECT query whose first
 // projected variable names the target nodes.
-func (ctx *afContext) resolveTarget(node Term) (string, error) {
+func (ctx *afContext) resolveTarget(node Term) (string, map[string]term.Term, error) {
 	g := ctx.shapesGraph
 
 	// A sh:SPARQLTarget carries its own query.
 	if g.HasType(node, IRI(SHSPARQLTarget)) {
 		sel := g.Objects(node, IRI(SH+"select"))
 		if len(sel) == 0 {
-			return "", fmt.Errorf("%w: the sh:SPARQLTarget %s has no sh:select", ErrAdvancedFeatures, node)
+			return "", nil, fmt.Errorf("%w: the sh:SPARQLTarget %s has no sh:select", ErrAdvancedFeatures, node)
 		}
-		return resolvePrefixes(g, node) + normalizeDollarVars(sel[0].Value()), nil
+		return resolvePrefixes(g, node) + normalizeDollarVars(sel[0].Value()), nil, nil
 	}
 
 	// Otherwise the node instantiates a target type: its rdf:type names a
@@ -69,13 +73,13 @@ func (ctx *afContext) resolveTarget(node Term) (string, error) {
 		}
 		sel := g.Objects(typ, IRI(SH+"select"))
 		if len(sel) == 0 {
-			return "", fmt.Errorf("%w: the sh:SPARQLTargetType %s has no sh:select", ErrAdvancedFeatures, typ)
+			return "", nil, fmt.Errorf("%w: the sh:SPARQLTargetType %s has no sh:select", ErrAdvancedFeatures, typ)
 		}
 		query := resolvePrefixes(g, typ) + normalizeDollarVars(sel[0].Value())
 		return ctx.bindTargetParameters(g, typ, node, query)
 	}
 
-	return "", fmt.Errorf("%w: the sh:target %s is neither a sh:SPARQLTarget nor an instance of a sh:SPARQLTargetType", ErrAdvancedFeatures, node)
+	return "", nil, fmt.Errorf("%w: the sh:target %s is neither a sh:SPARQLTarget nor an instance of a sh:SPARQLTargetType", ErrAdvancedFeatures, node)
 }
 
 // bindTargetParameters substitutes a target type's declared parameters with the
@@ -83,8 +87,8 @@ func (ctx *afContext) resolveTarget(node Term) (string, error) {
 //
 // A parameter declared with sh:path ex:class is written ?class in the query and
 // takes its value from the instance's ex:class property.
-func (ctx *afContext) bindTargetParameters(g *Graph, typeNode, instance Term, query string) (string, error) {
-	bindings := make(map[string]string)
+func (ctx *afContext) bindTargetParameters(g *Graph, typeNode, instance Term, query string) (string, map[string]term.Term, error) {
+	var bindings map[string]term.Term
 	for _, p := range g.Objects(typeNode, IRI(SH+"parameter")) {
 		paths := g.Objects(p, IRI(SH+"path"))
 		if len(paths) == 0 {
@@ -100,13 +104,14 @@ func (ctx *afContext) bindTargetParameters(g *Graph, typeNode, instance Term, qu
 			if len(optional) > 0 && optional[0].Value() == "true" {
 				continue
 			}
-			return "", fmt.Errorf("%w: the target %s gives no value for the required parameter %s of %s",
+			return "", nil, fmt.Errorf("%w: the target %s gives no value for the required parameter %s of %s",
 				ErrAdvancedFeatures, instance, paths[0], typeNode)
 		}
-		bindings[name] = termToSPARQL(vals[0])
+		// An initial binding, not text: see preBindTerm.
+		if bindings == nil {
+			bindings = make(map[string]term.Term)
+		}
+		bindings[name] = toTerm(vals[0])
 	}
-	if len(bindings) == 0 {
-		return query, nil
-	}
-	return preBindQuery(query, bindings), nil
+	return query, bindings, nil
 }
