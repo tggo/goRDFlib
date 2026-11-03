@@ -467,6 +467,10 @@ The `store.Store` interface (13 methods) has four implementations:
 - Function parameter order: by `sh:order` when **all** parameters have one,
   otherwise alphabetically by the local name of `sh:path`. Argument values bind
   to initial bindings keyed by that local name.
+- `sh:construct` gets `$this` as an **initial binding** for every focus node
+  kind (`preBindThis`), never spliced into the text: an IRI written into a
+  sub-SELECT's projection or GROUP BY is not SPARQL, so every IRI focus node
+  made the rule malformed (#55). Guard: `TestAF_SPARQLRule_ThisInSubSelect`.
 - Recursion is bounded in three places (`maxFunctionDepth`, `afExprMaxDepth`,
   `ruleIterationLimit`) — all three are reachable with legal input.
 - Reference suite: `testdata/dash-af/` (DASH), run by `shacl/af_dash_test.go`.

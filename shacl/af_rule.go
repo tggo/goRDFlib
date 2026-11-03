@@ -298,16 +298,13 @@ func (ctx *afContext) addTriple(s, p, o Term) (bool, error) {
 
 // preBindThis binds $this in a rule's query to the focus node.
 //
-// An IRI or literal focus node is spliced into the query text; a blank node
-// cannot be, because a blank-node label written in a query is a fresh
-// query-scoped node rather than a reference to the one in the data (SPARQL 1.1
-// §4.1.4), so it is passed as an initial binding instead.
+// The focus node is passed as an initial binding, never spliced into the query
+// text. A blank-node label written in a query is a fresh query-scoped node
+// rather than a reference to the one in the data (SPARQL 1.1 §4.1.4), and an
+// IRI written into a sub-SELECT's projection or GROUP BY is not SPARQL (#55);
+// a binding is what SHACL means by pre-binding (§5.3.1) in both cases.
 func preBindThis(query string, focusNode Term) (string, map[string]term.Term) {
-	query = normalizeDollarVars(query)
-	if focusNode.Kind() == TermBlankNode {
-		return query, map[string]term.Term{"this": toTerm(focusNode)}
-	}
-	return replaceVar(query, "?this", termToSPARQL(focusNode)), nil
+	return normalizeDollarVars(query), map[string]term.Term{"this": toTerm(focusNode)}
 }
 
 // loadRules reads every sh:rule in the shapes graph, grouped by the shape it is
