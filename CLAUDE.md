@@ -83,7 +83,11 @@ The `store.Store` interface (13 methods) has four implementations:
 - Adding a case here changes the bar for every backend including the external
   ones, which is what the `satellite-stores` CI job exists to catch. The one
   satellite today is `github.com/tggo/rdflibgo-mongostore`; the job builds and
-  runs its integration suite against every commit here, via a `replace`.
+  vets it (integration tag included) against every commit here, via a
+  `replace`. Its integration suite is **not** run in CI: mongod in Docker
+  stopped starting on GitHub's runners (Nov 2026, refused on both ::1 and
+  127.0.0.1). Run it locally before a release; the suite now prints the
+  container's state and log when mongod does not come up.
 
 ### store.Store context conventions (were undocumented, now pinned)
 - **nil context means the default graph, not "all graphs".** The interface doc
