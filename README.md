@@ -833,6 +833,20 @@ if report.Conforms {
 N-Quads describe exactly the same triples. Don't modify `g` while a validation
 of it is running. Runnable version: `ExampleCompiledShapes_parseOnce`.
 
+#### Triples already in memory
+
+A program that builds its triples itself (rather than parsing a file) hands
+them over without filling a store first:
+
+```go
+report := compiled.Validate(shacl.NewGraphFromTriples(triples, "")) // triples []term.Triple
+```
+
+Validation reads indexes built from the slice, as for `LoadJsonLD`; the rdflib
+graph is built only if a SPARQL-based constraint, `Add`, `Merge` or a SHACL-AF
+rule needs it. Don't modify the slice while the graph is in use. Runnable
+version: `ExampleNewGraphFromTriples`.
+
 #### Prepared validation and inspection
 
 A validation report contains findings, not every shape application. To inspect
