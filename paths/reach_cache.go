@@ -24,7 +24,40 @@ import (
 // Safe for concurrent use. Cached slices are shared and must not be modified.
 type reachCache struct {
 	mu sync.Mutex
-	m  map[string][]term.Term
+	m  map[string]*reachEntry
+}
+
+// reachEntry is one cached answer: the nodes in the store's order, and, built
+// on the first membership test, the set of their term keys.
+type reachEntry struct {
+	nodes []term.Term
+	once  sync.Once
+	keys  map[string]struct{}
+}
+
+// reachScanMax is the size up to which has scans the nodes instead of
+// building the key set: for a few nodes the scan is cheaper than the map.
+const reachScanMax = 16
+
+// has reports whether target is among the entry's nodes.
+func (e *reachEntry) has(target term.Term) bool {
+	if len(e.nodes) <= reachScanMax {
+		k := term.TermKey(target)
+		for _, n := range e.nodes {
+			if term.TermKey(n) == k {
+				return true
+			}
+		}
+		return false
+	}
+	e.once.Do(func() {
+		e.keys = make(map[string]struct{}, len(e.nodes))
+		for _, n := range e.nodes {
+			e.keys[term.TermKey(n)] = struct{}{}
+		}
+	})
+	_, ok := e.keys[term.TermKey(target)]
+	return ok
 }
 
 type reachCacheKey struct{}
@@ -50,12 +83,33 @@ func reachCacheIn(ctx context.Context) *reachCache {
 
 // reachable answers q from the cache or from rs.
 func (c *reachCache) reachable(ctx context.Context, rs store.ReachabilityStore, q store.ReachabilityQuery) ([]term.Term, error) {
+	e, err := c.entry(ctx, rs, q)
+	if err != nil {
+		return nil, err
+	}
+	return e.nodes, nil
+}
+
+// reaches reports whether target is among the nodes q reaches. A path with
+// both endpoints bound asks this once per pair it tests, so the answer comes
+// from a set of term keys built once per cached answer (reachEntry.has), not
+// from a scan of every reached node.
+func (c *reachCache) reaches(ctx context.Context, rs store.ReachabilityStore, q store.ReachabilityQuery, target term.Term) (bool, error) {
+	e, err := c.entry(ctx, rs, q)
+	if err != nil {
+		return false, err
+	}
+	return e.has(target), nil
+}
+
+// entry returns the cached answer to q, asking rs on a miss.
+func (c *reachCache) entry(ctx context.Context, rs store.ReachabilityStore, q store.ReachabilityQuery) (*reachEntry, error) {
 	k := reachKey(q)
 	c.mu.Lock()
-	r, ok := c.m[k]
+	e, ok := c.m[k]
 	c.mu.Unlock()
 	if ok {
-		return r, nil
+		return e, nil
 	}
 	r, err := rs.Reachable(ctx, q)
 	if err != nil {
@@ -63,11 +117,16 @@ func (c *reachCache) reachable(ctx context.Context, rs store.ReachabilityStore, 
 	}
 	c.mu.Lock()
 	if c.m == nil {
-		c.m = make(map[string][]term.Term)
+		c.m = make(map[string]*reachEntry)
 	}
-	c.m[k] = r
+	if prev, ok := c.m[k]; ok {
+		e = prev // another goroutine stored it first
+	} else {
+		e = &reachEntry{nodes: r}
+		c.m[k] = e
+	}
 	c.mu.Unlock()
-	return r, nil
+	return e, nil
 }
 
 // reachKey identifies q. The separator is NUL, as in provenance: a literal's
