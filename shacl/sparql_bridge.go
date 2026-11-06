@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/sparql"
@@ -45,23 +46,67 @@ func addWellKnownPrefixes(query string) string {
 	return sb.String()
 }
 
+// parsedQueries caches the parsed form of the SPARQL queries of the shapes
+// graphs (the sh:select, sh:ask and sh:construct of constraints, constraint
+// components, targets and rules), keyed by their text. A constraint's query text is the same for every focus
+// node, since every pre-bound variable is an initial binding rather than text
+// (see preBindTerm), so without the cache the same query was parsed once per
+// focus node. A stored query is never modified: each use gets a shallow copy
+// whose top-level fields (NamedGraphs) it may set. Queries that bind SHACL
+// functions are not cached, because BindContextFunctions writes into the
+// expression tree. The cache is bounded: once full it is emptied.
+var parsedQueries = struct {
+	sync.RWMutex
+	m map[string]*sparql.ParsedQuery
+}{m: map[string]*sparql.ParsedQuery{}}
+
+const maxParsedQueries = 4096
+
+// parseShapesQuery is sparql.Parse with the SHACL fix-ups (well-known
+// prefixes, syntax fixes, pre-binding into subqueries, the data graph as the
+// dataset), cached unless cacheable is false.
+func parseShapesQuery(query string, cacheable bool) (*sparql.ParsedQuery, error) {
+	if cacheable {
+		parsedQueries.RLock()
+		pq, ok := parsedQueries.m[query]
+		parsedQueries.RUnlock()
+		if ok {
+			cp := *pq
+			return &cp, nil
+		}
+	}
+	pq, err := sparql.Parse(fixSPARQLSyntax(addWellKnownPrefixes(query)))
+	if err != nil {
+		return nil, err
+	}
+	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
+	useDataGraphAsDataset(pq)
+	if !cacheable {
+		return pq, nil
+	}
+	parsedQueries.Lock()
+	if len(parsedQueries.m) >= maxParsedQueries {
+		parsedQueries.m = map[string]*sparql.ParsedQuery{}
+	}
+	parsedQueries.m[query] = pq
+	parsedQueries.Unlock()
+	cp := *pq
+	return &cp, nil
+}
+
 // executeSPARQL runs a SPARQL SELECT query against the underlying graph.Graph
 // with ctx, which reaches its store and stops the query (see cancel.go),
 // returning result bindings converted to shacl Terms.
 // funcs binds SHACL functions declared by the shapes graph for the duration of
 // this query; it is nil unless SHACL-AF is enabled.
 func executeSPARQL(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.ContextFunction) ([]map[string]Term, error) {
-	query = addWellKnownPrefixes(query)
-	query = fixSPARQLSyntax(query)
-	pq, err := sparql.Parse(query)
+	pq, err := parseShapesQuery(query, len(funcs) == 0)
 	if err != nil {
 		return nil, err
 	}
-	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
-	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	rg, err := rdfOf(ctx, g)
 	if err != nil {
@@ -127,17 +172,13 @@ func useDataGraphAsDataset(pq *sparql.ParsedQuery) {
 // executeSPARQLAsk runs a SPARQL ASK query against the underlying graph.Graph.
 // funcs carries SHACL functions as in executeSPARQL.
 func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, namedGraphs map[string]*graph.Graph, funcs map[string]sparql.ContextFunction) (bool, error) {
-	query = addWellKnownPrefixes(query)
-	query = fixSPARQLSyntax(query)
-	pq, err := sparql.Parse(query)
+	pq, err := parseShapesQuery(query, len(funcs) == 0)
 	if err != nil {
 		return false, err
 	}
-	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
 	if namedGraphs != nil {
 		pq.NamedGraphs = namedGraphs
 	}
-	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	rg, err := rdfOf(ctx, g)
 	if err != nil {
@@ -156,14 +197,10 @@ func executeSPARQLAsk(ctx context.Context, g *Graph, query string, initBindings 
 // It is used for SHACL-AF's sh:construct rules, where the constructed triples
 // are added to the data graph rather than returned to a caller.
 func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBindings map[string]term.Term, funcs map[string]sparql.ContextFunction) ([]Triple, error) {
-	query = addWellKnownPrefixes(query)
-	query = fixSPARQLSyntax(query)
-	pq, err := sparql.Parse(query)
+	pq, err := parseShapesQuery(query, len(funcs) == 0)
 	if err != nil {
 		return nil, err
 	}
-	pq.PreBindSubqueries = true // SHACL pre-binding substitutes into subqueries
-	useDataGraphAsDataset(pq)
 	pq.BindContextFunctions(funcs)
 	rg, err := rdfOf(ctx, g)
 	if err != nil {
