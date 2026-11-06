@@ -1208,9 +1208,20 @@ func evalBGPUpTo(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[
 	return evalBGPInOrder(ec, g, orderBGP(ec, g, triples, bindings, prefixes), bindings, prefixes, limit)
 }
 
-// evalBGPInOrder evaluates the triple patterns as nested loops in the order
-// given and collects at most limit solutions (limit <= 0: all of them).
+// evalBGPInOrder evaluates the triple patterns in the order given and collects
+// at most limit solutions (limit <= 0: all of them). Groups of patterns that
+// share no variable are evaluated once each and combined (bgp_components.go);
+// the patterns of one group are joined as nested loops.
 func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
+	if comps := bgpComponents(triples, bindings); comps != nil {
+		return evalBGPComponents(ec, g, comps, bindings, prefixes, limit)
+	}
+	return collectBGPSolutions(ec, g, triples, bindings, prefixes, limit)
+}
+
+// collectBGPSolutions evaluates the triple patterns as nested loops in the
+// order given and collects at most limit solutions (limit <= 0: all of them).
+func collectBGPSolutions(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
 	var results []map[string]rdflibgo.Term
 	eachBGPSolution(ec, g, triples, bindings, prefixes, func(b map[string]rdflibgo.Term) bool {
 		results = append(results, b)
