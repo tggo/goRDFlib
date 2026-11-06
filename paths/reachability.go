@@ -109,13 +109,27 @@ func (p *MulPath) evalViaStore(st *stopper, g *graph.Graph, subj term.Subject, o
 	if st.reach == nil {
 		st.reach = &reachCache{}
 	}
-	reached, err := st.reach.reachable(st.ctx, rs, store.ReachabilityQuery{
+	q := store.ReachabilityQuery{
 		Start:      start,
 		Predicates: spec.preds,
 		Negated:    spec.negated,
 		Inverse:    spec.inverse,
 		Context:    g.Identifier(),
-	})
+	}
+	if subj != nil && obj != nil {
+		// Both endpoints bound: a membership test. The reached nodes are a
+		// set (ReachabilityStore contract), so the pair is emitted at most
+		// once, as the scan did.
+		ok, err := st.reach.reaches(st.ctx, rs, q, obj)
+		if err != nil {
+			return false // see below: fall back, nothing emitted
+		}
+		if ok {
+			emit(subj, obj)
+		}
+		return true
+	}
+	reached, err := st.reach.reachable(st.ctx, rs, q)
 	if err != nil {
 		// Documented contract: an error means "compute this yourself", and no
 		// partial result has been emitted, so falling back is safe.
