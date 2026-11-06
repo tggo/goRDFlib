@@ -471,6 +471,20 @@ func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
 	return LoadNQuads(strings.NewReader(data), base, opts...)
 }
 
+// NewGraphFromTriples returns a graph over triples the caller already holds in
+// memory, for example triples built by Go code rather than parsed from a file.
+//
+// The triples are neither parsed nor copied into a store: validation reads the
+// indexes built from them on first use, and the rdflib graph that SPARQL-based
+// constraints, Add, Merge and SHACL-AF rules need is built only when one of
+// them runs, as for LoadJsonLD (issue #48). A repeated triple is held once.
+//
+// The slice is not copied and must not be modified while the graph is in use.
+// Like every Graph, the result is safe for concurrent reads.
+func NewGraphFromTriples(triples []term.Triple, baseURI string) *Graph {
+	return &Graph{src: triples, baseURI: baseURI}
+}
+
 // NewGraphFromRDF wraps an existing *graph.Graph as a *Graph, without copying
 // its triples.
 //
