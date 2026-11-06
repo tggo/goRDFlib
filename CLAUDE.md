@@ -661,6 +661,16 @@ The `store.Store` interface (13 methods) has four implementations:
   case LIMIT pushdown cannot help and only the budget bounds.
 - Guards: `TestLimitStopsCrossProduct` (allocation bound, not timing),
   `TestLimitPushdownRowsAreSolutions`, `TestMaxSolutions` (sparql and endpoint).
+- `bgp_merge.go`: `evalPattern`, `evalPatternWithBindings`,
+  `evalPatternPreBound` and `eachSolution` first pass the pattern through
+  `mergeJoinedBGPs`: a join whose leaves are all BGPs (a group split by a
+  FILTER or a nested group) is evaluated as one BGP, so the planner orders all
+  its patterns; the group's FILTERs wrap the join and are unaffected. Not
+  merged: leaves sharing a blank-node label, a triple term holding a blank
+  node. It returns a new BGP and never modifies the query (parsed queries are
+  shared). Guards: `TestJoinedBGPsMatchUnmergedJoin` (rows equal to the second
+  BGP written as `{ … FILTER (true) }`, which is never merged),
+  `TestJoinedBGPsAreEvaluatedAsOneBGP` (a 20,000-solution budget).
 
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
