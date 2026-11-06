@@ -705,6 +705,18 @@ The `store.Store` interface (13 methods) has four implementations:
   expose its bindings to expressions: SPARQL 1.1 §18.2.1 puts a variable bound
   in one group out of scope in a sibling group. The `bind10` W3C test is the
   guard; conflating the two functions breaks it.
+- Pre-bound Join (EXISTS bodies take this path too): a right side that is a
+  BGP, or a UNION or join of BGPs (`expressionFree`), is evaluated with each
+  left row substituted when a row binds one of its variables; it holds no
+  expression that could see the row. Any other right side never sees the
+  left row, so it is evaluated once, not per row (and not at all for no left
+  row), unless `callsVolatileFunction` (RAND, UUID, STRUUID, BNODE, extension
+  functions; unknown node types count as volatile): then per row, so each row
+  keeps its own value as without initial bindings. A right-side FILTER must
+  stay out of `expressionFree`, or the left row becomes visible to it
+  (`prebound_join.go`). Guards: `TestPreBoundJoinMatchesTextualSubstitution`,
+  `TestPreBoundJoinInExistsBody`, `TestPreBoundJoinVolatileRightSide`,
+  `TestPreBoundJoinWork` (triples pulled).
 
 ### sparql/ BGP join ordering (`bgp_order.go`)
 - `evalBGP` plans, `evalBGPInOrder` runs the nested loops. Recursion must stay

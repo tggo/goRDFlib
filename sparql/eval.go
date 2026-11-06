@@ -972,13 +972,49 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 	case *JoinPattern:
 		left := evalPatternPreBound(ec, g, p.Left, pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
+		if expressionFree(p.Right) && bindsAVariableOf(left, p.Right, pre) {
+			// A basic graph pattern holds no expression, nor does a UNION or a
+			// group of them, so evaluating it with the left row's values
+			// substituted (an index nested-loop join) is the same as joining
+			// its own solutions with the row, and only touches the triples
+			// that can match. This is the common case of a group split by a
+			// FILTER, { A FILTER (…) B }, a FILTER over Join(A, B), and of
+			// { A { B } UNION { C } }, Join(A, Union(B, C)); EXISTS bodies
+			// take this path too, with the outer row pre-bound. When no left
+			// row binds a variable of the right side, the right side is the
+			// same for every row and is evaluated once, below.
+			for _, lb := range left {
+				if ec.stop() {
+					return nil
+				}
+				for _, rb := range evalPatternPreBound(ec, g, p.Right, mergeBindings(pre, lb), prefixes, namedGraphs) {
+					result = append(result, mergeBindings(lb, rb))
+					if ec.produced(1) {
+						return nil
+					}
+				}
+			}
+			return result
+		}
+		// The right side sees the pre-bound constants, and the left row only
+		// through the ordinary, expression-opaque path. It does not depend on
+		// the left row, so it is evaluated once (and not at all for no row),
+		// unless it calls a function that may give each row its own value.
+		if len(left) == 0 {
+			return nil
+		}
+		var right []map[string]rdflibgo.Term
+		once := len(left) == 1 || !callsVolatileFunction(p.Right)
+		if once {
+			right = evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
+		}
 		for _, lb := range left {
 			if ec.stop() {
 				return nil
 			}
-			// The right side sees the pre-bound constants, and the left row
-			// only through the ordinary, expression-opaque path.
-			right := evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
+			if !once {
+				right = evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
+			}
 			for _, rb := range right {
 				if isCompatible(lb, rb) {
 					result = append(result, mergeBindings(lb, rb))
