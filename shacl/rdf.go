@@ -521,6 +521,10 @@ type graphIndexes struct {
 	// the reifier lookups of SHACL 1.2 read this instead of the store.
 	reifies   []reifyEntry
 	reifiesBy map[ikey][]term.TripleTerm // by reifier
+
+	// under is the base of an overlay graph (NewOverlayGraph): these indexes
+	// then hold only the triples added over it, and every lookup reads both.
+	under *graphIndexes
 }
 
 type reifyEntry struct {
@@ -641,9 +645,11 @@ func (g *Graph) invalidateIndexes() {
 // Triples returns all triples in the graph, from its indexes.
 func (g *Graph) Triples() []Triple {
 	idx := g.ensureIndexes()
-	result := make([]Triple, 0, idx.n)
-	for _, ts := range idx.p {
-		result = append(result, ts...)
+	result := make([]Triple, 0, idx.len())
+	for ; idx != nil; idx = idx.under {
+		for _, ts := range idx.p {
+			result = append(result, ts...)
+		}
 	}
 	return result
 }
@@ -654,8 +660,19 @@ func (g *Graph) Triples() []Triple {
 // The indexes cover the patterns the validator asks for most; anything else
 // falls through to the underlying graph, which can match any combination.
 func (g *Graph) All(s, p, o *Term) []Triple {
-	idx := g.ensureIndexes()
+	return g.ensureIndexes().all(s, p, o)
+}
 
+// all matches the pattern against idx and, for an overlay, its base.
+func (idx *graphIndexes) all(s, p, o *Term) []Triple {
+	if idx.under == nil {
+		return idx.match(s, p, o)
+	}
+	return concatClipped(idx.under.all(s, p, o), idx.match(s, p, o))
+}
+
+// match matches the pattern against the triples idx itself holds.
+func (idx *graphIndexes) match(s, p, o *Term) []Triple {
 	switch {
 	case s != nil && p != nil && o != nil:
 		// A fully bound pattern is an existence check. It has to compare the
@@ -711,7 +728,7 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 	case s == nil && p == nil && o != nil:
 		ok := o.TermKey()
 		var result []Triple
-		for _, t := range g.Triples() {
+		for _, t := range idx.own() {
 			if t.Object.TermKey() == ok {
 				result = append(result, t)
 			}
@@ -719,7 +736,16 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 		return result
 	}
 
-	return g.Triples()
+	return idx.own()
+}
+
+// own returns the triples idx itself holds (not those of an overlay's base).
+func (idx *graphIndexes) own() []Triple {
+	result := make([]Triple, 0, idx.n)
+	for _, ts := range idx.p {
+		result = append(result, ts...)
+	}
+	return result
 }
 
 // One returns the first triple matching the pattern.
@@ -738,20 +764,34 @@ func (g *Graph) Has(s, p, o *Term) bool {
 
 // Objects returns all objects of triples matching (s, p, ?).
 func (g *Graph) Objects(s, p Term) []Term {
-	sp := g.ensureIndexes().spo[indexKey(s)]
-	if sp == nil {
-		return nil
+	return g.ensureIndexes().objects(indexKey(s), indexKey(p))
+}
+
+func (idx *graphIndexes) objects(sk, pk ikey) []Term {
+	var own []Term
+	if sp := idx.spo[sk]; sp != nil {
+		own = sp[pk]
 	}
-	return sp[indexKey(p)]
+	if idx.under == nil {
+		return own
+	}
+	return concatClipped(idx.under.objects(sk, pk), own)
 }
 
 // Subjects returns all subjects of triples matching (?, p, o).
 func (g *Graph) Subjects(p, o Term) []Term {
-	po := g.ensureIndexes().pos[indexKey(p)]
-	if po == nil {
-		return nil
+	return g.ensureIndexes().subjects(indexKey(p), indexKey(o))
+}
+
+func (idx *graphIndexes) subjects(pk, ok ikey) []Term {
+	var own []Term
+	if po := idx.pos[pk]; po != nil {
+		own = po[ok]
 	}
-	return po[indexKey(o)]
+	if idx.under == nil {
+		return own
+	}
+	return concatClipped(idx.under.subjects(pk, ok), own)
 }
 
 // RDFList follows an RDF list starting at head and returns all elements.
@@ -787,7 +827,7 @@ func (g *Graph) RDFList(head Term) []Term {
 
 // Len returns the number of triples in the graph.
 func (g *Graph) Len() int {
-	return g.ensureIndexes().n
+	return g.ensureIndexes().len()
 }
 
 // Add inserts a triple into the graph. The write goes to the wrapped store

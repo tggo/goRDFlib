@@ -812,6 +812,26 @@ documents and more shapes the gap is larger (~20x in
 `BenchmarkCompiledShapes`). See [Performance](#performance) for the whole
 parse-and-validate pipeline.
 
+#### Many documents over one shared graph
+
+When every document is validated together with the same large graph (a
+vocabulary, reference data), wrapping the store again per document re-indexes
+all of it. Index the shared graph once and overlay each document on it:
+
+```go
+base, err := shacl.NewGraphFromRDF(ctx, shared, "") // once
+// per document: add its triples to shared, then
+overlay, err := shacl.NewOverlayGraph(ctx, base, shared, doc)
+report := compiled.Validate(overlay)
+// remove the document's triples from shared
+```
+
+The overlay indexes only `doc` and reads `base`'s indexes, which any number of
+overlays share, from any goroutine. SPARQL-based constraints and SHACL-AF
+query the store passed as the third argument, so it must hold the shared
+triples plus `doc` during the validation. Runnable version:
+`ExampleNewOverlayGraph`.
+
 #### Parse once, validate, then serialize
 
 A document does not have to be parsed twice to be both validated and written
