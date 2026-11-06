@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/paths"
 	"github.com/tggo/goRDFlib/store"
 )
 
@@ -39,6 +40,15 @@ import (
 // stopped it and possibly far larger. After probing every capped count is set
 // to the same final limit, so capped patterns compare by structure and written
 // order rather than by the accident of which was probed first.
+//
+// A property path is probed only when one of its endpoints is known before
+// evaluation (a constant or a pre-bound variable), by evaluating it up to a
+// limit, after the triple patterns: the limit is the smallest exact count
+// found so far, since a path that reaches it is no smaller than that pattern.
+// Below the limit its count is exact and it ranks like any exact pattern;
+// otherwise it is capped. A path with no known endpoint is never probed,
+// since counting it costs as much as evaluating it, and ranks below every
+// probed pattern, as does a capped path.
 //
 // Variables that an earlier pattern will bind are not known values at planning
 // time; they are credited with a fixed selectivity divisor instead. Patterns
@@ -88,10 +98,15 @@ type bgpCandidate struct {
 	count int
 	// capped means the probe stopped at its limit, so count is a lower bound.
 	capped bool
-	// path marks a property-path pattern. Paths are never probed, since
-	// counting a path costs as much as evaluating it; they rank below every
-	// probed pattern.
+	// path marks a property-path pattern. A path ranks below every probed
+	// pattern unless pathExact is set.
 	path bool
+	// pathProbe marks a path with a known endpoint, which probePaths
+	// evaluates up to a limit; s and o hold its endpoints.
+	pathProbe bool
+	// pathExact means the path's probe stopped below its limit, so count is
+	// its exact number of pairs.
+	pathExact bool
 }
 
 // orderBGP returns the triple patterns in the order evalBGP should run them.
@@ -155,12 +170,16 @@ func newBGPCandidate(tp Triple, bindings map[string]rdflibgo.Term, prefixes map[
 	if tp.PredicatePath != nil {
 		c.path, c.probed = true, true
 		// Bound endpoints still make a path cheaper than an unbound one.
-		if resolvePatternTerm(tp.Subject, bindings, prefixes) != nil {
+		subjOK := true
+		if v := resolvePatternTerm(tp.Subject, bindings, prefixes); v != nil {
 			c.fixed++
+			c.s, subjOK = v.(rdflibgo.Subject)
 		}
-		if resolvePatternTerm(tp.Object, bindings, prefixes) != nil {
+		if v := resolvePatternTerm(tp.Object, bindings, prefixes); v != nil {
 			c.fixed++
+			c.o = v
 		}
+		c.pathProbe = c.fixed > 0 && subjOK
 		return c
 	}
 
@@ -191,11 +210,18 @@ func newBGPCandidate(tp Triple, bindings map[string]rdflibgo.Term, prefixes map[
 
 // probeCandidates fills in count and capped for every candidate that needs
 // one: exactly from a CardinalityStore, otherwise by probing in the rounds
-// described at the top of the file.
+// described at the top of the file. Paths with a known endpoint are probed
+// last (probePaths).
 //
 // A store error is recorded on ec and leaves the counts it could not get at
 // zero: the plan no longer matters, because evaluation stops on the error.
 func probeCandidates(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
+	probePatterns(ec, g, cands)
+	probePaths(ec, g, cands)
+}
+
+// probePatterns counts the triple patterns, as described at probeCandidates.
+func probePatterns(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 	if cs, ok := g.Store().(store.CardinalityStore); ok {
 		for i := range cands {
 			if c := &cands[i]; !c.probed {
@@ -255,6 +281,35 @@ func probeCandidates(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 	}
 }
 
+// probePaths counts the pairs of each path with a known endpoint by
+// evaluating it, up to the smallest exact count of the patterns probed so far
+// (bgpProbeLimit when none is exact): a path that reaches that count is no
+// smaller than the pattern, and keeps the rank of an unprobed path. Each exact
+// path lowers the limit for the next. When a pattern has no match the BGP is
+// empty, and no path is evaluated.
+func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
+	limit := bgpProbeLimit
+	for i := range cands {
+		if c := &cands[i]; !c.path && !c.capped {
+			limit = min(limit, c.count)
+		}
+	}
+	for i := range cands {
+		c := &cands[i]
+		if !c.pathProbe || limit == 0 {
+			continue
+		}
+		if ec.poll() {
+			return // a store error or a done context: the plan no longer matters
+		}
+		n := probePath(ec, g, c.tp.PredicatePath, c.s, c.o, limit)
+		if n < limit {
+			c.count, c.pathExact = n, true
+			limit = n
+		}
+	}
+}
+
 // bgpCostKey orders candidates: connected before disconnected, exact before
 // capped, then by estimated cost. Ties keep the written order, because
 // orderBGP only replaces its pick on a strictly smaller key.
@@ -278,11 +333,12 @@ func (k bgpCostKey) less(o bgpCostKey) bool {
 // chosen. A disconnected candidate shares no variable with them and still has
 // variables of its own to bind.
 func (c *bgpCandidate) cost(bound map[string]struct{}, anyChosen bool) bgpCostKey {
-	if !c.path && c.count == 0 {
+	exact := !c.path || c.pathExact
+	if exact && c.count == 0 {
 		return bgpCostKey{} // an empty pattern empties the BGP; run it first
 	}
 	cost := float64(c.count)
-	if c.path {
+	if !exact {
 		// Paths are unprobed; bgpProbeLimit is above every probed count.
 		cost = float64(bgpProbeLimit) * float64(1+c.pathPenalty())
 	}
@@ -300,7 +356,7 @@ func (c *bgpCandidate) cost(bound map[string]struct{}, anyChosen bool) bgpCostKe
 	}
 	return bgpCostKey{
 		disconnected: anyChosen && !connected && free,
-		capped:       c.capped || c.path,
+		capped:       c.capped || !exact,
 		cost:         cost,
 	}
 }
@@ -320,6 +376,23 @@ func probeCount(ec *evalCtx, g *rdflibgo.Graph, s rdflibgo.Subject, p *rdflibgo.
 	}
 	n := 0
 	for _, err := range seq {
+		if err != nil {
+			ec.fail(err)
+			return n
+		}
+		n++
+		if n >= limit {
+			break
+		}
+	}
+	return n
+}
+
+// probePath counts the pairs of a property path, with at least one endpoint
+// known, up to limit, by evaluating it and stopping there.
+func probePath(ec *evalCtx, g *rdflibgo.Graph, p paths.Path, s rdflibgo.Subject, o rdflibgo.Term, limit int) int {
+	n := 0
+	for _, err := range p.Eval(ec.context(), g, s, o) {
 		if err != nil {
 			ec.fail(err)
 			return n
