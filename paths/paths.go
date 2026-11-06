@@ -87,6 +87,30 @@ func (p *SequencePath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj 
 			p.Args[0].eval(st, g, subj, obj)(yield)
 			return
 		}
+		if subj == nil && obj != nil && p.backwardFrom(st, g, obj) {
+			// Only the object is known: walk back from it, last step first.
+			// Going forward would start from every subject of the first step
+			// (?x rdf:type/rdfs:subClassOf* ex:C reads every rdf:type triple
+			// of the graph) to keep the few that end at obj. Each (s, mid, o)
+			// chain is found once either way, so the pairs are the same,
+			// repetitions included.
+			init := &SequencePath{Args: p.Args[:len(p.Args)-1]}
+			p.Args[len(p.Args)-1].eval(st, g, nil, obj)(func(mid, o term.Term) bool {
+				if st.stop() {
+					return false
+				}
+				cont := true
+				init.eval(st, g, nil, mid)(func(s, _ term.Term) bool {
+					if !yield(s, o) {
+						cont = false
+						return false
+					}
+					return true
+				})
+				return cont && !st.halted()
+			})
+			return
+		}
 		// Evaluate first path, then chain remaining
 		rest := &SequencePath{Args: p.Args[1:]}
 		p.Args[0].eval(st, g, subj, nil)(func(s1, mid term.Term) bool {
@@ -108,6 +132,42 @@ func (p *SequencePath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj 
 			return cont && !st.halted()
 		})
 	}
+}
+
+// backwardFrom reports whether a sequence with only its object bound is
+// walked back from obj rather than forward from every subject of its first
+// step. Backward is the default: the object is usually the selective end.
+// The one case decided otherwise is a store that counts triples without
+// visiting them (store.CardinalityStore) and a sequence whose first and last
+// steps are both plain predicates: the forward walk starts from the first
+// step's triples, the backward walk from the last step's triples into obj, and
+// the smaller wins (?x ex:rare/ex:common ex:hub, with every ex:common triple
+// pointing at ex:hub, stays forward). A store error is recorded on st, which
+// then stops the walk.
+func (p *SequencePath) backwardFrom(st *stopper, g *graph.Graph, obj term.Term) bool {
+	cs, ok := g.Store().(store.CardinalityStore)
+	if !ok {
+		return true
+	}
+	first, ok := p.Args[0].(URIRefPath)
+	if !ok {
+		return true
+	}
+	last, ok := p.Args[len(p.Args)-1].(URIRefPath)
+	if !ok {
+		return true
+	}
+	fwd, err := cs.Cardinality(st.ctx, term.TriplePattern{Predicate: &first.URI}, g.Identifier())
+	if err != nil {
+		st.fail(err)
+		return true
+	}
+	bwd, err := cs.Cardinality(st.ctx, term.TriplePattern{Predicate: &last.URI, Object: obj}, g.Identifier())
+	if err != nil {
+		st.fail(err)
+		return true
+	}
+	return bwd <= fwd
 }
 
 // --- AlternativePath: p1|p2 ---
