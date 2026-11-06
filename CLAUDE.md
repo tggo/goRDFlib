@@ -727,6 +727,16 @@ The `store.Store` interface (13 methods) has four implementations:
 - `benchmarks/bench_bgp_order_test.go` has written-well vs badly-written
   queries. A 4-pattern chain from a constant costs ~1µs more for planning; the
   badly-written queries went from seconds to µs.
+- `bgp_components.go`: `evalBGPInOrder` splits the planned BGP into groups
+  that share no variable unbound by the bindings (union-find; a blank-node
+  label joins like a variable; no split when a triple term holds variables),
+  evaluates each group once and enumerates their product row by row, each row
+  counted by `produced` — never an intermediate product, or a budget of 10,000
+  lets three groups allocate hundreds of MiB. The streaming path
+  (`eachBGPSolution`, LIMIT pushdown) does not split. Guards:
+  `TestDisjointBGPGroupsInQueries` (rows equal to the groups written as
+  `{ … FILTER (true) }`, which nothing looks into),
+  `TestDisjointBGPGroupsAreEvaluatedOnce`, `TestDisjointBGPGroupsRespectTheBudget`.
 
 ### MemoryStore lookups
 - `triplesLocked` must index straight on every bound key pair (`spo[s][p]`,

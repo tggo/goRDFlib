@@ -1,0 +1,180 @@
+package sparql
+
+import (
+	"strings"
+
+	rdflibgo "github.com/tggo/goRDFlib"
+)
+
+// BGP components.
+//
+// Nested loops evaluate every triple pattern once per solution of the patterns
+// before it. When a BGP falls into groups that share no variable (variables
+// already bound by the caller, such as a pre-bound ?this, are constants and
+// join nothing), a later group does not depend on the earlier ones at all, yet
+// it is evaluated again for each of their solutions:
+//
+//	?this ex:part+ ?a . ?a a ex:ClassA .  ?this ex:part+ ?b . ?b a ex:ClassB .
+//
+// walks from ?this again for every ?a. The join of groups that share no
+// variable is their cross product (SPARQL 1.1 §18.5: two such solutions are
+// always compatible), so evalBGPComponents evaluates each group once, in the
+// planned order within the group, and combines their solutions. The solution
+// multiset is unchanged.
+
+// bgpComponents returns the triple patterns (in the order given) split into
+// groups that share no variable unbound by bindings, or nil when there is only
+// one group or a pattern holds a triple term with variables (bound through
+// matchTripleTermPattern rather than by position). A blank node label is
+// treated like a variable: it keeps the patterns it appears in together.
+func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Triple {
+	if len(triples) < 2 {
+		return nil
+	}
+	// Called for every BGP evaluation, often once per row of an enclosing
+	// pattern, so a small BGP is grouped without allocating: most are
+	// connected and return nil before any group is built. A large one looks
+	// names up in a map rather than by a linear scan.
+	var parentBuf [16]int
+	var namesBuf [48]componentName
+	parent := parentBuf[:0]
+	names := namesBuf[:0]
+	var owner map[string]int
+	if len(triples) > len(parentBuf) {
+		owner = make(map[string]int, 2*len(triples))
+	}
+	for i := range triples {
+		parent = append(parent, i)
+	}
+	for i, tp := range triples {
+		if isVarTripleTerm(tp.Subject) || isVarTripleTerm(tp.Object) {
+			return nil
+		}
+		pos := [3]string{tp.Subject, tp.Object, ""}
+		if tp.PredicatePath == nil {
+			pos[2] = tp.Predicate
+		}
+		for _, s := range pos {
+			switch {
+			case strings.HasPrefix(s, "?"):
+				if _, bound := bindings[s[1:]]; bound {
+					continue
+				}
+			case strings.HasPrefix(s, "_:"):
+			default:
+				continue
+			}
+			j, seen := -1, false
+			if owner != nil {
+				j, seen = owner[s]
+			} else {
+				for _, n := range names {
+					if n.name == s {
+						j, seen = n.owner, true
+						break
+					}
+				}
+			}
+			if !seen {
+				if owner != nil {
+					owner[s] = i
+				} else {
+					names = append(names, componentName{s, i})
+				}
+				continue
+			}
+			parent[componentRoot(parent, i)] = componentRoot(parent, j)
+		}
+	}
+	root := componentRoot(parent, 0)
+	split := false
+	for i := 1; i < len(parent); i++ {
+		if componentRoot(parent, i) != root {
+			split = true
+			break
+		}
+	}
+	if !split {
+		return nil
+	}
+	var comps [][]Triple
+	index := make(map[int]int, len(triples))
+	for i, tp := range triples {
+		r := componentRoot(parent, i)
+		k, ok := index[r]
+		if !ok {
+			k = len(comps)
+			index[r] = k
+			comps = append(comps, nil)
+		}
+		comps[k] = append(comps[k], tp)
+	}
+	return comps
+}
+
+// componentName records the first pattern a variable or blank node label
+// appears in.
+type componentName struct {
+	name  string
+	owner int
+}
+
+// componentRoot returns the representative of i's group, halving the path.
+func componentRoot(parent []int, i int) int {
+	for parent[i] != i {
+		parent[i] = parent[parent[i]]
+		i = parent[i]
+	}
+	return i
+}
+
+// evalBGPComponents evaluates each group once and returns the cross product of
+// their solutions, at most limit of them (limit <= 0: all). The product is
+// enumerated with the first group varying slowest, and only its rows are
+// built: each one is counted against the solution budget (WithMaxSolutions),
+// as nested loops count each solution, and the groups' own solutions are
+// counted when they are built, so the budget still bounds every row held in
+// memory.
+func evalBGPComponents(ec *evalCtx, g *rdflibgo.Graph, comps [][]Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
+	parts := make([][]map[string]rdflibgo.Term, len(comps))
+	for i, c := range comps {
+		parts[i] = collectBGPSolutions(ec, g, c, bindings, prefixes, 0)
+		if len(parts[i]) == 0 || ec.stop() {
+			return nil
+		}
+	}
+	var results []map[string]rdflibgo.Term
+	idx := make([]int, len(parts))
+	for {
+		if ec.stop() {
+			return nil
+		}
+		// Every group's solution carries bindings, and the groups share no
+		// other variable, so the row is the union of one solution of each.
+		row := copyBindings(parts[0][idx[0]])
+		for i := 1; i < len(parts); i++ {
+			for k, v := range parts[i][idx[i]] {
+				row[k] = v
+			}
+		}
+		results = append(results, row)
+		if ec.produced(1) {
+			return nil
+		}
+		if limit > 0 && len(results) >= limit {
+			return results
+		}
+		// Advance the last group fastest, like the innermost loop.
+		i := len(idx) - 1
+		for ; i >= 0; i-- {
+			idx[i]++
+			if idx[i] < len(parts[i]) {
+				break
+			}
+			idx[i] = 0
+		}
+		if i < 0 {
+			return results
+		}
+	}
+}
