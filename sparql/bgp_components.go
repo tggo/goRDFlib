@@ -24,9 +24,11 @@ import (
 
 // bgpComponents returns the triple patterns (in the order given) split into
 // groups that share no variable unbound by bindings, or nil when there is only
-// one group or a pattern holds a triple term with variables (bound through
-// matchTripleTermPattern rather than by position). A blank node label is
-// treated like a variable: it keeps the patterns it appears in together.
+// one group. A blank node label is treated like a variable: it keeps the
+// patterns it appears in together. Variables and labels inside a triple term
+// count too, nested ones included: matchTripleTermPattern binds the variables
+// of a term pattern like any position does, so two patterns that share one
+// are joined on it, not multiplied.
 func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Triple {
 	if len(triples) < 2 {
 		return nil
@@ -37,55 +39,21 @@ func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Trip
 	// names up in a map rather than by a linear scan.
 	var parentBuf [16]int
 	var namesBuf [48]componentName
-	parent := parentBuf[:0]
-	names := namesBuf[:0]
-	var owner map[string]int
+	cb := componentBuilder{bindings: bindings, parent: parentBuf[:0], names: namesBuf[:0]}
 	if len(triples) > len(parentBuf) {
-		owner = make(map[string]int, 2*len(triples))
+		cb.owner = make(map[string]int, 2*len(triples))
 	}
 	for i := range triples {
-		parent = append(parent, i)
+		cb.parent = append(cb.parent, i)
 	}
 	for i, tp := range triples {
-		if isVarTripleTerm(tp.Subject) || isVarTripleTerm(tp.Object) {
-			return nil
-		}
-		pos := [3]string{tp.Subject, tp.Object, ""}
+		cb.visit(tp.Subject, i)
+		cb.visit(tp.Object, i)
 		if tp.PredicatePath == nil {
-			pos[2] = tp.Predicate
-		}
-		for _, s := range pos {
-			switch {
-			case strings.HasPrefix(s, "?"):
-				if _, bound := bindings[s[1:]]; bound {
-					continue
-				}
-			case strings.HasPrefix(s, "_:"):
-			default:
-				continue
-			}
-			j, seen := -1, false
-			if owner != nil {
-				j, seen = owner[s]
-			} else {
-				for _, n := range names {
-					if n.name == s {
-						j, seen = n.owner, true
-						break
-					}
-				}
-			}
-			if !seen {
-				if owner != nil {
-					owner[s] = i
-				} else {
-					names = append(names, componentName{s, i})
-				}
-				continue
-			}
-			parent[componentRoot(parent, i)] = componentRoot(parent, j)
+			cb.visit(tp.Predicate, i)
 		}
 	}
+	parent := cb.parent
 	root := componentRoot(parent, 0)
 	split := false
 	for i := 1; i < len(parent); i++ {
@@ -112,6 +80,56 @@ func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Trip
 	return comps
 }
 
+// componentBuilder is the union-find state of bgpComponents.
+type componentBuilder struct {
+	bindings map[string]rdflibgo.Term
+	parent   []int
+	names    []componentName
+	owner    map[string]int
+}
+
+// visit joins pattern i with every earlier pattern that holds one of the
+// unbound variables or blank node labels of s, a position of pattern i.
+func (cb *componentBuilder) visit(s string, i int) {
+	switch {
+	case strings.HasPrefix(s, "?"):
+		if _, bound := cb.bindings[s[1:]]; bound {
+			return
+		}
+	case strings.HasPrefix(s, "_:"):
+	case strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>"):
+		if len(s) < 8 {
+			return
+		}
+		for _, part := range splitTripleTermParts(s[4 : len(s)-4]) {
+			cb.visit(part, i)
+		}
+		return
+	default:
+		return
+	}
+	j, seen := -1, false
+	if cb.owner != nil {
+		j, seen = cb.owner[s]
+	} else {
+		for _, n := range cb.names {
+			if n.name == s {
+				j, seen = n.owner, true
+				break
+			}
+		}
+	}
+	if !seen {
+		if cb.owner != nil {
+			cb.owner[s] = i
+		} else {
+			cb.names = append(cb.names, componentName{s, i})
+		}
+		return
+	}
+	cb.parent[componentRoot(cb.parent, i)] = componentRoot(cb.parent, j)
+}
+
 // componentName records the first pattern a variable or blank node label
 // appears in.
 type componentName struct {
@@ -136,9 +154,14 @@ func componentRoot(parent []int, i int) int {
 // counted when they are built, so the budget still bounds every row held in
 // memory.
 func evalBGPComponents(ec *evalCtx, g *rdflibgo.Graph, comps [][]Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
+	// With a limit, row k of the product uses solution number <= k of every
+	// group (the odometer below moves one step per row), so the first limit
+	// rows never read past a group's first limit solutions. A group cut there
+	// is a prefix of the full one, in the same order; an empty group is still
+	// empty, so the answer stays empty.
 	parts := make([][]map[string]rdflibgo.Term, len(comps))
 	for i, c := range comps {
-		parts[i] = collectBGPSolutions(ec, g, c, bindings, prefixes, 0)
+		parts[i] = collectBGPSolutions(ec, g, c, bindings, prefixes, limit)
 		if len(parts[i]) == 0 || ec.stop() {
 			return nil
 		}
