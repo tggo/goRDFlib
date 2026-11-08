@@ -1,6 +1,8 @@
 package shacl
 
 import (
+	"sync"
+
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -13,6 +15,31 @@ type SPARQLConstraint struct {
 	Prefixes    string // resolved PREFIX preamble
 	Messages    []Term // sh:message on the constraint
 	Deactivated bool   // sh:deactivated
+
+	// prepared holds the query text Evaluate runs, keyed by the textual
+	// $PATH binding ("" for a shape without a predicate path): the text
+	// depends only on the constraint and that path, since $this and
+	// $currentShape are initial bindings. A constraint is parsed per shape, so
+	// in practice there is one entry; keying by path keeps the text right if
+	// a constraint is ever evaluated for another shape.
+	prepared sync.Map // string -> string
+}
+
+// preparedQuery returns the text Evaluate runs for a shape whose $PATH is
+// path ("" for a shape without a predicate path): the prefixes and the
+// SELECT with $var normalized and $PATH substituted. It is built on first use
+// and reused for every later focus node.
+func (c *SPARQLConstraint) preparedQuery(path string) string {
+	if q, ok := c.prepared.Load(path); ok {
+		return q.(string)
+	}
+	bindings := map[string]string{}
+	if path != "" {
+		bindings["PATH"] = path
+	}
+	q := preBindQuery(normalizeDollarVars(c.Prefixes+c.Select), bindings)
+	c.prepared.Store(path, q)
+	return q
 }
 
 func (c *SPARQLConstraint) ComponentIRI() string {
@@ -24,28 +51,25 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 		return nil
 	}
 
-	// Build the full query with prefixes, normalizing $var to ?var
-	fullQuery := normalizeDollarVars(c.Prefixes + c.Select)
-
-	// Pre-bind variables. IRI and literal values are spliced in via textual
-	// substitution, but blank-node values must use real pre-binding (initial
-	// bindings): a blank node label written into SPARQL query text denotes a
-	// fresh, query-scoped node, not a reference to the data-graph node
-	// (SPARQL 1.1 §4.1.4), so textual substitution of "_:b0" cannot scope the
-	// pattern to that focus node. SHACL pre-binding is defined as a solution
-	// binding, not text substitution (SHACL §5.2.1.3).
-	bindings := map[string]string{}
+	// Pre-bind variables. Every focus-dependent variable ($this,
+	// $currentShape) is an initial binding (preBindTerm): a blank node label
+	// written into SPARQL query text denotes a fresh, query-scoped node, not a
+	// reference to the data-graph node (SPARQL 1.1 §4.1.4), and SHACL
+	// pre-binding is defined as a solution binding, not text substitution
+	// (SHACL §5.2.1.3). Only $PATH is substituted into the text, and it
+	// depends on the shape alone, so the text is prepared once per constraint
+	// and path (preparedQuery).
 	initBindings := map[string]term.Term{}
-	preBindTerm(bindings, initBindings, "this", focusNode)
-	if shape.Path != nil && shape.Path.Kind == PathPredicate {
-		bindings["PATH"] = termToSPARQL(shape.Path.Pred)
-	}
-	preBindTerm(bindings, initBindings, "currentShape", shape.ID)
+	preBindTerm(nil, initBindings, "this", focusNode)
+	preBindTerm(nil, initBindings, "currentShape", shape.ID)
 	if ctx.shapesGraph != nil && ctx.shapesGraph.baseURI != "" {
 		initBindings["shapesGraph"] = term.NewURIRefUnsafe(ctx.shapesGraph.baseURI)
 	}
-
-	query := preBindQuery(fullQuery, bindings)
+	path := ""
+	if shape.Path != nil && shape.Path.Kind == PathPredicate {
+		path = termToSPARQL(shape.Path.Pred)
+	}
+	query := c.preparedQuery(path)
 
 	// Provide shapes graph as a named graph for GRAPH ?shapesGraph { ... }
 	var namedGraphs map[string]*graph.Graph
