@@ -1286,9 +1286,8 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 		nb := copyBindings(bindings)
 
 		if strings.HasPrefix(tp.Subject, "?") {
-			v := tp.Subject[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = t.Subject
+			if !bindVar(nb, bindings, tp.Subject[1:], t.Subject) {
+				return true // ?x p ?x: the subject differs from the object
 			}
 		} else if subjIsVarTT {
 			// Subject is a triple term pattern with variables — match against graph subject
@@ -1303,15 +1302,13 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 			}
 		}
 		if strings.HasPrefix(tp.Predicate, "?") {
-			v := tp.Predicate[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = t.Predicate
+			if !bindVar(nb, bindings, tp.Predicate[1:], t.Predicate) {
+				return true
 			}
 		}
 		if strings.HasPrefix(tp.Object, "?") {
-			v := tp.Object[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = t.Object
+			if !bindVar(nb, bindings, tp.Object[1:], t.Object) {
+				return true
 			}
 		} else if objIsVarTT {
 			// Object is a triple term pattern with variables — match against graph object
@@ -1331,6 +1328,24 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 	})
 
 	return cont
+}
+
+// bindVar binds v to val in nb, the solution being built for one matched
+// triple, and reports whether the triple is consistent with it. A variable
+// that bindings already held is a constant here: the lookup was restricted to
+// it. One that an earlier position of the same pattern just bound (?x ex:p ?x,
+// ?s ?s ?o) must match the same term again (SPARQL 1.1 §18.2.2.1: a variable
+// in two positions names one value).
+func bindVar(nb, bindings map[string]rdflibgo.Term, v string, val rdflibgo.Term) bool {
+	cur, ok := nb[v]
+	if !ok {
+		nb[v] = val
+		return true
+	}
+	if _, was := bindings[v]; was {
+		return true
+	}
+	return term.TermKey(cur) == term.TermKey(val)
 }
 
 func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, yield func(map[string]rdflibgo.Term) bool) bool {
@@ -1362,15 +1377,13 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 		nb := copyBindings(bindings)
 
 		if strings.HasPrefix(tp.Subject, "?") {
-			v := tp.Subject[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = s
+			if !bindVar(nb, bindings, tp.Subject[1:], s) {
+				return true
 			}
 		}
 		if strings.HasPrefix(tp.Object, "?") {
-			v := tp.Object[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = o
+			if !bindVar(nb, bindings, tp.Object[1:], o) {
+				return true // ?x path ?x: only a path from a node back to itself
 			}
 		}
 
