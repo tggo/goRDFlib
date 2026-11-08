@@ -253,3 +253,32 @@ func head(rows []string) []string {
 	}
 	return rows
 }
+
+// FuzzOptimisationsAgree: for any query text that parses, the optimised and
+// plain evaluations agree, pre-bound or written into the text. The seeds are
+// the generator's queries.
+func FuzzOptimisationsAgree(f *testing.F) {
+	for i := range 40 {
+		gen := &optGen{r: rand.New(rand.NewPCG(7, uint64(i)))}
+		f.Add(gen.query())
+	}
+	g := optGraph(f)
+	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
+	f.Fuzz(func(t *testing.T, q string) {
+		pq, err := Parse(q)
+		if err != nil || pq.Type != "SELECT" && pq.Type != "" && pq.Type != "ASK" {
+			return
+		}
+		defer setOpts(false)
+		setOpts(false)
+		a, skA, errA := optRows(g, pq, root)
+		setOpts(true)
+		b, skB, errB := optRows(g, pq, root)
+		if skA || skB || errA != nil || errB != nil {
+			return
+		}
+		if !slices.Equal(a, b) {
+			t.Errorf("optimised and plain rows differ for\n%s\n%v\n%v", q, head(a), head(b))
+		}
+	})
+}

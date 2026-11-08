@@ -19,6 +19,11 @@ func (p *sparqlParser) readVar() string {
 	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
 		p.pos++
 	}
+	if p.pos == start && p.badVar == nil {
+		// VARNAME needs at least one character (SPARQL 1.1 §19.8); a bare
+		// ? or $ named a variable "" that no pattern could tell from another.
+		p.badVar = fmt.Errorf("sparql parse error at pos %d: a variable needs a name after %q", start-1, p.input[start-1:start])
+	}
 	return p.input[start:p.pos]
 }
 

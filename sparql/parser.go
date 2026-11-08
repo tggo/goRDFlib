@@ -12,6 +12,9 @@ func Parse(input string) (*ParsedQuery, error) {
 	if p.undeclaredPrefix != nil { // the likelier cause of any later error
 		return nil, p.undeclaredPrefix
 	}
+	if err == nil && p.badVar != nil {
+		return nil, p.badVar
+	}
 	return q, err
 }
 
@@ -25,6 +28,9 @@ func ParseUpdate(input string) (*ParsedUpdate, error) {
 	u, err := p.parseUpdate()
 	if p.undeclaredPrefix != nil { // the likelier cause of any later error
 		return nil, p.undeclaredPrefix
+	}
+	if err == nil && p.badVar != nil {
+		return nil, p.badVar
 	}
 	return u, err
 }
@@ -41,6 +47,9 @@ type sparqlParser struct {
 	// because the term readers return strings, not errors; Parse and
 	// ParseUpdate report it once parsing has otherwise succeeded.
 	undeclaredPrefix error
+	// badVar is the first ? or $ with no name after it; deferred like
+	// undeclaredPrefix, reported when parsing has otherwise succeeded.
+	badVar error
 }
 
 func (p *sparqlParser) parse() (*ParsedQuery, error) {
