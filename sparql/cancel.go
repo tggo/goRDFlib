@@ -60,6 +60,11 @@ type evalCtx struct {
 	pre map[string]rdflibgo.Term
 	// substitute is ParsedQuery.PreBindSubqueries of the query evaluated.
 	substitute bool
+	// merged remembers, for the joins evaluated so far, the pattern
+	// mergeJoinedBGPs made of each: a join is evaluated once per row of an
+	// enclosing pattern, and its merge must not be rebuilt every time. Keyed
+	// by the query's own join, which is never modified.
+	merged map[*JoinPattern]Pattern
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {

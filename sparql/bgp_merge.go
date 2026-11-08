@@ -19,6 +19,30 @@ import "strings"
 // the patterns together. The FILTERs of the group are not affected: they wrap
 // the join and apply to its solutions either way.
 
+// mergeJoined is mergeJoinedBGPs once per evaluation: the result for a join is
+// remembered on ec, so a join under an OPTIONAL, EXISTS or a subquery, which
+// is evaluated again for every row, is merged (and allocated) once. A nil ec
+// merges every time. The query itself is never written to: ParsedQuery is
+// shared between evaluations (see the parse cache).
+func (ec *evalCtx) mergeJoined(p Pattern) Pattern {
+	j, ok := p.(*JoinPattern)
+	if !ok {
+		return p
+	}
+	if ec == nil {
+		return mergeJoinedBGPs(p)
+	}
+	if m, ok := ec.merged[j]; ok {
+		return m
+	}
+	m := mergeJoinedBGPs(p)
+	if ec.merged == nil {
+		ec.merged = make(map[*JoinPattern]Pattern)
+	}
+	ec.merged[j] = m
+	return m
+}
+
 // mergeJoinedBGPs returns p unchanged unless p is a join whose leaves are all
 // basic graph patterns, in which case it returns one BGP with the leaves'
 // triple patterns in order. A blank node label is scoped to its basic graph

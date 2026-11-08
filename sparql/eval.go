@@ -686,7 +686,7 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 	if pattern == nil {
 		return []map[string]rdflibgo.Term{{}}
 	}
-	pattern = mergeJoinedBGPs(pattern) // a join of BGPs is one BGP (bgp_merge.go)
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
 
 	switch p := pattern.(type) {
 	case *BGP:
@@ -923,7 +923,7 @@ func minusCompatible(a, b map[string]rdflibgo.Term) bool {
 // test checks. Only pre-bound values, which behave as constants substituted
 // into the query, cross that boundary — see evalPatternPreBound.
 func evalPatternWithBindings(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, bindings map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
-	pattern = mergeJoinedBGPs(pattern) // a join of BGPs is one BGP (bgp_merge.go)
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
 	switch p := pattern.(type) {
 	case *BGP:
 		return evalBGP(ec, g, p.Triples, bindings, prefixes)
@@ -961,7 +961,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		return []map[string]rdflibgo.Term{{}}
 	}
 
-	pattern = mergeJoinedBGPs(pattern) // a join of BGPs is one BGP (bgp_merge.go)
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
 
 	// evalExpr is given the row plus the pre-bound constants, so an expression
 	// sees them without them becoming part of the solution.
