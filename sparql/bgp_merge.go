@@ -26,7 +26,7 @@ import "strings"
 // shared between evaluations (see the parse cache).
 func (ec *evalCtx) mergeJoined(p Pattern) Pattern {
 	j, ok := p.(*JoinPattern)
-	if !ok {
+	if !ok || offMergeJoinedBGPs {
 		return p
 	}
 	if ec == nil {

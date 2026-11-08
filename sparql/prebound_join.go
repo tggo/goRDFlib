@@ -29,40 +29,116 @@ func expressionFree(p Pattern) bool {
 	return false
 }
 
-// bindsAVariableOf reports whether a row of left binds a variable that the
-// expression-free pattern p mentions and pre does not already bind.
-func bindsAVariableOf(left []map[string]rdflibgo.Term, p Pattern, pre map[string]rdflibgo.Term) bool {
-	vars := map[string]bool{}
-	var walk func(Pattern)
-	walk = func(p Pattern) {
-		switch p := p.(type) {
-		case *BGP:
-			for _, t := range p.Triples {
-				for _, s := range [3]string{t.Subject, t.Predicate, t.Object} {
-					if v, ok := strings.CutPrefix(s, "?"); ok {
-						if _, bound := pre[v]; !bound {
-							vars[v] = true
-						}
-					}
-				}
-			}
-		case *UnionPattern:
-			walk(p.Left)
-			walk(p.Right)
-		case *JoinPattern:
-			walk(p.Left)
-			walk(p.Right)
+// rightSide is what a pre-bound join needs to know about its right pattern,
+// worked out once per evaluation (evalCtx.rightSideOf): a join under OPTIONAL
+// or EXISTS is evaluated again for every row of the enclosing pattern, and
+// walking the pattern for its variables each time was a map per evaluation.
+type rightSide struct {
+	// free is expressionFree(p).
+	free bool
+	// vars holds every variable p mentions, wherever it stands: subject,
+	// predicate or object, an endpoint of a property path, or inside a triple
+	// term at any depth. A missed variable is not a wrong answer (the join
+	// then takes the path that joins on compatibility), only a slower one,
+	// but a complete list is what lets the substitution happen at all.
+	vars []string
+	// set is vars as a set, kept only when it is too long to scan.
+	set map[string]struct{}
+}
+
+// maxScannedVars is the length up to which a row is checked against vars by
+// scanning it: a handful of string compares beat hashing every key of a row.
+const maxScannedVars = 8
+
+// rightSideOf returns the rightSide of p, remembered on ec by pattern.
+func (ec *evalCtx) rightSideOf(p Pattern) *rightSide {
+	if ec != nil {
+		if rs, ok := ec.rights[p]; ok {
+			return rs
 		}
 	}
-	walk(p)
+	rs := &rightSide{free: expressionFree(p)}
+	if rs.free {
+		seen := map[string]struct{}{}
+		collectRightVars(p, func(v string) {
+			if _, dup := seen[v]; !dup {
+				seen[v] = struct{}{}
+				rs.vars = append(rs.vars, v)
+			}
+		})
+		if len(rs.vars) > maxScannedVars {
+			rs.set = seen
+		}
+	}
+	if ec != nil {
+		if ec.rights == nil {
+			ec.rights = make(map[Pattern]*rightSide)
+		}
+		ec.rights[p] = rs
+	}
+	return rs
+}
+
+// collectRightVars calls add for every variable of an expression-free
+// pattern (a BGP, or a UNION or join of them).
+func collectRightVars(p Pattern, add func(string)) {
+	switch p := p.(type) {
+	case *BGP:
+		for _, t := range p.Triples {
+			collectTermVars(t.Subject, add)
+			collectTermVars(t.Predicate, add)
+			collectTermVars(t.Object, add)
+		}
+	case *UnionPattern:
+		collectRightVars(p.Left, add)
+		collectRightVars(p.Right, add)
+	case *JoinPattern:
+		collectRightVars(p.Left, add)
+		collectRightVars(p.Right, add)
+	}
+}
+
+// collectTermVars calls add for the variable s names, or for every variable
+// of the triple term s, nested ones included.
+func collectTermVars(s string, add func(string)) {
+	switch {
+	case strings.HasPrefix(s, "?"):
+		add(s[1:])
+	case strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>") && len(s) >= 8:
+		for _, part := range splitTripleTermParts(s[4 : len(s)-4]) {
+			collectTermVars(part, add)
+		}
+	}
+}
+
+// bindsAVariableOf reports whether a row of left binds a variable that the
+// expression-free pattern described by rs mentions and pre does not already
+// bind.
+func (rs *rightSide) bindsAVariableOf(left []map[string]rdflibgo.Term, pre map[string]rdflibgo.Term) bool {
+	if len(rs.vars) == 0 {
+		return false
+	}
 	for _, lb := range left {
-		for k := range lb {
-			if vars[k] {
+		if rs.set != nil {
+			for k := range lb {
+				if _, ok := rs.set[k]; ok && !preBinds(pre, k) {
+					return true
+				}
+			}
+			continue
+		}
+		for _, v := range rs.vars {
+			if _, ok := lb[v]; ok && !preBinds(pre, v) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func preBinds(pre map[string]rdflibgo.Term, v string) bool {
+	_, ok := pre[v]
+	return ok
 }
 
 // xsdNamespace is the namespace of the XSD constructor functions (casts),

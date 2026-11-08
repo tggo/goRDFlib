@@ -976,7 +976,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 	case *JoinPattern:
 		left := evalPatternPreBound(ec, g, p.Left, pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
-		if expressionFree(p.Right) && bindsAVariableOf(left, p.Right, pre) {
+		if rs := ec.rightSideOf(p.Right); !offPreBoundJoinSubst && rs.free && rs.bindsAVariableOf(left, pre) {
 			// A basic graph pattern holds no expression, nor does a UNION or a
 			// group of them, so evaluating it with the left row's values
 			// substituted (an index nested-loop join) is the same as joining
@@ -1008,7 +1008,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 			return nil
 		}
 		var right []map[string]rdflibgo.Term
-		once := len(left) == 1 || !callsVolatileFunction(p.Right)
+		once := !offPreBoundJoinSubst && (len(left) == 1 || !callsVolatileFunction(p.Right))
 		if once {
 			right = evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
 		}

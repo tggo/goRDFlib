@@ -30,7 +30,7 @@ import (
 // of a term pattern like any position does, so two patterns that share one
 // are joined on it, not multiplied.
 func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Triple {
-	if len(triples) < 2 {
+	if len(triples) < 2 || offBGPComponents {
 		return nil
 	}
 	// Called for every BGP evaluation, often once per row of an enclosing

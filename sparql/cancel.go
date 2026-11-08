@@ -65,6 +65,9 @@ type evalCtx struct {
 	// enclosing pattern, and its merge must not be rebuilt every time. Keyed
 	// by the query's own join, which is never modified.
 	merged map[*JoinPattern]Pattern
+	// rights remembers what a pre-bound join knows about its right side
+	// (rightSideOf), by the query's own pattern.
+	rights map[Pattern]*rightSide
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
