@@ -15,6 +15,7 @@ Upgrade straight to the latest version and read every section after the version 
 | v0.4.0 | from [v0.4.0 → v0.5.0](#v040--v050) |
 | v0.5.0 – v0.5.2 | [v0.5.x → v0.5.3](#v05x--v053) |
 | v0.5.3 – v0.8.x | [v0.8.x → v0.9.0](#v08x--v090) |
+| v0.9.x | [v0.9.x → next release](#v09x--next-release) |
 
 If you implement `store.Store` yourself, also read [Custom store implementations](#custom-store-implementations).
 
@@ -353,6 +354,38 @@ returned. `paths.Path.Eval` takes `ctx` and returns
 Run `storetest.Run` against it. It checks the signatures above, that a done
 context is refused, and that an error from the store reaches the caller of
 `graph.Graph` instead of looking like an empty result.
+
+---
+
+## v0.9.x → next release
+
+No Go API changed. Two things can change what a program sees: queries that used to parse and no longer do, and a few answers that were wrong.
+
+### SPARQL text that no longer parses
+
+The parser used to accept text that is not SPARQL, and sometimes read it as something else. Each of these is now a parse error with the position, and each has a one-line fix. They do not occur in valid queries; they show up in hand-written or generated query text, and in SHACL `sh:select` text.
+
+| Text that used to parse | Why it is not SPARQL | Write instead |
+|---|---|---|
+| `?` or `$` with no name (`SELECT ?` , `FILTER (? = 1)`) | it read as a variable named `""` (VARNAME needs a character, §19.8) | `?x` |
+| `SELECT WHERE { … }`, `SELECT { … }` (nothing selected) | a SELECT needs `*`, a variable or `(expr AS ?v)` | `SELECT *` or name the variables |
+| `VALUES d { … }`, `VALUES !d { … }` (a variable without `?`/`$`) | the first character was skipped without being looked at, so `!d` and `d` read as `?d` | `VALUES ?d { … }` |
+| a bare word as a term: `?s ex:p word`, `A ex:p ?o`, `?s A ?o` | an IRI is `<…>`, a prefixed name has a colon, the type shorthand is the lower-case `a` | `<urn:x>`, `ex:word`, `a` |
+| `FILTER ?x`, `FILTER 1`, `FILTER ex:f` (no call), `FILTER word` | a constraint is a bracketed expression, a built-in call or a function call (grammar [68]) | `FILTER (?x)`, `FILTER (1)`, `FILTER ex:f(?x)` |
+| `FILTER !bound(?x)`, `FILTER !isLiteral(?o)`, `FILTER !EXISTS { … }` | `!` starts a UnaryExpression, which only a bracketed expression may hold ([68]); `FILTER NOT EXISTS { … }` is fine | `FILTER (!bound(?x))`, `FILTER NOT EXISTS { … }` |
+| `HAVING COUNT(?o) > 1`, `HAVING ?s`, `HAVING !bound(?s)` | HAVING takes the same Constraint ([22]) | `HAVING (COUNT(?o) > 1)` |
+| `GROUP_CONCAT(?o; SEPARATOR=a)`, `SEPARATOR=<urn:x>` | the separator is a string literal (§18.2.4.4); this used to panic | `SEPARATOR=", "` |
+
+`FILTER !bound(?x)` is the one most likely to be in existing queries. It is accepted by several engines, but it is not in the SPARQL 1.1 grammar, and goRDFlib now follows the grammar. The bracketed form means the same.
+
+To find them: parse every query you store or generate with `sparql.Parse` (or `ParseUpdate`) in a test and look at the errors. In a SHACL shapes graph, `shacl.WithErrorHandler` reports a `sh:select` that does not parse as `ErrMalformedConstraint`, and the constraint yields a violation per focus node, so a shape that suddenly reports violations everywhere has one of these in its query. A search for `FILTER\s+[^(\s]` over your query text finds the unbracketed constraints.
+
+### Answers that were wrong
+
+- **A variable repeated in one triple pattern.** `?x ex:p ?x` matched every triple of `ex:p` and kept the subject; it now matches only triples whose subject and object are the same term. Same for `?s ?s ?o` and a path `?x ex:p+ ?x`.
+- **A zero-length path step on a term the graph does not hold.** `{ VALUES ?d { "x" } ?s ex:p* ?d }` joins the zero-length solutions of the graph's nodes with the VALUES row (§18.5); "x" is not a node, so there is no row, and it was one when `?d` came from VALUES, BIND or an earlier pattern. A term written in the pattern (`?s ex:p* "x"`) and an initial binding still match, as the W3C tests require.
+- **`(^p)+` and `^p+` walked backward through a literal.** On a store without `Reachable` (Badger, SQLite; the in-memory store uses the pushdown and was right) the walk reached unrelated nodes after meeting a literal child.
+- **Initial bindings and a right-hand pattern.** Queries run with initial bindings (SHACL pre-binds `$this`) now substitute the row of a join into a right-hand BGP, UNION or join of BGPs instead of evaluating it for every row. The answers are the same; the queries are much faster. Anything with an expression on the right (FILTER, BIND, OPTIONAL, subquery) still does not see the left row, as before (§18.2.1).
 
 ---
 

@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"fmt"
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -25,13 +26,29 @@ func (p *sparqlParser) parseExpr() (Expr, error) {
 	return p.parseOrExpr()
 }
 
-// parseConstraint parses the constraint of a FILTER (SPARQL 1.1 rule [69]
-// Constraint ::= BrackettedExpression | BuiltInCall | FunctionCall). Unlike
-// parseExpr it never reads a binary operator after the call, so in
-// `FILTER bound(?x) <s> <p> ?o` the '<' that opens the next triple's IRI is not
-// taken for less-than. A leading '!' is still accepted, as before.
+// parseConstraint parses a FILTER or HAVING constraint: a bracketed
+// expression, a built-in call (including EXISTS and NOT EXISTS) or a function
+// call (SPARQL 1.1 grammar [68] Constraint, used by [22] HavingCondition and
+// [69] Filter). Anything else is an error: FILTER ?x, FILTER 1, FILTER A00000,
+// and also FILTER !bound(?x), because ! starts a UnaryExpression, which is
+// reached only through brackets. Write FILTER (!bound(?x)).
 func (p *sparqlParser) parseConstraint() (Expr, error) {
-	return p.parseUnaryExpr()
+	p.skipWS()
+	start := p.pos
+	e, err := p.parseUnaryExpr()
+	if err != nil {
+		return nil, err
+	}
+	if start < len(p.input) && p.input[start] == '(' {
+		return e, nil
+	}
+	switch e.(type) {
+	case *FuncExpr, *ExistsExpr:
+		if p.input[start] != '!' && p.input[start] != '+' && p.input[start] != '-' {
+			return e, nil
+		}
+	}
+	return nil, fmt.Errorf("sparql parse error at pos %d: a constraint is ( expression ), a built-in call or a function call, got %q (write it in brackets)", start, strings.TrimSpace(p.input[start:min(p.pos, start+20)]))
 }
 
 func (p *sparqlParser) parseOrExpr() (Expr, error) {

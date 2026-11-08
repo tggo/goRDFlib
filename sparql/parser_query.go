@@ -53,6 +53,9 @@ func (p *sparqlParser) parseSelect(q *ParsedQuery) error {
 				break
 			}
 		}
+		if len(q.Variables) == 0 {
+			return p.errorf("SELECT needs * or at least one variable or (expression AS ?var)")
+		}
 	}
 	return nil
 }
@@ -362,9 +365,9 @@ func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
 					break
 				}
 				before := p.pos
-				expr, err := p.parseExpr()
+				expr, err := p.parseConstraint()
 				if err != nil {
-					break
+					return err
 				}
 				if p.pos == before {
 					break

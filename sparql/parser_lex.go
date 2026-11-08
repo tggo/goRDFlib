@@ -14,15 +14,18 @@ func (p *sparqlParser) readVar() string {
 	if p.pos >= len(p.input) {
 		return ""
 	}
+	if c := p.input[p.pos]; c != '?' && c != '$' && p.badSyntax == nil {
+		p.badSyntax = fmt.Errorf("sparql parse error at pos %d: expected a variable (?name or $name), got %q", p.pos, c)
+	}
 	p.pos++ // skip ? or $
 	start := p.pos
 	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
 		p.pos++
 	}
-	if p.pos == start && p.badVar == nil {
+	if p.pos == start && p.badSyntax == nil {
 		// VARNAME needs at least one character (SPARQL 1.1 §19.8); a bare
 		// ? or $ named a variable "" that no pattern could tell from another.
-		p.badVar = fmt.Errorf("sparql parse error at pos %d: a variable needs a name after %q", start-1, p.input[start-1:start])
+		p.badSyntax = fmt.Errorf("sparql parse error at pos %d: a variable needs a name after %q", start-1, p.input[start-1:start])
 	}
 	return p.input[start:p.pos]
 }
@@ -133,6 +136,11 @@ func (p *sparqlParser) readTermOrVar() string {
 	start := p.pos
 	if _, ok := p.readPNameNS(); ok {
 		p.readPNLocal()
+	} else if p.pos > start && p.badSyntax == nil {
+		// A bare word is no term: an IRI is <...>, a prefixed name has its
+		// colon, and the only keyword-like terms (a, true, false) were
+		// handled above (SPARQL 1.1 grammar [136]-[137], [145]-[147]).
+		p.badSyntax = fmt.Errorf("sparql parse error at pos %d: %q is not a term (expected <iri>, prefix:name, literal, variable or blank node)", start, p.input[start:p.pos])
 	}
 	return p.input[start:p.pos]
 }
