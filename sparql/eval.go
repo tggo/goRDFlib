@@ -1417,6 +1417,28 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 	oVal := resolvePatternTerm(tp.Object, bindings, prefixes)
 	obj = oVal
 
+	// A triple term pattern that resolve could not turn into a term (a
+	// variable in it is still unbound) is not a wildcard: the path runs open
+	// at that end and its pairs are matched against the pattern.
+	subjTT := subj == nil && strings.HasPrefix(tp.Subject, "<<( ")
+	objTT := obj == nil && strings.HasPrefix(tp.Object, "<<( ")
+
+	// A zero-length step on an endpoint that an earlier pattern, VALUES or BIND
+	// bound to a term the graph does not hold is no match (zeroLengthMatches).
+	rowS, rowO := rowBound(ec, tp.Subject, bindings), rowBound(ec, tp.Object, bindings)
+	checkZero := rowS || rowO
+	// an endpoint that is a constant (written in the pattern, or an initial
+	// binding) makes a zero-length step on that very term a match
+	var constKeys [2]string
+	if checkZero {
+		if sVal != nil && !rowS {
+			constKeys[0] = term.TermKey(sVal)
+		}
+		if oVal != nil && !rowO {
+			constKeys[1] = term.TermKey(oVal)
+		}
+	}
+
 	cont := true
 	tp.PredicatePath.Eval(ec.context(), gg, subj, obj)(func(pair store.TermPair, err error) bool {
 		ec.fail(err)
@@ -1425,7 +1447,38 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 			return false
 		}
 		s, o := pair.First, pair.Second
+		// An endpoint written as a triple term with variables that no earlier
+		// pattern bound was left open above; the pair's end must match it, and
+		// binds its variables.
+		var matched map[string]rdflibgo.Term
+		if subjTT || objTT {
+			matched = copyBindings(bindings)
+			if subjTT {
+				tt, ok := s.(rdflibgo.TripleTerm)
+				if !ok {
+					return true
+				}
+				if matched = matchTripleTermPattern(tt, tp.Subject, matched, prefixes); matched == nil {
+					return true
+				}
+			}
+			if objTT {
+				tt, ok := o.(rdflibgo.TripleTerm)
+				if !ok {
+					return true
+				}
+				if matched = matchTripleTermPattern(tt, tp.Object, matched, prefixes); matched == nil {
+					return true
+				}
+			}
+		}
+		if checkZero && term.TermKey(s) == term.TermKey(o) && !ec.zeroLengthMatches(g, tp, bindings, s, constKeys, prefixes) {
+			return true
+		}
 		nb := copyBindings(bindings)
+		if matched != nil {
+			nb = matched
+		}
 
 		if strings.HasPrefix(tp.Subject, "?") {
 			if !bindVar(nb, bindings, tp.Subject[1:], s) {
