@@ -583,15 +583,6 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) (*graphIndexes, error)
 	// A streamed source may repeat a triple; a graph holds it once.
 	dedup := g.rg.Load() == nil
 	add := func(t term.Triple) {
-		if tt, ok := t.Object.(term.TripleTerm); ok && t.Predicate.Value() == RDF+"reifies" {
-			r := fromRDFLib(t.Subject)
-			idx.reifies = append(idx.reifies, reifyEntry{r, tt})
-			if idx.reifiesBy == nil {
-				idx.reifiesBy = make(map[ikey][]term.TripleTerm)
-			}
-			rk := indexKey(r)
-			idx.reifiesBy[rk] = append(idx.reifiesBy[rk], tt)
-		}
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
@@ -611,6 +602,16 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) (*graphIndexes, error)
 		}
 		sp[pk] = append(sp[pk], o)
 		idx.n++
+
+		// After the dedup check: a repeated rdf:reifies triple in a streamed
+		// source must not list its reifier twice.
+		if tt, ok := t.Object.(term.TripleTerm); ok && t.Predicate.Value() == RDF+"reifies" {
+			idx.reifies = append(idx.reifies, reifyEntry{s, tt})
+			if idx.reifiesBy == nil {
+				idx.reifiesBy = make(map[ikey][]term.TripleTerm)
+			}
+			idx.reifiesBy[sk] = append(idx.reifiesBy[sk], tt)
+		}
 
 		po := idx.pos[pk]
 		if po == nil {
