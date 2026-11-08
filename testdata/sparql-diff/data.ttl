@@ -20,3 +20,21 @@ ex:frank ex:name "Frank" ; ex:age 52 ; ex:knows ex:erin .
 
 ex:Admin ex:label "Administrator"@en .
 ex:Person ex:label "Person"@en, "Особа"@uk .
+
+# Shapes engines get wrong (see CLAUDE.md "every evaluator change is
+# differential-tested"): self-loops, cycles over two predicates, a node that
+# is its own predicate and object, and duplicates that differ only in lexical
+# form. Still no xsd:double.
+ex:a1 ex:p ex:a1, ex:a2 ; ex:q ex:a3 ; ex:r ex:a1 .
+ex:a2 ex:p ex:a3 ; ex:q ex:a1, ex:a2 .
+ex:a3 ex:p ex:a1 ; ex:q ex:a3 .
+ex:a4 ex:p ex:a5 .
+ex:a5 ex:q ex:a4 .
+ex:p ex:p ex:p .
+ex:r ex:r ex:a1 .
+ex:a6 ex:t ex:a6 ; ex:u ex:a6 .
+
+ex:d1 ex:v 1, "01"^^xsd:integer, 1.0, "1"^^xsd:decimal, "1", "1"@en ;
+    ex:w "a", "a"@en, "A" ; ex:knows ex:d2 .
+ex:d2 ex:v 1 ; ex:knows ex:d1 .
+ex:d3 ex:v 2 .
