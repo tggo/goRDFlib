@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -48,9 +49,32 @@ func TestW3CCSVTSV(t *testing.T) {
 		{"tsv02", "csvtsv02.rq", "data.ttl", "csvtsv02.tsv", results.FormatTSV},
 		{"csv03", "csvtsv01.rq", "data2.ttl", "csvtsv03.csv", results.FormatCSV},
 		{"tsv03", "csvtsv01.rq", "data2.ttl", "csvtsv03.tsv", results.FormatTSV},
+		// Added to rdf-tests after 35c503a: csv03 again, with CRLF line ends.
+		{"csv04", "csvtsv01.rq", "data2.ttl", "csvtsv04.csv", results.FormatCSV},
+	}
+	// The table above is transcribed by hand, so compare it with the manifest
+	// or a test added upstream is dropped without a trace (csv04 was).
+	if man, err := os.ReadFile(filepath.Join(dir, "manifest.ttl")); err == nil {
+		m := regexp.MustCompile(`(?s)mf:entries\s*\((.*?)\)`).FindSubmatch(man)
+		if m == nil {
+			t.Fatal("no mf:entries in the csv-tsv-res manifest")
+		}
+		listed := strings.Fields(string(m[1]))
+		have := 0
+		for _, tc := range tests {
+			if _, err := os.Stat(filepath.Join(dir, tc.result)); err == nil {
+				have++
+			}
+		}
+		if len(listed) != have {
+			t.Errorf("manifest lists %d tests, the table runs %d", len(listed), have)
+		}
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if _, err := os.Stat(filepath.Join(dir, tc.result)); err != nil {
+				t.Skipf("%s is not in this rdf-tests checkout", tc.result)
+			}
 			g := rdflibgo.NewGraph()
 			dataPath := filepath.Join(dir, tc.data)
 			f, err := os.Open(dataPath)

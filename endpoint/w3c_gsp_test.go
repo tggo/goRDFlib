@@ -164,8 +164,18 @@ func TestW3CGraphStore(t *testing.T) {
 	}
 
 	entries := manifestEntries(t, "http-rdf-update")
-	if len(entries) != len(steps) {
-		t.Errorf("%d transcriptions for %d manifest entries", len(steps), len(entries))
+	// Upstream removed "PUT - mismatched payload" from this (now deprecated)
+	// manifest after rdf-tests 35c503a; the transcription stays for older
+	// checkouts and is simply not reached when the entry is gone.
+	removedUpstream := map[string]bool{"put__mismatched_payload": true}
+	inManifest := make(map[string]bool, len(entries))
+	for _, name := range entries {
+		inManifest[name] = true
+	}
+	for name := range steps {
+		if !inManifest[name] && !removedUpstream[name] {
+			t.Errorf("transcription %s has no manifest entry", name)
+		}
 	}
 	for _, name := range entries {
 		fn, ok := steps[name]

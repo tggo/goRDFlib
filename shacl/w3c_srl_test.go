@@ -7,11 +7,41 @@ import (
 	"testing"
 )
 
-const srlTestBase = "../testdata/w3c/data-shapes/shacl12-test-suite/tests/rules"
-
+// The SRL (SHACL Rules / SPARQL 1.2 RL) test suite moved: at data-shapes
+// e0a20128 it lived in shacl12-test-suite/tests/rules with the
+// shacl-rules-test# vocabulary; upstream now has it in
+// shacl12-test-suite/tests/sparql-rl (sparql-rl-tests#), with the evaluation
+// tests split over eval/, eval2/ and examples/. Both layouts are read, so the
+// runner works at either submodule pin.
 const (
-	srtNS = "http://www.w3.org/ns/shacl-rules-test#"
+	srlTestBaseNew = "../testdata/w3c/data-shapes/shacl12-test-suite/tests/sparql-rl"
+	srlTestBaseOld = "../testdata/w3c/data-shapes/shacl12-test-suite/tests/rules"
 )
+
+var srtNamespaces = []string{
+	"http://www.w3.org/ns/sparql-rl-tests#",
+	"http://www.w3.org/ns/shacl-rules-test#",
+}
+
+func srlTestBase() string {
+	if st, err := os.Stat(srlTestBaseNew); err == nil && st.IsDir() {
+		return srlTestBaseNew
+	}
+	return srlTestBaseOld
+}
+
+// srlEvalDirs lists the directories holding RulesEvalTest manifests.
+func srlEvalDirs() []string {
+	base := srlTestBase()
+	dirs := []string{filepath.Join(base, "eval")}
+	for _, d := range []string{"eval2", "examples"} {
+		p := filepath.Join(base, d)
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			dirs = append(dirs, p)
+		}
+	}
+	return dirs
+}
 
 type srlTestEntry struct {
 	Name     string
@@ -34,8 +64,6 @@ func parseSRLManifest(t *testing.T, dir string) []srlTestEntry {
 	namePred := IRI(MF + "name")
 	actionPred := IRI(MF + "action")
 	resultPred := IRI(MF + "result")
-	rulesetPred := IRI(srtNS + "ruleset")
-	dataPred := IRI(srtNS + "data")
 
 	testTypes := []string{
 		"RulesPositiveSyntaxTest",
@@ -48,40 +76,49 @@ func parseSRLManifest(t *testing.T, dir string) []srlTestEntry {
 	}
 
 	var entries []srlTestEntry
-	for _, tt := range testTypes {
-		typeIRI := IRI(srtNS + tt)
-		tests := g.All(nil, &typePred, &typeIRI)
-		for _, test := range tests {
-			node := test.Subject
-			entry := srlTestEntry{TestType: tt}
+	declared := 0
+	for _, ns := range srtNamespaces {
+		rulesetPred := IRI(ns + "ruleset")
+		dataPred := IRI(ns + "data")
+		for _, tt := range testTypes {
+			typeIRI := IRI(ns + tt)
+			tests := g.All(nil, &typePred, &typeIRI)
+			declared += len(tests)
+			for _, test := range tests {
+				node := test.Subject
+				entry := srlTestEntry{TestType: tt}
 
-			if names := g.Objects(node, namePred); len(names) > 0 {
-				entry.Name = names[0].Value()
-			}
-
-			actions := g.Objects(node, actionPred)
-			if len(actions) == 0 {
-				continue
-			}
-
-			if tt == "RulesEvalTest" {
-				// Eval test: action is a blank node with srt:ruleset and srt:data
-				actionNode := actions[0]
-				if rs := g.Objects(actionNode, rulesetPred); len(rs) > 0 {
-					entry.Ruleset = resolveSRLPath(dir, rs[0].Value(), g.BaseURI())
+				if names := g.Objects(node, namePred); len(names) > 0 {
+					entry.Name = names[0].Value()
 				}
-				if d := g.Objects(actionNode, dataPred); len(d) > 0 {
-					entry.Data = resolveSRLPath(dir, d[0].Value(), g.BaseURI())
-				}
-				if r := g.Objects(node, resultPred); len(r) > 0 {
-					entry.Result = resolveSRLPath(dir, r[0].Value(), g.BaseURI())
-				}
-			} else {
-				entry.Action = resolveSRLPath(dir, actions[0].Value(), g.BaseURI())
-			}
 
-			entries = append(entries, entry)
+				actions := g.Objects(node, actionPred)
+				if len(actions) == 0 {
+					continue // reported by the declared/readable check below
+				}
+
+				if tt == "RulesEvalTest" {
+					// Eval test: action is a blank node with srt:ruleset and srt:data
+					actionNode := actions[0]
+					if rs := g.Objects(actionNode, rulesetPred); len(rs) > 0 {
+						entry.Ruleset = resolveSRLPath(dir, rs[0].Value(), g.BaseURI())
+					}
+					if d := g.Objects(actionNode, dataPred); len(d) > 0 {
+						entry.Data = resolveSRLPath(dir, d[0].Value(), g.BaseURI())
+					}
+					if r := g.Objects(node, resultPred); len(r) > 0 {
+						entry.Result = resolveSRLPath(dir, r[0].Value(), g.BaseURI())
+					}
+				} else {
+					entry.Action = resolveSRLPath(dir, actions[0].Value(), g.BaseURI())
+				}
+
+				entries = append(entries, entry)
+			}
 		}
+	}
+	if len(entries) != declared {
+		t.Errorf("manifest %s declares %d tests but %d were readable (missing mf:action?)", manifestPath, declared, len(entries))
 	}
 	return entries
 }
@@ -105,7 +142,7 @@ func resolveSRLPath(dir, ref, base string) string {
 }
 
 func TestW3CSRLSyntaxTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "syntax")
+	dir := filepath.Join(srlTestBase(), "syntax")
 	entries := parseSRLManifest(t, dir)
 
 	var total, passed int
@@ -144,7 +181,7 @@ func TestW3CSRLSyntaxTests(t *testing.T) {
 }
 
 func TestW3CSRLWellformedTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "wellformed")
+	dir := filepath.Join(srlTestBase(), "wellformed")
 	entries := parseSRLManifest(t, dir)
 
 	var total, passed int
@@ -192,7 +229,7 @@ func TestW3CSRLWellformedTests(t *testing.T) {
 }
 
 func TestW3CSRLStratificationTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "stratification")
+	dir := filepath.Join(srlTestBase(), "stratification")
 	entries := parseSRLManifest(t, dir)
 
 	var total, passed int
@@ -240,8 +277,10 @@ func TestW3CSRLStratificationTests(t *testing.T) {
 }
 
 func TestW3CSRLEvalTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "eval")
-	entries := parseSRLManifest(t, dir)
+	var entries []srlTestEntry
+	for _, dir := range srlEvalDirs() {
+		entries = append(entries, parseSRLManifest(t, dir)...)
+	}
 
 	var total, passed int
 	for _, entry := range entries {

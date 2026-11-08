@@ -80,14 +80,27 @@ func TestW3CDataset(t *testing.T) {
 func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	// Load default graph data
 	g := rdflibgo.NewGraph()
+	var namedGraphs map[string]*rdflibgo.Graph
 	if entry.Data != "" {
-		loadDataFile(t, g, entry.Data)
+		if strings.EqualFold(filepath.Ext(entry.Data), ".trig") {
+			// A TriG qt:data (sparql11/bindings graph-from-named-*) is a whole
+			// dataset: its default graph is the default graph and its GRAPH
+			// blocks are the named graphs, keyed by their IRI.
+			var ng map[string]*rdflibgo.Graph
+			g, ng = loadTrigFile(t, entry.Data)
+			if len(ng) > 0 {
+				namedGraphs = ng
+			}
+		} else {
+			loadDataFile(t, g, entry.Data)
+		}
 	}
 
 	// Load named graphs
-	var namedGraphs map[string]*rdflibgo.Graph
 	if len(entry.GraphData) > 0 {
-		namedGraphs = make(map[string]*rdflibgo.Graph)
+		if namedGraphs == nil {
+			namedGraphs = make(map[string]*rdflibgo.Graph)
+		}
 		for _, gd := range entry.GraphData {
 			ng := rdflibgo.NewGraph()
 			loadDataFile(t, ng, gd)
