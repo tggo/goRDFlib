@@ -150,15 +150,22 @@ func (idx *graphIndexes) len() int {
 }
 
 // concatClipped returns a followed by b. When one is empty the other is
-// returned as is (it may be an index's own slice: callers only read it); else
-// a new slice, so that base's index slices are never appended to.
+// returned without copying (it may be an index's own slice), but clipped to
+// its length: an append by a caller then reallocates instead of writing into
+// spare capacity that the base index, or another overlay over it, can still
+// see. Callers must not write to the elements either; none does (sorting is
+// always done on a copy), and TestOverlayReturnedSlicesAreIsolated holds the
+// append half of that.
 func concatClipped[T any](a, b []T) []T {
 	switch {
 	case len(b) == 0:
-		return a
+		return clip(a)
 	case len(a) == 0:
-		return b
+		return clip(b)
 	}
 	out := make([]T, 0, len(a)+len(b))
 	return append(append(out, a...), b...)
 }
+
+// clip limits the capacity of s to its length.
+func clip[T any](s []T) []T { return s[:len(s):len(s)] }

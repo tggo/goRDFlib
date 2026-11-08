@@ -696,7 +696,7 @@ func (g *Graph) Triples() []Triple {
 // The indexes cover the patterns the validator asks for most; anything else
 // falls through to the underlying graph, which can match any combination.
 func (g *Graph) All(s, p, o *Term) []Triple {
-	return g.ensureIndexes().all(s, p, o)
+	return clip(g.ensureIndexes().all(s, p, o))
 }
 
 // all matches the pattern against idx and, for an overlay, its base.
@@ -800,7 +800,7 @@ func (g *Graph) Has(s, p, o *Term) bool {
 
 // Objects returns all objects of triples matching (s, p, ?).
 func (g *Graph) Objects(s, p Term) []Term {
-	return g.ensureIndexes().objects(indexKey(s), indexKey(p))
+	return clip(g.ensureIndexes().objects(indexKey(s), indexKey(p)))
 }
 
 func (idx *graphIndexes) objects(sk, pk ikey) []Term {
@@ -816,7 +816,7 @@ func (idx *graphIndexes) objects(sk, pk ikey) []Term {
 
 // Subjects returns all subjects of triples matching (?, p, o).
 func (g *Graph) Subjects(p, o Term) []Term {
-	return g.ensureIndexes().subjects(indexKey(p), indexKey(o))
+	return clip(g.ensureIndexes().subjects(indexKey(p), indexKey(o)))
 }
 
 func (idx *graphIndexes) subjects(pk, ok ikey) []Term {
