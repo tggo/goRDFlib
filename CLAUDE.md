@@ -842,6 +842,26 @@ The `store.Store` interface (13 methods) has four implementations:
   default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
   json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.
 
+### sparql/ every evaluator change is differential-tested (rule)
+- **100% on W3C is not evidence of correctness.** `?x ex:p ?x` matched every
+  triple of `ex:p` from the first version (March 2026) until 778afcb: the BGP
+  loop skipped a variable already in the row without comparing it, which is
+  right for a variable an earlier pattern bound (the lookup used it) and wrong
+  for one the same pattern bound one position earlier. The W3C suites barely
+  contain the shape, and the BGP planner usually hid it by running another
+  pattern first. A randomized differential test found it on its first run.
+- So: any change to evaluation, planning, pushdown, caching or pre-binding
+  must pass a **seeded random differential test** that runs the same queries
+  with the change on and off (and pre-bound vs written into the text) and
+  requires equal multisets, in addition to W3C and the reference corpus.
+  An optimisation with no off switch for that test does not land.
+- Generators must cover the shapes implementations get wrong: a variable
+  repeated within one pattern (`?x p ?x`, `?s ?s ?o`, `?x path ?x`), shared
+  blank-node labels, variables inside triple terms, variables bound only on
+  one side of OPTIONAL/MINUS/EXISTS/subqueries, empty groups, duplicates.
+- A difference the test finds is a bug to fix or a spec citation to write
+  down, never a logged warning left in place.
+
 ### sparql/ differential corpus (`testdata/sparql-diff`)
 - `generate.py` builds queries from real constructs (OPTIONAL+FILTER, EXISTS,
   MINUS, subqueries, aggregates, paths, arithmetic) over an awkward
