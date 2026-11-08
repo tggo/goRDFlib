@@ -520,7 +520,13 @@ func (p *sparqlParser) parseAggregateCall(name string) (Expr, error) {
 				p.expect('=')
 				p.skipWS()
 				sep := p.readTermOrVar()
-				fe.Separator = string(p.resolveTermValue(sep).(rdflibgo.Literal).Lexical())
+				lit, ok := p.resolveTermValue(sep).(rdflibgo.Literal)
+				if !ok {
+					// SEPARATOR takes a string literal (SPARQL 1.1 section 18.2.4.4);
+					// a bare word, an IRI or a variable here used to panic.
+					return nil, p.errorf("GROUP_CONCAT SEPARATOR needs a string literal, got %q", sep)
+				}
+				fe.Separator = string(lit.Lexical())
 			}
 		} else {
 			fe.Separator = " " // default separator

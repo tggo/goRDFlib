@@ -1,0 +1,2 @@
+go test fuzz v1
+string("SELECT(GROUP_CONCAT(0;SEPARATOR=a ")
