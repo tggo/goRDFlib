@@ -5,40 +5,58 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
 
-// ErrNilGraph is returned by NewOverlayGraph when base or rg is nil.
+// ErrNilGraph is returned by Overlay on a nil graph.
 var ErrNilGraph = errors.New("shacl: nil graph")
 
-// NewOverlayGraph returns a graph that reads as base plus the added triples,
-// for validating many small variants of one large graph: each of many small
+// ErrReadOnly is returned by Add and Merge on an overlay graph (Overlay). It
+// is the same error as store.ErrReadOnly, which the overlay's SPARQL store
+// returns for its own writes.
+var ErrReadOnly = store.ErrReadOnly
+
+// overlay is what an overlay graph keeps besides its indexes.
+type overlay struct {
+	base  *Graph
+	added []term.Triple
+}
+
+// Overlay returns a graph that reads as g plus the added triples, for
+// validating many small variants of one large graph: each of many small
 // changes tried on it, or each of many data graphs validated over a large
 // shared vocabulary or reference data set.
 //
 // NewGraphFromRDF indexes every triple of the graph it wraps, so a variant
-// re-indexes the whole base each time. Here base's indexes are built once (on
-// the first overlay, or by NewGraphFromRDF) and shared read-only by every
-// overlay over it; an overlay indexes only its added triples, and each lookup
-// reads base then the overlay. An added triple base already holds is ignored.
+// built by adding to the store and wrapping it again re-indexes the whole of
+// it each time. Here g's indexes are built once (on the first overlay, or by
+// NewGraphFromRDF) and shared read-only by every overlay over it; an overlay
+// indexes only its added triples, and each lookup reads g, then the overlay.
+// An added triple g already holds is ignored. The overlay keeps its own copy
+// of the reifier lookups (SHACL 1.2) and reads g's namespace bindings.
 //
-// rg is the rdflib graph that SPARQL-based constraints and SHACL-AF query. It
-// must hold exactly base's triples plus added: typically the store base wraps,
-// with the added triples inserted for this validation and removed afterwards
-// (only those it did not already hold). base's indexes are a snapshot and do
-// not see those writes; base itself must not be used to validate while rg
-// holds the added triples.
+// Nothing is written to g or to its store. SPARQL-based constraints and
+// SHACL-AF see g plus added through a read-only store.UnionStore over g's
+// store and a small in-memory one holding added, built on the first such
+// query. So overlays over one base validate concurrently, SPARQL shapes
+// included, without any store the caller has to keep in step. Added triples
+// belong to the graph g wraps (the default graph of a plain graph).
 //
-// The overlay is safe for concurrent reads, and any number of overlays may
-// share one base. Add, Merge or InvalidateIndexes on the overlay drop the
-// overlay indexes; the next read indexes rg in full, as NewGraphFromRDF does.
-func NewOverlayGraph(ctx context.Context, base *Graph, rg *graph.Graph, added []term.Triple) (*Graph, error) {
-	if base == nil || rg == nil {
-		return nil, fmt.Errorf("%w: NewOverlayGraph needs a base graph and the rdflib graph (base's triples plus added) that SPARQL-based constraints query", ErrNilGraph)
+// The overlay is read-only: Add and Merge return ErrReadOnly, and
+// InvalidateIndexes does nothing (it has no error to return, and re-indexing
+// would defeat the point). g must not be changed — Add, Merge, or writes to its
+// store followed by InvalidateIndexes — while any overlay over it is in use:
+// the overlays read g's indexes and its store as they are. Overlays are safe
+// for concurrent reads, and an overlay may itself be the base of another.
+func (g *Graph) Overlay(ctx context.Context, added []term.Triple) (*Graph, error) {
+	if g == nil {
+		return nil, fmt.Errorf("%w: Overlay needs a base graph", ErrNilGraph)
 	}
-	under, err := base.ensureIndexesContext(ctx)
+	under, err := g.ensureIndexesContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -64,9 +82,27 @@ func NewOverlayGraph(ctx context.Context, base *Graph, rg *graph.Graph, added []
 			return nil, err
 		}
 	}
-	out := wrap(rg, base.baseURI)
+	out := &Graph{baseURI: g.baseURI, over: &overlay{base: g, added: slices.Clone(added)}}
 	out.idx.Store(idx)
 	return out, nil
+}
+
+// rdfOverlay builds the rdflib graph of an overlay: a read-only union of the
+// base's graph and a memory store holding the added triples.
+func (g *Graph) rdfOverlay(ctx context.Context) (*graph.Graph, error) {
+	brg, err := g.over.base.rdf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id := brg.Identifier()
+	extra := store.NewMemoryStore()
+	for _, t := range g.over.added {
+		if err := extra.Add(ctx, t, id); err != nil {
+			return nil, fmt.Errorf("shacl: building the store of an overlay graph: %w", err)
+		}
+	}
+	return graph.NewGraph(graph.WithStore(store.NewUnion(brg.Store(), extra)),
+		graph.WithIdentifier(id), graph.WithBase(g.baseURI)), nil
 }
 
 // addOver indexes one added triple of an overlay, unless the overlay (its base

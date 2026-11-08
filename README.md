@@ -820,17 +820,18 @@ all of it. Index the shared graph once and overlay each document on it:
 
 ```go
 base, err := shacl.NewGraphFromRDF(ctx, shared, "") // once
-// per document: add its triples to shared, then
-overlay, err := shacl.NewOverlayGraph(ctx, base, shared, doc)
+// per document:
+overlay, err := base.Overlay(ctx, doc) // doc is a []term.Triple
 report := compiled.Validate(overlay)
-// remove the document's triples from shared
 ```
 
 The overlay indexes only `doc` and reads `base`'s indexes, which any number of
-overlays share, from any goroutine. SPARQL-based constraints and SHACL-AF
-query the store passed as the third argument, so it must hold the shared
-triples plus `doc` during the validation. Runnable version:
-`ExampleNewOverlayGraph`.
+overlays share, from any goroutine. Nothing is written to `shared`: SPARQL-based
+constraints and SHACL-AF query a read-only `store.UnionStore` of `shared` and a
+small in-memory store holding `doc`, so documents over one base validate
+concurrently, SPARQL shapes included. An overlay is read-only (`Add` and
+`Merge` return `shacl.ErrReadOnly`), and `base` must not be changed while
+overlays over it are in use. Runnable version: `ExampleGraph_Overlay`.
 
 #### Parse once, validate, then serialize
 

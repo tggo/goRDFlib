@@ -13,8 +13,8 @@ import (
 
 // Many small data graphs are validated over one large shared graph (here a
 // vocabulary of two kinds). The shared graph is indexed once; each overlay
-// indexes only its own triples.
-func ExampleNewOverlayGraph() {
+// indexes only its own triples, and nothing is written to the shared graph.
+func ExampleGraph_Overlay() {
 	ctx := context.Background()
 	shapes, _ := shacl.LoadTurtleString(`
 @prefix sh: <http://www.w3.org/ns/shacl#> .
@@ -43,20 +43,12 @@ func ExampleNewOverlayGraph() {
 		{{Subject: ex("b"), Predicate: rdfType, Object: ex("Item")}, {Subject: ex("b"), Predicate: ex("kind"), Object: ex("huge")}},
 	}
 	for _, doc := range docs {
-		// SPARQL-based constraints query the store: it holds the document's
-		// triples (none of them is in the vocabulary) during the validation.
-		for _, t := range doc {
-			_ = shared.Add(ctx, t.Subject, t.Predicate, t.Object)
-		}
-		overlay, err := shacl.NewOverlayGraph(ctx, base, shared, doc)
+		overlay, err := base.Overlay(ctx, doc)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		fmt.Println("conforms:", compiled.Validate(overlay).Conforms)
-		for _, t := range doc {
-			_ = shared.Remove(ctx, t.Subject, &t.Predicate, t.Object)
-		}
 	}
 	// Output:
 	// conforms: true

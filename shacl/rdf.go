@@ -276,6 +276,10 @@ type Graph struct {
 	src     []term.Triple
 	baseURI string
 
+	// over is set on an overlay graph (Overlay): its rdflib graph is a
+	// read-only union built on first use, and it is never written.
+	over *overlay
+
 	// idx holds the lazily built lookup indexes. It is replaced wholesale
 	// rather than mutated in place, so a reader always sees a complete set.
 	idx   atomic.Pointer[graphIndexes]
@@ -330,6 +334,14 @@ func (g *Graph) rdf(ctx context.Context) (*graph.Graph, error) {
 	if rg := g.rg.Load(); rg != nil {
 		return rg, nil
 	}
+	if g.over != nil {
+		rg, err := g.rdfOverlay(ctx)
+		if err != nil {
+			return nil, err
+		}
+		g.rg.Store(rg)
+		return rg, nil
+	}
 	rg := graph.NewGraph(graph.WithBase(g.baseURI))
 	for _, t := range g.src {
 		if err := rg.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
@@ -359,6 +371,9 @@ var defaultNamespaces = sync.OnceValue(func() []store.NamespaceBinding {
 // indexes (buildIndexes), so this does no store I/O of its own; a graph whose
 // indexes could not be built reports none.
 func (g *Graph) namespaces() []store.NamespaceBinding {
+	if g.over != nil {
+		return g.over.base.namespaces()
+	}
 	if g.rg.Load() == nil {
 		return defaultNamespaces()
 	}
@@ -517,7 +532,13 @@ func NewGraphFromRDF(ctx context.Context, g *graph.Graph, baseURI string) (*Grap
 // next read to rebuild them from the wrapped graph. Call this after mutating
 // the graph.Graph passed to NewGraphFromRDF directly, outside of this
 // Graph's Add/Merge methods.
+//
+// On an overlay graph (Overlay) it does nothing: the overlay's indexes are
+// all it has, and the base it reads must not change.
 func (g *Graph) InvalidateIndexes() {
+	if g.over != nil {
+		return
+	}
 	g.invalidateIndexes()
 }
 
@@ -536,7 +557,7 @@ type graphIndexes struct {
 	reifies   []reifyEntry
 	reifiesBy map[ikey][]term.TripleTerm // by reifier
 
-	// under is the base of an overlay graph (NewOverlayGraph): these indexes
+	// under is the base of an overlay graph (Graph.Overlay): these indexes
 	// then hold only the triples added over it, and every lookup reads both.
 	under *graphIndexes
 }
@@ -849,6 +870,9 @@ func (g *Graph) Len() int {
 // with ctx; a store error or a done context is returned and the triple is not
 // indexed.
 func (g *Graph) Add(ctx context.Context, s, p, o Term) error {
+	if g.over != nil {
+		return fmt.Errorf("%w: Add on an overlay graph", ErrReadOnly)
+	}
 	g.invalidateIndexes()
 	rg, err := g.rdf(ctx)
 	if err != nil {
@@ -864,6 +888,9 @@ func (g *Graph) Add(ctx context.Context, s, p, o Term) error {
 // indexes (build them with ctx first when it wraps a store); the writes go to
 // this graph's store with ctx, and the first error stops the merge.
 func (g *Graph) Merge(ctx context.Context, other *Graph) error {
+	if g.over != nil {
+		return fmt.Errorf("%w: Merge into an overlay graph", ErrReadOnly)
+	}
 	g.invalidateIndexes()
 	if _, err := other.ensureIndexesContext(ctx); err != nil {
 		return err
