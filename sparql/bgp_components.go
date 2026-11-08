@@ -33,16 +33,73 @@ func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Trip
 	if len(triples) < 2 || offBGPComponents {
 		return nil
 	}
+	for _, tp := range triples {
+		if strings.HasPrefix(tp.Subject, "<<") || strings.HasPrefix(tp.Object, "<<") {
+			return bgpComponentsNested(triples, bindings)
+		}
+	}
 	// Called for every BGP evaluation, often once per row of an enclosing
 	// pattern, so a small BGP is grouped without allocating: most are
 	// connected and return nil before any group is built. A large one looks
-	// names up in a map rather than by a linear scan.
+	// names up in a map rather than by a linear scan. (The arrays below stay
+	// on the stack only because nothing here is reachable from a method that
+	// recurses; the triple term case, which recurses, is bgpComponentsNested.)
 	var parentBuf [16]int
 	var namesBuf [48]componentName
-	cb := componentBuilder{bindings: bindings, parent: parentBuf[:0], names: namesBuf[:0]}
+	parent := parentBuf[:0]
+	names := namesBuf[:0]
+	var owner map[string]int
 	if len(triples) > len(parentBuf) {
-		cb.owner = make(map[string]int, 2*len(triples))
+		owner = make(map[string]int, 2*len(triples))
 	}
+	for i := range triples {
+		parent = append(parent, i)
+	}
+	for i, tp := range triples {
+		pos := [3]string{tp.Subject, tp.Object, ""}
+		if tp.PredicatePath == nil {
+			pos[2] = tp.Predicate
+		}
+		for _, s := range pos {
+			switch {
+			case strings.HasPrefix(s, "?"):
+				if _, bound := bindings[s[1:]]; bound {
+					continue
+				}
+			case strings.HasPrefix(s, "_:"):
+			default:
+				continue
+			}
+			j, seen := -1, false
+			if owner != nil {
+				j, seen = owner[s]
+			} else {
+				for _, n := range names {
+					if n.name == s {
+						j, seen = n.owner, true
+						break
+					}
+				}
+			}
+			if !seen {
+				if owner != nil {
+					owner[s] = i
+				} else {
+					names = append(names, componentName{s, i})
+				}
+				continue
+			}
+			parent[componentRoot(parent, i)] = componentRoot(parent, j)
+		}
+	}
+	return splitComponents(parent, triples)
+}
+
+// bgpComponentsNested is bgpComponents for patterns with a triple term in the
+// subject or object position, whose variables and labels are found by a
+// recursive walk. It allocates.
+func bgpComponentsNested(triples []Triple, bindings map[string]rdflibgo.Term) [][]Triple {
+	cb := componentBuilder{bindings: bindings, parent: make([]int, 0, len(triples)), owner: make(map[string]int, 2*len(triples))}
 	for i := range triples {
 		cb.parent = append(cb.parent, i)
 	}
@@ -53,7 +110,12 @@ func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Trip
 			cb.visit(tp.Predicate, i)
 		}
 	}
-	parent := cb.parent
+	return splitComponents(cb.parent, triples)
+}
+
+// splitComponents returns the patterns grouped by the roots of parent, or nil
+// when they all share one.
+func splitComponents(parent []int, triples []Triple) [][]Triple {
 	root := componentRoot(parent, 0)
 	split := false
 	for i := 1; i < len(parent); i++ {
@@ -84,7 +146,6 @@ func bgpComponents(triples []Triple, bindings map[string]rdflibgo.Term) [][]Trip
 type componentBuilder struct {
 	bindings map[string]rdflibgo.Term
 	parent   []int
-	names    []componentName
 	owner    map[string]int
 }
 
@@ -108,23 +169,9 @@ func (cb *componentBuilder) visit(s string, i int) {
 	default:
 		return
 	}
-	j, seen := -1, false
-	if cb.owner != nil {
-		j, seen = cb.owner[s]
-	} else {
-		for _, n := range cb.names {
-			if n.name == s {
-				j, seen = n.owner, true
-				break
-			}
-		}
-	}
+	j, seen := cb.owner[s]
 	if !seen {
-		if cb.owner != nil {
-			cb.owner[s] = i
-		} else {
-			cb.names = append(cb.names, componentName{s, i})
-		}
+		cb.owner[s] = i
 		return
 	}
 	cb.parent[componentRoot(cb.parent, i)] = componentRoot(cb.parent, j)
