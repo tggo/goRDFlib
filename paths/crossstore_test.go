@@ -64,7 +64,13 @@ func TestClosureQueriesAgreeAcrossStores(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	for seed := range uint64(4) {
+	// Four random graphs find a difference; one is enough for the race
+	// detector, and four under -race cost ~45 s, mostly in Badger.
+	seeds := uint64(4)
+	if raceEnabled {
+		seeds = 1
+	}
+	for seed := range seeds {
 		r := rand.New(rand.NewPCG(seed, 7))
 		type edge struct {
 			s, p, o term.Term
