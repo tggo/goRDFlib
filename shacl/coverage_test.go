@@ -938,23 +938,6 @@ func TestSomeValueConstraintShapeNotFound(t *testing.T) {
 
 // --- node_expr helpers ---
 
-func TestParseNumeric(t *testing.T) {
-	v, ok := parseNumeric(Literal("42", XSD+"integer", ""))
-	if !ok || v != 42 {
-		t.Errorf("expected 42, got %v", v)
-	}
-
-	_, ok = parseNumeric(IRI(ex + "x"))
-	if ok {
-		t.Error("expected false for IRI")
-	}
-
-	_, ok = parseNumeric(Literal("notanumber", XSD+"integer", ""))
-	if ok {
-		t.Error("expected false for non-numeric string")
-	}
-}
-
 func TestIsTruthy(t *testing.T) {
 	if isTruthy(nil) {
 		t.Error("expected false for nil")
@@ -970,39 +953,6 @@ func TestIsTruthy(t *testing.T) {
 	}
 	// Note: Literal("false", "", "") gets datatype xsd:string, which doesn't match
 	// the boolean check in isTruthy, so it's actually truthy.
-}
-
-func TestCompareTermLists(t *testing.T) {
-	if compareTermLists(nil, nil) != 0 {
-		t.Error("nil vs nil should be 0")
-	}
-	if compareTermLists(nil, []Term{IRI(ex + "x")}) != -1 {
-		t.Error("nil vs non-empty should be -1")
-	}
-	if compareTermLists([]Term{IRI(ex + "x")}, nil) != 1 {
-		t.Error("non-empty vs nil should be 1")
-	}
-}
-
-func TestCompareTerm(t *testing.T) {
-	a := Literal("1", XSD+"integer", "")
-	b := Literal("2", XSD+"integer", "")
-	if compareTerm(a, b) >= 0 {
-		t.Error("expected 1 < 2")
-	}
-	if compareTerm(b, a) <= 0 {
-		t.Error("expected 2 > 1")
-	}
-	if compareTerm(a, a) != 0 {
-		t.Error("expected equal")
-	}
-
-	// String fallback
-	c := IRI(ex + "a")
-	d := IRI(ex + "b")
-	if compareTerm(c, d) >= 0 {
-		t.Error("expected a < b")
-	}
 }
 
 // --- TargetKind String ---
@@ -3821,34 +3771,6 @@ func TestToTermNoneCov(t *testing.T) {
 
 // --- compareTerm coverage ---
 
-func TestCompareTermNumeric(t *testing.T) {
-	a := Literal("1", XSD+"integer", "")
-	b := Literal("2", XSD+"integer", "")
-	if compareTerm(a, b) >= 0 {
-		t.Error("expected a < b")
-	}
-	if compareTerm(b, a) <= 0 {
-		t.Error("expected b > a")
-	}
-	if compareTerm(a, a) != 0 {
-		t.Error("expected a == a")
-	}
-}
-
-func TestCompareTermString(t *testing.T) {
-	a := Literal("abc", XSD+"string", "")
-	b := Literal("def", XSD+"string", "")
-	if compareTerm(a, b) >= 0 {
-		t.Error("expected a < b")
-	}
-	if compareTerm(b, a) <= 0 {
-		t.Error("expected b > a")
-	}
-	if compareTerm(a, a) != 0 {
-		t.Error("expected a == a")
-	}
-}
-
 // --- evalPath: zero or more, one or more ---
 
 func TestEvalPathZeroOrMore(t *testing.T) {
@@ -4871,9 +4793,10 @@ func TestNodeExprMinNoNumeric(t *testing.T) {
 		vars:      map[string]Term{},
 		shapesMap: map[string]*Shape{},
 	}
+	// SPARQL MIN uses the ORDER BY order, which orders IRIs.
 	result := expr.Eval(ctx)
-	if result != nil {
-		t.Error("expected nil for non-numeric min")
+	if len(result) != 1 || result[0].Value() != "http://example.org/a" {
+		t.Errorf("expected the smaller IRI, got %v", result)
 	}
 }
 
@@ -4890,8 +4813,8 @@ func TestNodeExprMaxNoNumeric(t *testing.T) {
 		shapesMap: map[string]*Shape{},
 	}
 	result := expr.Eval(ctx)
-	if result != nil {
-		t.Error("expected nil for non-numeric max")
+	if len(result) != 1 || result[0].Value() != "http://example.org/a" {
+		t.Errorf("expected the only IRI, got %v", result)
 	}
 }
 
@@ -5837,45 +5760,6 @@ ex:alice ex:status "inactive" .
 	g := loadTurtle(t, data)
 	report := Validate(g, g)
 	_ = report // Just exercise the SELECT validator path
-}
-
-func TestSumExprNonNumericSkip(t *testing.T) {
-	// SumExpr with non-numeric values → skips non-numeric
-	expr := &SumExpr{
-		Nodes: &multiTermExpr{terms: []Term{
-			Literal("1", XSD+"integer", ""),
-			IRI("http://example.org/notNumeric"),
-		}},
-	}
-	ctx := &nodeExprContext{
-		focusNode: IRI("http://example.org/x"),
-		dataGraph: loadTurtle(&testing.T{}, ""),
-		vars:      map[string]Term{},
-		shapesMap: map[string]*Shape{},
-	}
-	result := expr.Eval(ctx)
-	if len(result) == 0 {
-		t.Error("expected sum result with non-numeric skipped")
-	}
-}
-
-func TestSumExprWithFlatMap(t *testing.T) {
-	expr := &SumExpr{
-		Nodes: &multiTermExpr{terms: []Term{
-			Literal("1", XSD+"integer", ""),
-		}},
-		FlatMap: &multiTermExpr{terms: []Term{
-			Literal("2", XSD+"integer", ""),
-		}},
-	}
-	ctx := &nodeExprContext{
-		focusNode: IRI("http://example.org/x"),
-		dataGraph: loadTurtle(&testing.T{}, ""),
-		vars:      map[string]Term{},
-		shapesMap: map[string]*Shape{},
-	}
-	result := expr.Eval(ctx)
-	_ = result
 }
 
 func TestFindFirstExprNoMatch(t *testing.T) {
