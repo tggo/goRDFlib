@@ -51,6 +51,9 @@ const (
 	TermIRI
 	TermLiteral
 	TermBlankNode
+	// TermTriple is an RDF 1.2 triple term. Its value is the term.TermKey of
+	// the triple term, which is injective and decodes back (see toTerm).
+	TermTriple
 )
 
 func (k TermKind) String() string {
@@ -63,6 +66,8 @@ func (k TermKind) String() string {
 		return "Literal"
 	case TermBlankNode:
 		return "BlankNode"
+	case TermTriple:
+		return "TripleTerm"
 	}
 	return "Unknown"
 }
@@ -83,6 +88,7 @@ func (t Term) IsNone() bool     { return t.kind == TermNone }
 func (t Term) IsIRI() bool      { return t.kind == TermIRI }
 func (t Term) IsLiteral() bool  { return t.kind == TermLiteral }
 func (t Term) IsBlank() bool    { return t.kind == TermBlankNode }
+func (t Term) IsTriple() bool   { return t.kind == TermTriple }
 
 func (t Term) String() string {
 	switch t.kind {
@@ -98,6 +104,11 @@ func (t Term) String() string {
 		return s
 	case TermBlankNode:
 		return "_:" + t.value
+	case TermTriple:
+		if tt, ok := toTerm(t).(term.TripleTerm); ok {
+			return tt.N3()
+		}
+		return "<<( )>>"
 	}
 	return ""
 }
@@ -113,6 +124,8 @@ func (t Term) TermKey() string {
 		return "L:" + t.value + "^^" + t.datatype
 	case TermBlankNode:
 		return "B:" + t.value
+	case TermTriple:
+		return t.value
 	}
 	return ""
 }
@@ -147,7 +160,7 @@ func (t Term) Equal(other Term) bool {
 		return t.value == other.value
 	case TermLiteral:
 		return t.value == other.value && t.datatype == other.datatype && t.language == other.language
-	case TermBlankNode:
+	case TermBlankNode, TermTriple:
 		return t.value == other.value
 	}
 	return false
@@ -208,6 +221,8 @@ func fromRDFLib(t term.Term) Term {
 		return Term{kind: TermLiteral, value: val, datatype: dt, language: fullLang}
 	case term.BNode:
 		return Term{kind: TermBlankNode, value: v.Value()}
+	case term.TripleTerm:
+		return Term{kind: TermTriple, value: term.TermKey(v)}
 	}
 	return Term{}
 }
@@ -255,6 +270,10 @@ func toTerm(t Term) term.Term {
 		return term.NewLiteral(t.value)
 	case TermBlankNode:
 		return term.NewBNode(t.value)
+	case TermTriple:
+		if tt, err := term.TermFromKey(t.value); err == nil {
+			return tt
+		}
 	}
 	return nil
 }
