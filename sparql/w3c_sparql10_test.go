@@ -44,6 +44,8 @@ func TestW3CSPARQL10(t *testing.T) {
 		case negSyntax:
 			n++
 			t.Run("syntax-/"+entry.Name, func(t *testing.T) { runNegativeSyntaxTest(t, entry) })
+		default:
+			t.Errorf("manifest entry %q has a test type the runner does not dispatch: %s", entry.Name, entry.Type)
 		}
 	}
 	if n < 400 {
