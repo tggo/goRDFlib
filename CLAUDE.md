@@ -226,7 +226,7 @@ The `store.Store` interface (13 methods) has four implementations:
 - Badger iterators run with `PrefetchValues = false` (`iteratePrefix`): the
   default prefetches values in goroutines, which costs more than short index
   lookups of small values save.
-- Measured: `BenchmarkStoreBackendQuery/badger` 212 µs → 66 µs; sparql-server
+- Measured: `BenchmarkStoreBackendQuery/badger` (`endpoint/store_query_bench_test.go`) 212 µs → 66 µs; sparql-server
   throughput on Badger ~4.8k → ~14.6k req/s (median of 6 alternating runs).
 - Badger throughput runs right after a bulk load are bimodal (background
   compaction). Compare builds by alternating processes.
