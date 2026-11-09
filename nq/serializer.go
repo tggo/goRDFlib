@@ -43,7 +43,7 @@ func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Opti
 		if err != nil {
 			return fmt.Errorf("nq: serialize: %w", err)
 		}
-		line, err := formatLine(&sb, t.Subject, t.Predicate, t.Object, graphSuffix)
+		line, err := formatLine(&sb, termFn(&cfg), t.Subject, t.Predicate, t.Object, graphSuffix)
 		if err != nil {
 			return err
 		}

@@ -112,6 +112,13 @@ func parseLines(ctx context.Context, r io.Reader, opts []Option, h TripleHandler
 }
 
 func parseNTLine(line string, lineNum int, h TripleHandler, prov ProvenanceHandler, scope bnodes.Scope, iris *iricache.Cache) error {
+	// RDF 1.2 N-Triples: a VERSION announcement is a line of its own.
+	if isVer, err := ntsyntax.VersionLine(line); isVer {
+		if err != nil {
+			return fmt.Errorf("line %d: %w", lineNum, err)
+		}
+		return nil
+	}
 	p := &ntsyntax.LineParser{Line: line, Pos: 0, LineNum: lineNum, BlankNodes: scope, IRIs: iris}
 
 	subj, err := p.ReadSubject()

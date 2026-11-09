@@ -41,7 +41,7 @@ func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Opti
 		if err != nil {
 			return fmt.Errorf("nt: serialize: %w", err)
 		}
-		line, err := ntTriple(t)
+		line, err := ntTriple(t, termFn(&cfg))
 		if err != nil {
 			return err
 		}
@@ -56,16 +56,16 @@ func Serialize(ctx context.Context, g *rdflibgo.Graph, w io.Writer, opts ...Opti
 	return nil
 }
 
-func ntTriple(t rdflibgo.Triple) (string, error) {
-	s, err := ntsyntax.Term(t.Subject)
+func ntTriple(t rdflibgo.Triple, term func(rdflibgo.Term) (string, error)) (string, error) {
+	s, err := term(t.Subject)
 	if err != nil {
 		return "", err
 	}
-	p, err := ntsyntax.Term(t.Predicate)
+	p, err := term(t.Predicate)
 	if err != nil {
 		return "", err
 	}
-	o, err := ntsyntax.Term(t.Object)
+	o, err := term(t.Object)
 	if err != nil {
 		return "", err
 	}

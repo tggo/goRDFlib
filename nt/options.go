@@ -1,6 +1,9 @@
 package nt
 
-import rdflibgo "github.com/tggo/goRDFlib"
+import (
+	rdflibgo "github.com/tggo/goRDFlib"
+	"github.com/tggo/goRDFlib/internal/ntsyntax"
+)
 
 // Option configures N-Triples parsing or serialization.
 type Option func(*config)
@@ -31,6 +34,27 @@ type config struct {
 	maxLineLen           int
 	unbounded            bool
 	preserveBlankNodeIDs bool
+	canonical            bool
+}
+
+// WithCanonical makes Serialize and NewWriter write the canonical form of RDF
+// 1.2 N-Triples: single spaces between terms, " ." at the end, and literals
+// escaped as the W3C canonicalization tests expect (short escapes \b \t \n \f
+// \r; \uXXXX for other C0 controls, U+007F, U+FFFE and U+FFFF; every other
+// character as itself). Without it the output is valid N-Triples but spells
+// characters outside the BMP as \UXXXXXXXX and \b, \f as \u0008, \u000C.
+// Serialize still sorts its lines; Writer keeps the order it is given. Blank
+// node labels are written as they are, so a document that must keep its
+// labels is parsed with WithPreserveBlankNodeIDs.
+func WithCanonical() Option {
+	return func(c *config) { c.canonical = true }
+}
+
+func termFn(c *config) func(rdflibgo.Term) (string, error) {
+	if c.canonical {
+		return ntsyntax.CanonicalTerm
+	}
+	return ntsyntax.Term
 }
 
 // WithPreserveBlankNodeIDs retains source labels instead of assigning a fresh
