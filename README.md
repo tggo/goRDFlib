@@ -4,23 +4,23 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/tggo/goRDFlib.svg)](https://pkg.go.dev/github.com/tggo/goRDFlib)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tggo/goRDFlib)](https://goreportcard.com/report/github.com/tggo/goRDFlib)
 ![Coverage](https://img.shields.io/badge/Coverage-93.7%25-brightgreen)
-![W3C Tests](https://img.shields.io/badge/W3C_Tests-3362%2F3362-brightgreen)
-![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-328%2F328-brightgreen)
-![W3C SPARQL 1.0](https://img.shields.io/badge/W3C_SPARQL_1.0-481%2F481-brightgreen)
+![W3C Tests](https://img.shields.io/badge/W3C_Tests-4083%2F4083-brightgreen)
+![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-353%2F353-brightgreen)
+![W3C SPARQL 1.0](https://img.shields.io/badge/W3C_SPARQL_1.0-487%2F487-brightgreen)
 ![W3C SPARQL Update](https://img.shields.io/badge/W3C_SPARQL_1.1_Update-157%2F157-brightgreen)
-![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-254%2F254-brightgreen)
+![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-271%2F271-brightgreen)
 ![W3C Turtle](https://img.shields.io/badge/W3C_Turtle-313%2F313-brightgreen)
-![W3C Turtle 1.2](https://img.shields.io/badge/W3C_Turtle_1.2-96%2F96-brightgreen)
+![W3C Turtle 1.2](https://img.shields.io/badge/W3C_Turtle_1.2-109%2F109-brightgreen)
 ![W3C N-Triples](https://img.shields.io/badge/W3C_N--Triples-70%2F70-brightgreen)
-![W3C N-Triples 1.2](https://img.shields.io/badge/W3C_N--Triples_1.2-29%2F29-brightgreen)
+![W3C N-Triples 1.2](https://img.shields.io/badge/W3C_N--Triples_1.2-75%2F75-brightgreen)
 ![W3C N-Quads](https://img.shields.io/badge/W3C_N--Quads-87%2F87-brightgreen)
-![W3C N-Quads 1.2](https://img.shields.io/badge/W3C_N--Quads_1.2-27%2F27-brightgreen)
+![W3C N-Quads 1.2](https://img.shields.io/badge/W3C_N--Quads_1.2-72%2F72-brightgreen)
 ![W3C RDF/XML](https://img.shields.io/badge/W3C_RDF%2FXML-166%2F166-brightgreen)
-![W3C RDF/XML 1.2](https://img.shields.io/badge/W3C_RDF%2FXML_1.2-30%2F30-brightgreen)
-![W3C TriG](https://img.shields.io/badge/W3C_TriG-356%2F356-brightgreen)
-![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-60%2F60-brightgreen)
-![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-427%2F427-brightgreen)
-![W3C JSON-LD toRdf](https://img.shields.io/badge/W3C_JSON--LD_toRdf-411%2F448-yellowgreen)
+![W3C RDF/XML 1.2](https://img.shields.io/badge/W3C_RDF%2FXML_1.2-31%2F31-brightgreen)
+![W3C TriG](https://img.shields.io/badge/W3C_TriG-357%2F357-brightgreen)
+![W3C TriG 1.2](https://img.shields.io/badge/W3C_TriG_1.2-64%2F64-brightgreen)
+![W3C SHACL](https://img.shields.io/badge/W3C_SHACL-905%2F905-brightgreen)
+![W3C JSON-LD toRdf](https://img.shields.io/badge/W3C_JSON--LD_toRdf-411%2F467-yellowgreen)
 ![SPARQL Protocol](https://img.shields.io/badge/SPARQL_Protocol-99.7%25_coverage-brightgreen)
 ![Badger Store](https://img.shields.io/badge/Badger_Store-persistent_KV-blue)
 ![SQLite Store](https://img.shields.io/badge/SQLite_Store-persistent_SQL-blue)
@@ -28,7 +28,7 @@
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
-> **Note:** This project is in active development. The core API is stabilizing but may still change. All 3362 W3C conformance tests that run pass (`make test-w3c`, suites pinned as git submodules; moving them to current upstream is issue #71). Skipped: 29 RDFS entailment tests that need datatype semantics, 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold), and one CSV test whose file the pinned checkout does not have. Fuzz-tested for robustness.
+> **Note:** This project is in active development. The core API is stabilizing but may still change. All 4083 W3C conformance tests that run pass (`make test-w3c`; suites pinned as git submodules at rdf-tests 202a74e and data-shapes 40231dfb). Skipped: 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold). Fuzz-tested for robustness.
 
 ## About
 
@@ -300,11 +300,11 @@ All formats include both parser and serializer:
 
 | Format | Parser | Serializer | W3C Tests |
 |--------|:------:|:----------:|-----------|
-| Turtle 1.2 | yes | yes | 313/313 + 96/96 RDF 1.2 (100%) |
-| TriG 1.2 | yes | yes | 356/356 + 60/60 RDF 1.2 (100%) |
-| N-Triples 1.2 | yes | yes | 70/70 + 29/29 RDF 1.2 (100%) |
-| N-Quads 1.2 | yes | yes | 87/87 + 27/27 RDF 1.2 (100%) |
-| RDF/XML 1.2 | yes | yes | 166/166 + 30/30 RDF 1.2 (100%) |
+| Turtle 1.2 | yes | yes | 313/313 + 109/109 RDF 1.2 (100%) |
+| TriG 1.2 | yes | yes | 357/357 + 64/64 RDF 1.2 (100%) |
+| N-Triples 1.2 | yes | yes | 70/70 + 75/75 RDF 1.2 (100%) |
+| N-Quads 1.2 | yes | yes | 87/87 + 72/72 RDF 1.2 (100%) |
+| RDF/XML 1.2 | yes | yes | 166/166 + 31/31 RDF 1.2 (100%) |
 | JSON-LD 1.1 | yes | yes | toRdf 411/448 via [piprate/json-gold](https://github.com/piprate/json-gold); the 37 others are json-gold limitations, listed with reasons in `jsonld/w3c_test.go` |
 
 All parsers support RDF 1.2 features: triple terms (`<<( s p o )>>`), reified triples, annotations (`{| p o |}`), directional language tags, and `rdf:parseType="Triple"` (RDF/XML).
@@ -586,7 +586,7 @@ yet; its SPARQL query and update handlers do.
 
 ### SPARQL 1.2 Extensions
 
-Full SPARQL 1.2 support -- **254/254 W3C tests pass (100%)**:
+Full SPARQL 1.2 support -- **271/271 W3C tests pass (100%)**:
 
 - **Triple term patterns** -- `<<( ?s ?p ?o )>>` in graph patterns
 - **Reified triples** -- `<< ?s ?p ?o >>` with `rdf:reifies` desugaring
@@ -632,7 +632,7 @@ Full SPARQL 1.1 property path support:
 
 ### SHACL Validator
 
-Full W3C SHACL Core validation engine -- **98/98 W3C SHACL Core tests pass (100%)**; with SHACL-SPARQL and the SHACL 1.2 suites, 427/427.
+Full W3C SHACL Core validation engine -- **98/98 W3C SHACL Core tests pass (100%)**; with SHACL-SPARQL and the SHACL 1.2 suites (Core, SPARQL, node expressions, rules), 905/905.
 
 **Targets:**
 - `sh:targetNode`, `sh:targetClass` (with `rdfs:subClassOf` inference)
@@ -1048,33 +1048,36 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 
 | Component | Tests | Pass | Status |
 |-----------|-------|------|--------|
-| SPARQL 1.1 Query | 328 | 328 | 100% |
+| SPARQL 1.1 Query | 353 | 353 | 100% |
 | SPARQL 1.0 Dataset (FROM / FROM NAMED) | 12 | 12 | 100% |
-| SPARQL 1.0 (DAWG syntax and evaluation) | 469 | 469 | 100% |
+| SPARQL 1.0 (DAWG syntax and evaluation) | 475 | 475 | 100% |
 | SPARQL 1.1 Update | 157 | 157 | 100% |
-| SPARQL 1.2 | 254 | 254 | 100% |
+| SPARQL 1.2 | 271 | 271 | 100% |
 | SPARQL 1.1 Protocol | 34 | 34 | 100% |
-| SPARQL 1.1 Graph Store Protocol | 19 | 19 | 100% |
-| SPARQL 1.1 Results CSV/TSV | 8 | 7 | 1 skipped: csv04 is not in the pinned checkout |
+| SPARQL 1.1 Graph Store Protocol | 14 | 14 | 100% |
+| SPARQL 1.1 GSP (deprecated manifest) | 18 | 18 | 100% |
+| SPARQL 1.1 Results JSON | 4 | 4 | 100% |
+| SPARQL 1.1 Results CSV/TSV | 8 | 8 | 100% |
 | Turtle 1.1 | 313 | 313 | 100% |
-| Turtle 1.2 | 96 | 96 | 100% |
-| TriG 1.1 | 356 | 356 | 100% |
-| TriG 1.2 | 60 | 60 | 100% |
+| Turtle 1.2 | 109 | 109 | 100% |
+| TriG 1.1 | 357 | 357 | 100% |
+| TriG 1.2 | 64 | 64 | 100% |
 | N-Triples 1.1 | 70 | 70 | 100% |
-| N-Triples 1.2 | 29 | 29 | 100% |
+| N-Triples 1.2 | 75 | 75 | 100% |
 | N-Quads 1.1 | 87 | 87 | 100% |
-| N-Quads 1.2 | 27 | 27 | 100% |
+| N-Quads 1.2 | 72 | 72 | 100% |
 | RDF/XML 1.1 | 166 | 166 | 100% |
-| RDF/XML 1.2 | 30 | 30 | 100% |
+| RDF/XML 1.2 | 31 | 31 | 100% |
 | JSON-LD 1.1 toRdf | 467 | 411 | 19 skipped: JSON-LD 1.0 only; 37 skipped: json-gold limitations, each with its reason in `jsonld/w3c_test.go` |
 | SHACL Core | 98 | 98 | 100% |
 | SHACL-SPARQL | 22 | 22 | 100% |
-| SHACL 1.2 Core | 132 | 132 | 100% |
-| SHACL 1.2 SPARQL | 24 | 24 | 100% |
-| SHACL 1.2 Node Expressions | 65 | 65 | 100% |
-| SHACL 1.2 Rules (SRL) | 86 | 86 | 100% |
-| RDF 1.1 Semantics (RDFS entailment) | 39 | 10 | 29 skipped: need datatype semantics |
-| **Total** | **3448** | **3362** | **0 failed, 86 skipped** |
+| SHACL 1.2 Core | 162 | 162 | 100% |
+| SHACL 1.2 SPARQL | 98 | 98 | 100% |
+| SHACL 1.2 Node Expressions | 284 | 284 | 100% |
+| SHACL 1.2 Rules (SRL) | 241 | 241 | 100% |
+| RDF 1.1 Semantics (entailment) | 48 | 48 | 100% |
+| RDF 1.2 Semantics (entailment) | 29 | 29 | 100% |
+| **Total** | **4139** | **4083** | **0 failed, 56 skipped** |
 
 Counts are leaf test cases from `go test -json`, produced by `make test-w3c`.
 
