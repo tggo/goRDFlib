@@ -1,6 +1,8 @@
 package endpoint_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -245,6 +247,44 @@ func TestQueryDescribe(t *testing.T) {
 	wantStatus(t, get(t, ts.URL, q, "Accept", "text/csv"), http.StatusNotAcceptable)
 	// A resource the service does not describe is an empty graph, not an error.
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {`DESCRIBE <` + ex + `none>`}}, "Accept", "text/turtle"), http.StatusOK)
+}
+
+func TestQueryService(t *testing.T) {
+	q := func(s string) url.Values { return url.Values{"query": {s}} }
+	const svc = `SELECT * WHERE { ?s ?p ?o SERVICE <http://127.0.0.1:1/sparql> { ?s ?p2 ?o2 } }`
+
+	// Off by default: an untrusted query cannot make the server call out.
+	ts, _ := serve(t, fixture())
+	r := get(t, ts.URL, q(svc))
+	wantStatus(t, r, http.StatusNotImplemented)
+	if !strings.Contains(r.body, "WithServiceHandler") {
+		t.Errorf("the 501 does not name the option: %s", r.body)
+	}
+	// SILENT is the empty solution, joined with the rest.
+	r = get(t, ts.URL, q(`SELECT * WHERE { ?s ?p ?o SERVICE SILENT <http://127.0.0.1:1/sparql> { ?s ?p2 ?o2 } }`))
+	wantStatus(t, r, http.StatusOK)
+	if res := parseResult(t, r); len(res.Bindings) != 1 {
+		t.Fatalf("bindings = %v", res.Bindings)
+	}
+	// An update with SERVICE in its WHERE clause is refused the same way.
+	wantStatus(t, postUpdate(t, ts.URL, `INSERT { ?s <http://example.org/x> ?o2 } WHERE { SERVICE <http://127.0.0.1:1/sparql> { ?s ?p2 ?o2 } }`), http.StatusNotImplemented)
+
+	// With a handler it is asked; its failure is a bad gateway.
+	var asked string
+	ts, _ = serve(t, fixture(), endpoint.WithServiceHandler(func(_ context.Context, c *sparql.ServiceCall) ([]map[string]term.Term, error) {
+		asked = c.Endpoint.Value()
+		if strings.Contains(asked, "down") {
+			return nil, errors.New("connection refused")
+		}
+		return []map[string]term.Term{{"s": iri(ex + "s"), "o2": term.NewLiteral("remote")}}, nil
+	}))
+	r = get(t, ts.URL, q(`SELECT ?o2 WHERE { ?s ?p ?o SERVICE <http://svc.example/sparql> { ?s ?p2 ?o2 } }`))
+	wantStatus(t, r, http.StatusOK)
+	if res := parseResult(t, r); len(res.Bindings) != 1 || res.Bindings[0]["o2"].String() != "remote" || asked != "http://svc.example/sparql" {
+		t.Fatalf("bindings = %v, asked %q", res.Bindings, asked)
+	}
+	wantStatus(t, get(t, ts.URL, q(`SELECT * WHERE { SERVICE <http://down.example/sparql> { ?s ?p2 ?o2 } }`)), http.StatusBadGateway)
+	wantStatus(t, get(t, ts.URL, q(`SELECT * WHERE { SERVICE ?e { ?s ?p2 ?o2 } }`)), http.StatusBadRequest)
 }
 
 func TestQueryCSVAndTSVBodies(t *testing.T) {

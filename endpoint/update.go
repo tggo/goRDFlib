@@ -93,6 +93,9 @@ func (x *exchange) update(req *protocolRequest) error {
 		if errors.Is(err, sparql.ErrTooManySolutions) {
 			return tooManySolutions(err)
 		}
+		if serr := serviceError(err); serr != nil {
+			return serr
+		}
 		if isRejectedUpdate(err) {
 			return httpErrf(http.StatusBadRequest, "update failed: %v", err)
 		}

@@ -387,6 +387,9 @@ func (c *config) evalContext(ctx context.Context, d time.Duration) (context.Cont
 	if c.maxSolutions > 0 {
 		ctx = sparql.WithMaxSolutions(ctx, c.maxSolutions)
 	}
+	if c.services != nil {
+		ctx = sparql.WithServiceHandler(ctx, c.services)
+	}
 	return withTimeout(ctx, d)
 }
 

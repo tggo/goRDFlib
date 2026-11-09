@@ -668,6 +668,33 @@ The `store.Store` interface (13 methods) has four implementations:
 - Guards: `TestLimitStopsCrossProduct` (allocation bound, not timing),
   `TestLimitPushdownRowsAreSolutions`, `TestMaxSolutions` (sparql and endpoint).
 
+### sparql/ DESCRIBE and SERVICE
+- DESCRIBE (`describe.go`): `Result{Type: "DESCRIBE", Graph}`, the union of the
+  Concise Bounded Description of each resource (subject triples, followed
+  through blank-node objects with a visited set, plus `rdf:reifies` reifiers of
+  every emitted triple, probed only when the graph has any). Literals describe
+  nothing. Every triple is `ec.produced(1)` and `ec.stop()`: a huge bnode tree
+  ends with `ErrTooManySolutions` or the context error, never a partial graph.
+  `WithDescriber` replaces the CBD. Endpoint: RDF response negotiated like
+  CONSTRUCT; the `protocolKnown` exemption is gone (protocol 34/34).
+- SERVICE (`service.go`): parsed into `ServicePattern`, **never** evaluated
+  over the network by the library (SSRF; same reason LOAD is off). No
+  `ServiceHandler` in the context -> `ErrServiceUnsupported` naming
+  `WithServiceHandler`; `SERVICE SILENT` -> the one empty solution (Federated
+  Query §4), but never for cancellation or a spent budget. A handler error is
+  `ErrServiceFailed`; an unbound or non-IRI `SERVICE ?e` is `ErrServiceEndpoint`.
+  A variable endpoint is resolved per left row, which is why the join paths
+  in `evalPatternWithBindings` / `evalPatternPreBound` have a `ServicePattern`
+  case: a new pattern walker must handle the node (grep `*ServicePattern`).
+  The service sees no initial bindings (it is another endpoint), so
+  `PreBindRestrictions` rejects SERVICE (SHACL-SPARQL forbids it too).
+  Endpoint: 501 without `WithServiceHandler` (SILENT still answers 200), 400
+  unbound endpoint, 502 handler failure; queries and updates alike.
+- W3C: `TestW3CFederated` runs syntax-fed (3) and service (7); the handler
+  serves each manifest `qt:serviceData` endpoint from its local data file,
+  which is how other implementations run them. The differential generator has
+  a SERVICE kind served from the same graph; its group never mentions `?this`.
+
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
   builds that dataset out of `NamedGraphs` (§13.2): default = merge of the

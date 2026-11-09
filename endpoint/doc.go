@@ -70,6 +70,8 @@
 //	415  unsupported Content-Type, or a charset other than UTF-8
 //	422  result over WithMaxResultRows, evaluation over WithMaxSolutions
 //	500  panic (the value is logged, not sent), result that cannot be encoded in the negotiated format
+//	501  SERVICE without WithServiceHandler (SERVICE SILENT is answered with its empty solution)
+//	502  a ServiceHandler failed
 //	503  query or update exceeded its time limit, including time spent waiting for the lock
 //
 // A timeout is 503 without Retry-After: the same request would most likely
