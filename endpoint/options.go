@@ -93,6 +93,7 @@ type config struct {
 	authorize       Authorizer
 	hook            RequestHook
 	loader          sparql.Loader
+	services        sparql.ServiceHandler
 	baseIRI         string
 	requestIRI      func(*http.Request) string
 	resultFormats   []results.Format
@@ -186,6 +187,15 @@ func WithRequestHook(h RequestHook) Option { return func(c *config) { c.hook = h
 //
 // Dataset.Loader of the dataset passed to New is ignored for the same reason.
 func WithLoader(l sparql.Loader) Option { return func(c *config) { c.loader = l } }
+
+// WithServiceHandler enables SERVICE (SPARQL 1.1 Federated Query) in queries
+// and in the WHERE clause of updates, answered by h. SERVICE is disabled by
+// default: it makes the server call an endpoint the client names, a
+// server-side request forgery risk on any endpoint reachable by untrusted
+// clients. Without a handler a query with SERVICE is answered 501, and
+// SERVICE SILENT contributes the single empty solution. h should accept only
+// the endpoints you intend; there is no built-in HTTP implementation.
+func WithServiceHandler(h sparql.ServiceHandler) Option { return func(c *config) { c.services = h } }
 
 // WithBaseIRI sets the base IRI for relative IRIs in queries and updates that
 // have no BASE of their own, and in Graph Store PUT and POST bodies. Without

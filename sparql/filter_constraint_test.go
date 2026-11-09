@@ -11,16 +11,16 @@ import "testing"
 func TestFilter_UnbracketedConstraintThenIRI(t *testing.T) {
 	const data = `<urn:a> <urn:p> <urn:b> .`
 	for name, q := range map[string]string{
-		"NOT EXISTS":     `SELECT ?o WHERE { FILTER NOT EXISTS { <urn:a> <urn:q> ?x } <urn:a> <urn:p> ?o }`,
-		"EXISTS":         `SELECT ?o WHERE { FILTER EXISTS { <urn:a> <urn:p> ?x } <urn:a> <urn:p> ?o }`,
-		"newline":        "SELECT ?o WHERE { FILTER NOT EXISTS { <urn:a> <urn:q> ?x }\n<urn:a> <urn:p> ?o }",
-		"bound":          `SELECT ?o WHERE { FILTER bound(?o) <urn:a> <urn:p> ?o }`,
-		"isIRI":          `SELECT ?o WHERE { FILTER isIRI(?o) <urn:a> <urn:p> ?o }`,
-		"regex":          `SELECT ?o WHERE { FILTER regex(str(?o), "b") <urn:a> <urn:p> ?o }`,
-		"sameTerm":       `SELECT ?o WHERE { FILTER sameTerm(?o, <urn:b>) <urn:a> <urn:p> ?o }`,
-		"negated":        `SELECT ?o WHERE { FILTER !isLiteral(?o) <urn:a> <urn:p> ?o }`,
-		"bracketed":      `SELECT ?o WHERE { FILTER (NOT EXISTS { <urn:a> <urn:q> ?x }) <urn:a> <urn:p> ?o }`,
-		"bracketed then": `SELECT ?o WHERE { FILTER (?o = <urn:b>) <urn:a> <urn:p> ?o }`,
+		"NOT EXISTS":         `SELECT ?o WHERE { FILTER NOT EXISTS { <urn:a> <urn:q> ?x } <urn:a> <urn:p> ?o }`,
+		"EXISTS":             `SELECT ?o WHERE { FILTER EXISTS { <urn:a> <urn:p> ?x } <urn:a> <urn:p> ?o }`,
+		"newline":            "SELECT ?o WHERE { FILTER NOT EXISTS { <urn:a> <urn:q> ?x }\n<urn:a> <urn:p> ?o }",
+		"bound":              `SELECT ?o WHERE { FILTER bound(?o) <urn:a> <urn:p> ?o }`,
+		"isIRI":              `SELECT ?o WHERE { FILTER isIRI(?o) <urn:a> <urn:p> ?o }`,
+		"regex":              `SELECT ?o WHERE { FILTER regex(str(?o), "b") <urn:a> <urn:p> ?o }`,
+		"sameTerm":           `SELECT ?o WHERE { FILTER sameTerm(?o, <urn:b>) <urn:a> <urn:p> ?o }`,
+		"bracketed negation": `SELECT ?o WHERE { FILTER (!isLiteral(?o)) <urn:a> <urn:p> ?o }`,
+		"bracketed":          `SELECT ?o WHERE { FILTER (NOT EXISTS { <urn:a> <urn:q> ?x }) <urn:a> <urn:p> ?o }`,
+		"bracketed then":     `SELECT ?o WHERE { FILTER (?o = <urn:b>) <urn:a> <urn:p> ?o }`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if n := countRows(t, data, q); n != 1 {

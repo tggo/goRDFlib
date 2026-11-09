@@ -8,19 +8,30 @@ import (
 // ParsedQuery is the parsed representation of a SPARQL query.
 // Ported from: rdflib.plugins.sparql.parserutils.CompValue
 type ParsedQuery struct {
-	Type           string // "SELECT", "ASK", "CONSTRUCT"
-	Distinct       bool
-	Variables      []string // projection vars (nil = *)
-	ProjectExprs   []ProjectExpr
-	Where          Pattern
-	OrderBy        []OrderExpr
-	Limit          int // -1 = no limit
-	Offset         int
-	Prefixes       map[string]string // prefix → namespace
-	Construct      []TripleTemplate  // CONSTRUCT template
+	Type         string // "SELECT", "ASK", "CONSTRUCT", "DESCRIBE"
+	Distinct     bool
+	Variables    []string // projection vars (nil = *)
+	ProjectExprs []ProjectExpr
+	Where        Pattern
+	OrderBy      []OrderExpr
+	Limit        int // -1 = no limit
+	Offset       int
+	Prefixes     map[string]string // prefix → namespace
+	Construct    []TripleTemplate  // CONSTRUCT template
+	// Describe lists the DESCRIBE targets: a variable as "?name", an IRI as
+	// "<iri>". Empty for DESCRIBE *. EvalQuery answers with the Concise
+	// Bounded Description of each resource (describe.go), or with the
+	// Describer installed by WithDescriber.
+	Describe       []string
 	GroupBy        []Expr
 	GroupByAliases []string // parallel to GroupBy: variable name if (expr AS ?var), else ""
 	Having         Expr
+	// TrailingValues is the VALUES clause that follows the solution modifiers
+	// of a grouped query (SPARQL 1.2 §18.2.4.1: it is joined with the grouped
+	// solutions, before the SELECT expressions). Set only for a query that
+	// groups; on any other query the clause is joined into Where, which gives
+	// the same answers and keeps LIMIT pushdown possible.
+	TrailingValues *ValuesPattern
 	BaseURI        string
 	NamedGraphs    map[string]*rdflibgo.Graph // graph IRI → graph data (for GRAPH clause)
 
@@ -136,6 +147,23 @@ type GraphPattern struct {
 }
 
 func (*GraphPattern) isPattern() {}
+
+// ServicePattern is SERVICE [SILENT] VarOrIri { pattern } (SPARQL 1.1 Federated
+// Query §2). The engine never contacts the endpoint itself: evaluation goes
+// through the ServiceHandler installed with WithServiceHandler, and fails with
+// ErrServiceUnsupported when there is none (see service.go).
+type ServicePattern struct {
+	// Endpoint is "?var" or the endpoint IRI as "<iri>" (or a prefixed name,
+	// resolved against the query's prefixes at evaluation).
+	Endpoint string
+	Silent   bool
+	Pattern  Pattern
+	// Text is the group graph pattern as written in the query, braces
+	// included: what a handler sends to a remote endpoint.
+	Text string
+}
+
+func (*ServicePattern) isPattern() {}
 
 // MinusPattern removes solutions from left that are compatible with right.
 type MinusPattern struct {

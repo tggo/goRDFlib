@@ -296,6 +296,8 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 				sb.WriteByte('\\')
 			case '"':
 				sb.WriteByte('"')
+			case '\'':
+				sb.WriteByte('\'') // ECHAR includes \' (N-Triples [153s])
 			case 'u':
 				if p.Pos+4 > len(p.Line) {
 					return rdflibgo.Literal{}, fmt.Errorf("line %d: truncated \\u escape", p.LineNum)
@@ -343,6 +345,11 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 	lexical := sb.String()
 	var opts []rdflibgo.LiteralOption
 
+	// White space is allowed between the string and its LANGTAG or "^^", and
+	// between "^^" and the datatype IRI: both are separate tokens in the
+	// grammar (RDF 1.2 N-Triples §8, canonicalization test extra_whitespace-03/04).
+	p.SkipSpaces()
+
 	if p.Pos < len(p.Line) && p.Line[p.Pos] == '@' {
 		p.Pos++
 		start := p.Pos
@@ -373,6 +380,7 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 		}
 	} else if p.Pos+1 < len(p.Line) && p.Line[p.Pos] == '^' && p.Line[p.Pos+1] == '^' {
 		p.Pos += 2
+		p.SkipSpaces()
 		dt, err := p.ReadIRI()
 		if err != nil {
 			return rdflibgo.Literal{}, fmt.Errorf("line %d: datatype: %w", p.LineNum, err)

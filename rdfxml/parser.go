@@ -51,22 +51,20 @@ func newParser(cfg *config, sink TripleHandler) *rdfxmlParser {
 		bnodes:     bnodes.New(cfg.preserveBlankNodeIDs),
 		iris:       iricache.New(),
 		usedIDs:    make(map[string]bool),
-		nsPrefixes: make(map[string]string),
 	}
 }
 
 type rdfxmlParser struct {
-	sink          TripleHandler   // receives every triple
-	stop          *stream.Stopper // set by a streaming parse; nil otherwise
-	base          string
-	provenance    ProvenanceHandler
-	dec           *xml.Decoder // the decoder currently being read, for source positions
-	bnodes        bnodes.Scope
-	iris          *iricache.Cache   // vocabIRI
-	usedIDs       map[string]bool   // track rdf:ID values for uniqueness
-	nsPrefixes    map[string]string // prefix → namespace URI (in-scope)
-	nsPrefixOrder []string          // insertion order of prefixes
-	rdfVersion    string            // "1.2" if rdf:version="1.2" on root (RDF 1.2)
+	sink       TripleHandler   // receives every triple
+	stop       *stream.Stopper // set by a streaming parse; nil otherwise
+	base       string
+	provenance ProvenanceHandler
+	dec        *xml.Decoder // the decoder currently being read, for source positions
+	bnodes     bnodes.Scope
+	iris       *iricache.Cache // vocabIRI
+	usedIDs    map[string]bool // track rdf:ID values for uniqueness
+	nsScope    []nsDecl        // in-scope xmlns declarations, innermost last
+	rdfVersion string          // "1.2" if rdf:version="1.2" on root (RDF 1.2)
 
 	// err is the first IRI that could not be accepted (see iri). Parsing goes
 	// on to the end of the current element, but nothing more is added.
@@ -283,7 +281,7 @@ func (p *rdfxmlParser) parseRDFRoot(decoder *xml.Decoder, root xml.StartElement)
 func (p *rdfxmlParser) parseNodeElement(decoder *xml.Decoder, el xml.StartElement, parentLang string, its itsContext) (rdflibgo.Subject, error) {
 	elemURI := el.Name.Space + el.Name.Local
 
-	p.collectNamespaces(el)
+	defer p.popNamespaces(p.collectNamespaces(el))
 
 	// Validate node element name.
 	if forbidden, ok := forbiddenNodeElementNames[elemURI]; ok && forbidden {
@@ -415,6 +413,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 	pred := p.vocabIRI(predURI)
 	lang := parentLang
 
+	defer p.popNamespaces(p.collectNamespaces(el))
 	savedBase := p.base
 	defer func() { p.base = savedBase }()
 
@@ -582,7 +581,7 @@ func (p *rdfxmlParser) parsePropertyElement(decoder *xml.Decoder, el xml.StartEl
 
 	// Case 4: parseType="Literal" → XML literal
 	if parseType == "Literal" {
-		content, err := readInnerXML(decoder, p.nsPrefixes, p.nsPrefixOrder)
+		content, err := readXMLLiteral(decoder, p.nsScope)
 		if err != nil {
 			return err
 		}
@@ -876,16 +875,22 @@ func isValidNCName(s string) bool {
 	return true
 }
 
-func (p *rdfxmlParser) collectNamespaces(el xml.StartElement) {
+// collectNamespaces records the xmlns declarations of el and returns the
+// scope mark to hand to popNamespaces when el ends.
+func (p *rdfxmlParser) collectNamespaces(el xml.StartElement) int {
+	mark := len(p.nsScope)
 	for _, attr := range el.Attr {
-		if attr.Name.Space == "xmlns" {
-			if _, exists := p.nsPrefixes[attr.Name.Local]; !exists {
-				p.nsPrefixOrder = append(p.nsPrefixOrder, attr.Name.Local)
-			}
-			p.nsPrefixes[attr.Name.Local] = attr.Value
+		switch {
+		case attr.Name.Space == "xmlns":
+			p.nsScope = append(p.nsScope, nsDecl{attr.Name.Local, attr.Value})
+		case attr.Name.Space == "" && attr.Name.Local == "xmlns":
+			p.nsScope = append(p.nsScope, nsDecl{"", attr.Value})
 		}
 	}
+	return mark
 }
+
+func (p *rdfxmlParser) popNamespaces(mark int) { p.nsScope = p.nsScope[:mark] }
 
 func isRDFAttr(attr xml.Attr) bool {
 	return attr.Name.Space == rdfNS || (attr.Name.Space == "" && coreRDFAttrs[attr.Name.Local])
@@ -901,80 +906,6 @@ func isXMLAttr(attr xml.Attr, local string) bool {
 
 func isAnyXMLAttr(attr xml.Attr) bool {
 	return attr.Name.Space == "xml" || attr.Name.Space == xmlNS
-}
-
-func readInnerXML(decoder *xml.Decoder, nsMap map[string]string, nsOrder []string) (string, error) {
-	// Build reverse map: namespace URI → prefix.
-	nsToPrefix := make(map[string]string, len(nsMap))
-	for prefix, ns := range nsMap {
-		nsToPrefix[ns] = prefix
-	}
-
-	var sb strings.Builder
-	depth := 1
-	for depth > 0 {
-		tok, err := decoder.Token()
-		if err != nil {
-			return "", err
-		}
-		switch t := tok.(type) {
-		case xml.StartElement:
-			depth++
-			sb.WriteString("<")
-			sb.WriteString(t.Name.Local)
-
-			// Add in-scope namespace declarations.
-			for _, prefix := range nsOrder {
-				ns := nsMap[prefix]
-				sb.WriteString(fmt.Sprintf(` xmlns:%s="%s"`, prefix, ns))
-			}
-
-			for _, attr := range t.Attr {
-				if attr.Name.Space == "xmlns" {
-					continue // skip xmlns declarations (we add our own)
-				}
-				sb.WriteString(" ")
-				if attr.Name.Space != "" {
-					if prefix, ok := nsToPrefix[attr.Name.Space]; ok {
-						sb.WriteString(prefix)
-						sb.WriteString(":")
-					}
-				}
-				sb.WriteString(attr.Name.Local)
-				sb.WriteString(`="`)
-				xmlEscapeToBuilder(&sb, attr.Value)
-				sb.WriteString(`"`)
-			}
-			sb.WriteString(">")
-		case xml.EndElement:
-			depth--
-			if depth > 0 {
-				sb.WriteString("</")
-				sb.WriteString(t.Name.Local)
-				sb.WriteString(">")
-			}
-		case xml.CharData:
-			xmlEscapeToBuilder(&sb, string(t))
-		}
-	}
-	return sb.String(), nil
-}
-
-func xmlEscapeToBuilder(sb *strings.Builder, s string) {
-	for _, r := range s {
-		switch r {
-		case '<':
-			sb.WriteString("&lt;")
-		case '>':
-			sb.WriteString("&gt;")
-		case '&':
-			sb.WriteString("&amp;")
-		case '"':
-			sb.WriteString("&quot;")
-		default:
-			sb.WriteRune(r)
-		}
-	}
 }
 
 func skipToEnd(decoder *xml.Decoder) error {

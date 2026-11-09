@@ -25,14 +25,20 @@ import (
 // Blank nodes are written with their labels, so the same BNode written in two
 // calls is the same node in the output. Not safe for concurrent use.
 type Writer struct {
-	w   *bufio.Writer
-	sb  strings.Builder
-	err error
+	w    *bufio.Writer
+	sb   strings.Builder
+	term func(rdflibgo.Term) (string, error)
+	err  error
 }
 
-// NewWriter returns a Writer that writes to w.
-func NewWriter(w io.Writer) *Writer {
-	return &Writer{w: bufio.NewWriter(w)}
+// NewWriter returns a Writer that writes to w. WithCanonical is the only
+// option it honours.
+func NewWriter(w io.Writer, opts ...Option) *Writer {
+	var cfg config
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return &Writer{w: bufio.NewWriter(w), term: termFn(&cfg)}
 }
 
 // Write writes one statement. A nil graph, or store.DefaultGraph, puts it in
@@ -49,7 +55,7 @@ func (w *Writer) Write(s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, g
 		}
 		suffix = " " + g
 	}
-	line, err := formatLine(&w.sb, s, p, o, suffix)
+	line, err := formatLine(&w.sb, w.term, s, p, o, suffix)
 	if err != nil {
 		return err
 	}
@@ -100,16 +106,16 @@ func (w *Writer) Flush() error {
 
 // formatLine renders one statement without the trailing newline, reusing sb.
 // suffix is empty or " <graph>".
-func formatLine(sb *strings.Builder, s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, suffix string) (string, error) {
-	st, err := ntsyntax.Term(s)
+func formatLine(sb *strings.Builder, term func(rdflibgo.Term) (string, error), s rdflibgo.Subject, p rdflibgo.URIRef, o rdflibgo.Term, suffix string) (string, error) {
+	st, err := term(s)
 	if err != nil {
 		return "", err
 	}
-	pt, err := ntsyntax.Term(p)
+	pt, err := term(p)
 	if err != nil {
 		return "", err
 	}
-	ot, err := ntsyntax.Term(o)
+	ot, err := term(o)
 	if err != nil {
 		return "", err
 	}

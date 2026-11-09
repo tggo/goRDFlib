@@ -97,6 +97,7 @@ func evalPatternUpTo(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes m
 // other pattern is evaluated in full and then passed on. The solutions are the
 // ones evalPattern returns.
 func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph, yield func(map[string]rdflibgo.Term) bool) bool {
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
 	switch p := pattern.(type) {
 	case *BGP:
 		empty := map[string]rdflibgo.Term{}

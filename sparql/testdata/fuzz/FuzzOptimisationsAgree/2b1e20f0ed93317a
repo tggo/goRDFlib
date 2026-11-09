@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX ex:<0000000000000000000>SELECT{VALUES!d{00000000000}A A 0 A0 ex:000*$d  }")

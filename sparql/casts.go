@@ -139,6 +139,27 @@ func castXSD(name string, val rdflibgo.Term) rdflibgo.Term {
 		}
 		return nil
 
+	case "XSD:DATETIME":
+		// SPARQL 1.0 section 11.2 / 1.1 section 17.5, casting table: an
+		// xsd:dateTime stays itself, a simple literal or xsd:string becomes
+		// one when its lexical form is valid, anything else is an error.
+		if !isLit {
+			return nil
+		}
+		if lit.Datatype() == rdflibgo.XSDDateTime {
+			if _, ok := parseDateTime(lit.Lexical(), rdflibgo.XSDDateTime); !ok {
+				return nil
+			}
+			return lit
+		}
+		if !isSimpleOrXSDString(lit) {
+			return nil
+		}
+		if _, ok := parseDateTime(lit.Lexical(), rdflibgo.XSDDateTime); !ok {
+			return nil
+		}
+		return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.XSDDateTime))
+
 	case "XSD:STRING":
 		if isURI {
 			u := val.(rdflibgo.URIRef)

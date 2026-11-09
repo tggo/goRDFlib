@@ -1,87 +1,126 @@
 package shacl
 
-import (
-	"fmt"
-	"regexp"
-)
+import "fmt"
 
-// CheckWellformed checks that an SRL ruleset is well-formed.
-//
-// Well-formedness rules:
-//  1. Every variable in the head must appear in a positive body triple pattern or be assigned by BIND
-//  2. BIND target variable must not already be bound by preceding elements
-//  3. FILTER variables must all be bound by preceding elements
+// CheckWellformed checks the SPARQL-RL well-formedness conditions of every
+// rule of rs ("Well-formedness Conditions"). In a well-formed rule every
+// variable of a FILTER or SET expression is bound by an element before it;
+// SET and aggregation variables are new; a negation and a group pattern are
+// themselves well-formed given the variables in scope; and every variable of
+// the head is bound by the body. The error wraps ErrSRLNotWellFormed.
 func CheckWellformed(rs *RuleSet) error {
 	for i, rule := range rs.Rules {
-		if err := checkRuleWellformed(rule, i); err != nil {
-			return err
+		if err := checkRuleWellformed(rule); err != nil {
+			return fmt.Errorf("%w: rule %d: %s", ErrSRLNotWellFormed, i+1, err)
 		}
 	}
 	return nil
 }
 
-func checkRuleWellformed(rule SRLRule, idx int) error {
-	// Process body elements sequentially — order matters for BIND/FILTER safety.
-	bound := make(map[string]bool)
-	for _, elem := range rule.Body {
+type srlVarSet map[string]bool
+
+func (s srlVarSet) clone() srlVarSet {
+	out := make(srlVarSet, len(s)+4)
+	for k := range s {
+		out[k] = true
+	}
+	return out
+}
+
+func checkRuleWellformed(rule SRLRule) error {
+	bound, err := checkSequence(rule.Body, srlVarSet{})
+	if err != nil {
+		return err
+	}
+	for _, t := range rule.Head {
+		for _, term := range []SRLTerm{t.Subject, t.Predicate, t.Object} {
+			for _, v := range srlTermVars(term) {
+				if !bound[v] {
+					return fmt.Errorf("head variable ?%s is not bound by the rule body", v)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// checkSequence checks that elems is a well-formed sequence given the initial
+// variables v0 and returns vars(S, v0).
+func checkSequence(elems []SRLBodyElement, v0 srlVarSet) (srlVarSet, error) {
+	bound := v0.clone()
+	for _, elem := range elems {
 		switch elem.Kind {
 		case SRLBodyTriple:
-			collectTripleVars(elem.Triple, bound)
-		case SRLBodyBind:
-			if bound[elem.BindVar] {
-				return fmt.Errorf("rule %d: BIND variable ?%s already bound", idx, elem.BindVar)
-			}
-			// Check BIND expression references only bound variables
-			for _, v := range extractExprVars(elem.BindExpr) {
-				if !bound[v] {
-					return fmt.Errorf("rule %d: BIND expression references unbound variable ?%s", idx, v)
+			for _, term := range []SRLTerm{elem.Triple.Subject, elem.Triple.Predicate, elem.Triple.Object} {
+				for _, v := range srlTermVars(term) {
+					bound[v] = true
 				}
+			}
+		case SRLBodyFilter:
+			for _, v := range exprVars(elem.FilterExpr) {
+				if !bound[v] {
+					return nil, fmt.Errorf("FILTER uses ?%s, which is not bound before it", v)
+				}
+			}
+		case SRLBodyBind:
+			for _, v := range exprVars(elem.BindExpr) {
+				if !bound[v] {
+					return nil, fmt.Errorf("SET ?%s uses ?%s, which is not bound before it", elem.BindVar, v)
+				}
+			}
+			if bound[elem.BindVar] {
+				return nil, fmt.Errorf("SET assigns ?%s, which is already in use", elem.BindVar)
 			}
 			bound[elem.BindVar] = true
-		case SRLBodyFilter:
-			for _, v := range extractExprVars(elem.FilterExpr) {
-				if !bound[v] {
-					return fmt.Errorf("rule %d: FILTER references unbound variable ?%s", idx, v)
-				}
-			}
 		case SRLBodyNot:
-			// NOT does not bind variables in the outer scope.
-			// Variables referenced in NOT should be bound by preceding elements.
-			// (New variables inside NOT are local.)
+			if _, err := checkSequence(elem.NotBody, bound); err != nil {
+				return nil, fmt.Errorf("in NOT: %w", err)
+			}
+		case SRLBodyGroup:
+			if err := checkGroup(elem, bound); err != nil {
+				return nil, err
+			}
+			for _, k := range elem.GroupKeys {
+				bound[k] = true
+			}
+			for _, a := range elem.GroupAggs {
+				bound[a.Var] = true
+			}
 		}
 	}
+	return bound, nil
+}
 
-	// Check that all head variables are bound (positive triples or BIND).
-	for _, t := range rule.Head {
-		for _, v := range srlTermVars(t.Subject) {
-			if !bound[v] {
-				return fmt.Errorf("rule %d: head variable ?%s not bound in body", idx, v)
-			}
+func checkGroup(g SRLBodyElement, vin srlVarSet) error {
+	gk := srlVarSet{}
+	for _, k := range g.GroupKeys {
+		if vin[k] {
+			gk[k] = true
 		}
-		for _, v := range srlTermVars(t.Predicate) {
-			if !bound[v] {
-				return fmt.Errorf("rule %d: head variable ?%s not bound in body", idx, v)
-			}
+	}
+	inner, err := checkSequence(g.GroupBody, gk)
+	if err != nil {
+		return fmt.Errorf("in GROUP: %w", err)
+	}
+	for _, k := range g.GroupKeys {
+		if !inner[k] {
+			return fmt.Errorf("GROUP BY ?%s: the group pattern does not bind it", k)
 		}
-		for _, v := range srlTermVars(t.Object) {
-			if !bound[v] {
-				return fmt.Errorf("rule %d: head variable ?%s not bound in body", idx, v)
-			}
+	}
+	seen := map[string]bool{}
+	for _, a := range g.GroupAggs {
+		if inner[a.Var] || vin[a.Var] {
+			return fmt.Errorf("aggregation variable ?%s is already in use", a.Var)
+		}
+		if seen[a.Var] {
+			return fmt.Errorf("aggregation variable ?%s is assigned twice", a.Var)
+		}
+		seen[a.Var] = true
+		if a.Arg != "*" && !inner[a.Arg] {
+			return fmt.Errorf("%s(?%s): the group pattern does not bind ?%s", a.Func, a.Arg, a.Arg)
 		}
 	}
 	return nil
-}
-
-func collectTripleVars(t SRLTriple, bound map[string]bool) {
-	for _, v := range srlTermVars(t.Subject) {
-		bound[v] = true
-	}
-	for _, v := range srlTermVars(t.Predicate) {
-		bound[v] = true
-	}
-	for _, v := range srlTermVars(t.Object) {
-		bound[v] = true
-	}
 }
 
 func srlTermVars(t SRLTerm) []string {
@@ -90,32 +129,12 @@ func srlTermVars(t SRLTerm) []string {
 		return []string{t.Value}
 	case SRLTermTripleTerm:
 		var vars []string
-		if t.TTSubject != nil {
-			vars = append(vars, srlTermVars(*t.TTSubject)...)
-		}
-		if t.TTPredicate != nil {
-			vars = append(vars, srlTermVars(*t.TTPredicate)...)
-		}
-		if t.TTObject != nil {
-			vars = append(vars, srlTermVars(*t.TTObject)...)
+		for _, c := range []*SRLTerm{t.TTSubject, t.TTPredicate, t.TTObject} {
+			if c != nil {
+				vars = append(vars, srlTermVars(*c)...)
+			}
 		}
 		return vars
 	}
 	return nil
-}
-
-var varPattern = regexp.MustCompile(`\?([A-Za-z_]\w*)`)
-
-func extractExprVars(expr string) []string {
-	matches := varPattern.FindAllStringSubmatch(expr, -1)
-	seen := make(map[string]bool, len(matches))
-	var vars []string
-	for _, m := range matches {
-		name := m[1]
-		if !seen[name] {
-			seen[name] = true
-			vars = append(vars, name)
-		}
-	}
-	return vars
 }

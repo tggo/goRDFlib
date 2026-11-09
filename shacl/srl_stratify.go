@@ -2,170 +2,254 @@ package shacl
 
 import "fmt"
 
-// Stratify computes a stratification of the rules in the RuleSet.
-// It returns strata (groups of rule indices that can be evaluated together)
-// or an error if the rules contain a negative cycle (unstratifiable).
-func Stratify(rs *RuleSet) ([][]int, error) {
-	if len(rs.Rules) == 0 {
-		return nil, nil
-	}
-
-	n := len(rs.Rules)
-
-	// Build rule-level dependency graph.
-	// Rule B depends positively on Rule A if A's head predicate appears in B's positive body.
-	// Rule B depends negatively on Rule A if A's head could match a pattern in B's NOT body.
-	type edge struct {
-		to       int
-		negative bool
-	}
-	deps := make([][]edge, n)
-
-	for b := 0; b < n; b++ {
-		posBodyPats := collectBodyPatterns(rs.Rules[b].Body, false)
-		negBodyPats := collectBodyPatterns(rs.Rules[b].Body, true)
-
-		for a := 0; a < n; a++ {
-			headPats := rs.Rules[a].Head
-
-			// Check positive dependency.
-			if patternsOverlap(headPats, posBodyPats) {
-				deps[b] = append(deps[b], edge{to: a, negative: false})
-			}
-
-			// Check negative dependency: A's head could match B's NOT patterns.
-			if patternsCouldMatch(headPats, negBodyPats) {
-				deps[b] = append(deps[b], edge{to: a, negative: true})
-			}
-		}
-	}
-
-	// Assign strata using iterative refinement.
-	strata := make([]int, n)
-	maxIter := n + 1
-	for iter := 0; iter < maxIter; iter++ {
-		changed := false
-		for b := 0; b < n; b++ {
-			for _, e := range deps[b] {
-				required := strata[e.to]
-				if e.negative {
-					required++
-				}
-				if strata[b] < required {
-					strata[b] = required
-					changed = true
-				}
-			}
-		}
-		if !changed {
-			break
-		}
-		for _, s := range strata {
-			if s > n {
-				return nil, fmt.Errorf("ruleset is not stratifiable: negative cycle detected")
-			}
-		}
-	}
-
-	// Verify no negative dependency within or backward.
-	for b := 0; b < n; b++ {
-		for _, e := range deps[b] {
-			if e.negative && strata[b] <= strata[e.to] {
-				return nil, fmt.Errorf("ruleset is not stratifiable: negative cycle detected")
-			}
-		}
-	}
-
-	// Group rules by stratum.
-	maxStratum := 0
-	for _, s := range strata {
-		if s > maxStratum {
-			maxStratum = s
-		}
-	}
-	result := make([][]int, maxStratum+1)
-	for i, s := range strata {
-		result[s] = append(result[s], i)
-	}
-	return result, nil
+// srlLayer is a stratification layer: the run-once rules are evaluated once
+// at the start of the layer, then the general rules until nothing new is
+// inferred.
+type srlLayer struct {
+	once    []int
+	general []int
 }
 
-// collectBodyPatterns collects triple patterns from body elements.
-// If negativeOnly, only patterns inside NOT blocks are returned.
-func collectBodyPatterns(elements []SRLBodyElement, negativeOnly bool) []SRLTriple {
-	var pats []SRLTriple
-	for _, elem := range elements {
-		switch elem.Kind {
-		case SRLBodyTriple:
-			if !negativeOnly {
-				pats = append(pats, elem.Triple)
+// Stratify partitions the rules of rs into stratification layers following
+// SPARQL-RL "Stratification": a rule that negates, groups over or is
+// run-once relative to another rule is placed above it. Each element of the
+// result is a layer holding rule indices (run-once rules first, in the order
+// they must run). It fails with ErrSRLNotStratifiable if a cycle in the rule
+// dependency graph contains a closed dependency.
+func Stratify(rs *RuleSet) ([][]int, error) {
+	layers, err := stratify(rs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]int, len(layers))
+	for i, l := range layers {
+		out[i] = append(append([]int(nil), l.once...), l.general...)
+	}
+	return out, nil
+}
+
+// srlIsRunOnce: a rule is run-once if its body has an assignment or a group,
+// or its head has a blank node or a triple term in which a variable occurs.
+func srlIsRunOnce(r SRLRule) bool {
+	for _, e := range r.Body {
+		if e.Kind == SRLBodyBind || e.Kind == SRLBodyGroup {
+			return true
+		}
+	}
+	for _, t := range r.Head {
+		for _, term := range []SRLTerm{t.Subject, t.Predicate, t.Object} {
+			if srlTemplateCreates(term, false) {
+				return true
 			}
-		case SRLBodyNot:
-			if negativeOnly {
-				for _, ne := range elem.NotBody {
+		}
+	}
+	return false
+}
+
+// srlTemplateCreates reports whether a template term mints a blank node, or
+// is a triple term with a variable (inTriple says we are inside one).
+func srlTemplateCreates(t SRLTerm, inTriple bool) bool {
+	switch t.Kind {
+	case SRLTermBlankNode:
+		return true
+	case SRLTermVariable:
+		return inTriple
+	case SRLTermTripleTerm:
+		for _, c := range []*SRLTerm{t.TTSubject, t.TTPredicate, t.TTObject} {
+			if c != nil && srlTemplateCreates(*c, true) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type srlEdge struct{ from, to int }
+
+func stratify(rs *RuleSet) ([]srlLayer, error) {
+	n := len(rs.Rules)
+	if n == 0 {
+		return nil, nil
+	}
+	closed := buildDependencies(rs)
+
+	// The stratification condition: no cycle contains a closed dependency.
+	adj := make([][]int, n)
+	for e := range closed {
+		adj[e.from] = append(adj[e.from], e.to)
+	}
+	for e, isClosed := range closed {
+		if isClosed && srlReaches(adj, e.to, e.from) {
+			return nil, srlCycleError(rs, e)
+		}
+	}
+
+	// The stratification algorithm of the specification.
+	stratum := make([]int, n)
+	for changed := true; changed; {
+		changed = false
+		for e, isClosed := range closed {
+			need := stratum[e.to]
+			if isClosed {
+				need++
+			}
+			if stratum[e.from] < need {
+				stratum[e.from] = need
+				changed = true
+			}
+		}
+	}
+	maxS := 0
+	for _, s := range stratum {
+		if s > maxS {
+			maxS = s
+		}
+	}
+	layers := make([]srlLayer, maxS+1)
+	for i, s := range stratum {
+		if srlIsRunOnce(rs.Rules[i]) {
+			layers[s].once = append(layers[s].once, i)
+		} else {
+			layers[s].general = append(layers[s].general, i)
+		}
+	}
+	return layers, nil
+}
+
+// srlReaches reports whether to is reachable from from (from == to counts
+// only through a cycle, so a self-loop is found by the first step).
+func srlReaches(adj [][]int, from, to int) bool {
+	seen := make([]bool, len(adj))
+	stack := []int{from}
+	for len(stack) > 0 {
+		v := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if v == to {
+			return true
+		}
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		stack = append(stack, adj[v]...)
+	}
+	return false
+}
+
+func srlCycleError(rs *RuleSet, e srlEdge) error {
+	name := func(i int) string {
+		if rs.Rules[i].ID != "" {
+			return fmt.Sprintf("rule %d <%s>", i+1, rs.Rules[i].ID)
+		}
+		return fmt.Sprintf("rule %d", i+1)
+	}
+	why := "a negation, a group, an assignment, or a head that creates blank nodes or triple terms"
+	if e.from == e.to {
+		return fmt.Errorf("%w: %s depends on its own output through %s; "+
+			"a rule cannot read what it creates there", ErrSRLNotStratifiable, name(e.from), why)
+	}
+	return fmt.Errorf("%w: %s depends through %s on %s, which depends on it in turn; "+
+		"break the cycle or match the base graph with NOT DATA / WHERE DATA",
+		ErrSRLNotStratifiable, name(e.from), why, name(e.to))
+}
+
+// buildDependencies computes the rule dependency graph: an edge R1 -> R2 when
+// a triple pattern of R1's body can match a triple R2's head generates; the
+// value says whether the dependency is closed.
+func buildDependencies(rs *RuleSet) map[srlEdge]bool {
+	type dep struct {
+		tp     SRLTriple
+		closed bool
+	}
+	edges := map[srlEdge]bool{}
+	for i, r1 := range rs.Rules {
+		if r1.BaseGraphOnly {
+			continue // matched against the base graph: no dependencies
+		}
+		var deps []dep
+		once := srlIsRunOnce(r1)
+		for _, e := range r1.Body {
+			switch e.Kind {
+			case SRLBodyTriple:
+				deps = append(deps, dep{e.Triple, once})
+			case SRLBodyNot:
+				if e.NotData {
+					continue
+				}
+				for _, ne := range e.NotBody {
 					if ne.Kind == SRLBodyTriple {
-						pats = append(pats, ne.Triple)
+						deps = append(deps, dep{ne.Triple, true})
+					}
+				}
+			case SRLBodyGroup:
+				for _, ge := range e.GroupBody {
+					if ge.Kind == SRLBodyTriple {
+						deps = append(deps, dep{ge.Triple, true})
+					}
+				}
+			}
+		}
+		for _, d := range deps {
+			for j, r2 := range rs.Rules {
+				for _, tt := range r2.Head {
+					if srlPatternMatchesTemplate(d.tp, tt) {
+						k := srlEdge{i, j}
+						// A closed dependency overrides an open one.
+						edges[k] = edges[k] || d.closed
 					}
 				}
 			}
 		}
 	}
-	return pats
+	return edges
 }
 
-// patternsOverlap checks if any head pattern shares a predicate with any body pattern.
-func patternsOverlap(head, body []SRLTriple) bool {
-	for _, h := range head {
-		hp := extractPredIRI(h)
-		if hp == "" {
-			continue
+// srlPatternMatchesTemplate: the template can generate a triple the pattern
+// matches. Variables and (in patterns) blank nodes match anything.
+func srlPatternMatchesTemplate(tp, tt SRLTriple) bool {
+	if tp.Path != nil {
+		// A path's subject and object are not the triple's: compare the
+		// predicates only, and conservatively.
+		if tt.Predicate.Kind == SRLTermVariable {
+			return true
 		}
-		for _, b := range body {
-			bp := extractPredIRI(b)
-			if hp == bp || hp == "?var" || bp == "?var" {
-				return true
-			}
+		return srlPathMentions(tp.Path, tt.Predicate.Value)
+	}
+	return srlTermsUnify(tp.Subject, tt.Subject) &&
+		srlTermsUnify(tp.Predicate, tt.Predicate) &&
+		srlTermsUnify(tp.Object, tt.Object)
+}
+
+func srlPathMentions(p *SRLPath, iri string) bool {
+	if p.Kind == SRLPathIRI {
+		return p.IRI == iri
+	}
+	for _, e := range p.Elems {
+		if srlPathMentions(e, iri) {
+			return true
 		}
 	}
 	return false
 }
 
-// patternsCouldMatch checks if any head pattern could produce a triple that
-// matches a NOT body pattern. Two patterns "could match" if they share the
-// same predicate and have no conflicting constants in corresponding positions.
-func patternsCouldMatch(head, negBody []SRLTriple) bool {
-	for _, h := range head {
-		for _, nb := range negBody {
-			if triplePatternCouldMatch(h, nb) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func triplePatternCouldMatch(head, negPat SRLTriple) bool {
-	return termCouldMatch(head.Subject, negPat.Subject) &&
-		termCouldMatch(head.Predicate, negPat.Predicate) &&
-		termCouldMatch(head.Object, negPat.Object)
-}
-
-// termCouldMatch returns true if two terms could potentially unify.
-// Variables match anything. Two constants match only if equal.
-func termCouldMatch(a, b SRLTerm) bool {
-	if a.Kind == SRLTermVariable || b.Kind == SRLTermVariable {
+// srlTermsUnify reports whether two terms can denote the same RDF term.
+func srlTermsUnify(a, b SRLTerm) bool {
+	if a.Kind == SRLTermVariable || a.Kind == SRLTermBlankNode ||
+		b.Kind == SRLTermVariable || b.Kind == SRLTermBlankNode {
 		return true
 	}
-	// Both are constants — must be equal.
-	return srlTermToKey(a) == srlTermToKey(b)
-}
-
-func extractPredIRI(t SRLTriple) string {
-	switch t.Predicate.Kind {
-	case SRLTermIRI:
-		return t.Predicate.Value
-	case SRLTermVariable:
-		return "?var"
+	if a.Kind != b.Kind {
+		return false
 	}
-	return ""
+	switch a.Kind {
+	case SRLTermIRI:
+		return a.Value == b.Value
+	case SRLTermLiteral:
+		return a.Value == b.Value && a.Datatype == b.Datatype && a.Language == b.Language
+	case SRLTermTripleTerm:
+		return srlTermsUnify(*a.TTSubject, *b.TTSubject) &&
+			srlTermsUnify(*a.TTPredicate, *b.TTPredicate) &&
+			srlTermsUnify(*a.TTObject, *b.TTObject)
+	}
+	return false
 }

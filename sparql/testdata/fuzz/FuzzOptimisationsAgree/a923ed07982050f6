@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX ex:SELECT*{FILTER A00000 VALUES$d{ex:00000000 ex:}$d ex:0*ex: }")

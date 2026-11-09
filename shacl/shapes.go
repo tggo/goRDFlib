@@ -24,8 +24,22 @@ type Shape struct {
 	ClosedByTypes     bool
 	IgnoredProperties []Term
 
-	// SHACL 1.2: sh:values — SPARQL-computed value nodes override path evaluation.
+	// SHACL 1.2: sh:values — SPARQL-computed value nodes, added to the nodes
+	// reached by the path (SHACL 1.2 Core, "Value Nodes of Property Shapes").
 	Values *SPARQLValues
+
+	// SHACL 1.2: sh:values and sh:defaultValue as written in the shapes graph.
+	// A node expression other than sh:select / sh:sparqlExpr (a constant, a
+	// list, a shnex: expression) is evaluated from these. DefaultValue is used
+	// only when the path and sh:values yield no value node at all.
+	valuesNode, defaultNode Term
+	DefaultValue            *SPARQLValues
+
+	// SHACL 1.2: sh:deactivated may be a node expression, evaluated per focus
+	// node; Deactivated is true only for the constant true. deactivatedNode is
+	// the expression (none for a constant), deactivatedSPARQL its SPARQL form.
+	deactivatedNode   Term
+	deactivatedSPARQL *SPARQLValues
 }
 
 // SPARQLValues represents sh:values with sh:select or sh:sparqlExpr.
@@ -175,6 +189,12 @@ type recursionGuard struct {
 	// run, so ErrMalformedConstraint is reported once per constraint and not
 	// once per focus node.
 	malformed map[any]struct{}
+
+	// uniqueIndex caches, per sh:uniqueValuesFor constraint, the target nodes
+	// of its shape grouped by their values (see UniqueValuesForConstraint).
+	// It lives on the guard because a run is the scope in which the data graph
+	// is fixed.
+	uniqueIndex map[*UniqueValuesForConstraint]map[string][]Term
 }
 
 // guardScanDepth is the stack depth up to which the guard scans instead of
@@ -283,13 +303,25 @@ func (ctx *evalContext) report(err error) {
 	}
 }
 
-// sparqlFuncs returns the SHACL functions to bind to a query run for this
-// validation, or nil when SHACL-AF is not enabled.
+// sparqlFuncs returns the functions to bind to a query run for this
+// validation: the SHACL-AF functions when SHACL-AF is enabled, and the SHACL
+// 1.2 custom functions the shapes graph declares. It is nil when there are
+// none.
 func (ctx *evalContext) sparqlFuncs() map[string]sparql.ContextFunction {
-	if ctx == nil || ctx.af == nil {
+	return ctx.sparqlFuncsAt(1)
+}
+
+// sparqlFuncsAt is sparqlFuncs for a query nested depth levels inside function
+// bodies.
+func (ctx *evalContext) sparqlFuncsAt(depth int) map[string]sparql.ContextFunction {
+	if ctx == nil {
 		return nil
 	}
-	return ctx.af.functionsAtDepth(1, ctx.guard.fail)
+	var table map[string]sparql.ContextFunction
+	if ctx.af != nil {
+		table = ctx.af.functionsAtDepth(depth, ctx.guard.fail)
+	}
+	return ctx.customSPARQLFunctions(table, depth)
 }
 
 // parseShapes extracts all NodeShapes and PropertyShapes from the shapes graph.
@@ -452,13 +484,12 @@ func parseShapeBasic(g *Graph, s *Shape, shapes map[string]*Shape) {
 
 	// SHACL 1.2: sh:values — SPARQL-computed value nodes
 	if valNodes := g.Objects(id, IRI(SH+"values")); len(valNodes) > 0 {
-		vn := valNodes[0]
-		prefixes := resolvePrefixes(g, firstOrNone(g.Objects(vn, IRI(SH+"prefixes"))))
-		if sels := g.Objects(vn, selectPred); len(sels) > 0 {
-			s.Values = &SPARQLValues{Select: sels[0].Value(), Prefixes: prefixes}
-		} else if exprs := g.Objects(vn, IRI(SH+"sparqlExpr")); len(exprs) > 0 {
-			s.Values = &SPARQLValues{Expr: exprs[0].Value(), Prefixes: prefixes}
-		}
+		s.valuesNode = valNodes[0]
+		s.Values = parseSPARQLValues(g, valNodes[0], selectPred)
+	}
+	if defNodes := g.Objects(id, IRI(SH+"defaultValue")); len(defNodes) > 0 {
+		s.defaultNode = defNodes[0]
+		s.DefaultValue = parseSPARQLValues(g, defNodes[0], selectPred)
 	}
 
 	if sevs := g.Objects(id, IRI(SH+"severity")); len(sevs) > 0 {
@@ -466,7 +497,12 @@ func parseShapeBasic(g *Graph, s *Shape, shapes map[string]*Shape) {
 	}
 
 	if deacts := g.Objects(id, IRI(SH+"deactivated")); len(deacts) > 0 {
-		s.Deactivated = deacts[0].Value() == "true"
+		if deacts[0].IsLiteral() {
+			s.Deactivated = deacts[0].Value() == "true"
+		} else {
+			s.deactivatedNode = deacts[0]
+			s.deactivatedSPARQL = parseSPARQLValues(g, deacts[0], selectPred)
+		}
 	}
 
 	s.Messages = g.Objects(id, IRI(SH+"message"))
@@ -669,4 +705,20 @@ func (c *severityOverrideConstraint) Evaluate(ctx *evalContext, shape *Shape, fo
 		results[i].ResultSeverity = c.severity
 	}
 	return results
+}
+
+// parseSPARQLValues reads a sh:select / sh:sparqlExpr node expression, or nil
+// when vn is some other kind of node expression.
+func parseSPARQLValues(g *Graph, vn, selectPred Term) *SPARQLValues {
+	if vn.IsLiteral() {
+		return nil
+	}
+	prefixes := resolvePrefixes(g, firstOrNone(g.Objects(vn, IRI(SH+"prefixes"))))
+	if sels := g.Objects(vn, selectPred); len(sels) > 0 {
+		return &SPARQLValues{Select: sels[0].Value(), Prefixes: prefixes}
+	}
+	if exprs := g.Objects(vn, IRI(SH+"sparqlExpr")); len(exprs) > 0 {
+		return &SPARQLValues{Expr: exprs[0].Value(), Prefixes: prefixes}
+	}
+	return nil
 }

@@ -114,7 +114,7 @@ func evalFuncWithGraph(ec *evalCtx, name string, args []Expr, bindings map[strin
 			return nil // §17.4.2.9: BNODE takes a simple literal or xsd:string
 		}
 		return rdflibgo.NewBNode("bnode_" + key)
-	case "XSD:BOOLEAN", "XSD:INTEGER", "XSD:FLOAT", "XSD:DOUBLE", "XSD:DECIMAL", "XSD:STRING":
+	case "XSD:BOOLEAN", "XSD:INTEGER", "XSD:FLOAT", "XSD:DOUBLE", "XSD:DECIMAL", "XSD:STRING", "XSD:DATETIME":
 		if len(vals) == 1 {
 			return castXSD(name, vals[0])
 		}

@@ -341,32 +341,6 @@ func TestReadInnerXMLPureText(t *testing.T) {
 	}
 }
 
-// ─── parser.go:859 xmlEscapeToBuilder ────────────────────────────────────────
-
-func TestXMLEscapeToBuilder(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{"<", "&lt;"},
-		{">", "&gt;"},
-		{"&", "&amp;"},
-		{`"`, "&quot;"},
-		{"'", "'"},                     // single quote — no escaping
-		{"hello world", "hello world"}, // plain text unchanged
-		{"a<b>c&d\"e", "a&lt;b&gt;c&amp;d&quot;e"},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		var sb strings.Builder
-		xmlEscapeToBuilder(&sb, tc.input)
-		got := sb.String()
-		if got != tc.want {
-			t.Errorf("xmlEscapeToBuilder(%q) = %q, want %q", tc.input, got, tc.want)
-		}
-	}
-}
-
 // TestXMLEscapeInsideLiteral verifies that special chars inside
 // rdf:parseType="Literal" content are correctly escaped.
 func TestXMLEscapeInsideLiteral(t *testing.T) {

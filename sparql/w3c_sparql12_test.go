@@ -32,6 +32,10 @@ func TestW3CSPARQL12(t *testing.T) {
 		mfNegSyntax   = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#NegativeSyntaxTest"
 		mfPosSyntax11 = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11"
 		mfNegSyntax11 = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#NegativeSyntaxTest11"
+		// The SPARQL 1.2 triple-term syntax manifests use the un-suffixed
+		// update syntax types; the dispatch below used to drop them silently.
+		mfPosUpdateSyntax = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest"
+		mfNegUpdateSyntax = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#NegativeUpdateSyntaxTest"
 	)
 
 	for _, entry := range manifest.Entries {
@@ -53,9 +57,37 @@ func TestW3CSPARQL12(t *testing.T) {
 			t.Run("syntax-/"+entry.Name, func(t *testing.T) {
 				runSPARQL12NegativeSyntaxTest(t, entry)
 			})
+		case mfPosUpdateSyntax:
+			t.Run("update-syntax+/"+entry.Name, func(t *testing.T) {
+				runPositiveUpdateSyntaxTest(t, entry)
+			})
+		case mfNegUpdateSyntax:
+			t.Run("update-syntax-/"+entry.Name, func(t *testing.T) {
+				if reason, ok := sparql12UpdateSyntaxKnown[entry.Name]; ok {
+					// Known gap: the update parser still accepts this input. The
+					// test fails the run the moment it starts passing, so the
+					// entry cannot outlive the fix.
+					src, err := os.ReadFile(entry.Action)
+					if err != nil {
+						t.Fatalf("failed to read %s: %v", entry.Action, err)
+					}
+					if _, err := sparql.ParseUpdate(string(src)); err != nil {
+						t.Fatalf("now rejected as required; remove %q from sparql12UpdateSyntaxKnown", entry.Name)
+					}
+					t.Skipf("known gap: %s", reason)
+				}
+				runNegativeUpdateSyntaxTest(t, entry)
+			})
+		default:
+			t.Errorf("manifest entry %q has a test type the runner does not dispatch: %s", entry.Name, entry.Type)
 		}
 	}
 }
+
+// sparql12UpdateSyntaxKnown lists negative update syntax tests the parser
+// still accepts. They were dropped silently by the dispatch until the
+// un-suffixed update syntax test types were added to it.
+var sparql12UpdateSyntaxKnown = map[string]string{}
 
 func runSPARQL12QueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	g := rdflibgo.NewGraph()

@@ -96,6 +96,9 @@ func addInScopeVars(p Pattern, set *orderedVars) {
 	case *GraphPattern:
 		addTermVars(pat.Name, set)
 		addInScopeVars(pat.Pattern, set)
+	case *ServicePattern:
+		addTermVars(pat.Endpoint, set)
+		addInScopeVars(pat.Pattern, set)
 	case *SubqueryPattern:
 		q := pat.Query
 		if q.Variables == nil { // SELECT * in the subquery

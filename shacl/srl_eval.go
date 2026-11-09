@@ -3,18 +3,16 @@ package shacl
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
+
+	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/sparql"
+	"github.com/tggo/goRDFlib/term"
 )
 
-// srlGroundTriple is a fully instantiated triple (no variables).
-type srlGroundTriple struct {
-	S, P, O string // string key for each term
-}
-
-// EvalRuleSet evaluates an SRL RuleSet against a data graph.
-// Returns a new Graph containing only the inferred triples (including DATA block triples)
-// that are not in the original data graph.
+// EvalRuleSet evaluates a SPARQL-RL rule set against a base graph and returns
+// the inference graph: the triples the rule set infers (including its DATA
+// blocks) that are not in the base graph. dataGraph is not modified.
 //
 // It uses context.Background; see EvalRuleSetContext.
 func EvalRuleSet(rs *RuleSet, dataGraph *Graph) (*Graph, error) {
@@ -23,437 +21,230 @@ func EvalRuleSet(rs *RuleSet, dataGraph *Graph) (*Graph, error) {
 
 // EvalRuleSetContext is EvalRuleSet reading dataGraph with ctx: a store error
 // or a done context is returned, never an evaluation over part of the graph.
+//
+// The rule set must be well-formed (ErrSRLNotWellFormed) and stratifiable
+// (ErrSRLNotStratifiable), and have no IMPORTS (ErrSRLImports). Evaluation
+// follows the specification: strata in order; in each, the run-once rules
+// once, then the general rules until nothing new is inferred. A rule body is
+// run by the sparql engine, so expressions have SPARQL semantics.
 func EvalRuleSetContext(ctx context.Context, rs *RuleSet, dataGraph *Graph) (*Graph, error) {
+	if len(rs.Imports) > 0 {
+		return nil, fmt.Errorf("%w: %d IMPORTS declared (first: <%s>)", ErrSRLImports, len(rs.Imports), rs.Imports[0])
+	}
 	if err := buildIndexes(ctx, dataGraph); err != nil {
 		return nil, err
 	}
-	e := &srlEvalEngine{
-		triples:  make(map[srlGroundTriple]bool),
-		prefixes: rs.Prefixes,
+	if err := CheckWellformed(rs); err != nil {
+		return nil, err
 	}
-
-	// Load data graph triples.
-	origTriples := make(map[srlGroundTriple]bool)
-	for _, t := range dataGraph.Triples() {
-		gt := srlGroundTriple{
-			S: termToSRLKey(t.Subject),
-			P: termToSRLKey(t.Predicate),
-			O: termToSRLKey(t.Object),
-		}
-		e.triples[gt] = true
-		origTriples[gt] = true
-	}
-
-	// Load DATA block triples.
-	for _, block := range rs.DataBlocks {
-		for _, t := range block {
-			gt := srlGroundTriple{
-				S: srlTermToKey(t.Subject),
-				P: srlTermToKey(t.Predicate),
-				O: srlTermToKey(t.Object),
-			}
-			e.triples[gt] = true
-		}
-	}
-
-	// Stratify rules.
-	strata, err := Stratify(rs)
+	layers, err := stratify(rs)
 	if err != nil {
 		return nil, err
 	}
 
-	// Evaluate each stratum to fixpoint.
-	for _, stratum := range strata {
-		if len(stratum) == 0 {
-			continue
+	base, err := dataGraph.rdf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ev := &srlEvaluator{
+		base: base,
+		eval: graph.NewGraph(),
+		inf:  graph.NewGraph(),
+	}
+	// GE starts as the base graph plus the DATA blocks, GI as the DATA
+	// triples that are not in the base graph.
+	for t, err := range base.Triples(ctx, nil, nil, nil) {
+		if err != nil {
+			return nil, err
 		}
-		rules := make([]SRLRule, len(stratum))
-		for i, idx := range stratum {
-			rules[i] = rs.Rules[idx]
-		}
-		if err := e.evalStratum(rules); err != nil {
+		if err := ev.eval.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
 			return nil, err
 		}
 	}
-
-	// Build result: all triples minus original data graph.
-	result := NewGraph()
-	for gt := range e.triples {
-		if origTriples[gt] {
-			continue
-		}
-		s := srlKeyToTerm(gt.S)
-		p := srlKeyToTerm(gt.P)
-		o := srlKeyToTerm(gt.O)
-		// result is a fresh in-memory graph: adding to it cannot fail.
-		if err := result.Add(ctx, s, p, o); err != nil {
-			return nil, err
+	dataBnodes := map[string]term.BNode{}
+	for _, block := range rs.DataBlocks {
+		for _, t := range block {
+			tr, ok := instantiateTriple(t, nil, dataBnodes)
+			if !ok {
+				continue
+			}
+			if _, err := ev.add(ctx, tr); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return result, nil
-}
 
-func (e *srlEvalEngine) evalStratum(rules []SRLRule) error {
-	// Semi-naive: repeat until no new triples.
-	for iter := 0; iter < 1000; iter++ {
-		newTriples := make(map[srlGroundTriple]bool)
-		for _, rule := range rules {
-			bindings := e.matchBody(rule.Body, srlBinding{})
-			for _, b := range bindings {
-				for _, headTriple := range rule.Head {
-					gt, err := e.instantiate(headTriple, b)
-					if err != nil {
-						continue // skip if can't instantiate
-					}
-					if !e.triples[gt] {
-						newTriples[gt] = true
-					}
+	compiled := make([]*srlCompiledRule, len(rs.Rules))
+	for i, r := range rs.Rules {
+		pq, err := sparql.Parse(buildRuleQuery(r))
+		if err != nil {
+			return nil, fmt.Errorf("shacl: SPARQL-RL rule %d could not be translated to a query: %w", i+1, err)
+		}
+		pq.NamedGraphs = map[string]*graph.Graph{srlBaseGraphIRI: base}
+		compiled[i] = &srlCompiledRule{rule: r, pq: pq, n: i + 1}
+	}
+
+	for _, layer := range layers {
+		for _, i := range layer.once {
+			if _, err := ev.run(ctx, compiled[i]); err != nil {
+				return nil, err
+			}
+		}
+		for changed := len(layer.general) > 0; changed; {
+			changed = false
+			for _, i := range layer.general {
+				added, err := ev.run(ctx, compiled[i])
+				if err != nil {
+					return nil, err
+				}
+				if added > 0 {
+					changed = true
 				}
 			}
 		}
-		if len(newTriples) == 0 {
-			break
-		}
-		for gt := range newTriples {
-			e.triples[gt] = true
-		}
 	}
-	return nil
+	return NewGraphFromRDF(ctx, ev.inf, dataGraph.BaseURI())
 }
 
-type srlBinding map[string]string
+type srlCompiledRule struct {
+	rule SRLRule
+	pq   *sparql.ParsedQuery
+	n    int // 1-based position, for messages
+}
 
-func copyBinding(b srlBinding) srlBinding {
-	nb := make(srlBinding, len(b))
-	for k, v := range b {
-		nb[k] = v
+type srlEvaluator struct {
+	base *graph.Graph // G0: the input
+	eval *graph.Graph // GE: base + DATA + inferred
+	inf  *graph.Graph // GI: the result
+}
+
+// add puts t into the evaluation graph and the inference graph unless the
+// evaluation graph (base, DATA and inferred) already has it. It reports whether
+// t was new.
+func (ev *srlEvaluator) add(ctx context.Context, t term.Triple) (bool, error) {
+	if has, err := ev.eval.Contains(ctx, t.Subject, t.Predicate, t.Object); err != nil || has {
+		return false, err
 	}
-	return nb
-}
-
-type srlEvalEngine struct {
-	triples  map[srlGroundTriple]bool
-	prefixes map[string]string
-}
-
-func (e *srlEvalEngine) allTriples() []srlGroundTriple {
-	result := make([]srlGroundTriple, 0, len(e.triples))
-	for t := range e.triples {
-		result = append(result, t)
+	if err := ev.eval.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
+		return false, err
 	}
-	return result
+	return true, ev.inf.Add(ctx, t.Subject, t.Predicate, t.Object)
 }
 
-// matchBody returns all bindings that satisfy the body elements.
-func (e *srlEvalEngine) matchBody(elements []SRLBodyElement, initial srlBinding) []srlBinding {
-	return e.matchElements(elements, 0, initial)
-}
-
-func (e *srlEvalEngine) matchElements(elements []SRLBodyElement, idx int, b srlBinding) []srlBinding {
-	if idx >= len(elements) {
-		return []srlBinding{copyBinding(b)}
+// run evaluates a rule once and returns how many triples it added.
+func (ev *srlEvaluator) run(ctx context.Context, cr *srlCompiledRule) (int, error) {
+	if err := stopped(ctx); err != nil {
+		return 0, err
 	}
-	elem := elements[idx]
-	switch elem.Kind {
-	case SRLBodyTriple:
-		var results []srlBinding
-		for t := range e.triples {
-			if nb, ok := matchGroundTriple(elem.Triple, t, b); ok {
-				results = append(results, e.matchElements(elements, idx+1, nb)...)
+	g := ev.eval
+	if cr.rule.BaseGraphOnly {
+		g = ev.base
+	}
+	res, err := sparql.EvalQueryContext(ctx, g, cr.pq, nil)
+	if err != nil {
+		return 0, fmt.Errorf("shacl: SPARQL-RL rule %d: %w", cr.n, err)
+	}
+	added := 0
+	for _, sol := range res.Bindings {
+		// A blank node of the head is fresh for each solution.
+		bnodes := map[string]term.BNode{}
+		for _, tt := range cr.rule.Head {
+			tr, ok := instantiateTriple(tt, sol, bnodes)
+			if !ok {
+				continue // not an RDF triple under this solution
+			}
+			isNew, err := ev.add(ctx, tr)
+			if err != nil {
+				return added, err
+			}
+			if isNew {
+				added++
 			}
 		}
-		return results
-	case SRLBodyFilter:
-		if e.evalFilter(elem.FilterExpr, b) {
-			return e.matchElements(elements, idx+1, b)
-		}
-		return nil
-	case SRLBodyNot:
-		// NOT succeeds if the not-body has no matches extending current bindings.
-		notResults := e.matchElements(elem.NotBody, 0, b)
-		if len(notResults) == 0 {
-			return e.matchElements(elements, idx+1, b)
-		}
-		return nil
-	case SRLBodyBind:
-		val := e.evalBindExpr(elem.BindExpr, b)
-		nb := copyBinding(b)
-		nb[elem.BindVar] = val
-		return e.matchElements(elements, idx+1, nb)
 	}
-	return nil
+	return added, nil
 }
 
-// matchGroundTriple tries to match an SRL triple pattern against a ground triple.
-func matchGroundTriple(pattern SRLTriple, ground srlGroundTriple, b srlBinding) (srlBinding, bool) {
-	nb := copyBinding(b)
-	if !matchTermKey(pattern.Subject, ground.S, nb) {
-		return nil, false
+// instantiateTriple substitutes a solution into a triple template. It reports
+// false if a variable is unbound or the result is not an RDF triple (a literal
+// subject, a predicate that is not an IRI): a template that cannot produce a
+// triple for a solution produces none for it (evalRule's subst).
+func instantiateTriple(t SRLTriple, sol map[string]term.Term, bnodes map[string]term.BNode) (term.Triple, bool) {
+	s, ok := instantiateTerm(t.Subject, sol, bnodes)
+	if !ok {
+		return term.Triple{}, false
 	}
-	if !matchTermKey(pattern.Predicate, ground.P, nb) {
-		return nil, false
+	p, ok := instantiateTerm(t.Predicate, sol, bnodes)
+	if !ok {
+		return term.Triple{}, false
 	}
-	if !matchTermKey(pattern.Object, ground.O, nb) {
-		return nil, false
+	o, ok := instantiateTerm(t.Object, sol, bnodes)
+	if !ok {
+		return term.Triple{}, false
 	}
-	return nb, true
+	subj, ok := s.(term.Subject)
+	if !ok {
+		return term.Triple{}, false
+	}
+	pred, ok := p.(term.URIRef)
+	if !ok {
+		return term.Triple{}, false
+	}
+	return term.Triple{Subject: subj, Predicate: pred, Object: o}, true
 }
 
-func matchTermKey(pattern SRLTerm, groundKey string, b srlBinding) bool {
-	if pattern.Kind == SRLTermVariable {
-		if existing, ok := b[pattern.Value]; ok {
-			return existing == groundKey
-		}
-		b[pattern.Value] = groundKey
-		return true
-	}
-	return srlTermToKey(pattern) == groundKey
-}
-
-func (e *srlEvalEngine) instantiate(t SRLTriple, b srlBinding) (srlGroundTriple, error) {
-	s, err := instantiateTerm(t.Subject, b)
-	if err != nil {
-		return srlGroundTriple{}, err
-	}
-	p, err := instantiateTerm(t.Predicate, b)
-	if err != nil {
-		return srlGroundTriple{}, err
-	}
-	o, err := instantiateTerm(t.Object, b)
-	if err != nil {
-		return srlGroundTriple{}, err
-	}
-	return srlGroundTriple{S: s, P: p, O: o}, nil
-}
-
-func instantiateTerm(t SRLTerm, b srlBinding) (string, error) {
-	if t.Kind == SRLTermVariable {
-		if v, ok := b[t.Value]; ok {
-			return v, nil
-		}
-		return "", fmt.Errorf("unbound variable ?%s", t.Value)
-	}
-	return srlTermToKey(t), nil
-}
-
-// srlTermToKey converts an SRLTerm to a unique string key.
-func srlTermToKey(t SRLTerm) string {
+func instantiateTerm(t SRLTerm, sol map[string]term.Term, bnodes map[string]term.BNode) (term.Term, bool) {
 	switch t.Kind {
 	case SRLTermIRI:
-		return "<" + t.Value + ">"
-	case SRLTermLiteral:
-		if t.Language != "" {
-			return `"` + escapeLiteralValue(t.Value) + `"@` + t.Language
-		}
-		return `"` + escapeLiteralValue(t.Value) + `"^^<` + t.Datatype + `>`
+		u, err := term.NewURIRef(t.Value)
+		return u, err == nil
+	case SRLTermVariable:
+		v, ok := sol[t.Value]
+		return v, ok && v != nil
 	case SRLTermBlankNode:
-		return "_:" + t.Value
+		b, ok := bnodes[t.Value]
+		if !ok {
+			b = term.NewBNode()
+			bnodes[t.Value] = b
+		}
+		return b, true
+	case SRLTermLiteral:
+		return srlLiteral(t), true
 	case SRLTermTripleTerm:
-		s := srlTermToKey(*t.TTSubject)
-		p := srlTermToKey(*t.TTPredicate)
-		o := srlTermToKey(*t.TTObject)
-		return "<<(" + s + " " + p + " " + o + ")>>"
+		s, ok := instantiateTerm(*t.TTSubject, sol, bnodes)
+		if !ok {
+			return nil, false
+		}
+		p, ok := instantiateTerm(*t.TTPredicate, sol, bnodes)
+		if !ok {
+			return nil, false
+		}
+		o, ok := instantiateTerm(*t.TTObject, sol, bnodes)
+		if !ok {
+			return nil, false
+		}
+		subj, ok := s.(term.Subject)
+		pred, ok2 := p.(term.URIRef)
+		if !ok || !ok2 {
+			return nil, false
+		}
+		return term.NewTripleTerm(subj, pred, o), true
 	}
-	return ""
+	return nil, false
 }
 
-func escapeLiteralValue(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			b.WriteRune(r)
+// srlLiteral builds the literal of a template. A plain string is a plain
+// literal, as every parser builds it.
+func srlLiteral(t SRLTerm) term.Literal {
+	if t.Language != "" {
+		lang, dir, _ := strings.Cut(t.Language, "--")
+		if dir != "" {
+			return term.NewLiteral(t.Value, term.WithLang(lang), term.WithDir(dir))
 		}
+		return term.NewLiteral(t.Value, term.WithLang(lang))
 	}
-	return b.String()
-}
-
-// termToSRLKey converts a shacl Term to the same key format as srlTermToKey.
-func termToSRLKey(t Term) string {
-	switch t.kind {
-	case TermIRI:
-		return "<" + t.value + ">"
-	case TermLiteral:
-		if t.language != "" {
-			return `"` + escapeLiteralValue(t.value) + `"@` + t.language
-		}
-		dt := t.datatype
-		if dt == "" {
-			dt = XSD + "string"
-		}
-		return `"` + escapeLiteralValue(t.value) + `"^^<` + dt + `>`
-	case TermBlankNode:
-		return "_:" + t.value
+	if t.Datatype != "" && t.Datatype != XSD+"string" {
+		return term.NewLiteral(t.Value, term.WithDatatype(term.NewURIRefUnsafe(t.Datatype)))
 	}
-	return ""
-}
-
-// srlKeyToTerm converts a string key back to a shacl Term.
-func srlKeyToTerm(key string) Term {
-	if strings.HasPrefix(key, "<") && strings.HasSuffix(key, ">") {
-		return IRI(key[1 : len(key)-1])
-	}
-	if strings.HasPrefix(key, "_:") {
-		return Term{kind: TermBlankNode, value: key[2:]}
-	}
-	if strings.HasPrefix(key, `"`) {
-		// Parse literal
-		return parseSRLKeyLiteral(key)
-	}
-	return IRI(key)
-}
-
-func parseSRLKeyLiteral(key string) Term {
-	// Format: "value"^^<datatype> or "value"@lang
-	// Find the closing quote (handling escapes).
-	i := 1 // skip opening "
-	for i < len(key) {
-		if key[i] == '\\' {
-			i += 2
-			continue
-		}
-		if key[i] == '"' {
-			break
-		}
-		i++
-	}
-	value := unescapeLiteralValue(key[1:i])
-	rest := key[i+1:]
-
-	if strings.HasPrefix(rest, "^^<") && strings.HasSuffix(rest, ">") {
-		dt := rest[3 : len(rest)-1]
-		return Term{kind: TermLiteral, value: value, datatype: dt}
-	}
-	if strings.HasPrefix(rest, "@") {
-		lang := rest[1:]
-		dt := RDF + "langString"
-		if strings.Contains(lang, "--") {
-			dt = RDF + "dirLangString"
-		}
-		return Term{kind: TermLiteral, value: value, datatype: dt, language: lang}
-	}
-	return Term{kind: TermLiteral, value: value, datatype: XSD + "string"}
-}
-
-func unescapeLiteralValue(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
-			case '"':
-				b.WriteByte('"')
-			case '\\':
-				b.WriteByte('\\')
-			case 'n':
-				b.WriteByte('\n')
-			case 'r':
-				b.WriteByte('\r')
-			case 't':
-				b.WriteByte('\t')
-			default:
-				b.WriteByte(s[i+1])
-			}
-			i++
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}
-
-// evalFilter evaluates a FILTER expression with bindings.
-// Supports basic comparisons for the test suite.
-func (e *srlEvalEngine) evalFilter(expr string, b srlBinding) bool {
-	// Substitute variables.
-	resolved := substituteVars(expr, b)
-	resolved = strings.TrimSpace(resolved)
-
-	// Handle basic functions.
-	if strings.HasPrefix(resolved, "isURI(") || strings.HasPrefix(resolved, "isIRI(") {
-		arg := resolved[6 : len(resolved)-1]
-		return strings.HasPrefix(arg, "<") && strings.HasSuffix(arg, ">")
-	}
-	if resolved == "true" {
-		return true
-	}
-	if resolved == "false" {
-		return false
-	}
-
-	// Handle basic comparison: value > number, value < number
-	for _, op := range []string{">=", "<=", ">", "<", "=", "!="} {
-		parts := strings.SplitN(resolved, op, 2)
-		if len(parts) == 2 {
-			left := strings.TrimSpace(parts[0])
-			right := strings.TrimSpace(parts[1])
-			lv, lok := parseFilterNum(left)
-			rv, rok := parseFilterNum(right)
-			if lok && rok {
-				switch op {
-				case ">":
-					return lv > rv
-				case "<":
-					return lv < rv
-				case ">=":
-					return lv >= rv
-				case "<=":
-					return lv <= rv
-				case "=":
-					return lv == rv
-				case "!=":
-					return lv != rv
-				}
-			}
-		}
-	}
-	// Default: pass filter for expressions we can't evaluate.
-	// Per SPARQL semantics, type errors in FILTER evaluate to false,
-	// but for SRL we err on the side of inclusion since the W3C eval tests
-	// don't use complex FILTER expressions.
-	return true
-}
-
-func parseFilterNum(s string) (float64, bool) {
-	s = strings.TrimSpace(s)
-	// Try direct number.
-	if v, err := strconv.ParseFloat(s, 64); err == nil {
-		return v, true
-	}
-	// Try literal number "123"^^<xsd:integer>
-	if strings.HasPrefix(s, `"`) {
-		idx := strings.Index(s[1:], `"`)
-		if idx >= 0 {
-			val := s[1 : idx+1]
-			if v, err := strconv.ParseFloat(val, 64); err == nil {
-				return v, true
-			}
-		}
-	}
-	return 0, false
-}
-
-func substituteVars(expr string, b srlBinding) string {
-	return varPattern.ReplaceAllStringFunc(expr, func(match string) string {
-		name := match[1:] // strip ?
-		if v, ok := b[name]; ok {
-			return v
-		}
-		return match
-	})
-}
-
-// evalBindExpr evaluates a BIND expression.
-func (e *srlEvalEngine) evalBindExpr(expr string, b srlBinding) string {
-	resolved := substituteVars(strings.TrimSpace(expr), b)
-	return resolved
+	return term.NewLiteral(t.Value)
 }

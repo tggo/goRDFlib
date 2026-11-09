@@ -1,17 +1,50 @@
 package shacl
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tggo/goRDFlib/testutil"
 )
 
-const srlTestBase = "../testdata/w3c/data-shapes/shacl12-test-suite/tests/rules"
-
+// The SRL (SHACL Rules / SPARQL 1.2 RL) test suite moved: at data-shapes
+// e0a20128 it lived in shacl12-test-suite/tests/rules with the
+// shacl-rules-test# vocabulary; upstream now has it in
+// shacl12-test-suite/tests/sparql-rl (sparql-rl-tests#), with the evaluation
+// tests split over eval/, eval2/ and examples/. Both layouts are read, so the
+// runner works at either submodule pin.
 const (
-	srtNS = "http://www.w3.org/ns/shacl-rules-test#"
+	srlTestBaseNew = "../testdata/w3c/data-shapes/shacl12-test-suite/tests/sparql-rl"
+	srlTestBaseOld = "../testdata/w3c/data-shapes/shacl12-test-suite/tests/rules"
 )
+
+var srtNamespaces = []string{
+	"http://www.w3.org/ns/sparql-rl-tests#",
+	"http://www.w3.org/ns/shacl-rules-test#",
+}
+
+func srlTestBase() string {
+	if st, err := os.Stat(srlTestBaseNew); err == nil && st.IsDir() {
+		return srlTestBaseNew
+	}
+	return srlTestBaseOld
+}
+
+// srlEvalDirs lists the directories holding RulesEvalTest manifests.
+func srlEvalDirs() []string {
+	base := srlTestBase()
+	dirs := []string{filepath.Join(base, "eval")}
+	for _, d := range []string{"eval2", "examples"} {
+		p := filepath.Join(base, d)
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			dirs = append(dirs, p)
+		}
+	}
+	return dirs
+}
 
 type srlTestEntry struct {
 	Name     string
@@ -34,8 +67,6 @@ func parseSRLManifest(t *testing.T, dir string) []srlTestEntry {
 	namePred := IRI(MF + "name")
 	actionPred := IRI(MF + "action")
 	resultPred := IRI(MF + "result")
-	rulesetPred := IRI(srtNS + "ruleset")
-	dataPred := IRI(srtNS + "data")
 
 	testTypes := []string{
 		"RulesPositiveSyntaxTest",
@@ -48,40 +79,52 @@ func parseSRLManifest(t *testing.T, dir string) []srlTestEntry {
 	}
 
 	var entries []srlTestEntry
-	for _, tt := range testTypes {
-		typeIRI := IRI(srtNS + tt)
-		tests := g.All(nil, &typePred, &typeIRI)
-		for _, test := range tests {
-			node := test.Subject
-			entry := srlTestEntry{TestType: tt}
+	declared := 0
+	for _, ns := range srtNamespaces {
+		rulesetPred := IRI(ns + "ruleset")
+		dataPred := IRI(ns + "data")
+		for _, tt := range testTypes {
+			typeIRI := IRI(ns + tt)
+			tests := g.All(nil, &typePred, &typeIRI)
+			declared += len(tests)
+			for _, test := range tests {
+				node := test.Subject
+				entry := srlTestEntry{TestType: tt}
 
-			if names := g.Objects(node, namePred); len(names) > 0 {
-				entry.Name = names[0].Value()
-			}
-
-			actions := g.Objects(node, actionPred)
-			if len(actions) == 0 {
-				continue
-			}
-
-			if tt == "RulesEvalTest" {
-				// Eval test: action is a blank node with srt:ruleset and srt:data
-				actionNode := actions[0]
-				if rs := g.Objects(actionNode, rulesetPred); len(rs) > 0 {
-					entry.Ruleset = resolveSRLPath(dir, rs[0].Value(), g.BaseURI())
+				if names := g.Objects(node, namePred); len(names) > 0 {
+					entry.Name = names[0].Value()
 				}
-				if d := g.Objects(actionNode, dataPred); len(d) > 0 {
-					entry.Data = resolveSRLPath(dir, d[0].Value(), g.BaseURI())
-				}
-				if r := g.Objects(node, resultPred); len(r) > 0 {
-					entry.Result = resolveSRLPath(dir, r[0].Value(), g.BaseURI())
-				}
-			} else {
-				entry.Action = resolveSRLPath(dir, actions[0].Value(), g.BaseURI())
-			}
 
-			entries = append(entries, entry)
+				actions := g.Objects(node, actionPred)
+				if len(actions) == 0 {
+					continue // reported by the declared/readable check below
+				}
+
+				if tt == "RulesEvalTest" {
+					// Eval test: action is a blank node with srt:ruleset and srt:data
+					actionNode := actions[0]
+					if rs := g.Objects(actionNode, rulesetPred); len(rs) > 0 {
+						entry.Ruleset = resolveSRLPath(dir, rs[0].Value(), g.BaseURI())
+					}
+					if d := g.Objects(actionNode, dataPred); len(d) > 0 {
+						entry.Data = resolveSRLPath(dir, d[0].Value(), g.BaseURI())
+					}
+					if r := g.Objects(node, resultPred); len(r) > 0 {
+						entry.Result = resolveSRLPath(dir, r[0].Value(), g.BaseURI())
+					}
+				} else {
+					entry.Action = resolveSRLPath(dir, actions[0].Value(), g.BaseURI())
+				}
+
+				entries = append(entries, entry)
+			}
 		}
+	}
+	if n := len(g.All(nil, &actionPred, nil)); n != declared {
+		t.Errorf("manifest %s has %d tests (mf:action) but %d of a type this runner knows: an unknown test type would be skipped silently", manifestPath, n, declared)
+	}
+	if len(entries) != declared {
+		t.Errorf("manifest %s declares %d tests but %d were readable (missing mf:action?)", manifestPath, declared, len(entries))
 	}
 	return entries
 }
@@ -105,7 +148,7 @@ func resolveSRLPath(dir, ref, base string) string {
 }
 
 func TestW3CSRLSyntaxTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "syntax")
+	dir := filepath.Join(srlTestBase(), "syntax")
 	entries := parseSRLManifest(t, dir)
 
 	var total, passed int
@@ -144,7 +187,7 @@ func TestW3CSRLSyntaxTests(t *testing.T) {
 }
 
 func TestW3CSRLWellformedTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "wellformed")
+	dir := filepath.Join(srlTestBase(), "wellformed")
 	entries := parseSRLManifest(t, dir)
 
 	var total, passed int
@@ -192,7 +235,7 @@ func TestW3CSRLWellformedTests(t *testing.T) {
 }
 
 func TestW3CSRLStratificationTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "stratification")
+	dir := filepath.Join(srlTestBase(), "stratification")
 	entries := parseSRLManifest(t, dir)
 
 	var total, passed int
@@ -239,17 +282,74 @@ func TestW3CSRLStratificationTests(t *testing.T) {
 	t.Logf("SRL Stratification: %d/%d passed", passed, total)
 }
 
+// srlEvalBroken lists evaluation tests whose files the suite itself lacks.
+// Each is checked: if its ruleset appears, the run fails and the entry must go.
+var srlEvalBroken = map[string]string{
+	"Eval-assign-01": "the eval2 manifest names eval-assign-01.srl, which exists only in eval/ " +
+		"(the same test runs there as eval-assign-01): a manifest defect upstream",
+}
+
+// TestW3CSRLManifestsAllRun checks the runner reads every manifest the root
+// manifest includes, so a suite that grows a directory is not skipped.
+func TestW3CSRLManifestsAllRun(t *testing.T) {
+	base := srlTestBase()
+	root := filepath.Join(base, "manifest-sparql-rl.ttl")
+	if _, err := os.Stat(root); err != nil {
+		t.Skipf("no root manifest at this submodule pin (%v)", err)
+	}
+	g, err := LoadTurtleFile(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	include := IRI(MF + "include")
+	var included []string
+	for _, tr := range g.All(nil, &include, nil) {
+		for _, m := range g.RDFList(tr.Object) {
+			p := resolveSRLPath(base, m.Value(), g.BaseURI())
+			included = append(included, filepath.Dir(p))
+		}
+	}
+	if len(included) == 0 {
+		t.Fatalf("%s lists no sub-manifests", root)
+	}
+	run := map[string]bool{
+		filepath.Join(base, "syntax"):         true,
+		filepath.Join(base, "wellformed"):     true,
+		filepath.Join(base, "stratification"): true,
+	}
+	for _, d := range srlEvalDirs() {
+		run[d] = true
+	}
+	for _, d := range included {
+		if !run[d] {
+			t.Errorf("the root manifest includes %s, which no SRL runner reads", d)
+		}
+	}
+	if len(included) != len(run) {
+		t.Errorf("the root manifest includes %d manifests, the runner reads %d", len(included), len(run))
+	}
+}
+
 func TestW3CSRLEvalTests(t *testing.T) {
-	dir := filepath.Join(srlTestBase, "eval")
-	entries := parseSRLManifest(t, dir)
+	var entries []srlTestEntry
+	for _, dir := range srlEvalDirs() {
+		entries = append(entries, parseSRLManifest(t, dir)...)
+	}
 
 	var total, passed int
 	for _, entry := range entries {
 		if entry.TestType != "RulesEvalTest" {
 			continue
 		}
-		total++
 		name := entry.Name
+		if reason, ok := srlEvalBroken[name]; ok {
+			if _, err := os.Stat(entry.Ruleset); err == nil {
+				t.Errorf("%s is listed as broken (%s) but its ruleset exists: remove the exemption", name, reason)
+			}
+			t.Logf("SRL eval %s not run: %s", name, reason)
+			continue
+		}
+		total++
 		t.Run(name, func(t *testing.T) {
 			// Load ruleset.
 			srlData, err := os.ReadFile(entry.Ruleset)
@@ -298,64 +398,22 @@ func TestW3CSRLEvalTests(t *testing.T) {
 	t.Logf("SRL Eval: %d/%d passed", passed, total)
 }
 
-// srlGraphsEqual compares two graphs for isomorphism (with bnode normalization).
+// srlGraphsEqual compares two graphs for isomorphism, so a blank node of the
+// inference graph only has to correspond to one of the expected graph.
 func srlGraphsEqual(t *testing.T, got, expected *Graph) bool {
 	t.Helper()
-	gotTriples := got.Triples()
-	expTriples := expected.Triples()
-
-	if len(gotTriples) != len(expTriples) {
-		t.Logf("Triple count mismatch: got %d, expected %d", len(gotTriples), len(expTriples))
-		return false
+	ctx := context.Background()
+	gr, err := got.rdf(ctx)
+	if err != nil {
+		t.Fatalf("reading the result graph: %v", err)
 	}
-
-	// Try exact match first.
-	gotKeys := make(map[string]int, len(gotTriples))
-	for _, tr := range gotTriples {
-		k := tr.Subject.TermKey() + "|" + tr.Predicate.TermKey() + "|" + tr.Object.TermKey()
-		gotKeys[k]++
+	er, err := expected.rdf(ctx)
+	if err != nil {
+		t.Fatalf("reading the expected graph: %v", err)
 	}
-	expKeys := make(map[string]int, len(expTriples))
-	for _, tr := range expTriples {
-		k := tr.Subject.TermKey() + "|" + tr.Predicate.TermKey() + "|" + tr.Object.TermKey()
-		expKeys[k]++
+	ok, err := testutil.Isomorphic(ctx, gr, er)
+	if err != nil {
+		t.Fatalf("comparing graphs: %v", err)
 	}
-
-	match := true
-	for k, v := range expKeys {
-		if gotKeys[k] != v {
-			match = false
-			break
-		}
-	}
-	if match && len(gotKeys) == len(expKeys) {
-		return true
-	}
-
-	// Bnode-normalized comparison.
-	normalize := func(key string) string {
-		if strings.HasPrefix(key, "_:") {
-			return "_:BNODE"
-		}
-		return key
-	}
-	gotNorm := make(map[string]int, len(gotTriples))
-	for _, tr := range gotTriples {
-		k := normalize(tr.Subject.TermKey()) + "|" + normalize(tr.Predicate.TermKey()) + "|" + normalize(tr.Object.TermKey())
-		gotNorm[k]++
-	}
-	expNorm := make(map[string]int, len(expTriples))
-	for _, tr := range expTriples {
-		k := normalize(tr.Subject.TermKey()) + "|" + normalize(tr.Predicate.TermKey()) + "|" + normalize(tr.Object.TermKey())
-		expNorm[k]++
-	}
-	if len(gotNorm) != len(expNorm) {
-		return false
-	}
-	for k, v := range expNorm {
-		if gotNorm[k] != v {
-			return false
-		}
-	}
-	return true
+	return ok
 }

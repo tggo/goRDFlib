@@ -28,8 +28,6 @@ func (x *exchange) query(req *protocolRequest) error {
 	base := h.baseIRI(x.r)
 	form := scanForm(req.text)
 	switch {
-	case form == "DESCRIBE":
-		return httpErr(http.StatusNotImplemented, ErrDescribeUnsupported)
 	case updateKeywords[form]:
 		return httpErrf(http.StatusBadRequest,
 			"%s is an update operation: send it with POST as update= or as %s", form, mtUpdate)
@@ -65,7 +63,7 @@ func (x *exchange) query(req *protocolRequest) error {
 			return notAcceptable(accept, mediaTypesOf(offers))
 		}
 		resultFormat = f
-	case "CONSTRUCT":
+	case "CONSTRUCT", "DESCRIBE":
 		if rdfFmt = negotiateRDF(accept); rdfFmt == nil {
 			return notAcceptable(accept, rdfMediaTypes())
 		}
@@ -92,7 +90,7 @@ func (x *exchange) query(req *protocolRequest) error {
 	}
 
 	switch res.Type {
-	case "CONSTRUCT":
+	case "CONSTRUCT", "DESCRIBE":
 		n := 0
 		if res.Graph != nil {
 			var err error
@@ -161,6 +159,9 @@ func (x *exchange) evaluate(ctx context.Context, q *sparql.ParsedQuery, req *pro
 		}
 		if errors.Is(err, sparql.ErrTooManySolutions) {
 			return nil, tooManySolutions(err)
+		}
+		if serr := serviceError(err); serr != nil {
+			return nil, serr
 		}
 		return nil, httpErrf(http.StatusInternalServerError, "query evaluation failed: %v", err)
 	}
@@ -293,6 +294,24 @@ func tooManyRows(limit int, what string) error {
 	return httpErr(http.StatusUnprocessableEntity,
 		fmt.Errorf("%w: the result has more than %d %s; add a LIMIT or narrow the query (the limit is set with WithMaxResultRows)",
 			ErrTooManyRows, limit, what))
+}
+
+// serviceError maps the errors of a SERVICE clause to a status, or returns nil
+// for any other error. A query that uses SERVICE on an endpoint without a
+// handler is a request this server does not implement (501, naming the
+// option); an endpoint variable that is unbound is the client's mistake (400);
+// a handler that fails is a bad gateway (502).
+func serviceError(err error) error {
+	switch {
+	case errors.Is(err, sparql.ErrServiceUnsupported):
+		return httpErr(http.StatusNotImplemented,
+			fmt.Errorf("SERVICE is disabled on this endpoint (the server enables it with WithServiceHandler); use SERVICE SILENT or remove the clause: %w", err))
+	case errors.Is(err, sparql.ErrServiceEndpoint):
+		return httpErr(http.StatusBadRequest, err)
+	case errors.Is(err, sparql.ErrServiceFailed):
+		return httpErr(http.StatusBadGateway, err)
+	}
+	return nil
 }
 
 func tooManySolutions(err error) error {

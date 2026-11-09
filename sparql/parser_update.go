@@ -35,9 +35,6 @@ func convertInternalVarsToBnodes(triples []Triple) {
 // --- SPARQL Update parsing ---
 
 func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
-	// Preprocess codepoint escapes outside strings
-	p.input = preprocessCodepointEscapes(p.input)
-
 	u := &ParsedUpdate{
 		Prefixes: p.prefixes,
 	}
@@ -61,13 +58,12 @@ func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
 				p.pos += 6
 				p.skipWS()
 				prefix := p.readUntil(':')
-				if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z')) {
+				if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z') || (prefix[0] >= 0x80 && validPNRunes(prefix))) {
 					return nil, p.errorf("invalid prefix name: %q", prefix)
 				}
 				p.pos++ // skip ':'
 				p.skipWS()
-				iri := p.readIRIRef()
-				p.prefixes[prefix] = iri
+				p.prefixes[prefix] = resolveNamespace(u.BaseURI, p.readIRIRef())
 				continue
 			}
 			if p.matchKeywordCI("BASE") {
@@ -241,7 +237,7 @@ func (p *sparqlParser) parseDeleteWhere() (*DeleteWhereOp, error) {
 	// BNodes not allowed in DELETE WHERE
 	for _, qp := range quads {
 		for _, t := range qp.Triples {
-			if strings.HasPrefix(t.Subject, "_:") || strings.HasPrefix(t.Object, "_:") {
+			if isTemplateBlank(t.Subject) || isTemplateBlank(t.Object) {
 				return nil, p.errorf("blank node not allowed in DELETE WHERE")
 			}
 		}
@@ -478,8 +474,7 @@ func (p *sparqlParser) parseModifyOp(with string, hasDelete, hasInsert bool) (*M
 		// Check for bnodes in DELETE template
 		for _, qp := range quads {
 			for _, t := range qp.Triples {
-				if strings.HasPrefix(t.Subject, "_:") || strings.HasPrefix(t.Object, "_:") ||
-					strings.HasPrefix(t.Subject, "?.bnode") || strings.HasPrefix(t.Object, "?.bnode") {
+				if isTemplateBlank(t.Subject) || isTemplateBlank(t.Object) {
 					return nil, p.errorf("blank node not allowed in DELETE template")
 				}
 			}
@@ -685,4 +680,24 @@ func (p *sparqlParser) parseGraphRefAll() (string, error) {
 		p.skipWS()
 	}
 	return p.readGraphIRI("graph reference")
+}
+
+// isTemplateBlank reports whether a template position is a blank node: a
+// label, or what the parser generates for [], a collection or an anonymous
+// reifier ({| |}, << >> without ~). A DELETE template and DELETE WHERE may
+// not hold one (SPARQL 1.1 Update §3.1.3; SPARQL 1.2 syntax-update-anonreifier-01).
+// A triple term is searched too: its components are template positions.
+func isTemplateBlank(s string) bool {
+	switch {
+	case strings.HasPrefix(s, "_:"), strings.HasPrefix(s, "?.bnode"),
+		strings.HasPrefix(s, "?.reifier"), strings.HasPrefix(s, "?.coll"):
+		return true
+	case strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>"):
+		for _, part := range splitTripleTermParts(s[4 : len(s)-4]) {
+			if isTemplateBlank(part) {
+				return true
+			}
+		}
+	}
+	return false
 }

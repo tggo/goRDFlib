@@ -2,6 +2,7 @@ package shacl
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -519,321 +520,19 @@ func TestMatchesNodeKindUnknown(t *testing.T) {
 
 // --- SRL eval engine ---
 
-func TestSRLTermToKeyBlankNode(t *testing.T) {
-	term := SRLTerm{Kind: SRLTermBlankNode, Value: "b1"}
-	if got := srlTermToKey(term); got != "_:b1" {
-		t.Errorf("expected _:b1, got %s", got)
-	}
-}
-
-func TestSRLTermToKeyLangLiteral(t *testing.T) {
-	term := SRLTerm{Kind: SRLTermLiteral, Value: "hello", Language: "en"}
-	got := srlTermToKey(term)
-	if got != `"hello"@en` {
-		t.Errorf("expected \"hello\"@en, got %s", got)
-	}
-}
-
-func TestSRLTermToKeyTripleTerm(t *testing.T) {
-	s := SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/s"}
-	p := SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"}
-	o := SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/o"}
-	term := SRLTerm{Kind: SRLTermTripleTerm, TTSubject: &s, TTPredicate: &p, TTObject: &o}
-	got := srlTermToKey(term)
-	if !strings.HasPrefix(got, "<<(") {
-		t.Errorf("expected triple term key, got %s", got)
-	}
-}
-
-func TestSRLTermToKeyUnknown(t *testing.T) {
-	term := SRLTerm{Kind: SRLTermKind(99)}
-	if got := srlTermToKey(term); got != "" {
-		t.Errorf("expected empty, got %s", got)
-	}
-}
-
-func TestTermToSRLKeyBlankNode(t *testing.T) {
-	bn := BlankNode("b1")
-	if got := termToSRLKey(bn); got != "_:b1" {
-		t.Errorf("expected _:b1, got %s", got)
-	}
-}
-
-func TestTermToSRLKeyNone(t *testing.T) {
-	if got := termToSRLKey(Term{}); got != "" {
-		t.Errorf("expected empty, got %s", got)
-	}
-}
-
-func TestTermToSRLKeyLiteralWithLang(t *testing.T) {
-	lit := Literal("hello", "", "en")
-	got := termToSRLKey(lit)
-	if !strings.Contains(got, "@en") {
-		t.Errorf("expected @en, got %s", got)
-	}
-}
-
 // --- srlKeyToTerm ---
-
-func TestSRLKeyToTermIRI(t *testing.T) {
-	term := srlKeyToTerm("<http://example.org/x>")
-	if !term.IsIRI() || term.Value() != "http://example.org/x" {
-		t.Errorf("unexpected: %v", term)
-	}
-}
-
-func TestSRLKeyToTermBlankNode(t *testing.T) {
-	term := srlKeyToTerm("_:b1")
-	if term.kind != TermBlankNode || term.value != "b1" {
-		t.Errorf("unexpected: %v", term)
-	}
-}
-
-func TestSRLKeyToTermLiteralTyped(t *testing.T) {
-	term := srlKeyToTerm(`"42"^^<` + XSD + `integer>`)
-	if !term.IsLiteral() || term.Value() != "42" {
-		t.Errorf("unexpected: %v", term)
-	}
-	if term.Datatype() != XSD+"integer" {
-		t.Errorf("expected xsd:integer, got %s", term.Datatype())
-	}
-}
-
-func TestSRLKeyToTermLiteralLang(t *testing.T) {
-	term := srlKeyToTerm(`"hello"@en`)
-	if !term.IsLiteral() || term.Value() != "hello" {
-		t.Errorf("unexpected: %v", term)
-	}
-	if term.Language() != "en" {
-		t.Errorf("expected en, got %s", term.Language())
-	}
-}
-
-func TestSRLKeyToTermLiteralDirLang(t *testing.T) {
-	term := srlKeyToTerm(`"hello"@ar--ltr`)
-	if term.Language() != "ar--ltr" {
-		t.Errorf("expected ar--ltr, got %s", term.Language())
-	}
-	if term.Datatype() != RDF+"dirLangString" {
-		t.Errorf("expected dirLangString, got %s", term.Datatype())
-	}
-}
-
-func TestSRLKeyToTermPlain(t *testing.T) {
-	term := srlKeyToTerm(`"hello"`)
-	if !term.IsLiteral() || term.Value() != "hello" {
-		t.Errorf("unexpected: %v", term)
-	}
-}
-
-func TestSRLKeyToTermFallback(t *testing.T) {
-	term := srlKeyToTerm("http://example.org/bare")
-	if !term.IsIRI() {
-		t.Errorf("expected IRI fallback, got %v", term)
-	}
-}
 
 // --- escapeLiteralValue / unescapeLiteralValue ---
 
-func TestEscapeUnescapeLiteralValue(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		escaped string
-	}{
-		{"quotes", `say "hi"`, `say \"hi\"`},
-		{"backslash", `a\b`, `a\\b`},
-		{"newline", "a\nb", `a\nb`},
-		{"return", "a\rb", `a\rb`},
-		{"tab", "a\tb", `a\tb`},
-		{"plain", "hello", "hello"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := escapeLiteralValue(tc.input)
-			if got != tc.escaped {
-				t.Errorf("escape: got %q, want %q", got, tc.escaped)
-			}
-			roundtripped := unescapeLiteralValue(got)
-			if roundtripped != tc.input {
-				t.Errorf("unescape: got %q, want %q", roundtripped, tc.input)
-			}
-		})
-	}
-}
-
 // --- SRL evalFilter ---
-
-func TestSRLEvalFilterTrue(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	if !e.evalFilter("true", srlBinding{}) {
-		t.Error("expected true")
-	}
-}
-
-func TestSRLEvalFilterFalse(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	if e.evalFilter("false", srlBinding{}) {
-		t.Error("expected false")
-	}
-}
-
-func TestSRLEvalFilterIsIRI(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	if !e.evalFilter("isIRI(<http://example.org/x>)", srlBinding{}) {
-		t.Error("expected true for IRI")
-	}
-	if e.evalFilter(`isIRI("hello")`, srlBinding{}) {
-		t.Error("expected false for non-IRI")
-	}
-}
-
-func TestSRLEvalFilterComparison(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	if !e.evalFilter("5 > 3", srlBinding{}) {
-		t.Error("expected true for 5 > 3")
-	}
-	if e.evalFilter("3 > 5", srlBinding{}) {
-		t.Error("expected false for 3 > 5")
-	}
-	if !e.evalFilter("5 >= 5", srlBinding{}) {
-		t.Error("expected true for 5 >= 5")
-	}
-	if !e.evalFilter("3 < 5", srlBinding{}) {
-		t.Error("expected true for 3 < 5")
-	}
-	if !e.evalFilter("3 <= 3", srlBinding{}) {
-		t.Error("expected true for 3 <= 3")
-	}
-	if !e.evalFilter("5 = 5", srlBinding{}) {
-		t.Error("expected true for 5 = 5")
-	}
-	if !e.evalFilter("5 != 3", srlBinding{}) {
-		t.Error("expected true for 5 != 3")
-	}
-}
-
-func TestSRLEvalFilterDefault(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	// Unrecognized expression defaults to true
-	if !e.evalFilter("some_unknown_expr", srlBinding{}) {
-		t.Error("expected true for unrecognized expression")
-	}
-}
 
 // --- SRL parseFilterNum ---
 
-func TestParseFilterNum(t *testing.T) {
-	v, ok := parseFilterNum("42")
-	if !ok || v != 42 {
-		t.Errorf("expected 42, got %v/%v", v, ok)
-	}
-
-	v, ok = parseFilterNum(`"123"^^<http://www.w3.org/2001/XMLSchema#integer>`)
-	if !ok || v != 123 {
-		t.Errorf("expected 123, got %v/%v", v, ok)
-	}
-
-	_, ok = parseFilterNum("notanumber")
-	if ok {
-		t.Error("expected false")
-	}
-}
-
 // --- SRL substituteVars ---
-
-func TestSubstituteVars(t *testing.T) {
-	b := srlBinding{"x": "<http://example.org/x>"}
-	got := substituteVars("?x > 5", b)
-	if got != "<http://example.org/x> > 5" {
-		t.Errorf("got %q", got)
-	}
-}
 
 // --- SRL evalBindExpr ---
 
-func TestSRLEvalBindExpr(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	b := srlBinding{"x": "<http://example.org/x>"}
-	got := e.evalBindExpr("?x", b)
-	if got != "<http://example.org/x>" {
-		t.Errorf("got %q", got)
-	}
-}
-
 // --- SRL matchElements with FILTER/NOT/BIND ---
-
-func TestSRLMatchElementsFilter(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	gt := srlGroundTriple{S: `<http://example.org/s>`, P: `<http://example.org/p>`, O: `"42"^^<` + XSD + `integer>`}
-	e.triples[gt] = true
-
-	pattern := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "s"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "o"},
-	}
-	elements := []SRLBodyElement{
-		{Kind: SRLBodyTriple, Triple: pattern},
-		{Kind: SRLBodyFilter, FilterExpr: "true"},
-	}
-	results := e.matchElements(elements, 0, srlBinding{})
-	if len(results) != 1 {
-		t.Errorf("expected 1 result, got %d", len(results))
-	}
-}
-
-func TestSRLMatchElementsNot(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	gt := srlGroundTriple{S: "<http://example.org/s>", P: "<http://example.org/p>", O: "<http://example.org/o>"}
-	e.triples[gt] = true
-
-	// NOT body that does match — should fail
-	notBody := []SRLBodyElement{
-		{Kind: SRLBodyTriple, Triple: SRLTriple{
-			Subject:   SRLTerm{Kind: SRLTermVariable, Value: "s"},
-			Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-			Object:    SRLTerm{Kind: SRLTermVariable, Value: "o"},
-		}},
-	}
-	elements := []SRLBodyElement{
-		{Kind: SRLBodyNot, NotBody: notBody},
-	}
-	results := e.matchElements(elements, 0, srlBinding{})
-	if len(results) != 0 {
-		t.Errorf("expected 0 results (NOT body matched), got %d", len(results))
-	}
-
-	// NOT body that does NOT match — should succeed
-	notBody2 := []SRLBodyElement{
-		{Kind: SRLBodyTriple, Triple: SRLTriple{
-			Subject:   SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/nonexistent"},
-			Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-			Object:    SRLTerm{Kind: SRLTermVariable, Value: "o"},
-		}},
-	}
-	elements2 := []SRLBodyElement{
-		{Kind: SRLBodyNot, NotBody: notBody2},
-	}
-	results2 := e.matchElements(elements2, 0, srlBinding{})
-	if len(results2) != 1 {
-		t.Errorf("expected 1 result (NOT body did not match), got %d", len(results2))
-	}
-}
-
-func TestSRLMatchElementsBind(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	elements := []SRLBodyElement{
-		{Kind: SRLBodyBind, BindExpr: `"hello"`, BindVar: "x"},
-	}
-	results := e.matchElements(elements, 0, srlBinding{})
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0]["x"] != `"hello"` {
-		t.Errorf("expected bound value, got %s", results[0]["x"])
-	}
-}
 
 // --- SRL srlTermVars ---
 
@@ -938,23 +637,6 @@ func TestSomeValueConstraintShapeNotFound(t *testing.T) {
 
 // --- node_expr helpers ---
 
-func TestParseNumeric(t *testing.T) {
-	v, ok := parseNumeric(Literal("42", XSD+"integer", ""))
-	if !ok || v != 42 {
-		t.Errorf("expected 42, got %v", v)
-	}
-
-	_, ok = parseNumeric(IRI(ex + "x"))
-	if ok {
-		t.Error("expected false for IRI")
-	}
-
-	_, ok = parseNumeric(Literal("notanumber", XSD+"integer", ""))
-	if ok {
-		t.Error("expected false for non-numeric string")
-	}
-}
-
 func TestIsTruthy(t *testing.T) {
 	if isTruthy(nil) {
 		t.Error("expected false for nil")
@@ -970,39 +652,6 @@ func TestIsTruthy(t *testing.T) {
 	}
 	// Note: Literal("false", "", "") gets datatype xsd:string, which doesn't match
 	// the boolean check in isTruthy, so it's actually truthy.
-}
-
-func TestCompareTermLists(t *testing.T) {
-	if compareTermLists(nil, nil) != 0 {
-		t.Error("nil vs nil should be 0")
-	}
-	if compareTermLists(nil, []Term{IRI(ex + "x")}) != -1 {
-		t.Error("nil vs non-empty should be -1")
-	}
-	if compareTermLists([]Term{IRI(ex + "x")}, nil) != 1 {
-		t.Error("non-empty vs nil should be 1")
-	}
-}
-
-func TestCompareTerm(t *testing.T) {
-	a := Literal("1", XSD+"integer", "")
-	b := Literal("2", XSD+"integer", "")
-	if compareTerm(a, b) >= 0 {
-		t.Error("expected 1 < 2")
-	}
-	if compareTerm(b, a) <= 0 {
-		t.Error("expected 2 > 1")
-	}
-	if compareTerm(a, a) != 0 {
-		t.Error("expected equal")
-	}
-
-	// String fallback
-	c := IRI(ex + "a")
-	d := IRI(ex + "b")
-	if compareTerm(c, d) >= 0 {
-		t.Error("expected a < b")
-	}
 }
 
 // --- TargetKind String ---
@@ -1213,7 +862,7 @@ func TestParseSRLBind(t *testing.T) {
 			?x ex:label ?label .
 		} WHERE {
 			?x ex:name ?name .
-			BIND(?name AS ?label)
+			SET ( ?label := ?name )
 		}
 	`)
 	if err != nil {
@@ -1362,14 +1011,6 @@ func TestEvalRuleSetBasic(t *testing.T) {
 }
 
 // --- SRL instantiateTerm error ---
-
-func TestInstantiateTermUnbound(t *testing.T) {
-	term := SRLTerm{Kind: SRLTermVariable, Value: "unbound"}
-	_, err := instantiateTerm(term, srlBinding{})
-	if err == nil {
-		t.Error("expected error for unbound variable")
-	}
-}
 
 // --- SRL Stratify ---
 
@@ -2196,49 +1837,7 @@ func TestParseSRLExprInFilter(t *testing.T) {
 
 // --- SRL allTriples ---
 
-func TestSRLAllTriples(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	gt1 := srlGroundTriple{S: "<a>", P: "<b>", O: "<c>"}
-	gt2 := srlGroundTriple{S: "<d>", P: "<e>", O: "<f>"}
-	e.triples[gt1] = true
-	e.triples[gt2] = true
-	all := e.allTriples()
-	if len(all) != 2 {
-		t.Errorf("expected 2, got %d", len(all))
-	}
-}
-
 // --- SRL instantiate ---
-
-func TestSRLInstantiateFull(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	t1 := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "s"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "o"},
-	}
-	b := srlBinding{"s": "<http://example.org/x>", "o": `"hello"^^<` + XSD + `string>`}
-	gt, err := e.instantiate(t1, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gt.S != "<http://example.org/x>" {
-		t.Errorf("unexpected subject: %s", gt.S)
-	}
-}
-
-func TestSRLInstantiateError(t *testing.T) {
-	e := &srlEvalEngine{triples: make(map[srlGroundTriple]bool)}
-	t1 := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "unbound"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-		Object:    SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/o"},
-	}
-	_, err := e.instantiate(t1, srlBinding{})
-	if err == nil {
-		t.Error("expected error for unbound variable")
-	}
-}
 
 func TestSeverityOverride(t *testing.T) {
 	dataG, err := LoadTurtleString(`
@@ -2404,7 +2003,7 @@ func TestParseSRLTripleTermWithReifier(t *testing.T) {
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
 		DATA {
-			<<( ex:s ex:p ex:o ~ex:reif1 )>> ex:source ex:wiki .
+			<< ex:s ex:p ex:o ~ex:reif1 >> ex:source ex:wiki .
 		}
 	`)
 	if err != nil {
@@ -2438,7 +2037,7 @@ func TestParseSRLReifiedTripleWithAnnotation(t *testing.T) {
 	rs, err := ParseSRL(`
 		PREFIX ex: <http://example.org/>
 		DATA {
-			<< ex:s ex:p ex:o >> {| ex:meta ex:val |} ex:source ex:wiki .
+			ex:s ex:p ex:o {| ex:meta ex:val |} .
 		}
 	`)
 	if err != nil {
@@ -2460,7 +2059,7 @@ func TestParseSRLRuleWithFilterAndBind(t *testing.T) {
 			?s ex:value ?v1 .
 			?o ex:value ?v2 .
 			FILTER(?v1 > ?v2)
-			BIND(?v1 - ?v2 AS ?diff)
+			SET ( ?diff := ?v1 - ?v2 )
 		}
 	`)
 	if err != nil {
@@ -2683,15 +2282,13 @@ func TestParseSRLAAsObject(t *testing.T) {
 			ex:s ex:p a .
 		}
 	`)
-	if err != nil {
-		t.Fatal(err)
+	// 'a' is a verb only (grammar productions VerbData and Verb): as an
+	// object it is a syntax error (W3C syntax-data-bad-02).
+	if err == nil || rs != nil {
+		t.Fatalf("expected a syntax error, got %v, %v", rs, err)
 	}
-	if len(rs.DataBlocks) == 0 {
-		t.Fatal("expected data block")
-	}
-	obj := rs.DataBlocks[0][0].Object
-	if obj.Value != RDFType {
-		t.Errorf("expected rdf:type IRI, got %s", obj.Value)
+	if !errors.Is(err, ErrSRLSyntax) {
+		t.Errorf("error does not wrap ErrSRLSyntax: %v", err)
 	}
 }
 
@@ -2825,57 +2422,9 @@ func TestParseSRLUnexpectedToken(t *testing.T) {
 
 // --- SRL eval: termToSRLKey for blank and nil ---
 
-func TestTermToSRLKeyBlank(t *testing.T) {
-	bt := Term{kind: TermBlankNode, value: "b1"}
-	key := termToSRLKey(bt)
-	if key != "_:b1" {
-		t.Errorf("expected _:b1, got %s", key)
-	}
-}
-
-func TestTermToSRLKeyNoneKind(t *testing.T) {
-	nt := Term{kind: TermNone}
-	key := termToSRLKey(nt)
-	if key != "" {
-		t.Errorf("expected empty, got %s", key)
-	}
-}
-
-func TestTermToSRLKeyLiteralNoDatatype(t *testing.T) {
-	lt := Literal("hello", "", "")
-	key := termToSRLKey(lt)
-	if key != `"hello"^^<http://www.w3.org/2001/XMLSchema#string>` {
-		t.Errorf("unexpected key: %s", key)
-	}
-}
-
 // --- SRL eval: substituteVars full coverage ---
 
-func TestSubstituteVarsNoMatch(t *testing.T) {
-	// Variable not in binding should remain
-	result := substituteVars("?x + ?y", map[string]string{"x": `"1"`})
-	if result != `"1" + ?y` {
-		t.Errorf("unexpected result: %s", result)
-	}
-}
-
 // --- SRL eval: parseSRLKeyLiteral with escapes ---
-
-func TestParseSRLKeyLiteralEscapes(t *testing.T) {
-	key := `"hello\"world"^^<http://www.w3.org/2001/XMLSchema#string>`
-	result := parseSRLKeyLiteral(key)
-	if result.value != `hello"world` {
-		t.Errorf("unexpected value: %s", result.value)
-	}
-}
-
-func TestParseSRLKeyLiteralLang(t *testing.T) {
-	key := `"hello"@en`
-	result := parseSRLKeyLiteral(key)
-	if result.language != "en" {
-		t.Errorf("expected lang en, got %s", result.language)
-	}
-}
 
 // --- SRL eval: EvalRuleSet with stratification ---
 
@@ -2906,30 +2455,6 @@ func TestEvalRuleSetWithDataBlock(t *testing.T) {
 
 // --- SRL stratify: extractPredIRI edge cases ---
 
-func TestExtractPredIRIVariable(t *testing.T) {
-	t1 := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "s"},
-		Predicate: SRLTerm{Kind: SRLTermVariable, Value: "p"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "o"},
-	}
-	result := extractPredIRI(t1)
-	if result != "?var" {
-		t.Errorf("expected ?var, got %s", result)
-	}
-}
-
-func TestExtractPredIRIBlank(t *testing.T) {
-	t1 := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermIRI, Value: "http://s"},
-		Predicate: SRLTerm{Kind: SRLTermBlankNode, Value: "b1"},
-		Object:    SRLTerm{Kind: SRLTermIRI, Value: "http://o"},
-	}
-	result := extractPredIRI(t1)
-	if result != "" {
-		t.Errorf("expected empty string, got %s", result)
-	}
-}
-
 // --- SRL wellformed: checkRuleWellformed ---
 
 func TestCheckRuleWellformedBadHeadVar(t *testing.T) {
@@ -2951,30 +2476,6 @@ func TestCheckRuleWellformedBadHeadVar(t *testing.T) {
 }
 
 // --- SRL patternsOverlap ---
-
-func TestPatternsOverlap(t *testing.T) {
-	head := []SRLTriple{
-		{Subject: SRLTerm{Kind: SRLTermVariable, Value: "s"}, Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://p"}, Object: SRLTerm{Kind: SRLTermVariable, Value: "o"}},
-	}
-	body := []SRLTriple{
-		{Subject: SRLTerm{Kind: SRLTermVariable, Value: "a"}, Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://p"}, Object: SRLTerm{Kind: SRLTermVariable, Value: "b"}},
-	}
-	if !patternsOverlap(head, body) {
-		t.Error("expected overlap with same predicate")
-	}
-}
-
-func TestPatternsOverlapNoMatch(t *testing.T) {
-	head := []SRLTriple{
-		{Subject: SRLTerm{Kind: SRLTermVariable, Value: "s"}, Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://p1"}, Object: SRLTerm{Kind: SRLTermVariable, Value: "o"}},
-	}
-	body := []SRLTriple{
-		{Subject: SRLTerm{Kind: SRLTermVariable, Value: "a"}, Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://p2"}, Object: SRLTerm{Kind: SRLTermVariable, Value: "b"}},
-	}
-	if patternsOverlap(head, body) {
-		t.Error("expected no overlap with different predicates")
-	}
-}
 
 // --- shape_based.go: ComponentIRI coverage ---
 
@@ -3667,38 +3168,9 @@ func TestValidateSequencePath(t *testing.T) {
 
 // --- SRL: substituteVars with multiple variables ---
 
-func TestSubstituteVarsMultiple(t *testing.T) {
-	result := substituteVars("?x + ?y", map[string]string{"x": "1", "y": "2"})
-	if result != "1 + 2" {
-		t.Errorf("expected '1 + 2', got %q", result)
-	}
-}
-
 // --- SRL: srlTermToKey for triple term (variant) ---
 
-func TestSRLTermToKeyTripleTermVariant(t *testing.T) {
-	s := SRLTerm{Kind: SRLTermIRI, Value: "http://s"}
-	p := SRLTerm{Kind: SRLTermIRI, Value: "http://p"}
-	o := SRLTerm{Kind: SRLTermIRI, Value: "http://o"}
-	tt := SRLTerm{Kind: SRLTermTripleTerm, TTSubject: &s, TTPredicate: &p, TTObject: &o}
-	key := srlTermToKey(tt)
-	if key == "" {
-		t.Error("expected non-empty key")
-	}
-}
-
 // --- SRL: instantiateTerm for non-variable ---
-
-func TestInstantiateTermNonVariable(t *testing.T) {
-	iriTerm := SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/x"}
-	key, err := instantiateTerm(iriTerm, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if key != "<http://example.org/x>" {
-		t.Errorf("expected <http://example.org/x>, got %s", key)
-	}
-}
 
 // --- SRL: RuleSet with multiple strata ---
 
@@ -3742,7 +3214,7 @@ func TestSRLEvalWithBIND(t *testing.T) {
 			?s ex:doubled ?d .
 		} WHERE {
 			?s ex:value ?v .
-			BIND(?v * 2 AS ?d)
+			SET ( ?d := ?v * 2 )
 		}
 	`)
 	if err != nil {
@@ -3820,34 +3292,6 @@ func TestToTermNoneCov(t *testing.T) {
 }
 
 // --- compareTerm coverage ---
-
-func TestCompareTermNumeric(t *testing.T) {
-	a := Literal("1", XSD+"integer", "")
-	b := Literal("2", XSD+"integer", "")
-	if compareTerm(a, b) >= 0 {
-		t.Error("expected a < b")
-	}
-	if compareTerm(b, a) <= 0 {
-		t.Error("expected b > a")
-	}
-	if compareTerm(a, a) != 0 {
-		t.Error("expected a == a")
-	}
-}
-
-func TestCompareTermString(t *testing.T) {
-	a := Literal("abc", XSD+"string", "")
-	b := Literal("def", XSD+"string", "")
-	if compareTerm(a, b) >= 0 {
-		t.Error("expected a < b")
-	}
-	if compareTerm(b, a) <= 0 {
-		t.Error("expected b > a")
-	}
-	if compareTerm(a, a) != 0 {
-		t.Error("expected a == a")
-	}
-}
 
 // --- evalPath: zero or more, one or more ---
 
@@ -4627,39 +4071,6 @@ func TestValidateWithMessage(t *testing.T) {
 
 // --- SRL: patternsCouldMatch ---
 
-func TestSRLPatternsCouldMatch(t *testing.T) {
-	// Both use the same predicate IRI
-	a := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "x"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "y"},
-	}
-	b := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "a"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "b"},
-	}
-	if !patternsCouldMatch([]SRLTriple{a}, []SRLTriple{b}) {
-		t.Error("expected patterns with same predicate to potentially match")
-	}
-}
-
-func TestSRLPatternsDontMatch(t *testing.T) {
-	a := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "x"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p1"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "y"},
-	}
-	b := SRLTriple{
-		Subject:   SRLTerm{Kind: SRLTermVariable, Value: "a"},
-		Predicate: SRLTerm{Kind: SRLTermIRI, Value: "http://example.org/p2"},
-		Object:    SRLTerm{Kind: SRLTermVariable, Value: "b"},
-	}
-	if patternsCouldMatch([]SRLTriple{a}, []SRLTriple{b}) {
-		t.Error("expected patterns with different predicates to not match")
-	}
-}
-
 // --- SRL wellformed: head var must be in body ---
 
 func TestSRLWellformedHeadVarNotInBody(t *testing.T) {
@@ -4871,9 +4282,10 @@ func TestNodeExprMinNoNumeric(t *testing.T) {
 		vars:      map[string]Term{},
 		shapesMap: map[string]*Shape{},
 	}
+	// SPARQL MIN uses the ORDER BY order, which orders IRIs.
 	result := expr.Eval(ctx)
-	if result != nil {
-		t.Error("expected nil for non-numeric min")
+	if len(result) != 1 || result[0].Value() != "http://example.org/a" {
+		t.Errorf("expected the smaller IRI, got %v", result)
 	}
 }
 
@@ -4890,8 +4302,8 @@ func TestNodeExprMaxNoNumeric(t *testing.T) {
 		shapesMap: map[string]*Shape{},
 	}
 	result := expr.Eval(ctx)
-	if result != nil {
-		t.Error("expected nil for non-numeric max")
+	if len(result) != 1 || result[0].Value() != "http://example.org/a" {
+		t.Errorf("expected the only IRI, got %v", result)
 	}
 }
 
@@ -5683,7 +5095,7 @@ RULE {
 }
 WHERE {
     ?s ex:val ?v .
-    BIND(?v + ?v AS ?d)
+    SET ( ?d := ?v + ?v )
 }
 `
 	rs, err := ParseSRL(input)
@@ -5837,45 +5249,6 @@ ex:alice ex:status "inactive" .
 	g := loadTurtle(t, data)
 	report := Validate(g, g)
 	_ = report // Just exercise the SELECT validator path
-}
-
-func TestSumExprNonNumericSkip(t *testing.T) {
-	// SumExpr with non-numeric values → skips non-numeric
-	expr := &SumExpr{
-		Nodes: &multiTermExpr{terms: []Term{
-			Literal("1", XSD+"integer", ""),
-			IRI("http://example.org/notNumeric"),
-		}},
-	}
-	ctx := &nodeExprContext{
-		focusNode: IRI("http://example.org/x"),
-		dataGraph: loadTurtle(&testing.T{}, ""),
-		vars:      map[string]Term{},
-		shapesMap: map[string]*Shape{},
-	}
-	result := expr.Eval(ctx)
-	if len(result) == 0 {
-		t.Error("expected sum result with non-numeric skipped")
-	}
-}
-
-func TestSumExprWithFlatMap(t *testing.T) {
-	expr := &SumExpr{
-		Nodes: &multiTermExpr{terms: []Term{
-			Literal("1", XSD+"integer", ""),
-		}},
-		FlatMap: &multiTermExpr{terms: []Term{
-			Literal("2", XSD+"integer", ""),
-		}},
-	}
-	ctx := &nodeExprContext{
-		focusNode: IRI("http://example.org/x"),
-		dataGraph: loadTurtle(&testing.T{}, ""),
-		vars:      map[string]Term{},
-		shapesMap: map[string]*Shape{},
-	}
-	result := expr.Eval(ctx)
-	_ = result
 }
 
 func TestFindFirstExprNoMatch(t *testing.T) {

@@ -1,6 +1,8 @@
 package endpoint_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -229,6 +231,62 @@ func TestQueryConstructBodies(t *testing.T) {
 	}
 }
 
+func TestQueryDescribe(t *testing.T) {
+	ts, _ := serve(t, fixture())
+	q := url.Values{"query": {`DESCRIBE <` + ex + `s>`}}
+	r := get(t, ts.URL, q, "Accept", "text/turtle")
+	wantStatus(t, r, http.StatusOK)
+	if ct := r.header.Get("Content-Type"); !strings.HasPrefix(ct, "text/turtle") {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	g := graph.NewGraph()
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(r.body)); err != nil || mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("turtle body did not parse to one triple (err %v): %s", err, r.body)
+	}
+	// Negotiated like CONSTRUCT: nobody who accepts only results gets a graph.
+	wantStatus(t, get(t, ts.URL, q, "Accept", "text/csv"), http.StatusNotAcceptable)
+	// A resource the service does not describe is an empty graph, not an error.
+	wantStatus(t, get(t, ts.URL, url.Values{"query": {`DESCRIBE <` + ex + `none>`}}, "Accept", "text/turtle"), http.StatusOK)
+}
+
+func TestQueryService(t *testing.T) {
+	q := func(s string) url.Values { return url.Values{"query": {s}} }
+	const svc = `SELECT * WHERE { ?s ?p ?o SERVICE <http://127.0.0.1:1/sparql> { ?s ?p2 ?o2 } }`
+
+	// Off by default: an untrusted query cannot make the server call out.
+	ts, _ := serve(t, fixture())
+	r := get(t, ts.URL, q(svc))
+	wantStatus(t, r, http.StatusNotImplemented)
+	if !strings.Contains(r.body, "WithServiceHandler") {
+		t.Errorf("the 501 does not name the option: %s", r.body)
+	}
+	// SILENT is the empty solution, joined with the rest.
+	r = get(t, ts.URL, q(`SELECT * WHERE { ?s ?p ?o SERVICE SILENT <http://127.0.0.1:1/sparql> { ?s ?p2 ?o2 } }`))
+	wantStatus(t, r, http.StatusOK)
+	if res := parseResult(t, r); len(res.Bindings) != 1 {
+		t.Fatalf("bindings = %v", res.Bindings)
+	}
+	// An update with SERVICE in its WHERE clause is refused the same way.
+	wantStatus(t, postUpdate(t, ts.URL, `INSERT { ?s <http://example.org/x> ?o2 } WHERE { SERVICE <http://127.0.0.1:1/sparql> { ?s ?p2 ?o2 } }`), http.StatusNotImplemented)
+
+	// With a handler it is asked; its failure is a bad gateway.
+	var asked string
+	ts, _ = serve(t, fixture(), endpoint.WithServiceHandler(func(_ context.Context, c *sparql.ServiceCall) ([]map[string]term.Term, error) {
+		asked = c.Endpoint.Value()
+		if strings.Contains(asked, "down") {
+			return nil, errors.New("connection refused")
+		}
+		return []map[string]term.Term{{"s": iri(ex + "s"), "o2": term.NewLiteral("remote")}}, nil
+	}))
+	r = get(t, ts.URL, q(`SELECT ?o2 WHERE { ?s ?p ?o SERVICE <http://svc.example/sparql> { ?s ?p2 ?o2 } }`))
+	wantStatus(t, r, http.StatusOK)
+	if res := parseResult(t, r); len(res.Bindings) != 1 || res.Bindings[0]["o2"].String() != "remote" || asked != "http://svc.example/sparql" {
+		t.Fatalf("bindings = %v, asked %q", res.Bindings, asked)
+	}
+	wantStatus(t, get(t, ts.URL, q(`SELECT * WHERE { SERVICE <http://down.example/sparql> { ?s ?p2 ?o2 } }`)), http.StatusBadGateway)
+	wantStatus(t, get(t, ts.URL, q(`SELECT * WHERE { SERVICE ?e { ?s ?p2 ?o2 } }`)), http.StatusBadRequest)
+}
+
 func TestQueryCSVAndTSVBodies(t *testing.T) {
 	ts, _ := serve(t, fixture())
 	q := url.Values{"query": {`SELECT ?o WHERE { ?s ?p ?o }`}}
@@ -259,7 +317,6 @@ func TestQueryErrors(t *testing.T) {
 		body   string
 	}{
 		{"syntax error has a position", newReq(t, "GET", ts.URL+"?query="+url.QueryEscape("SELECT ?x\nWHERE { ?x ?y }"), "", ""), 400, "line 2"},
-		{"describe is not implemented", newReq(t, "GET", ts.URL+"?query="+url.QueryEscape("DESCRIBE <http://example.org/>"), "", ""), 501, "DESCRIBE"},
 		{"an update sent as a query", newReq(t, "POST", ts.URL, "application/sparql-query", "INSERT DATA { <a:b> <a:c> <a:d> }"), 400, "update="},
 		{"update via GET", newReq(t, "GET", ts.URL+"?update="+url.QueryEscape("CLEAR ALL"), "", ""), 405, "POST"},
 		{"PUT without graph", newReq(t, "PUT", ts.URL+"?query=ASK%7B%7D", "", ""), 405, "not allowed"},

@@ -226,7 +226,7 @@ The `store.Store` interface (13 methods) has four implementations:
 - Badger iterators run with `PrefetchValues = false` (`iteratePrefix`): the
   default prefetches values in goroutines, which costs more than short index
   lookups of small values save.
-- Measured: `BenchmarkStoreBackendQuery/badger` 212 µs → 66 µs; sparql-server
+- Measured: `BenchmarkStoreBackendQuery/badger` (`endpoint/store_query_bench_test.go`) 212 µs → 66 µs; sparql-server
   throughput on Badger ~4.8k → ~14.6k req/s (median of 6 alternating runs).
 - Badger throughput runs right after a bulk load are bimodal (background
   compaction). Compare builds by alternating processes.
@@ -238,13 +238,19 @@ The `store.Store` interface (13 methods) has four implementations:
   graphs an update creates into the store, because `getOrCreateGraph` makes
   in-memory graphs). Auth, metrics, limits are options; CORS, gzip, TLS and the
   listener belong to the binary (tggo/sparql-server).
-- W3C manifests `protocol` (34/34) and `http-rdf-update` (19/19) run from the
-  manifests themselves; four GSP manifest defects are worked around and
-  commented in `w3c_gsp_test.go`.
+- Newer rdf-tests pins: `graph-store-protocol` (14/14) and `protocol` (34/34) are driven by the manifests' own `ht:requests`
+  (`w3c_gsp_suite_test.go`, `w3c_protocol_suite_test.go`): a property the
+  runner does not understand, an unknown status or a test missing from
+  `mf:entries` fails the run (upstream's `head_non_existing_direct` is defined
+  but never listed). There are no exemptions.
+- Older pins: `protocol` (34/34) and `http-rdf-update` (19/19) run from
+  hand transcriptions (`w3c_protocol_test.go`, `w3c_gsp_test.go`; four GSP
+  manifest defects are worked around and commented). `http-rdf-update` is
+  deprecated upstream and keeps those defects at the newer pin.
 - Status decisions: 500 when the store fails (query, update, GSP; GSP GET
   serializes into a buffer first, so never a truncated 200); 400 for
   `sparql.ErrUpdateRejected`; 422 for `WithMaxResultRows` (fail, never truncate), 503
-  without Retry-After for timeouts (incl. waiting for the lock), 501 DESCRIBE,
+  without Retry-After for timeouts (incl. waiting for the lock), DESCRIBE answers an RDF graph negotiated like CONSTRUCT,
   499 in the hook on client disconnect.
 - SELECT/ASK are evaluated fully, then `results.Write` pre-checks every value
   before the first byte; a failure after the header aborts the connection
@@ -662,6 +668,33 @@ The `store.Store` interface (13 methods) has four implementations:
 - Guards: `TestLimitStopsCrossProduct` (allocation bound, not timing),
   `TestLimitPushdownRowsAreSolutions`, `TestMaxSolutions` (sparql and endpoint).
 
+### sparql/ DESCRIBE and SERVICE
+- DESCRIBE (`describe.go`): `Result{Type: "DESCRIBE", Graph}`, the union of the
+  Concise Bounded Description of each resource (subject triples, followed
+  through blank-node objects with a visited set, plus `rdf:reifies` reifiers of
+  every emitted triple, probed only when the graph has any). Literals describe
+  nothing. Every triple is `ec.produced(1)` and `ec.stop()`: a huge bnode tree
+  ends with `ErrTooManySolutions` or the context error, never a partial graph.
+  `WithDescriber` replaces the CBD. Endpoint: RDF response negotiated like
+  CONSTRUCT; the `protocolKnown` exemption is gone (protocol 34/34).
+- SERVICE (`service.go`): parsed into `ServicePattern`, **never** evaluated
+  over the network by the library (SSRF; same reason LOAD is off). No
+  `ServiceHandler` in the context -> `ErrServiceUnsupported` naming
+  `WithServiceHandler`; `SERVICE SILENT` -> the one empty solution (Federated
+  Query §4), but never for cancellation or a spent budget. A handler error is
+  `ErrServiceFailed`; an unbound or non-IRI `SERVICE ?e` is `ErrServiceEndpoint`.
+  A variable endpoint is resolved per left row, which is why the join paths
+  in `evalPatternWithBindings` / `evalPatternPreBound` have a `ServicePattern`
+  case: a new pattern walker must handle the node (grep `*ServicePattern`).
+  The service sees no initial bindings (it is another endpoint), so
+  `PreBindRestrictions` rejects SERVICE (SHACL-SPARQL forbids it too).
+  Endpoint: 501 without `WithServiceHandler` (SILENT still answers 200), 400
+  unbound endpoint, 502 handler failure; queries and updates alike.
+- W3C: `TestW3CFederated` runs syntax-fed (3) and service (7); the handler
+  serves each manifest `qt:serviceData` endpoint from its local data file,
+  which is how other implementations run them. The differential generator has
+  a SERVICE kind served from the same graph; its group never mentions `?this`.
+
 ### sparql/ FROM and FROM NAMED (issues #37, #38)
 - `ParsedQuery.DatasetClause` records what the query declared; `EvalQuery`
   builds that dataset out of `NamedGraphs` (§13.2): default = merge of the
@@ -842,6 +875,26 @@ The `store.Store` interface (13 methods) has four implementations:
   default (`WithStrictIRIs` to fail). `resolveEmptyFragmentVocab` works around
   json-gold dropping an empty `#` in `@vocab`; remove it once upstream fixes it.
 
+### sparql/ every evaluator change is differential-tested (rule)
+- **100% on W3C is not evidence of correctness.** `?x ex:p ?x` matched every
+  triple of `ex:p` from the first version (March 2026) until 778afcb: the BGP
+  loop skipped a variable already in the row without comparing it, which is
+  right for a variable an earlier pattern bound (the lookup used it) and wrong
+  for one the same pattern bound one position earlier. The W3C suites barely
+  contain the shape, and the BGP planner usually hid it by running another
+  pattern first. A randomized differential test found it on its first run.
+- So: any change to evaluation, planning, pushdown, caching or pre-binding
+  must pass a **seeded random differential test** that runs the same queries
+  with the change on and off (and pre-bound vs written into the text) and
+  requires equal multisets, in addition to W3C and the reference corpus.
+  An optimisation with no off switch for that test does not land.
+- Generators must cover the shapes implementations get wrong: a variable
+  repeated within one pattern (`?x p ?x`, `?s ?s ?o`, `?x path ?x`), shared
+  blank-node labels, variables inside triple terms, variables bound only on
+  one side of OPTIONAL/MINUS/EXISTS/subqueries, empty groups, duplicates.
+- A difference the test finds is a bug to fix or a spec citation to write
+  down, never a logged warning left in place.
+
 ### sparql/ differential corpus (`testdata/sparql-diff`)
 - `generate.py` builds queries from real constructs (OPTIONAL+FILTER, EXISTS,
   MINUS, subqueries, aggregates, paths, arithmetic) over an awkward
@@ -885,8 +938,15 @@ The `store.Store` interface (13 methods) has four implementations:
   variables by a `_` prefix again.
 - Template blank nodes need one `bnodes.New(false)` per instantiation; don't
   write generated nodes into solution maps, rows can share them.
-- Known gaps: `BNODE("x")` is not fresh per solution; `_:b` in a WHERE pattern
-  acts as an unnamed wildcard; aggregates inside function calls stay unbound.
+- A blank-node label in a query pattern is a variable (§4.1.4): the parser
+  rewrites `_:b` to `?.bnode:b` (`bnode_vars.go`) in WHERE, EXISTS,
+  subqueries and update WHERE, never in templates. It used to be an
+  independent wildcard per occurrence. SELECT * and DISTINCT ignore internal
+  variables (`solutionKey`). A label in two BGPs is a parse error
+  (`claimBlankLabels`; a FILTER does not end a BGP, every other element does). The COUNT/ASK store shortcuts refuse a pattern
+  with a repeated variable: a store pattern has only wildcards.
+- Known gaps: `BNODE("x")` is not fresh per solution; aggregates inside
+  function calls stay unbound.
 
 ### shacl/ recursion, datatypes, order
 - Any new place that creates an `evalContext` or `nodeExprContext` must pass on

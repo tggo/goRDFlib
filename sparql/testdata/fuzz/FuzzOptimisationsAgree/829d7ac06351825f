@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX ex:#00000000000000000000\nSELECT $00{ a ex:0*$b{$0 ex:0000*<<($b ex: ex:} }")

@@ -70,7 +70,8 @@
 //	415  unsupported Content-Type, or a charset other than UTF-8
 //	422  result over WithMaxResultRows, evaluation over WithMaxSolutions
 //	500  panic (the value is logged, not sent), result that cannot be encoded in the negotiated format
-//	501  DESCRIBE, which the engine does not implement
+//	501  SERVICE without WithServiceHandler (SERVICE SILENT is answered with its empty solution)
+//	502  a ServiceHandler failed
 //	503  query or update exceeded its time limit, including time spent waiting for the lock
 //
 // A timeout is 503 without Retry-After: the same request would most likely
@@ -129,7 +130,9 @@
 //     memory; use WithQueryTimeout for that.
 //   - A single store call (a transitive path pushed down to the store) and an
 //     extension function are not interrupted by a timeout.
-//   - DESCRIBE is not supported (501).
+//   - DESCRIBE answers with the Concise Bounded Description of each resource,
+//     as an RDF graph negotiated like CONSTRUCT. Its size is bounded by
+//     WithMaxSolutions (422) and WithMaxResultRows (422).
 //   - Graph Store PATCH is not supported (405). Empty named graphs survive in a
 //     New dataset but not in a NewForStore one.
 package endpoint

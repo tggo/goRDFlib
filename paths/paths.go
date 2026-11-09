@@ -42,9 +42,16 @@ func (p *InvPath) eval(st *stopper, g *graph.Graph, subj term.Subject, obj term.
 		// Swap subject/object, evaluate inner, then swap back
 		var objSubj term.Subject
 		if obj != nil {
-			if s, ok := obj.(term.Subject); ok {
-				objSubj = s
+			s, ok := obj.(term.Subject)
+			if !ok {
+				// A literal object becomes the inner path's subject, and a
+				// literal is no subject. Leaving objSubj nil here would
+				// make it a wildcard: every pair of the inner path, so a
+				// backward walk through a literal (^p+ to a node that
+				// has a literal child) reached nodes unrelated to it.
+				return
 			}
+			objSubj = s
 		}
 		p.Arg.eval(st, g, objSubj, subj)(func(s, o term.Term) bool {
 			return yield(o, s)

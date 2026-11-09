@@ -1,5 +1,7 @@
 package sparql
 
+import "github.com/tggo/goRDFlib/internal/iri"
+
 // Parse parses a SPARQL query string.
 // Ported from: rdflib.plugins.sparql.parser.parseQuery
 func Parse(input string) (*ParsedQuery, error) {
@@ -11,6 +13,12 @@ func Parse(input string) (*ParsedQuery, error) {
 	q, err := p.parse()
 	if p.undeclaredPrefix != nil { // the likelier cause of any later error
 		return nil, p.undeclaredPrefix
+	}
+	if err == nil && p.badSyntax != nil {
+		return nil, p.badSyntax
+	}
+	if err == nil {
+		blankLabelsInQuery(q)
 	}
 	return q, err
 }
@@ -26,6 +34,16 @@ func ParseUpdate(input string) (*ParsedUpdate, error) {
 	if p.undeclaredPrefix != nil { // the likelier cause of any later error
 		return nil, p.undeclaredPrefix
 	}
+	if err == nil && p.badSyntax != nil {
+		return nil, p.badSyntax
+	}
+	if err == nil {
+		for _, op := range u.Operations {
+			if m, ok := op.(*ModifyOp); ok {
+				blankLabelsToVars(m.Where)
+			}
+		}
+	}
 	return u, err
 }
 
@@ -34,19 +52,24 @@ type sparqlParser struct {
 	pos             int
 	prefixes        map[string]string
 	bnodeCount      int
-	reifierTriples  []Triple // pending rdf:reifies triples from reified triple syntax
-	tripleTermError error    // deferred error from triple term validation
+	dotAfterTriples bool           // the last triples block ended with '.'
+	bgpSeq          int            // last basic graph pattern id (nextBGP)
+	bgpLabels       map[string]int // blank-node label -> the BGP that used it
+	reifierTriples  []Triple       // pending rdf:reifies triples from reified triple syntax
+	tripleTermError error          // deferred error from triple term validation
 	// undeclaredPrefix is the first prefixed name whose prefix the prologue
 	// did not declare (SPARQL 1.1 §4.1.1: a query error). It is deferred
 	// because the term readers return strings, not errors; Parse and
 	// ParseUpdate report it once parsing has otherwise succeeded.
 	undeclaredPrefix error
+	// badSyntax is the first lexical error the term readers cannot return (a
+	// ? or $ with no name, a variable position holding something else, a bare
+	// word where a term belongs); deferred like undeclaredPrefix, reported
+	// when parsing has otherwise succeeded.
+	badSyntax error
 }
 
 func (p *sparqlParser) parse() (*ParsedQuery, error) {
-	// Preprocess codepoint escapes outside strings
-	p.input = preprocessCodepointEscapes(p.input)
-
 	q := &ParsedQuery{
 		Limit:    -1,
 		Prefixes: p.prefixes,
@@ -60,13 +83,12 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 			p.skipWS()
 			prefix := p.readUntil(':')
 			// Validate prefix: must start with letter or be empty
-			if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z')) {
+			if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z') || (prefix[0] >= 0x80 && validPNRunes(prefix))) {
 				return nil, p.errorf("invalid prefix name: %q", prefix)
 			}
 			p.pos++ // skip ':'
 			p.skipWS()
-			iri := p.readIRIRef()
-			p.prefixes[prefix] = iri
+			p.prefixes[prefix] = resolveNamespace(q.BaseURI, p.readIRIRef())
 			continue
 		}
 		if p.matchKeywordCI("BASE") {
@@ -106,8 +128,14 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 				return nil, err
 			}
 		}
+	} else if p.matchKeywordCI("DESCRIBE") {
+		p.pos += 8
+		q.Type = "DESCRIBE"
+		if err := p.parseDescribeTargets(q); err != nil {
+			return nil, err
+		}
 	} else {
-		return nil, p.errorf("expected SELECT, ASK, or CONSTRUCT")
+		return nil, p.errorf("expected SELECT, ASK, CONSTRUCT, or DESCRIBE")
 	}
 
 	// FROM / FROM NAMED dataset clauses
@@ -131,8 +159,15 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		})
 	}
 
-	// WHERE clause
+	// WHERE clause (optional for DESCRIBE: DescribeQuery ::= ... WhereClause?)
 	p.skipWS()
+	if q.Type == "DESCRIBE" && !p.matchKeywordCI("WHERE") && (p.pos >= len(p.input) || p.input[p.pos] != '{') {
+		q.Where = &BGP{}
+		if err := p.parseSolutionModifiers(q); err != nil {
+			return nil, err
+		}
+		return q, nil
+	}
 	if p.matchKeywordCI("WHERE") {
 		p.pos += 5
 	}
@@ -161,37 +196,56 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		}
 	}
 
+	// Post-query VALUES/BINDINGS clause. It is read before validation: the
+	// variables it binds are in scope for the SELECT expressions.
+	if err := p.parseTrailingValues(q); err != nil {
+		return nil, err
+	}
+
 	// Semantic validation
 	if err := p.validate(q); err != nil {
 		return nil, err
 	}
 
-	// Post-query VALUES/BINDINGS clause
-	p.skipWS()
-	if p.matchKeywordCI("BINDINGS") {
-		p.pos += 8
-		vp, err := p.parseValues()
-		if err != nil {
-			return nil, err
-		}
-		if q.Where == nil {
-			q.Where = vp
-		} else {
-			q.Where = &JoinPattern{Left: q.Where, Right: vp}
-		}
-	} else if p.matchKeywordCI("VALUES") {
-		p.pos += 6
-		vp, err := p.parseValues()
-		if err != nil {
-			return nil, err
-		}
-		// Join with existing WHERE pattern
-		if q.Where == nil {
-			q.Where = vp
-		} else {
-			q.Where = &JoinPattern{Left: q.Where, Right: vp}
-		}
-	}
-
 	return q, nil
+}
+
+// resolveNamespace resolves the IRI of a PREFIX declaration against the BASE
+// declared before it (SPARQL 1.1 section 4.1.1.1: relative IRIs in a query are
+// resolved against the base IRI, which includes the IRI of a PREFIX). Without
+// a BASE the namespace stays as written, for the caller to resolve.
+func resolveNamespace(base, ns string) string {
+	if base == "" || iri.IsAbsolute(ns) {
+		return ns
+	}
+	return iri.Resolve(base, ns)
+}
+
+// parseTrailingValues reads the optional VALUES (or legacy BINDINGS) clause
+// after the solution modifiers of a SELECT. A query that groups keeps it in
+// q.TrailingValues, to be joined with the grouped solutions (SPARQL 1.2
+// §18.2.4.1); any other query joins it into the WHERE pattern, which is
+// equivalent there and lets LIMIT and OFFSET apply to the joined solutions.
+func (p *sparqlParser) parseTrailingValues(q *ParsedQuery) error {
+	p.skipWS()
+	switch {
+	case p.matchKeywordCI("BINDINGS"):
+		p.pos += 8
+	case p.matchKeywordCI("VALUES"):
+		p.pos += 6
+	default:
+		return nil
+	}
+	vp, err := p.parseValues()
+	if err != nil {
+		return err
+	}
+	if q.Type == "SELECT" && (len(q.GroupBy) > 0 || hasAggregates(q)) {
+		q.TrailingValues = vp
+	} else if q.Where == nil {
+		q.Where = vp
+	} else {
+		q.Where = &JoinPattern{Left: q.Where, Right: vp}
+	}
+	return nil
 }

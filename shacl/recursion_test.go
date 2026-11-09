@@ -186,7 +186,7 @@ func TestRecursion_SHACL12FilterShapeExpression(t *testing.T) {
 	// validation context, which is why the guard has to be shared across both.
 	report, _ := validateTTL(t, `
 ex:S a sh:NodeShape ; sh:targetNode ex:a ;
-  sh:expression [ shnex:filterShape ex:S ; shnex:nodes [ shnex:pathValues ex:next ] ] .
+  sh:expression [ shnex:exists [ shnex:filterShape ex:S ; shnex:nodes [ shnex:pathValues ex:next ] ] ] .
 `, `ex:a ex:next ex:b . ex:b ex:next ex:a .`)
 	if !report.Conforms {
 		t.Fatalf("expected conforms, got %d results", len(report.Results))

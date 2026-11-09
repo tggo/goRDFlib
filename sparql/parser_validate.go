@@ -36,6 +36,11 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 			for _, pe := range q.ProjectExprs {
 				grouped[pe.Var] = true
 			}
+			if q.TrailingValues != nil {
+				for _, tv := range q.TrailingValues.Vars {
+					grouped[tv] = true
+				}
+			}
 			for _, v := range q.Variables {
 				if !grouped[v] {
 					return fmt.Errorf("sparql parse error: variable ?%s not in GROUP BY or aggregate", v)
@@ -87,6 +92,12 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 					grouped[alias] = true
 				}
 			}
+			if q.TrailingValues != nil {
+				// The trailing VALUES is joined after grouping.
+				for _, tv := range q.TrailingValues.Vars {
+					grouped[tv] = true
+				}
+			}
 			for _, pe := range q.ProjectExprs {
 				if !containsAggregate(pe.Expr) {
 					// Check that all variable references are grouped
@@ -100,13 +111,34 @@ func (p *sparqlParser) validate(q *ParsedQuery) error {
 			}
 		}
 
-		// Check for scope conflict: project expression variable from inner subquery
-		if q.Where != nil {
-			innerVars := collectPatternVars(q.Where)
-			for _, pe := range q.ProjectExprs {
-				if innerVars[pe.Var] {
-					return fmt.Errorf("sparql parse error: variable ?%s already defined in inner scope", pe.Var)
+		// Scope conflict: a SELECT expression may not assign a variable that is
+		// already in scope. After GROUP BY the scope is only what the group
+		// keys expose (SPARQL 1.2 §18.2.4.1; syntax tests group-by-scope-*):
+		// `SELECT (1 AS ?z) {?s :p ?z} GROUP BY ?s` is legal because ?z is
+		// not a key, `GROUP BY ?z` or `GROUP BY (1 AS ?z)` is not.
+		inScope := map[string]bool{}
+		if len(q.GroupBy) > 0 {
+			for _, g := range q.GroupBy {
+				if ve, ok := g.(*VarExpr); ok {
+					inScope[ve.Name] = true
 				}
+			}
+			for _, alias := range q.GroupByAliases {
+				if alias != "" {
+					inScope[alias] = true
+				}
+			}
+		} else if q.Where != nil {
+			inScope = collectPatternVars(q.Where)
+		}
+		if q.TrailingValues != nil {
+			for _, tv := range q.TrailingValues.Vars {
+				inScope[tv] = true
+			}
+		}
+		for _, pe := range q.ProjectExprs {
+			if inScope[pe.Var] {
+				return fmt.Errorf("sparql parse error: variable ?%s already defined in inner scope", pe.Var)
 			}
 		}
 	}
@@ -148,6 +180,8 @@ func validateBindScope(p Pattern) error {
 			return err
 		}
 		return validateBindScope(pat.Right)
+	case *ServicePattern:
+		return validateBindScope(pat.Pattern)
 	case *SubqueryPattern:
 		return validateBindScope(pat.Query.Where)
 	}
@@ -191,6 +225,11 @@ func collectVarsInto(p Pattern, vars map[string]bool) {
 	case *BindPattern:
 		collectVarsInto(pat.Pattern, vars)
 		vars[pat.Var] = true
+	case *ServicePattern:
+		collectVarsInto(pat.Pattern, vars)
+		if strings.HasPrefix(pat.Endpoint, "?") {
+			vars[pat.Endpoint[1:]] = true
+		}
 	case *SubqueryPattern:
 		for _, v := range pat.Query.Variables {
 			vars[v] = true
@@ -309,6 +348,8 @@ func validateTripleTerms(p Pattern) error {
 		return validateTripleTerms(pat.Pattern)
 	case *ValuesPattern:
 		return nil
+	case *ServicePattern:
+		return validateTripleTerms(pat.Pattern)
 	case *SubqueryPattern:
 		return validateTripleTerms(pat.Query.Where)
 	}

@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"fmt"
 	"strings"
 
 	rdflibgo "github.com/tggo/goRDFlib"
@@ -25,13 +26,29 @@ func (p *sparqlParser) parseExpr() (Expr, error) {
 	return p.parseOrExpr()
 }
 
-// parseConstraint parses the constraint of a FILTER (SPARQL 1.1 rule [69]
-// Constraint ::= BrackettedExpression | BuiltInCall | FunctionCall). Unlike
-// parseExpr it never reads a binary operator after the call, so in
-// `FILTER bound(?x) <s> <p> ?o` the '<' that opens the next triple's IRI is not
-// taken for less-than. A leading '!' is still accepted, as before.
+// parseConstraint parses a FILTER or HAVING constraint: a bracketed
+// expression, a built-in call (including EXISTS and NOT EXISTS) or a function
+// call (SPARQL 1.1 grammar [68] Constraint, used by [22] HavingCondition and
+// [69] Filter). Anything else is an error: FILTER ?x, FILTER 1, FILTER A00000,
+// and also FILTER !bound(?x), because ! starts a UnaryExpression, which is
+// reached only through brackets. Write FILTER (!bound(?x)).
 func (p *sparqlParser) parseConstraint() (Expr, error) {
-	return p.parseUnaryExpr()
+	p.skipWS()
+	start := p.pos
+	e, err := p.parseUnaryExpr()
+	if err != nil {
+		return nil, err
+	}
+	if start < len(p.input) && p.input[start] == '(' {
+		return e, nil
+	}
+	switch e.(type) {
+	case *FuncExpr, *ExistsExpr:
+		if p.input[start] != '!' && p.input[start] != '+' && p.input[start] != '-' {
+			return e, nil
+		}
+	}
+	return nil, fmt.Errorf("sparql parse error at pos %d: a constraint is ( expression ), a built-in call or a function call, got %q (write it in brackets)", start, strings.TrimSpace(p.input[start:min(p.pos, start+20)]))
 }
 
 func (p *sparqlParser) parseOrExpr() (Expr, error) {
@@ -84,6 +101,11 @@ func (p *sparqlParser) parseCompareExpr() (Expr, error) {
 	p.skipWS()
 	for _, op := range []string{"!=", "<=", ">=", "=", "<", ">"} {
 		if p.startsWith(op) {
+			if op[0] == '<' && p.atIRIRef() {
+				// The lexer is greedy: "<?a&&?b>" is one IRIREF token, not a
+				// less-than sign followed by an expression (DAWG syn-bad-26).
+				break
+			}
 			p.pos += len(op)
 			right, err := p.parseAddExpr()
 			if err != nil {
@@ -231,13 +253,16 @@ func (p *sparqlParser) parseUnaryExpr() (Expr, error) {
 		}
 		return &UnaryExpr{Op: "!", Arg: arg}, nil
 	}
-	if p.pos < len(p.input) && p.input[p.pos] == '-' {
+	// UnaryExpression ::= '!' PrimaryExpression | '+' PrimaryExpression |
+	// '-' PrimaryExpression (SPARQL 1.1 grammar [118]).
+	if p.pos < len(p.input) && (p.input[p.pos] == '-' || p.input[p.pos] == '+') {
+		op := string(p.input[p.pos])
 		p.pos++
 		arg, err := p.parseUnaryExpr()
 		if err != nil {
 			return nil, err
 		}
-		return &UnaryExpr{Op: "-", Arg: arg}, nil
+		return &UnaryExpr{Op: op, Arg: arg}, nil
 	}
 	return p.parsePrimaryExpr()
 }
@@ -359,11 +384,11 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	}
 
 	// Boolean or function call
-	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameChar(rune(p.input[p.pos+4]))) {
+	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameByte(p.input[p.pos+4])) {
 		p.pos += 4
 		return &LiteralExpr{Value: rdflibgo.NewLiteral(true)}, nil
 	}
-	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameChar(rune(p.input[p.pos+5]))) {
+	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameByte(p.input[p.pos+5])) {
 		p.pos += 5
 		return &LiteralExpr{Value: rdflibgo.NewLiteral(false)}, nil
 	}
@@ -520,7 +545,13 @@ func (p *sparqlParser) parseAggregateCall(name string) (Expr, error) {
 				p.expect('=')
 				p.skipWS()
 				sep := p.readTermOrVar()
-				fe.Separator = string(p.resolveTermValue(sep).(rdflibgo.Literal).Lexical())
+				lit, ok := p.resolveTermValue(sep).(rdflibgo.Literal)
+				if !ok {
+					// SEPARATOR takes a string literal (SPARQL 1.1 section 18.2.4.4);
+					// a bare word, an IRI or a variable here used to panic.
+					return nil, p.errorf("GROUP_CONCAT SEPARATOR needs a string literal, got %q", sep)
+				}
+				fe.Separator = string(lit.Lexical())
 			}
 		} else {
 			fe.Separator = " " // default separator

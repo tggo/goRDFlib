@@ -1,62 +1,40 @@
 package shacl
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 )
 
 const testSuiteBase = "../testdata/w3c/data-shapes/data-shapes-test-suite/tests"
 
 func TestW3CCoreTests(t *testing.T) {
-	categories := []string{
-		"core/complex",
-		"core/misc",
-		"core/node",
-		"core/path",
-		"core/property",
-		"core/targets",
-		"core/validation-reports",
+	runShaclManifestTree(t, testSuiteBase, "core")
+}
+
+// shacl10OnlyFailures lists the SHACL 1.0 test-suite cases that expect a
+// failure for a restriction SHACL 1.2 lifted. The 1.0 specification forbade
+// any VALUES clause and any sub-SELECT that does not project the pre-bound
+// variables; SHACL-SPARQL 1.2 restricts only a VALUES that mentions a
+// pre-bound variable, and substitutes pre-bound values into sub-SELECTs
+// (the 1.2 suite's scope-interactions/projected-subquery-* cases need that).
+// The engine implements the 1.2 rules, so these queries are legal and run.
+var shacl10OnlyFailures = map[string]string{
+	"data-shapes-test-suite/tests/sparql/pre-binding/pre-binding-006.ttl":        "1.0: a sub-SELECT * is unsupported; 1.2 pre-binds into sub-SELECTs",
+	"data-shapes-test-suite/tests/sparql/pre-binding/unsupported-sparql-002.ttl": "1.0: any VALUES is unsupported; 1.2 only VALUES mentioning a pre-bound variable",
+	"data-shapes-test-suite/tests/sparql/pre-binding/unsupported-sparql-004.ttl": "1.0: a sub-SELECT must project $this; 1.2 pre-binds into sub-SELECTs",
+}
+
+func shacl10OnlyFailureReason(testFilePath string) (string, bool) {
+	p := filepath.ToSlash(testFilePath)
+	i := strings.LastIndex(p, "data-shapes-test-suite/")
+	if i < 0 {
+		return "", false
 	}
-
-	var total, passed int64
-
-	for _, cat := range categories {
-		catDir := filepath.Join(testSuiteBase, cat)
-		manifestPath := filepath.Join(catDir, "manifest.ttl")
-
-		manifest, err := LoadTurtleFile(manifestPath)
-		if err != nil {
-			t.Errorf("Failed to load manifest %s: %v", cat, err)
-			continue
-		}
-
-		includePred := IRI(MF + "include")
-		includes := manifest.All(nil, &includePred, nil)
-
-		for _, inc := range includes {
-			testFile := inc.Object.Value()
-			testFile = resolveURI(manifest.BaseURI(), testFile)
-			testFilePath := uriToPath(testFile)
-
-			if testFilePath == "" || !strings.HasSuffix(testFilePath, ".ttl") {
-				continue
-			}
-
-			atomic.AddInt64(&total, 1)
-			testName := cat + "/" + filepath.Base(testFilePath)
-
-			t.Run(testName, func(t *testing.T) {
-				if runSingleTest(t, testFilePath) {
-					atomic.AddInt64(&passed, 1)
-				}
-			})
-		}
-	}
-
-	t.Logf("Total: %d, Passed: %d", atomic.LoadInt64(&total), atomic.LoadInt64(&passed))
+	reason, ok := shacl10OnlyFailures[p[i:]]
+	return reason, ok
 }
 
 func runSingleTest(t *testing.T, testFilePath string) bool {
@@ -134,9 +112,25 @@ func runSingleTest(t *testing.T, testFilePath string) bool {
 	// that don't support certain SPARQL features. Our implementation supports them,
 	// so we verify that validation completes without panicking.
 	if results[0].IsIRI() && results[0].Value() == SHT+"Failure" {
-		actual := Validate(dataGraph, shapesGraph)
-		t.Logf("sht:Failure test — feature supported, validation completed: conforms=%v results=%d",
-			actual.Conforms, len(actual.Results))
+		var reported []error
+		actual, runErr := ValidateContext(context.Background(), dataGraph, shapesGraph,
+			WithErrorHandler(func(err error) { reported = append(reported, err) }))
+		failed := runErr != nil || len(reported) > 0
+		reason, exempt := shacl10OnlyFailureReason(testFilePath)
+		if exempt {
+			if failed {
+				t.Errorf("sht:Failure: this test is exempt (%s) but the run now reports a failure; remove it from shacl10OnlyFailures", reason)
+				return false
+			}
+			t.Logf("sht:Failure exempt (%s): conforms=%v results=%d", reason, actual.Conforms, len(actual.Results))
+			return true
+		}
+		if !failed {
+			t.Errorf("sht:Failure: the run produced a report (conforms=%v, %d results) and reported no failure",
+				actual.Conforms, len(actual.Results))
+			return false
+		}
+		t.Logf("sht:Failure: run error %v, reported %v", runErr, reported)
 		return true
 	}
 
@@ -170,340 +164,17 @@ func runSingleTest(t *testing.T, testFilePath string) bool {
 }
 
 func TestW3CSPARQLTests(t *testing.T) {
-	categories := []string{
-		"sparql/component",
-		"sparql/node",
-		"sparql/property",
-		"sparql/pre-binding",
-	}
-
-	var total, passed int64
-
-	for _, cat := range categories {
-		catDir := filepath.Join(testSuiteBase, cat)
-		manifestPath := filepath.Join(catDir, "manifest.ttl")
-
-		manifest, err := LoadTurtleFile(manifestPath)
-		if err != nil {
-			t.Errorf("Failed to load manifest %s: %v", cat, err)
-			continue
-		}
-
-		includePred := IRI(MF + "include")
-		includes := manifest.All(nil, &includePred, nil)
-
-		for _, inc := range includes {
-			testFile := inc.Object.Value()
-			testFile = resolveURI(manifest.BaseURI(), testFile)
-			testFilePath := uriToPath(testFile)
-
-			if testFilePath == "" || !strings.HasSuffix(testFilePath, ".ttl") {
-				continue
-			}
-
-			atomic.AddInt64(&total, 1)
-			testName := cat + "/" + filepath.Base(testFilePath)
-
-			t.Run(testName, func(t *testing.T) {
-				if runSingleTest(t, testFilePath) {
-					atomic.AddInt64(&passed, 1)
-				}
-			})
-		}
-	}
-
-	t.Logf("Total: %d, Passed: %d", atomic.LoadInt64(&total), atomic.LoadInt64(&passed))
+	runShaclManifestTree(t, testSuiteBase, "sparql")
 }
 
 const testSuite12Base = "../testdata/w3c/data-shapes/shacl12-test-suite/tests"
 
 func TestW3CSHACL12CoreTests(t *testing.T) {
-	categories := []string{
-		"core/complex",
-		"core/misc",
-		"core/node",
-		"core/path",
-		"core/property",
-		"core/targets",
-		"core/validation-reports",
-	}
-
-	var total, passed int64
-
-	for _, cat := range categories {
-		catDir := filepath.Join(testSuite12Base, cat)
-		manifestPath := filepath.Join(catDir, "manifest.ttl")
-
-		manifest, err := LoadTurtleFile(manifestPath)
-		if err != nil {
-			t.Errorf("Failed to load manifest %s: %v", cat, err)
-			continue
-		}
-
-		includePred := IRI(MF + "include")
-		includes := manifest.All(nil, &includePred, nil)
-
-		for _, inc := range includes {
-			testFile := inc.Object.Value()
-			testFile = resolveURI(manifest.BaseURI(), testFile)
-			testFilePath := uriToPath(testFile)
-
-			if testFilePath == "" || !strings.HasSuffix(testFilePath, ".ttl") {
-				continue
-			}
-
-			atomic.AddInt64(&total, 1)
-			testName := cat + "/" + filepath.Base(testFilePath)
-
-			t.Run(testName, func(t *testing.T) {
-				if runSingleTest(t, testFilePath) {
-					atomic.AddInt64(&passed, 1)
-				}
-			})
-		}
-	}
-
-	t.Logf("Total: %d, Passed: %d", atomic.LoadInt64(&total), atomic.LoadInt64(&passed))
+	runShaclManifestTree(t, testSuite12Base, "core")
 }
 
 func TestW3CSHACL12SPARQLTests(t *testing.T) {
-	categories := []string{
-		"sparql/component",
-		"sparql/node",
-		"sparql/pre-binding",
-		"sparql/property",
-		"sparql/targets",
-	}
-
-	var total, passed int64
-
-	for _, cat := range categories {
-		catDir := filepath.Join(testSuite12Base, cat)
-		manifestPath := filepath.Join(catDir, "manifest.ttl")
-
-		manifest, err := LoadTurtleFile(manifestPath)
-		if err != nil {
-			t.Errorf("Failed to load manifest %s: %v", cat, err)
-			continue
-		}
-
-		includePred := IRI(MF + "include")
-		includes := manifest.All(nil, &includePred, nil)
-
-		for _, inc := range includes {
-			testFile := inc.Object.Value()
-			testFile = resolveURI(manifest.BaseURI(), testFile)
-			testFilePath := uriToPath(testFile)
-
-			if testFilePath == "" || !strings.HasSuffix(testFilePath, ".ttl") {
-				continue
-			}
-
-			atomic.AddInt64(&total, 1)
-			testName := cat + "/" + filepath.Base(testFilePath)
-
-			t.Run(testName, func(t *testing.T) {
-				if runSingleTest(t, testFilePath) {
-					atomic.AddInt64(&passed, 1)
-				}
-			})
-		}
-	}
-
-	t.Logf("Total: %d, Passed: %d", atomic.LoadInt64(&total), atomic.LoadInt64(&passed))
-}
-
-func TestW3CSHACL12NodeExprTests(t *testing.T) {
-	categories := []string{
-		"node-expr/shnex",
-	}
-
-	var total, passed int64
-
-	for _, cat := range categories {
-		catDir := filepath.Join(testSuite12Base, cat)
-		manifestPath := filepath.Join(catDir, "manifest.ttl")
-
-		manifest, err := LoadTurtleFile(manifestPath)
-		if err != nil {
-			t.Errorf("Failed to load manifest %s: %v", cat, err)
-			continue
-		}
-
-		includePred := IRI(MF + "include")
-		includes := manifest.All(nil, &includePred, nil)
-
-		for _, inc := range includes {
-			testFile := inc.Object.Value()
-			testFile = resolveURI(manifest.BaseURI(), testFile)
-			testFilePath := uriToPath(testFile)
-
-			if testFilePath == "" || !strings.HasSuffix(testFilePath, ".ttl") {
-				continue
-			}
-
-			atomic.AddInt64(&total, 1)
-			testName := cat + "/" + filepath.Base(testFilePath)
-
-			t.Run(testName, func(t *testing.T) {
-				if runNodeExprTestFile(t, testFilePath) {
-					atomic.AddInt64(&passed, 1)
-				}
-			})
-		}
-	}
-
-	t.Logf("Total: %d, Passed: %d", atomic.LoadInt64(&total), atomic.LoadInt64(&passed))
-}
-
-func TestW3CSHACL12NodeExprConstraintTests(t *testing.T) {
-	categories := []string{
-		"node-expr/constraints",
-	}
-
-	var total, passed int64
-
-	for _, cat := range categories {
-		catDir := filepath.Join(testSuite12Base, cat)
-		manifestPath := filepath.Join(catDir, "manifest.ttl")
-
-		manifest, err := LoadTurtleFile(manifestPath)
-		if err != nil {
-			t.Errorf("Failed to load manifest %s: %v", cat, err)
-			continue
-		}
-
-		includePred := IRI(MF + "include")
-		includes := manifest.All(nil, &includePred, nil)
-
-		for _, inc := range includes {
-			testFile := inc.Object.Value()
-			testFile = resolveURI(manifest.BaseURI(), testFile)
-			testFilePath := uriToPath(testFile)
-
-			if testFilePath == "" || !strings.HasSuffix(testFilePath, ".ttl") {
-				continue
-			}
-
-			atomic.AddInt64(&total, 1)
-			testName := cat + "/" + filepath.Base(testFilePath)
-
-			t.Run(testName, func(t *testing.T) {
-				if runSingleTest(t, testFilePath) {
-					atomic.AddInt64(&passed, 1)
-				}
-			})
-		}
-	}
-
-	t.Logf("Total: %d, Passed: %d", atomic.LoadInt64(&total), atomic.LoadInt64(&passed))
-}
-
-func runNodeExprTestFile(t *testing.T, testFilePath string) bool {
-	t.Helper()
-
-	g, err := LoadTurtleFile(testFilePath)
-	if err != nil {
-		t.Fatalf("Failed to load test file %s: %v", testFilePath, err)
-	}
-
-	typePred := IRI(RDFType)
-	evalType := IRI(SHT + "EvalNodeExpr")
-	testEntries := g.All(nil, &typePred, &evalType)
-	if len(testEntries) == 0 {
-		t.Skip("No sht:EvalNodeExpr entry found")
-	}
-
-	allPassed := true
-	for _, entry := range testEntries {
-		testNode := entry.Subject
-		label := ""
-		if labs := g.Objects(testNode, IRI(RDFS+"label")); len(labs) > 0 {
-			label = labs[0].Value()
-		}
-		t.Run(label, func(t *testing.T) {
-			if !runSingleNodeExprTest(t, g, testNode) {
-				allPassed = false
-			}
-		})
-	}
-	return allPassed
-}
-
-func runSingleNodeExprTest(t *testing.T, g *Graph, testNode Term) bool {
-	t.Helper()
-
-	actionPred := IRI(MF + "action")
-	actions := g.Objects(testNode, actionPred)
-	if len(actions) == 0 {
-		t.Fatal("No mf:action found")
-	}
-	actionNode := actions[0]
-
-	// Parse sht:nodeExpr
-	nodeExprPred := IRI(SHT + "nodeExpr")
-	exprNodes := g.Objects(actionNode, nodeExprPred)
-	if len(exprNodes) == 0 {
-		t.Fatal("No sht:nodeExpr found")
-	}
-	exprNode := exprNodes[0]
-
-	// Parse sht:focusNode
-	var focusNode Term
-	if fn := g.Objects(actionNode, IRI(SHT+"focusNode")); len(fn) > 0 {
-		focusNode = fn[0]
-	}
-
-	// Parse sht:ignoreOrder
-	ignoreOrder := false
-	if io := g.Objects(actionNode, IRI(SHT+"ignoreOrder")); len(io) > 0 {
-		ignoreOrder = io[0].Value() == "true"
-	}
-
-	// Parse bound scope variables (sht:scope-*)
-	vars := make(map[string]Term)
-	for _, triple := range g.All(&actionNode, nil, nil) {
-		pred := triple.Predicate.Value()
-		if strings.HasPrefix(pred, SHT+"scope-") {
-			varName := strings.TrimPrefix(pred, SHT+"scope-")
-			vars[varName] = triple.Object
-		}
-	}
-
-	// Parse shapes from the test graph (for filterShape etc.)
-	shapes := parseShapes(g)
-
-	// Parse expected result (mf:result is an RDF list)
-	resultPred := IRI(MF + "result")
-	results := g.Objects(testNode, resultPred)
-	if len(results) == 0 {
-		t.Fatal("No mf:result found")
-	}
-	expected := g.RDFList(results[0])
-
-	// Parse and evaluate the expression
-	expr := parseNodeExpr(g, exprNode)
-	ctx := &nodeExprContext{
-		dataGraph: g,
-		shapesMap: shapes,
-		focusNode: focusNode,
-		vars:      vars,
-	}
-	actual := expr.Eval(ctx)
-
-	// Compare results
-	if ignoreOrder {
-		if !termSetsEqual(expected, actual) {
-			t.Errorf("Result mismatch (ignoring order)\nExpected: %v\nActual:   %v", termsToStrings(expected), termsToStrings(actual))
-			return false
-		}
-	} else {
-		if !termListsEqual(expected, actual) {
-			t.Errorf("Result mismatch\nExpected: %v\nActual:   %v", termsToStrings(expected), termsToStrings(actual))
-			return false
-		}
-	}
-	return true
+	runShaclManifestTree(t, testSuite12Base, "sparql")
 }
 
 func termListsEqual(a, b []Term) bool {

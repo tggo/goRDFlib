@@ -46,6 +46,10 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 
 	for _, value := range valueNodes {
 		bindings, initBindings := c.buildBindings(shape, focusNode, value)
+		if err := checkPreBound(queryTemplate, bindings, initBindings); err != nil {
+			ctx.guard.fail(err)
+			return nil
+		}
 		query := preBindQuery(queryTemplate, bindings)
 
 		askResult, err := executeSPARQLAsk(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
@@ -66,6 +70,10 @@ func (c *SPARQLComponentConstraint) evaluateASK(ctx *evalContext, shape *Shape, 
 
 func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term, queryTemplate string) []ValidationResult {
 	bindings, initBindings := c.buildBindings(shape, focusNode, Term{})
+	if err := checkPreBound(queryTemplate, bindings, initBindings); err != nil {
+		ctx.guard.fail(err)
+		return nil
+	}
 	query := preBindQuery(queryTemplate, bindings)
 
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
@@ -77,6 +85,10 @@ func (c *SPARQLComponentConstraint) evaluateSELECT(ctx *evalContext, shape *Shap
 
 	var results []ValidationResult
 	for _, row := range rows {
+		if isFailureTrue(row) {
+			ctx.guard.fail(failureError(c.ComponentNode))
+			return nil
+		}
 		value := focusNode
 		if v, ok := row["value"]; ok && !v.IsNone() {
 			value = v
@@ -130,8 +142,8 @@ func (c *SPARQLComponentConstraint) buildBindings(shape *Shape, focusNode, value
 		preBindTerm(bindings, initBindings, "value", value)
 	}
 
-	if shape.Path != nil && shape.Path.Kind == PathPredicate {
-		bindings["PATH"] = termToSPARQL(shape.Path.Pred)
+	if p := shape.Path.sparqlSyntax(); p != "" {
+		bindings["PATH"] = p
 	}
 
 	preBindTerm(bindings, initBindings, "currentShape", shape.ID)

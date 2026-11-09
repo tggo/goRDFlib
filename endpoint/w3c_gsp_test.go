@@ -19,6 +19,13 @@ import (
 // direct graph identification. They run here in manifest order against
 // GraphStoreHandler mounted at /rdf-graph-store.
 //
+// Upstream deprecated this whole manifest in favour of
+// sparql11/graph-store-protocol, which TestW3CGraphStoreProtocol runs from its
+// manifests. This transcription stays for older rdf-tests checkouts and as a
+// second check; at the newer pin its defects are all still there except the
+// removed "PUT - mismatched payload" (the entry is simply not reached), so
+// the workarounds below remain needed.
+//
 // Where the manifest cannot be taken literally, the deviation is noted at the
 // entry: "DELETE - existing graph" deletes person/2.ttl, which no earlier entry
 // creates, and "PUT - mismatched payload" sends a well-formed Turtle body with
@@ -164,8 +171,18 @@ func TestW3CGraphStore(t *testing.T) {
 	}
 
 	entries := manifestEntries(t, "http-rdf-update")
-	if len(entries) != len(steps) {
-		t.Errorf("%d transcriptions for %d manifest entries", len(steps), len(entries))
+	// Upstream removed "PUT - mismatched payload" from this (now deprecated)
+	// manifest after rdf-tests 35c503a; the transcription stays for older
+	// checkouts and is simply not reached when the entry is gone.
+	removedUpstream := map[string]bool{"put__mismatched_payload": true}
+	inManifest := make(map[string]bool, len(entries))
+	for _, name := range entries {
+		inManifest[name] = true
+	}
+	for name := range steps {
+		if !inManifest[name] && !removedUpstream[name] {
+			t.Errorf("transcription %s has no manifest entry", name)
+		}
 	}
 	for _, name := range entries {
 		fn, ok := steps[name]

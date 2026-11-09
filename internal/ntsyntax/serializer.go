@@ -21,32 +21,36 @@ var ErrInvalidUTF8 = errors.New("invalid UTF-8 cannot be written in N-Triples or
 // and for terms the N-Triples grammar cannot express: relative IRIs
 // (ErrRelativeIRI), IRIs containing characters IRIREF excludes (ErrInvalidIRI)
 // and invalid UTF-8 (ErrInvalidUTF8).
-func Term(t rdflibgo.Term) (string, error) {
+func Term(t rdflibgo.Term) (string, error) { return term(t, false) }
+
+func term(t rdflibgo.Term, canon bool) (string, error) {
 	switch v := t.(type) {
 	case rdflibgo.URIRef:
 		return IRI(v.Value())
 	case rdflibgo.BNode:
 		return "_:" + v.Value(), nil
 	case rdflibgo.Literal:
-		return Literal(v)
+		return literal(v, canon)
 	case rdflibgo.TripleTerm:
-		return TripleTermStr(v)
+		return tripleTerm(v, canon)
 	default:
 		return "", fmt.Errorf("unsupported term type %T for N-Triples serialization", t)
 	}
 }
 
 // TripleTermStr serializes a TripleTerm to N-Triples syntax: <<( <s> <p> <o> )>>.
-func TripleTermStr(tt rdflibgo.TripleTerm) (string, error) {
-	s, err := Term(tt.Subject())
+func TripleTermStr(tt rdflibgo.TripleTerm) (string, error) { return tripleTerm(tt, false) }
+
+func tripleTerm(tt rdflibgo.TripleTerm, canon bool) (string, error) {
+	s, err := term(tt.Subject(), canon)
 	if err != nil {
 		return "", err
 	}
-	p, err := Term(tt.Predicate())
+	p, err := term(tt.Predicate(), canon)
 	if err != nil {
 		return "", err
 	}
-	o, err := Term(tt.Object())
+	o, err := term(tt.Object(), canon)
 	if err != nil {
 		return "", err
 	}
@@ -87,11 +91,17 @@ func isIRIREFExcluded(r rune) bool {
 // Literal serializes a Literal to N-Triples syntax. It fails with
 // ErrInvalidUTF8 when the lexical form is not UTF-8, and with the IRI errors
 // when the datatype cannot be written.
-func Literal(l rdflibgo.Literal) (string, error) {
+func Literal(l rdflibgo.Literal) (string, error) { return literal(l, false) }
+
+func literal(l rdflibgo.Literal, canon bool) (string, error) {
 	if !utf8.ValidString(l.Lexical()) {
 		return "", fmt.Errorf("%w: literal %q; fix the data at its source, or store the bytes as a base64 or hex literal", ErrInvalidUTF8, l.Lexical())
 	}
-	quoted := `"` + EscapeString(l.Lexical()) + `"`
+	esc := EscapeString
+	if canon {
+		esc = escapeCanonical
+	}
+	quoted := `"` + esc(l.Lexical()) + `"`
 	if l.Language() != "" {
 		if l.Dir() != "" {
 			return quoted + "@" + l.Language() + "--" + l.Dir(), nil

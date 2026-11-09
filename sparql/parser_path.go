@@ -40,7 +40,7 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 			next = p.input[p.pos]
 		}
 		p.pos = savedPos
-		if next == '<' || next == '(' || next == '^' || (next != 0 && isNameChar(rune(next))) {
+		if next == '<' || next == '(' || next == '^' || (next != 0 && isNameByte(next)) {
 			path, err := p.parsePathExpr()
 			if err != nil {
 				return "", nil, err
@@ -52,10 +52,10 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 	savedPos := p.pos
 
 	// Check for 'a' shorthand
-	if ch == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
+	if ch == 'a' && p.atTypeShorthand() {
 		p.pos++
 		pred := "<" + rdflibgo.RDF.Type.Value() + ">"
-		if p.pos < len(p.input) && (isPathModifier(p.input[p.pos]) || (p.input[p.pos] == '?' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))))) {
+		if p.pos < len(p.input) && (isPathModifier(p.input[p.pos]) || (p.input[p.pos] == '?' && (p.pos+1 >= len(p.input) || !isNameByte(p.input[p.pos+1])))) {
 			p.pos = savedPos
 			path, err := p.parsePathExpr()
 			if err != nil {
@@ -67,16 +67,16 @@ func (p *sparqlParser) parsePredicateOrPath() (string, paths.Path, error) {
 	}
 
 	// Try reading a simple term/var
-	pred := p.readTermOrVar()
-	if pred == "" {
-		return "", nil, nil
+	pred, err := p.readVarOrIRI("a predicate")
+	if err != nil {
+		return "", nil, err
 	}
 
 	// Check if followed by path operators (/, |, *, +)
 	// Also check ? when not followed by a name char (variable)
 	if p.pos < len(p.input) {
 		ch2 := p.input[p.pos]
-		if isPathModifier(ch2) || (ch2 == '?' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1])))) {
+		if isPathModifier(ch2) || (ch2 == '?' && (p.pos+1 >= len(p.input) || !isNameByte(p.input[p.pos+1]))) {
 			p.pos = savedPos
 			path, err := p.parsePathExpr()
 			if err != nil {
@@ -190,7 +190,7 @@ func (p *sparqlParser) applyPathMod(elt paths.Path) paths.Path {
 		p.pos++
 		return paths.OneOrMore(elt)
 	case '?':
-		if p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1])) {
+		if p.pos+1 >= len(p.input) || !isNameByte(p.input[p.pos+1]) {
 			p.pos++
 			return paths.ZeroOrOne(elt)
 		}
@@ -275,7 +275,7 @@ func (p *sparqlParser) parsePathPrimary() (paths.Path, error) {
 	}
 
 	// 'a' shorthand
-	if ch == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
+	if ch == 'a' && p.atTypeShorthand() {
 		p.pos++
 		return paths.AsPath(term.NewURIRefUnsafe(rdflibgo.RDF.Type.Value())), nil
 	}
@@ -309,7 +309,7 @@ func (p *sparqlParser) resolvePathURI() string {
 		return ""
 	}
 	// 'a' shorthand for rdf:type
-	if p.input[p.pos] == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
+	if p.input[p.pos] == 'a' && p.atTypeShorthand() {
 		p.pos++
 		return rdflibgo.RDF.Type.Value()
 	}

@@ -55,15 +55,21 @@ func (c *ClosedConstraint) ComponentIRI() string {
 }
 
 func (c *ClosedConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term) []ValidationResult {
+	// SHACL 1.2 Core: closed applies to each value node (for a node shape that
+	// is the focus node), and the result keeps the focus node of the run.
 	var results []ValidationResult
-	triples := ctx.dataGraph.All(&focusNode, nil, nil)
-	for _, t := range triples {
-		if c.isAllowed(t.Predicate) {
+	for _, vn := range valueNodes {
+		if vn.IsLiteral() {
 			continue
 		}
-		r := makeResult(shape, focusNode, t.Object, c.ComponentIRI())
-		r.ResultPath = t.Predicate
-		results = append(results, r)
+		for _, t := range ctx.dataGraph.All(&vn, nil, nil) {
+			if c.isAllowed(t.Predicate) {
+				continue
+			}
+			r := makeResult(shape, focusNode, t.Object, c.ComponentIRI())
+			r.ResultPath = t.Predicate
+			results = append(results, r)
+		}
 	}
 	return results
 }
@@ -95,6 +101,18 @@ func (c *ClosedByTypesConstraint) ComponentIRI() string {
 }
 
 func (c *ClosedByTypesConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Term, valueNodes []Term) []ValidationResult {
+	var results []ValidationResult
+	for _, vn := range valueNodes {
+		if !vn.IsLiteral() {
+			results = append(results, c.evaluateNode(ctx, shape, focusNode, vn)...)
+		}
+	}
+	return results
+}
+
+// evaluateNode checks one value node (SHACL 1.2 Core: sh:closed applies to
+// each value node).
+func (c *ClosedByTypesConstraint) evaluateNode(ctx *evalContext, shape *Shape, focusNode, vn Term) []ValidationResult {
 	// Collect allowed properties from this shape and all type-compatible shapes.
 	allowed := make(map[string]bool)
 
@@ -127,7 +145,7 @@ func (c *ClosedByTypesConstraint) Evaluate(ctx *evalContext, shape *Shape, focus
 
 	// Get the focus node's types and their superclasses
 	typePred := IRI(RDFType)
-	types := ctx.dataGraph.Objects(focusNode, typePred)
+	types := ctx.dataGraph.Objects(vn, typePred)
 	allTypes := make(map[string]bool)
 	for _, t := range types {
 		allTypes[t.TermKey()] = true
@@ -157,7 +175,7 @@ func (c *ClosedByTypesConstraint) Evaluate(ctx *evalContext, shape *Shape, focus
 	}
 
 	var results []ValidationResult
-	triples := ctx.dataGraph.All(&focusNode, nil, nil)
+	triples := ctx.dataGraph.All(&vn, nil, nil)
 	for _, t := range triples {
 		if !allowed[t.Predicate.TermKey()] {
 			r := makeResult(shape, focusNode, t.Object, c.ComponentIRI())

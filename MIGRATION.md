@@ -15,6 +15,7 @@ Upgrade straight to the latest version and read every section after the version 
 | v0.4.0 | from [v0.4.0 → v0.5.0](#v040--v050) |
 | v0.5.0 – v0.5.2 | [v0.5.x → v0.5.3](#v05x--v053) |
 | v0.5.3 – v0.8.x | [v0.8.x → v0.9.0](#v08x--v090) |
+| v0.9.x | [v0.9.x → v0.10.0](#v09x--v0100) |
 
 If you implement `store.Store` yourself, also read [Custom store implementations](#custom-store-implementations).
 
@@ -353,6 +354,104 @@ returned. `paths.Path.Eval` takes `ctx` and returns
 Run `storetest.Run` against it. It checks the signatures above, that a done
 context is refused, and that an error from the store reaches the caller of
 `graph.Graph` instead of looking like an empty result.
+
+---
+
+## v0.9.x → v0.10.0
+
+Most of this release is behaviour: queries that used to parse and no longer do (and the reverse), answers that were wrong, and SHACL 1.2 / SPARQL-RL following the current drafts. A few Go API changes, all narrow:
+
+### Go API
+
+| Change | Who is affected | Fix |
+|---|---|---|
+| `namespace.RDFS` (and the root `RDFS`) gained the field `Proposition` | only code that builds that struct with an unkeyed literal | use the package variable |
+| `endpoint.ErrDescribeUnsupported` removed | code that checks for it | DESCRIBE is evaluated now; drop the check |
+| `nq.NewWriter(w)` is `nq.NewWriter(w, opts...)` | only code that stores the function in a variable of the old type | add `...nq.Option` to that type |
+| `shacl.InstancesOfExpr.Class` is `Classes`; `LimitExpr.Limit` and `OffsetExpr.Offset` are `Term`; `SumExpr.FlatMap` removed | code that builds SHACL 1.2 node expressions by hand | follow the current draft: `shnex:instancesOf` takes a list, `shnex:limit`/`shnex:offset` may be any node expression, `shnex:sum` takes its nodes directly |
+
+New, all additive: SPARQL `DESCRIBE` (`sparql.WithDescriber`), `SERVICE` with an opt-in handler (`sparql.WithServiceHandler`, `endpoint.WithServiceHandler`; no handler means `ErrServiceUnsupported`, never a network call), `shacl.(*Graph).Overlay` and `store.NewUnion`, `reasoning.Entails` / `Satisfiable`, `nt.Writer` and `WithCanonical` (nt, nq), SHACL 1.2 custom functions callable from SPARQL.
+
+### RDF syntax parsers and serializers
+
+- **`rdf:XMLLiteral` lexical forms from RDF/XML are now Exclusive XML Canonicalization** (RDF 1.1 Concepts §3.3) of the `rdf:parseType="Literal"` content, without comments. The parser used to declare every namespace in scope on every element and drop element prefixes. Now only visibly used namespaces are declared, once, on the outermost element that needs them; attributes are sorted; empty elements are written `<br></br>`. A literal parsed before and compared by lexical form with one parsed now differs; the new form is what the W3C `xml-canon` tests expect. A namespace bound to several prefixes at once may come back under a different prefix.
+- **N-Triples and N-Quads accept a `VERSION "1.2"` line** (RDF 1.2). A malformed one (`VERSION 1.2`, `VERSION "1.2" .`) is `nt.ErrBadVersion` / `nq.ErrBadVersion` with the line number; `version "1.2"` in lower case is still a syntax error.
+- **N-Triples and N-Quads accept white space between a literal and its `@lang` or `^^`, and between `^^` and the datatype IRI** (`"Alice" @en`).
+- **New:** `nt.WithCanonical()` / `nq.WithCanonical()` for `Serialize` and `NewWriter`, and `nt.Writer` (the N-Triples twin of `nq.Writer`). Canonical output writes `\b`, `\f`, `\uXXXX` for the other controls, U+007F, U+FFFE, U+FFFF, and every other character raw. Without the option the output is unchanged.
+- **RDFS closure (`reasoning`) types triple terms and the objects of `rdf:reifies` as `rdfs:Proposition`** (RDF 1.2 Semantics). A graph with triple terms gains `rdf:type rdfs:Proposition` triples after `Expand(g, RDFS)`. `namespace.RDFS.Proposition` is new.
+
+### SPARQL text that no longer parses
+
+The parser used to accept text that is not SPARQL, and sometimes read it as something else. Each of these is now a parse error with the position, and each has a one-line fix. They do not occur in valid queries; they show up in hand-written or generated query text, and in SHACL `sh:select` text.
+
+| Text that used to parse | Why it is not SPARQL | Write instead |
+|---|---|---|
+| `?` or `$` with no name (`SELECT ?` , `FILTER (? = 1)`) | it read as a variable named `""` (VARNAME needs a character, §19.8) | `?x` |
+| `SELECT WHERE { … }`, `SELECT { … }` (nothing selected) | a SELECT needs `*`, a variable or `(expr AS ?v)` | `SELECT *` or name the variables |
+| `VALUES d { … }`, `VALUES !d { … }` (a variable without `?`/`$`) | the first character was skipped without being looked at, so `!d` and `d` read as `?d` | `VALUES ?d { … }` |
+| a bare word as a term: `?s ex:p word`, `A ex:p ?o`, `?s A ?o` | an IRI is `<…>`, a prefixed name has a colon, the type shorthand is the lower-case `a` | `<urn:x>`, `ex:word`, `a` |
+| `FILTER ?x`, `FILTER 1`, `FILTER ex:f` (no call), `FILTER word` | a constraint is a bracketed expression, a built-in call or a function call (grammar [68]) | `FILTER (?x)`, `FILTER (1)`, `FILTER ex:f(?x)` |
+| `FILTER !bound(?x)`, `FILTER !isLiteral(?o)`, `FILTER !EXISTS { … }` | `!` starts a UnaryExpression, which only a bracketed expression may hold ([68]); `FILTER NOT EXISTS { … }` is fine | `FILTER (!bound(?x))`, `FILTER NOT EXISTS { … }` |
+| `HAVING COUNT(?o) > 1`, `HAVING ?s`, `HAVING !bound(?s)` | HAVING takes the same Constraint ([22]) | `HAVING (COUNT(?o) > 1)` |
+| `GROUP_CONCAT(?o; SEPARATOR=a)`, `SEPARATOR=<urn:x>` | the separator is a string literal (§18.2.4.4); this used to panic | `SEPARATOR=", "` |
+| one blank-node label in two basic graph patterns: `_:a ex:p ?v . OPTIONAL { _:a ex:q ?w }`, `{ _:a ex:p ?v } _:a ex:q ?w` | a label may not be used in two BGPs (§4.1.4); OPTIONAL, UNION, MINUS, GRAPH, BIND, VALUES, EXISTS, a subquery or a nested group starts a new one, a FILTER does not | a variable: `?a ex:p ?v . OPTIONAL { ?a ex:q ?w }` |
+| two triples blocks with no `.` between them: `?x ex:q ?x ?z ex:p ?x`, `:s1 :p1 :o1 :s2 :p2 :o2` | the second subject read as another object; TriplesBlock needs the dot (grammar [55]); both Oxigraph and rdflib reject it | `?x ex:q ?x . ?z ex:p ?x` |
+| a blank node, `[]`, a literal or a number as a predicate (`:x [] :q`, `:x _:a :q`) or as a graph name (`GRAPH [] { }`, `GRAPH _:g { }`) | a predicate and a graph name are a variable, an IRI or a prefixed name (VarOrIri, [106]) | a variable: `:x ?p :q`, `GRAPH ?g { }` |
+| `FILTER (?x<?a&&?b>?y)` | `<?a&&?b>` is one IRIREF token, tokens are matched greedily | spaces around the operator: `?x < ?a && ?b > ?y` |
+
+`FILTER !bound(?x)` is the one most likely to be in existing queries. It is accepted by several engines, but it is not in the SPARQL 1.1 grammar, and goRDFlib now follows the grammar. The bracketed form means the same.
+
+To find them: parse every query you store or generate with `sparql.Parse` (or `ParseUpdate`) in a test and look at the errors. In a SHACL shapes graph, `shacl.WithErrorHandler` reports a `sh:select` that does not parse as `ErrMalformedConstraint`, and the constraint yields a violation per focus node, so a shape that suddenly reports violations everywhere has one of these in its query. A search for `FILTER\s+[^(\s]` over your query text finds the unbracketed constraints.
+
+### SPARQL text that now parses
+
+SPARQL 1.0 and 1.1 text the parser used to reject, found by running the DAWG SPARQL 1.0 suites (`TestW3CSPARQL10`):
+
+- a `.` after OPTIONAL, MINUS, a group, BIND, VALUES or GRAPH (`OPTIONAL { … } .`), and a trailing `;` in a property list (`:s :p :o ; FILTER (…)`, `:s :p :o ; OPTIONAL { … }`)
+- unary `+` (`FILTER (+?x > 1)`, `+1 + +2`)
+- non-ASCII characters in prefixes and local names (`食:ほげ`), checked against PN_CHARS_BASE / PN_CHARS
+- a prefix called `a` or beginning with `a` (`a:`, `a-b:x`); `a` alone is still `rdf:type`
+- `DESCRIBE` is evaluated. `DESCRIBE <iri> | ?var ... [WHERE {...}]` and `DESCRIBE *` return `Result{Type: "DESCRIBE", Graph: g}`: the union of the Concise Bounded Description of each resource (subject triples, followed through blank-node objects, cycle-safe, plus RDF 1.2 `rdf:reifies` reifiers of those triples). Every triple counts against `WithMaxSolutions` and the context is polled. `sparql.WithDescriber(ctx, fn)` replaces the description. The endpoint answers DESCRIBE with an RDF graph negotiated like CONSTRUCT instead of 501, and `endpoint.ErrDescribeUnsupported` is removed
+- `SERVICE [SILENT] VarOrIri { ... }` parses (`ServicePattern`; every pattern walker in `sparql/` handles it). The library makes **no network call**: evaluating it fails with `sparql.ErrServiceUnsupported` unless the context carries a handler (`sparql.WithServiceHandler(ctx, func(ctx, *ServiceCall) ([]map[string]term.Term, error))`; `ServiceCall.Query` is a complete `SELECT * WHERE {...}` for a remote endpoint, `ServiceCall.Select()` a `*ParsedQuery` for a local graph). `SERVICE SILENT` yields the single empty solution when the call fails or no handler exists. `SERVICE ?e` is asked once per binding of `?e`; unbound is `ErrServiceEndpoint`; a failing handler is `ErrServiceFailed`. `ParsedQuery.PreBindRestrictions` now rejects SERVICE (it used to be a parse error). Endpoint: `endpoint.WithServiceHandler(h)` enables it; without it a SERVICE query or update answers 501 (SILENT: 200), an unbound endpoint 400, a failing handler 502. Code that matched the old `SERVICE not supported` parse error must match these instead
+
+### Answers that were wrong
+
+- **`=` and `<` on `xsd:date`, `xsd:time` and `xsd:dateTime` with and without a timezone.** `"2006-08-23"^^xsd:date = "2006-08-23Z"^^xsd:date` was true (the untimezoned reading was taken as UTC). The order of the two is indeterminate unless they are more than 14 hours apart (XSD 1.1 §3.3.7.2), so the comparison is now a type error, like the one `ValueEqual` already treated as unequal for `xsd:dateTime`. `"…T24:00:00"` is now the first instant of the next day instead of an unparsable value.
+- **A relative namespace in `PREFIX`** (`BASE <http://example.org/x/> PREFIX : <>`) is resolved against the BASE written before it; `:x` used to stay the relative IRI `x`.
+- **`xsd:dateTime(…)` as a cast** was an unbound error for every argument; it now accepts an `xsd:dateTime` or a string with a valid lexical form.
+- **A variable repeated in one triple pattern.** `?x ex:p ?x` matched every triple of `ex:p` and kept the subject; it now matches only triples whose subject and object are the same term. Same for `?s ?s ?o` and a path `?x ex:p+ ?x`.
+- **A zero-length path step on a term the graph does not hold.** `{ VALUES ?d { "x" } ?s ex:p* ?d }` joins the zero-length solutions of the graph's nodes with the VALUES row (§18.5); "x" is not a node, so there is no row, and it was one when `?d` came from VALUES, BIND or an earlier pattern. A term written in the pattern (`?s ex:p* "x"`) and an initial binding still match, as the W3C tests require.
+- **`(^p)+` and `^p+` walked backward through a literal.** On a store without `Reachable` (Badger, SQLite; the in-memory store uses the pushdown and was right) the walk reached unrelated nodes after meeting a literal child.
+- **A blank-node label in a query pattern.** `_:b ex:p ?o . _:b ex:q ?z` treated each `_:b` as an independent wildcard, a cross product; the label is a variable (§4.1.4) and the two patterns now join on it. `COUNT(*)` and `ASK` over one pattern with a repeated variable (`?x ex:p ?x`) counted or found every triple of `ex:p`; `SELECT DISTINCT *` kept rows that differed only in a hidden `[]` or label.
+- **Initial bindings and MINUS.** `{ MINUS { ?this ex:p ?o } }` with `?this` pre-bound removed the solution; with the value written into the query it does not, and now neither does the pre-bound form.
+- **Initial bindings and a right-hand pattern.** Queries run with initial bindings (SHACL pre-binds `$this`) now substitute the row of a join into a right-hand BGP, UNION or join of BGPs instead of evaluating it for every row. The answers are the same; the queries are much faster. Anything with an expression on the right (FILTER, BIND, OPTIONAL, subquery) still does not see the left row, as before (§18.2.1).
+- **Codepoint escapes (`\uXXXX`, `\UXXXXXXXX`) are recognised only inside `<IRI>` and string literals** (SPARQL 1.2 §19.2). They used to be decoded across the whole query text first, so `ns:a\u0062c` was `ns:abc`, a whole query could be written in escapes, and `"a\u0022b"` ended the string at the decoded quote. A decoded character is now data: `"\u005Cn"` is a backslash and an `n`, not a newline. Escapes elsewhere (names, variables, keywords) and surrogates or characters an IRI may not hold (`<a\u0020b>`) are parse errors.
+- **A SELECT expression may reuse a pattern variable that GROUP BY does not expose.** `SELECT (1 AS ?z) { ?s :p ?z } GROUP BY ?s` parses now (after grouping only the keys are in scope); `GROUP BY ?z` and `GROUP BY (1 AS ?z)` with the same alias are errors even when the pattern never binds `?z`.
+- **A trailing VALUES clause after GROUP BY is joined with the grouped solutions**, so `SELECT ?s ?v { ?s :p ?o } GROUP BY ?s VALUES ?v { 1 }` projects `?v`; it used to be joined into the pattern before grouping. A subquery's own trailing VALUES is joined before its OFFSET and LIMIT apply (it used to be joined after).
+- **`TRIPLE(s, p, o)` with a triple term as `s`** is an error (unbound), as RDF 1.2 allows only an IRI or blank node subject; it built an ill-formed triple term.
+
+- **SHACL 1.2 node expressions follow the Node Expressions draft (data-shapes 40231dfb).** `sh:expression` is evaluated once per value node with the scope variable `value` and holds only when the output is exactly `( true )` (it was "non-empty and not false" once per focus node); a SHACL-AF expression keeps its old reading. An evaluation failure (`ErrNodeExprFailure`: `shnex:instancesOf` over a literal, a SPARQL function error, a path values expression with two focus nodes) now makes validation return an error instead of counting the constraint as satisfied. `shnex:min`/`shnex:max` use the SPARQL ORDER BY order (strings, dates, IRIs; they used to skip non-numbers), `shnex:sum` of a non-number is a failure, `shnex:orderBy` sorts like ORDER BY, and `shnex:if` takes the then branch only for exactly `( true )`. `sh:nodeByExpression` evaluates its expression per value node and names the shape that failed as `sh:sourceConstraint`. A blank node with properties that no declared function claims is a failure, not an empty list. Added: the `sparql:` function expressions, `shnex:conformsToShape`, `shnex:arg`, and custom `sh:NamedParameterExpressionFunction` / `sh:ListParameterExpressionFunction` bodies. RDF 1.2 triple terms are now kept by the SHACL graph (`Term.IsTriple`) instead of read as an empty term.
+- **SHACL 1.2 Core and SPARQL follow data-shapes 40231dfb.**
+  - Added: `sh:rootClass`, `sh:uniqueValuesFor` (a result carries no `sh:value`), `sh:nodeKind sh:TripleTerm`, and `sh:severity` on a `sh:sparql` constraint, which overrides the shape's.
+  - Changed: `sh:closed` applies to each value node of a property shape (before, to the focus node only, so on a property shape it checked the wrong node). `sh:values` now adds to the nodes the path reaches instead of replacing them, and `sh:defaultValue` supplies the value nodes when there are none. `sh:deactivated` may be a node expression, evaluated for each focus node.
+  - `$PATH` in a SPARQL constraint is replaced for every property path (sequence, inverse, alternative, `*`, `+`, `?`), not only for a predicate; for a path it could not write it used to stay unbound.
+  - Prefixes: without `sh:prefixes`, a query now uses the `sh:declare` of the `owl:Ontology`, `sh:DataGraph`, `sh:ShapesGraph` and `sh:RulesGraph` nodes of the shapes graph; `sh:prefixes` reaches a graph through `owl:versionIRI` and `owl:imports`.
+  - **A run now fails** (`ValidateContext` returns the error, `Validate` sets `ValidationReport.Err`) instead of producing a report when a SHACL-SPARQL query run with pre-bound variables has a `MINUS`, a `VALUES` that mentions a pre-bound variable, or `AS ?var` for one (`ErrPreBoundRestriction`, also `ErrQueryFailed`), or when a solution binds `?failure` to true (`ErrQueryReportedFailure`). The query was evaluated before. Replace `MINUS` with `FILTER NOT EXISTS`, and a `VALUES ?this` with a `FILTER`.
+  - Custom functions declared as `sh:ListParameterExpressionFunction` can be called from the SPARQL queries of the shapes graph, with or without `WithAdvancedFeatures`.
+  - `sparql`: `ParsedQuery.PreBindRestrictions(vars...)` reports those restrictions; a `LIMIT` over one triple pattern no longer ignores initial bindings (`SELECT ?s ?o WHERE { ?s ex:p ?o } LIMIT 1` with `?s` pre-bound answered from the first triple of `ex:p`).
+
+### SHACL rules (SPARQL-RL, `shacl/srl_*.go`)
+
+The rule language follows the current SPARQL-RL draft (data-shapes 40231dfb), which changed the grammar and tightened evaluation:
+
+- `SET ( ?v := expr )` is the assignment element. `BIND ( expr AS ?v )` is still read as the same element, so old rule files parse; new files should use `SET`.
+- New elements: `GROUP [BY ?k ...] { pattern } [ ?n := COUNT|MIN|MAX|SUM(...) ]` (`SRLBodyGroup`, `SRLBodyElement.GroupKeys/GroupBody/GroupAggs`), `NOT DATA { }` (`SRLBodyElement.NotData`), `WHERE DATA` (`SRLRule.BaseGraphOnly`), property paths in a body (`SRLTriple.Path`), an optional rule IRI (`SRLRule.ID`), `VERSION` and `IMPORTS`.
+- FILTER and SET expressions are SPARQL expressions run by the sparql engine, not string comparisons: numeric promotion, string and date functions, language matching, and "error means false" (FILTER) / "error rejects the solution" (SET). A function SPARQL-RL does not list (`BOUND`, `EXISTS`, `COALESCE`, aggregates) is a syntax error. Expressions hold the PREFIX and BASE in force where the rule was written.
+- `EvalRuleSet` checks the rule set first: `ErrSRLNotWellFormed`, `ErrSRLNotStratifiable` (a cycle through a negation, group, assignment, or a head that creates blank nodes or triple terms), `ErrSRLImports` (IMPORTS are not resolved). Syntax errors wrap `ErrSRLSyntax` and carry the offset of the token. Previously a rule set that broke these conditions was evaluated anyway.
+- Run-once rules (assignment, group, blank node or variable triple term in the head) run once per stratum, before the general rules reach their fixpoint; a blank node in a head is a fresh node per solution.
+- `<< s p o >>` no longer asserts `s p o` (RDF 1.2): it only adds `rdf:reifies`. `a` as an object, `@lang--LTR` (upper case) and a bare `[`...`]` where a blank node label is required are syntax errors.
+- Removed (unexported helpers): the string-key engine (`srlTermToKey`, `evalFilter`, ...).
+
 
 ---
 

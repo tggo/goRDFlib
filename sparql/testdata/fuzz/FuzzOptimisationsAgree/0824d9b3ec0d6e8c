@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX ex: <http://example.org/> SELECT{ BIND (00AS!^ex:r* $}")

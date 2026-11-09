@@ -88,10 +88,11 @@ func (ctx *nodeExprContext) goContext() context.Context {
 var ErrQueryFailed = errors.New("shacl: a SPARQL query could not be evaluated")
 
 // fail records err as the failure of the run when it is a query evaluation
-// error; the first one wins. Parse errors are not recorded: they are findings
-// about the shapes graph and are reported as before.
+// error or a node expression failure (ErrNodeExprFailure); the first one wins.
+// Parse errors are not recorded: they are findings about the shapes graph and
+// are reported as before.
 func (g *recursionGuard) fail(err error) {
-	if g != nil && g.err == nil && errors.Is(err, ErrQueryFailed) {
+	if g != nil && g.err == nil && (errors.Is(err, ErrQueryFailed) || errors.Is(err, ErrNodeExprFailure)) {
 		g.err = err
 	}
 }

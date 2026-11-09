@@ -1,0 +1,2 @@
+go test fuzz v1
+string("PREFIX ex:<http://example.org/>SELECT$0{MINUS{}$0 ex:a$a{$0!ex:0000<<($0 ex: 0}}")

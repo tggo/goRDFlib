@@ -50,9 +50,13 @@ func TestEvalQueryCONSTRUCTWhere(t *testing.T) {
 
 func TestEvalQueryInvalidType(t *testing.T) {
 	g := makeSPARQLGraph(t)
-	_, err := Query(g, `PREFIX ex: <http://example.org/> DESCRIBE ex:Alice`)
-	if err == nil {
-		t.Error("expected error for DESCRIBE")
+	q, err := Parse(`ASK { ?s ?p ?o }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.Type = "NOSUCH"
+	if _, err := EvalQuery(g, q, nil); err == nil {
+		t.Error("expected error for an unknown query type")
 	}
 }
 

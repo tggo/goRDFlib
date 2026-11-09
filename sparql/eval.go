@@ -94,43 +94,74 @@ func evalQuery(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[
 		if len(q.Construct) == 0 && q.Where != nil {
 			q.Construct = extractTemplateFromPattern(q.Where)
 		}
-		// Apply ORDER BY, LIMIT, OFFSET to solutions (same as SELECT)
-		if len(q.OrderBy) > 0 {
-			sortSolutions(ec, solutions, func(a, b map[string]rdflibgo.Term) int {
-				for _, ob := range q.OrderBy {
-					va := evalExprWithGraph(ec, ob.Expr, a, q.Prefixes, g, q.NamedGraphs)
-					vb := evalExprWithGraph(ec, ob.Expr, b, q.Prefixes, g, q.NamedGraphs)
-					c := compareTermValues(va, vb)
-					if ob.Desc {
-						c = -c
-					}
-					if c != 0 {
-						return c
-					}
-				}
-				return 0
-			})
-		}
-		if q.Offset > 0 {
-			if q.Offset >= len(solutions) {
-				solutions = nil
-			} else {
-				solutions = solutions[q.Offset:]
-			}
-		}
-		if q.Limit >= 0 && q.Limit < len(solutions) {
-			solutions = solutions[:q.Limit]
-		}
+		solutions = applyModifiers(ec, g, q, solutions)
 		return evalConstruct(ec, g, q, solutions)
+	case "DESCRIBE":
+		solutions = applyModifiers(ec, g, q, solutions)
+		if ec.poll() {
+			return nil, nil
+		}
+		return evalDescribe(ec, g, q, solutions)
 	default:
 		return nil, fmt.Errorf("unsupported query type: %s", q.Type)
 	}
+}
+
+// applyModifiers applies ORDER BY, OFFSET and LIMIT to the solutions of a
+// CONSTRUCT or DESCRIBE query (same as SELECT).
+func applyModifiers(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+	// Apply ORDER BY, LIMIT, OFFSET to solutions (same as SELECT)
+	if len(q.OrderBy) > 0 {
+		sortSolutions(ec, solutions, func(a, b map[string]rdflibgo.Term) int {
+			for _, ob := range q.OrderBy {
+				va := evalExprWithGraph(ec, ob.Expr, a, q.Prefixes, g, q.NamedGraphs)
+				vb := evalExprWithGraph(ec, ob.Expr, b, q.Prefixes, g, q.NamedGraphs)
+				c := compareTermValues(va, vb)
+				if ob.Desc {
+					c = -c
+				}
+				if c != 0 {
+					return c
+				}
+			}
+			return 0
+		})
+	}
+	if q.Offset > 0 {
+		if q.Offset >= len(solutions) {
+			solutions = nil
+		} else {
+			solutions = solutions[q.Offset:]
+		}
+	}
+	if q.Limit >= 0 && q.Limit < len(solutions) {
+		solutions = solutions[:q.Limit]
+	}
+	return solutions
 }
 
 func evalSelect(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) (*Result, error) {
 	// Aggregation
 	if len(q.GroupBy) > 0 || hasAggregates(q) {
 		solutions = evalAggregation(ec, g, q, solutions)
+	}
+
+	// A trailing VALUES clause is joined with the grouped solutions, before
+	// the SELECT expressions see them (SPARQL 1.2 §18.2.4.1).
+	if q.TrailingValues != nil {
+		rows := evalPattern(ec, g, q.TrailingValues, q.Prefixes, q.NamedGraphs)
+		var joined []map[string]rdflibgo.Term
+		for _, s := range solutions {
+			for _, r := range rows {
+				if ec.stop() {
+					return nil, nil
+				}
+				if isCompatible(s, r) {
+					joined = append(joined, mergeBindings(s, r))
+				}
+			}
+		}
+		solutions = joined
 	}
 
 	// Project expressions
@@ -191,7 +222,11 @@ func evalSelect(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[
 	if (q.Limit >= 0 || q.Offset > 0) &&
 		len(q.OrderBy) == 0 && !q.Distinct &&
 		len(q.GroupBy) == 0 && !hasAggregates(q) &&
-		len(q.ProjectExprs) == 0 {
+		len(q.ProjectExprs) == 0 && len(ec.pre) == 0 {
+		// Not under initial bindings: the store would be asked for the bare
+		// pattern, and the rows it returns replace the pre-bound ones, so a
+		// sub-SELECT { ?this p ?o } LIMIT 1 with ?this pre-bound answered
+		// from the first triple of p of any subject.
 		if tp := extractSimpleBGP(q.Where); tp != nil {
 			if qs, ok := g.Store().(store.QueryableStore); ok {
 				pat := buildStorePattern(tp, q.Prefixes)
@@ -686,6 +721,7 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 	if pattern == nil {
 		return []map[string]rdflibgo.Term{{}}
 	}
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
 
 	switch p := pattern.(type) {
 	case *BGP:
@@ -797,7 +833,11 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 		if ec.poll() {
 			return nil
 		}
-		right := evalPattern(ec, g, p.Right, prefixes, namedGraphs)
+		// A pre-bound value is a constant substituted into the whole query,
+		// the right side included, and a constant is not a variable the two
+		// sides can share: { MINUS { ?this ex:p ?o } } removes nothing from
+		// the empty solution, exactly as { MINUS { ex:root ex:p ?o } } does.
+		right := minusRight(ec, g, p.Right, ec.pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, lb := range left {
 			excluded := false
@@ -805,7 +845,7 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 				if ec.stop() {
 					return nil
 				}
-				if minusCompatible(lb, rb) {
+				if minusCompatibleExcept(lb, rb, ec.pre) {
 					excluded = true
 					break
 				}
@@ -818,6 +858,9 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 
 	case *GraphPattern:
 		return evalGraphPattern(ec, g, p, prefixes, namedGraphs)
+
+	case *ServicePattern:
+		return evalService(ec, p, nil, prefixes)
 
 	case *SubqueryPattern:
 		subQ := *p.Query // shallow copy; deep-copy mutable fields below
@@ -846,6 +889,24 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 	}
 
 	return []map[string]rdflibgo.Term{{}}
+}
+
+// compatibleWith keeps the rows that agree with bindings on every variable
+// both bind.
+func compatibleWith(ec *evalCtx, rows []map[string]rdflibgo.Term, bindings map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+	if len(bindings) == 0 {
+		return rows
+	}
+	kept := make([]map[string]rdflibgo.Term, 0, len(rows))
+	for _, r := range rows {
+		if ec.stop() {
+			return nil
+		}
+		if isCompatible(bindings, r) {
+			kept = append(kept, r)
+		}
+	}
+	return kept
 }
 
 func evalGraphPattern(ec *evalCtx, g *rdflibgo.Graph, gp *GraphPattern, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
@@ -899,6 +960,35 @@ func evalGraphPattern(ec *evalCtx, g *rdflibgo.Graph, gp *GraphPattern, prefixes
 	return nil
 }
 
+// minusRight evaluates the right side of a MINUS with the initial bindings as
+// constants, as it would be with the values written into the query.
+func minusRight(ec *evalCtx, g *rdflibgo.Graph, p Pattern, pre map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+	if len(pre) == 0 {
+		return evalPattern(ec, g, p, prefixes, namedGraphs)
+	}
+	return evalPatternPreBound(ec, g, p, pre, prefixes, namedGraphs)
+}
+
+// minusCompatibleExcept is minusCompatible with the variables of pre left
+// out of the shared domain: they are constants, and both sides agree on them
+// by construction.
+func minusCompatibleExcept(a, b, pre map[string]rdflibgo.Term) bool {
+	shared := false
+	for k, va := range a {
+		vb, ok := b[k]
+		if !ok {
+			continue
+		}
+		if va.N3() != vb.N3() {
+			return false
+		}
+		if _, constant := pre[k]; !constant {
+			shared = true
+		}
+	}
+	return shared
+}
+
 func minusCompatible(a, b map[string]rdflibgo.Term) bool {
 	shared := false
 	for k, va := range a {
@@ -922,9 +1012,13 @@ func minusCompatible(a, b map[string]rdflibgo.Term) bool {
 // test checks. Only pre-bound values, which behave as constants substituted
 // into the query, cross that boundary — see evalPatternPreBound.
 func evalPatternWithBindings(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, bindings map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
 	switch p := pattern.(type) {
 	case *BGP:
 		return evalBGP(ec, g, p.Triples, bindings, prefixes)
+	case *ServicePattern:
+		// The row's value of a variable endpoint is what selects the service.
+		return compatibleWith(ec, evalService(ec, p, bindings, prefixes), bindings)
 	default:
 		results := evalPattern(ec, g, pattern, prefixes, namedGraphs)
 		var compatible []map[string]rdflibgo.Term
@@ -959,6 +1053,8 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		return []map[string]rdflibgo.Term{{}}
 	}
 
+	pattern = ec.mergeJoined(pattern) // a join of BGPs is one BGP (bgp_merge.go)
+
 	// evalExpr is given the row plus the pre-bound constants, so an expression
 	// sees them without them becoming part of the solution.
 	evalWith := func(expr Expr, row map[string]rdflibgo.Term) rdflibgo.Term {
@@ -969,16 +1065,72 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 	case *BGP:
 		return evalBGP(ec, g, p.Triples, pre, prefixes)
 
+	case *ServicePattern:
+		return compatibleWith(ec, evalService(ec, p, pre, prefixes), pre)
+
 	case *JoinPattern:
 		left := evalPatternPreBound(ec, g, p.Left, pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
+		if sp, ok := p.Right.(*ServicePattern); ok {
+			// A SERVICE clause is asked once per left row: its endpoint may be
+			// a variable the row binds, and the handler may use the row.
+			for _, lb := range left {
+				if ec.stop() {
+					return nil
+				}
+				in := mergeBindings(pre, lb)
+				for _, rb := range compatibleWith(ec, evalService(ec, sp, in, prefixes), in) {
+					result = append(result, mergeBindings(lb, rb))
+					if ec.produced(1) {
+						return nil
+					}
+				}
+			}
+			return result
+		}
+		if rs := ec.rightSideOf(p.Right); !offPreBoundJoinSubst && rs.free && rs.bindsAVariableOf(left, pre) {
+			// A basic graph pattern holds no expression, nor does a UNION or a
+			// group of them, so evaluating it with the left row's values
+			// substituted (an index nested-loop join) is the same as joining
+			// its own solutions with the row, and only touches the triples
+			// that can match. This is the common case of a group split by a
+			// FILTER, { A FILTER (…) B }, a FILTER over Join(A, B), and of
+			// { A { B } UNION { C } }, Join(A, Union(B, C)); EXISTS bodies
+			// take this path too, with the outer row pre-bound. When no left
+			// row binds a variable of the right side, the right side is the
+			// same for every row and is evaluated once, below.
+			for _, lb := range left {
+				if ec.stop() {
+					return nil
+				}
+				for _, rb := range evalPatternPreBound(ec, g, p.Right, mergeBindings(pre, lb), prefixes, namedGraphs) {
+					result = append(result, mergeBindings(lb, rb))
+					if ec.produced(1) {
+						return nil
+					}
+				}
+			}
+			return result
+		}
+		// The right side sees the pre-bound constants, and the left row only
+		// through the ordinary, expression-opaque path. It does not depend on
+		// the left row, so it is evaluated once (and not at all for no row),
+		// unless it calls a function that may give each row its own value.
+		if len(left) == 0 {
+			return nil
+		}
+		var right []map[string]rdflibgo.Term
+		once := !offPreBoundJoinSubst && (len(left) == 1 || !callsVolatileFunction(p.Right))
+		if once {
+			right = evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
+		}
 		for _, lb := range left {
 			if ec.stop() {
 				return nil
 			}
-			// The right side sees the pre-bound constants, and the left row
-			// only through the ordinary, expression-opaque path.
-			right := evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
+			if !once {
+				right = evalPatternPreBound(ec, g, p.Right, pre, prefixes, namedGraphs)
+			}
 			for _, rb := range right {
 				if isCompatible(lb, rb) {
 					result = append(result, mergeBindings(lb, rb))
@@ -1055,7 +1207,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		if ec.poll() {
 			return nil
 		}
-		right := evalPattern(ec, g, p.Right, prefixes, namedGraphs)
+		right := minusRight(ec, g, p.Right, pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, lb := range left {
 			excluded := false
@@ -1063,7 +1215,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 				if ec.stop() {
 					return nil
 				}
-				if minusCompatible(lb, rb) {
+				if minusCompatibleExcept(lb, rb, pre) {
 					excluded = true
 					break
 				}
@@ -1208,9 +1360,20 @@ func evalBGPUpTo(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[
 	return evalBGPInOrder(ec, g, orderBGP(ec, g, triples, bindings, prefixes), bindings, prefixes, limit)
 }
 
-// evalBGPInOrder evaluates the triple patterns as nested loops in the order
-// given and collects at most limit solutions (limit <= 0: all of them).
+// evalBGPInOrder evaluates the triple patterns in the order given and collects
+// at most limit solutions (limit <= 0: all of them). Groups of patterns that
+// share no variable are evaluated once each and combined (bgp_components.go);
+// the patterns of one group are joined as nested loops.
 func evalBGPInOrder(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
+	if comps := bgpComponents(triples, bindings); comps != nil {
+		return evalBGPComponents(ec, g, comps, bindings, prefixes, limit)
+	}
+	return collectBGPSolutions(ec, g, triples, bindings, prefixes, limit)
+}
+
+// collectBGPSolutions evaluates the triple patterns as nested loops in the
+// order given and collects at most limit solutions (limit <= 0: all of them).
+func collectBGPSolutions(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, limit int) []map[string]rdflibgo.Term {
 	var results []map[string]rdflibgo.Term
 	eachBGPSolution(ec, g, triples, bindings, prefixes, func(b map[string]rdflibgo.Term) bool {
 		results = append(results, b)
@@ -1286,9 +1449,8 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 		nb := copyBindings(bindings)
 
 		if strings.HasPrefix(tp.Subject, "?") {
-			v := tp.Subject[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = t.Subject
+			if !bindVar(nb, bindings, tp.Subject[1:], t.Subject) {
+				return true // ?x p ?x: the subject differs from the object
 			}
 		} else if subjIsVarTT {
 			// Subject is a triple term pattern with variables — match against graph subject
@@ -1303,15 +1465,13 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 			}
 		}
 		if strings.HasPrefix(tp.Predicate, "?") {
-			v := tp.Predicate[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = t.Predicate
+			if !bindVar(nb, bindings, tp.Predicate[1:], t.Predicate) {
+				return true
 			}
 		}
 		if strings.HasPrefix(tp.Object, "?") {
-			v := tp.Object[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = t.Object
+			if !bindVar(nb, bindings, tp.Object[1:], t.Object) {
+				return true
 			}
 		} else if objIsVarTT {
 			// Object is a triple term pattern with variables — match against graph object
@@ -1333,6 +1493,24 @@ func eachBGPSolution(ec *evalCtx, g *rdflibgo.Graph, triples []Triple, bindings 
 	return cont
 }
 
+// bindVar binds v to val in nb, the solution being built for one matched
+// triple, and reports whether the triple is consistent with it. A variable
+// that bindings already held is a constant here: the lookup was restricted to
+// it. One that an earlier position of the same pattern just bound (?x ex:p ?x,
+// ?s ?s ?o) must match the same term again (SPARQL 1.1 §18.2.2.1: a variable
+// in two positions names one value).
+func bindVar(nb, bindings map[string]rdflibgo.Term, v string, val rdflibgo.Term) bool {
+	cur, ok := nb[v]
+	if !ok {
+		nb[v] = val
+		return true
+	}
+	if _, was := bindings[v]; was {
+		return true
+	}
+	return term.TermKey(cur) == term.TermKey(val)
+}
+
 func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, bindings map[string]rdflibgo.Term, prefixes map[string]string, yield func(map[string]rdflibgo.Term) bool) bool {
 	gg := (*graph.Graph)(g)
 
@@ -1351,6 +1529,14 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 	oVal := resolvePatternTerm(tp.Object, bindings, prefixes)
 	obj = oVal
 
+	// A triple term pattern that resolve could not turn into a term (a
+	// variable in it is still unbound) is not a wildcard: the path runs open
+	// at that end and its pairs are matched against the pattern.
+	// The endpoint checks are rarely needed, so they live behind one pointer
+	// that stays nil, and out of the callback's captured variables, when no
+	// endpoint calls for them (see pathEndChecks).
+	chk := newPathEndChecks(ec, tp, bindings, sVal, oVal, subj == nil, obj == nil)
+
 	cont := true
 	tp.PredicatePath.Eval(ec.context(), gg, subj, obj)(func(pair store.TermPair, err error) bool {
 		ec.fail(err)
@@ -1359,18 +1545,47 @@ func eachPathSolution(ec *evalCtx, g *rdflibgo.Graph, tp Triple, rest []Triple, 
 			return false
 		}
 		s, o := pair.First, pair.Second
+		// An endpoint written as a triple term with variables that no earlier
+		// pattern bound was left open above; the pair's end must match it, and
+		// binds its variables.
+		var matched map[string]rdflibgo.Term
+		if chk != nil && (chk.subjTT || chk.objTT) {
+			matched = copyBindings(bindings)
+			if chk.subjTT {
+				tt, ok := s.(rdflibgo.TripleTerm)
+				if !ok {
+					return true
+				}
+				if matched = matchTripleTermPattern(tt, tp.Subject, matched, prefixes); matched == nil {
+					return true
+				}
+			}
+			if chk.objTT {
+				tt, ok := o.(rdflibgo.TripleTerm)
+				if !ok {
+					return true
+				}
+				if matched = matchTripleTermPattern(tt, tp.Object, matched, prefixes); matched == nil {
+					return true
+				}
+			}
+		}
+		if chk != nil && chk.checkZero && term.TermKey(s) == term.TermKey(o) && !ec.zeroLengthMatches(g, tp, bindings, s, chk.constKeys, prefixes) {
+			return true
+		}
 		nb := copyBindings(bindings)
+		if matched != nil {
+			nb = matched
+		}
 
 		if strings.HasPrefix(tp.Subject, "?") {
-			v := tp.Subject[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = s
+			if !bindVar(nb, bindings, tp.Subject[1:], s) {
+				return true
 			}
 		}
 		if strings.HasPrefix(tp.Object, "?") {
-			v := tp.Object[1:]
-			if _, bound := nb[v]; !bound {
-				nb[v] = o
+			if !bindVar(nb, bindings, tp.Object[1:], o) {
+				return true // ?x path ?x: only a path from a node back to itself
 			}
 		}
 
@@ -1622,7 +1837,12 @@ func isCompatible(a, b map[string]rdflibgo.Term) bool {
 func solutionKey(s map[string]rdflibgo.Term, vars []string) string {
 	var parts []string
 	if vars == nil {
+		// SELECT * projects in-scope variables only: a blank-node label or
+		// [] is a variable of the pattern, never of the solution (§18.2.1).
 		for k, v := range s {
+			if isInternalVar(k) {
+				continue
+			}
 			parts = append(parts, k+"="+v.N3())
 		}
 		slices.Sort(parts)
@@ -1698,6 +1918,13 @@ func extractSimpleBGP(p Pattern) *Triple {
 		return nil
 	}
 	if strings.HasPrefix(tp.Object, "<<( ") && tripleTermHasVariables(tp.Object) {
+		return nil
+	}
+	// A variable repeated within the pattern (?x ex:p ?x) constrains the
+	// match, and a store pattern has only wildcards: it would count or find
+	// every triple of ex:p.
+	if isVar(tp.Subject) && (tp.Subject == tp.Predicate || tp.Subject == tp.Object) ||
+		isVar(tp.Predicate) && tp.Predicate == tp.Object {
 		return nil
 	}
 	return tp

@@ -43,7 +43,7 @@ const (
 	RDFSSubClassOf = RDFS + "subClassOf"
 )
 
-// TermKind distinguishes the three kinds of RDF terms.
+// TermKind distinguishes the kinds of RDF terms.
 type TermKind int
 
 const (
@@ -51,6 +51,9 @@ const (
 	TermIRI
 	TermLiteral
 	TermBlankNode
+	// TermTriple is an RDF 1.2 triple term. Its value is the term.TermKey of
+	// the triple term, which is injective and decodes back (see toTerm).
+	TermTriple
 )
 
 func (k TermKind) String() string {
@@ -63,6 +66,8 @@ func (k TermKind) String() string {
 		return "Literal"
 	case TermBlankNode:
 		return "BlankNode"
+	case TermTriple:
+		return "TripleTerm"
 	}
 	return "Unknown"
 }
@@ -83,6 +88,7 @@ func (t Term) IsNone() bool     { return t.kind == TermNone }
 func (t Term) IsIRI() bool      { return t.kind == TermIRI }
 func (t Term) IsLiteral() bool  { return t.kind == TermLiteral }
 func (t Term) IsBlank() bool    { return t.kind == TermBlankNode }
+func (t Term) IsTriple() bool   { return t.kind == TermTriple }
 
 func (t Term) String() string {
 	switch t.kind {
@@ -98,6 +104,11 @@ func (t Term) String() string {
 		return s
 	case TermBlankNode:
 		return "_:" + t.value
+	case TermTriple:
+		if tt, ok := toTerm(t).(term.TripleTerm); ok {
+			return tt.N3()
+		}
+		return "<<( )>>"
 	}
 	return ""
 }
@@ -113,6 +124,8 @@ func (t Term) TermKey() string {
 		return "L:" + t.value + "^^" + t.datatype
 	case TermBlankNode:
 		return "B:" + t.value
+	case TermTriple:
+		return t.value
 	}
 	return ""
 }
@@ -147,7 +160,7 @@ func (t Term) Equal(other Term) bool {
 		return t.value == other.value
 	case TermLiteral:
 		return t.value == other.value && t.datatype == other.datatype && t.language == other.language
-	case TermBlankNode:
+	case TermBlankNode, TermTriple:
 		return t.value == other.value
 	}
 	return false
@@ -208,6 +221,8 @@ func fromRDFLib(t term.Term) Term {
 		return Term{kind: TermLiteral, value: val, datatype: dt, language: fullLang}
 	case term.BNode:
 		return Term{kind: TermBlankNode, value: v.Value()}
+	case term.TripleTerm:
+		return Term{kind: TermTriple, value: term.TermKey(v)}
 	}
 	return Term{}
 }
@@ -219,6 +234,12 @@ func toSubject(t Term) term.Subject {
 		return term.NewURIRefUnsafe(t.value)
 	case TermBlankNode:
 		return term.NewBNode(t.value)
+	case TermTriple:
+		if tt, err := term.TermFromKey(t.value); err == nil {
+			if sub, ok := tt.(term.Subject); ok {
+				return sub
+			}
+		}
 	}
 	return nil
 }
@@ -255,6 +276,10 @@ func toTerm(t Term) term.Term {
 		return term.NewLiteral(t.value)
 	case TermBlankNode:
 		return term.NewBNode(t.value)
+	case TermTriple:
+		if tt, err := term.TermFromKey(t.value); err == nil {
+			return tt
+		}
 	}
 	return nil
 }
@@ -275,6 +300,10 @@ type Graph struct {
 	rgMu    sync.Mutex // serialises building rg from src
 	src     []term.Triple
 	baseURI string
+
+	// over is set on an overlay graph (Overlay): its rdflib graph is a
+	// read-only union built on first use, and it is never written.
+	over *overlay
 
 	// idx holds the lazily built lookup indexes. It is replaced wholesale
 	// rather than mutated in place, so a reader always sees a complete set.
@@ -330,6 +359,14 @@ func (g *Graph) rdf(ctx context.Context) (*graph.Graph, error) {
 	if rg := g.rg.Load(); rg != nil {
 		return rg, nil
 	}
+	if g.over != nil {
+		rg, err := g.rdfOverlay(ctx)
+		if err != nil {
+			return nil, err
+		}
+		g.rg.Store(rg)
+		return rg, nil
+	}
 	rg := graph.NewGraph(graph.WithBase(g.baseURI))
 	for _, t := range g.src {
 		if err := rg.Add(ctx, t.Subject, t.Predicate, t.Object); err != nil {
@@ -359,6 +396,9 @@ var defaultNamespaces = sync.OnceValue(func() []store.NamespaceBinding {
 // indexes (buildIndexes), so this does no store I/O of its own; a graph whose
 // indexes could not be built reports none.
 func (g *Graph) namespaces() []store.NamespaceBinding {
+	if g.over != nil {
+		return g.over.base.namespaces()
+	}
 	if g.rg.Load() == nil {
 		return defaultNamespaces()
 	}
@@ -471,6 +511,20 @@ func LoadNQuadsString(data, base string, opts ...nq.Option) (*Graph, error) {
 	return LoadNQuads(strings.NewReader(data), base, opts...)
 }
 
+// NewGraphFromTriples returns a graph over triples the caller already holds in
+// memory, for example triples built by Go code rather than parsed from a file.
+//
+// The triples are neither parsed nor copied into a store: validation reads the
+// indexes built from them on first use, and the rdflib graph that SPARQL-based
+// constraints, Add, Merge and SHACL-AF rules need is built only when one of
+// them runs, as for LoadJsonLD (issue #48). A repeated triple is held once.
+//
+// The slice is not copied and must not be modified while the graph is in use.
+// Like every Graph, the result is safe for concurrent reads.
+func NewGraphFromTriples(triples []term.Triple, baseURI string) *Graph {
+	return &Graph{src: triples, baseURI: baseURI}
+}
+
 // NewGraphFromRDF wraps an existing *graph.Graph as a *Graph, without copying
 // its triples.
 //
@@ -503,7 +557,13 @@ func NewGraphFromRDF(ctx context.Context, g *graph.Graph, baseURI string) (*Grap
 // next read to rebuild them from the wrapped graph. Call this after mutating
 // the graph.Graph passed to NewGraphFromRDF directly, outside of this
 // Graph's Add/Merge methods.
+//
+// On an overlay graph (Overlay) it does nothing: the overlay's indexes are
+// all it has, and the base it reads must not change.
 func (g *Graph) InvalidateIndexes() {
+	if g.over != nil {
+		return
+	}
 	g.invalidateIndexes()
 }
 
@@ -521,6 +581,10 @@ type graphIndexes struct {
 	// the reifier lookups of SHACL 1.2 read this instead of the store.
 	reifies   []reifyEntry
 	reifiesBy map[ikey][]term.TripleTerm // by reifier
+
+	// under is the base of an overlay graph (Graph.Overlay): these indexes
+	// then hold only the triples added over it, and every lookup reads both.
+	under *graphIndexes
 }
 
 type reifyEntry struct {
@@ -569,15 +633,6 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) (*graphIndexes, error)
 	// A streamed source may repeat a triple; a graph holds it once.
 	dedup := g.rg.Load() == nil
 	add := func(t term.Triple) {
-		if tt, ok := t.Object.(term.TripleTerm); ok && t.Predicate.Value() == RDF+"reifies" {
-			r := fromRDFLib(t.Subject)
-			idx.reifies = append(idx.reifies, reifyEntry{r, tt})
-			if idx.reifiesBy == nil {
-				idx.reifiesBy = make(map[ikey][]term.TripleTerm)
-			}
-			rk := indexKey(r)
-			idx.reifiesBy[rk] = append(idx.reifiesBy[rk], tt)
-		}
 		s := fromRDFLib(t.Subject)
 		p := fromRDFLib(t.Predicate)
 		o := fromRDFLib(t.Object)
@@ -597,6 +652,16 @@ func (g *Graph) ensureIndexesContext(ctx context.Context) (*graphIndexes, error)
 		}
 		sp[pk] = append(sp[pk], o)
 		idx.n++
+
+		// After the dedup check: a repeated rdf:reifies triple in a streamed
+		// source must not list its reifier twice.
+		if tt, ok := t.Object.(term.TripleTerm); ok && t.Predicate.Value() == RDF+"reifies" {
+			idx.reifies = append(idx.reifies, reifyEntry{s, tt})
+			if idx.reifiesBy == nil {
+				idx.reifiesBy = make(map[ikey][]term.TripleTerm)
+			}
+			idx.reifiesBy[sk] = append(idx.reifiesBy[sk], tt)
+		}
 
 		po := idx.pos[pk]
 		if po == nil {
@@ -641,9 +706,11 @@ func (g *Graph) invalidateIndexes() {
 // Triples returns all triples in the graph, from its indexes.
 func (g *Graph) Triples() []Triple {
 	idx := g.ensureIndexes()
-	result := make([]Triple, 0, idx.n)
-	for _, ts := range idx.p {
-		result = append(result, ts...)
+	result := make([]Triple, 0, idx.len())
+	for ; idx != nil; idx = idx.under {
+		for _, ts := range idx.p {
+			result = append(result, ts...)
+		}
 	}
 	return result
 }
@@ -654,8 +721,19 @@ func (g *Graph) Triples() []Triple {
 // The indexes cover the patterns the validator asks for most; anything else
 // falls through to the underlying graph, which can match any combination.
 func (g *Graph) All(s, p, o *Term) []Triple {
-	idx := g.ensureIndexes()
+	return clip(g.ensureIndexes().all(s, p, o))
+}
 
+// all matches the pattern against idx and, for an overlay, its base.
+func (idx *graphIndexes) all(s, p, o *Term) []Triple {
+	if idx.under == nil {
+		return idx.match(s, p, o)
+	}
+	return concatClipped(idx.under.all(s, p, o), idx.match(s, p, o))
+}
+
+// match matches the pattern against the triples idx itself holds.
+func (idx *graphIndexes) match(s, p, o *Term) []Triple {
 	switch {
 	case s != nil && p != nil && o != nil:
 		// A fully bound pattern is an existence check. It has to compare the
@@ -711,7 +789,7 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 	case s == nil && p == nil && o != nil:
 		ok := o.TermKey()
 		var result []Triple
-		for _, t := range g.Triples() {
+		for _, t := range idx.own() {
 			if t.Object.TermKey() == ok {
 				result = append(result, t)
 			}
@@ -719,7 +797,16 @@ func (g *Graph) All(s, p, o *Term) []Triple {
 		return result
 	}
 
-	return g.Triples()
+	return idx.own()
+}
+
+// own returns the triples idx itself holds (not those of an overlay's base).
+func (idx *graphIndexes) own() []Triple {
+	result := make([]Triple, 0, idx.n)
+	for _, ts := range idx.p {
+		result = append(result, ts...)
+	}
+	return result
 }
 
 // One returns the first triple matching the pattern.
@@ -738,20 +825,34 @@ func (g *Graph) Has(s, p, o *Term) bool {
 
 // Objects returns all objects of triples matching (s, p, ?).
 func (g *Graph) Objects(s, p Term) []Term {
-	sp := g.ensureIndexes().spo[indexKey(s)]
-	if sp == nil {
-		return nil
+	return clip(g.ensureIndexes().objects(indexKey(s), indexKey(p)))
+}
+
+func (idx *graphIndexes) objects(sk, pk ikey) []Term {
+	var own []Term
+	if sp := idx.spo[sk]; sp != nil {
+		own = sp[pk]
 	}
-	return sp[indexKey(p)]
+	if idx.under == nil {
+		return own
+	}
+	return concatClipped(idx.under.objects(sk, pk), own)
 }
 
 // Subjects returns all subjects of triples matching (?, p, o).
 func (g *Graph) Subjects(p, o Term) []Term {
-	po := g.ensureIndexes().pos[indexKey(p)]
-	if po == nil {
-		return nil
+	return clip(g.ensureIndexes().subjects(indexKey(p), indexKey(o)))
+}
+
+func (idx *graphIndexes) subjects(pk, ok ikey) []Term {
+	var own []Term
+	if po := idx.pos[pk]; po != nil {
+		own = po[ok]
 	}
-	return po[indexKey(o)]
+	if idx.under == nil {
+		return own
+	}
+	return concatClipped(idx.under.subjects(pk, ok), own)
 }
 
 // RDFList follows an RDF list starting at head and returns all elements.
@@ -787,13 +888,16 @@ func (g *Graph) RDFList(head Term) []Term {
 
 // Len returns the number of triples in the graph.
 func (g *Graph) Len() int {
-	return g.ensureIndexes().n
+	return g.ensureIndexes().len()
 }
 
 // Add inserts a triple into the graph. The write goes to the wrapped store
 // with ctx; a store error or a done context is returned and the triple is not
 // indexed.
 func (g *Graph) Add(ctx context.Context, s, p, o Term) error {
+	if g.over != nil {
+		return fmt.Errorf("%w: Add on an overlay graph", ErrReadOnly)
+	}
 	g.invalidateIndexes()
 	rg, err := g.rdf(ctx)
 	if err != nil {
@@ -809,6 +913,9 @@ func (g *Graph) Add(ctx context.Context, s, p, o Term) error {
 // indexes (build them with ctx first when it wraps a store); the writes go to
 // this graph's store with ctx, and the first error stops the merge.
 func (g *Graph) Merge(ctx context.Context, other *Graph) error {
+	if g.over != nil {
+		return fmt.Errorf("%w: Merge into an overlay graph", ErrReadOnly)
+	}
 	g.invalidateIndexes()
 	if _, err := other.ensureIndexesContext(ctx); err != nil {
 		return err

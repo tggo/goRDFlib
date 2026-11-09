@@ -704,3 +704,19 @@ func TestNTParseStreamSkipsCommentsAndBlanks(t *testing.T) {
 		t.Fatalf("expected 2 triples, got %d", count)
 	}
 }
+
+// ECHAR is '\' [tbnrfu"'\] (N-Triples grammar [153s]): \' is legal and means '.
+func TestParseEscapedApostrophe(t *testing.T) {
+	g := rdflibgo.NewGraph()
+	if err := Parse(t.Context(), g, strings.NewReader(`<http://s> <http://p> "it\'s" .`+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	for tr, err := range g.Triples(t.Context(), nil, nil, nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l := tr.Object.(rdflibgo.Literal); l.Lexical() != "it's" {
+			t.Errorf("lexical %q, want it's", l.Lexical())
+		}
+	}
+}
