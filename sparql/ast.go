@@ -27,6 +27,12 @@ type ParsedQuery struct {
 	GroupBy        []Expr
 	GroupByAliases []string // parallel to GroupBy: variable name if (expr AS ?var), else ""
 	Having         Expr
+	// TrailingValues is the VALUES clause that follows the solution modifiers
+	// of a grouped query (SPARQL 1.2 §18.2.4.1: it is joined with the grouped
+	// solutions, before the SELECT expressions). Set only for a query that
+	// groups; on any other query the clause is joined into Where, which gives
+	// the same answers and keeps LIMIT pushdown possible.
+	TrailingValues *ValuesPattern
 	BaseURI        string
 	NamedGraphs    map[string]*rdflibgo.Graph // graph IRI → graph data (for GRAPH clause)
 

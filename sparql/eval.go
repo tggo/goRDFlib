@@ -133,6 +133,24 @@ func evalSelect(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[
 		solutions = evalAggregation(ec, g, q, solutions)
 	}
 
+	// A trailing VALUES clause is joined with the grouped solutions, before
+	// the SELECT expressions see them (SPARQL 1.2 §18.2.4.1).
+	if q.TrailingValues != nil {
+		rows := evalPattern(ec, g, q.TrailingValues, q.Prefixes, q.NamedGraphs)
+		var joined []map[string]rdflibgo.Term
+		for _, s := range solutions {
+			for _, r := range rows {
+				if ec.stop() {
+					return nil, nil
+				}
+				if isCompatible(s, r) {
+					joined = append(joined, mergeBindings(s, r))
+				}
+			}
+		}
+		solutions = joined
+	}
+
 	// Project expressions
 	if len(q.ProjectExprs) > 0 {
 		for i, s := range solutions {

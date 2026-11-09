@@ -557,7 +557,16 @@ func (p *sparqlParser) readIRIRef() string {
 	if p.pos < len(p.input) {
 		p.pos++ // skip '>'
 	}
-	return iri
+	// IRIREF is one of the two tokens that take codepoint escapes (SPARQL
+	// 1.2 §19.2). Everything downstream sees the decoded IRI.
+	dec, err := decodeIRIRef(iri)
+	if err != nil {
+		if p.badSyntax == nil {
+			p.badSyntax = fmt.Errorf("sparql parse error at pos %d: %w", start, err)
+		}
+		return iri
+	}
+	return dec
 }
 
 // readFuncName reads a built-in function name or a prefixed name. A prefixed

@@ -474,6 +474,11 @@ func (p *sparqlParser) parseSubQuery() (*ParsedQuery, error) {
 	if err := p.parseSolutionModifiers(q); err != nil {
 		return nil, err
 	}
+	// SubSelect ::= SelectClause WhereClause SolutionModifier ValuesClause:
+	// the subquery's own VALUES is joined before its OFFSET and LIMIT apply.
+	if err := p.parseTrailingValues(q); err != nil {
+		return nil, err
+	}
 	return q, nil
 }
 

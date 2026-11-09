@@ -70,9 +70,6 @@ type sparqlParser struct {
 }
 
 func (p *sparqlParser) parse() (*ParsedQuery, error) {
-	// Preprocess codepoint escapes outside strings
-	p.input = preprocessCodepointEscapes(p.input)
-
 	q := &ParsedQuery{
 		Limit:    -1,
 		Prefixes: p.prefixes,
@@ -199,36 +196,15 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		}
 	}
 
-	// Semantic validation
-	if err := p.validate(q); err != nil {
+	// Post-query VALUES/BINDINGS clause. It is read before validation: the
+	// variables it binds are in scope for the SELECT expressions.
+	if err := p.parseTrailingValues(q); err != nil {
 		return nil, err
 	}
 
-	// Post-query VALUES/BINDINGS clause
-	p.skipWS()
-	if p.matchKeywordCI("BINDINGS") {
-		p.pos += 8
-		vp, err := p.parseValues()
-		if err != nil {
-			return nil, err
-		}
-		if q.Where == nil {
-			q.Where = vp
-		} else {
-			q.Where = &JoinPattern{Left: q.Where, Right: vp}
-		}
-	} else if p.matchKeywordCI("VALUES") {
-		p.pos += 6
-		vp, err := p.parseValues()
-		if err != nil {
-			return nil, err
-		}
-		// Join with existing WHERE pattern
-		if q.Where == nil {
-			q.Where = vp
-		} else {
-			q.Where = &JoinPattern{Left: q.Where, Right: vp}
-		}
+	// Semantic validation
+	if err := p.validate(q); err != nil {
+		return nil, err
 	}
 
 	return q, nil
@@ -243,4 +219,33 @@ func resolveNamespace(base, ns string) string {
 		return ns
 	}
 	return iri.Resolve(base, ns)
+}
+
+// parseTrailingValues reads the optional VALUES (or legacy BINDINGS) clause
+// after the solution modifiers of a SELECT. A query that groups keeps it in
+// q.TrailingValues, to be joined with the grouped solutions (SPARQL 1.2
+// §18.2.4.1); any other query joins it into the WHERE pattern, which is
+// equivalent there and lets LIMIT and OFFSET apply to the joined solutions.
+func (p *sparqlParser) parseTrailingValues(q *ParsedQuery) error {
+	p.skipWS()
+	switch {
+	case p.matchKeywordCI("BINDINGS"):
+		p.pos += 8
+	case p.matchKeywordCI("VALUES"):
+		p.pos += 6
+	default:
+		return nil
+	}
+	vp, err := p.parseValues()
+	if err != nil {
+		return err
+	}
+	if q.Type == "SELECT" && (len(q.GroupBy) > 0 || hasAggregates(q)) {
+		q.TrailingValues = vp
+	} else if q.Where == nil {
+		q.Where = vp
+	} else {
+		q.Where = &JoinPattern{Left: q.Where, Right: vp}
+	}
+	return nil
 }

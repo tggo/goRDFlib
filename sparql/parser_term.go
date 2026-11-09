@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/iri"
@@ -149,7 +150,13 @@ func parseLiteralString(s string) rdflibgo.Literal {
 	} else if strings.HasPrefix(rest, "^^") {
 		dt := rest[2:]
 		if strings.HasPrefix(dt, "<") && strings.HasSuffix(dt, ">") {
-			opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(dt[1:len(dt)-1])))
+			// The token is raw: the datatype IRI may carry codepoint escapes.
+			// A malformed one was reported when the token was read.
+			iriText, err := decodeIRIRef(dt[1 : len(dt)-1])
+			if err != nil {
+				iriText = dt[1 : len(dt)-1]
+			}
+			opts = append(opts, rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(iriText)))
 		}
 	}
 	return rdflibgo.NewLiteral(lexical, opts...)
@@ -184,12 +191,105 @@ func closingQuoteIndex(s string, quote byte, long bool) int {
 	return -1
 }
 
-// sparqlStringUnescaper is a package-level replacer for SPARQL string escape sequences.
-// It covers every ECHAR of SPARQL 1.1 grammar [160]: \t \b \n \r \f \" \' \\.
-var sparqlStringUnescaper = strings.NewReplacer(`\"`, `"`, `\'`, `'`, `\\`, `\`, `\n`, "\n", `\r`, "\r", `\t`, "\t", `\b`, "\b", `\f`, "\f")
-
+// unescapeSPARQLString decodes the escapes of a string literal's content in
+// one left-to-right pass: an ECHAR of SPARQL 1.1 grammar [160] (\t \b \n \r
+// \f \" \' \\) or a codepoint escape (\uHHHH, \UHHHHHHHH). The character a
+// codepoint escape produces is data: it never starts or ends an escape or the
+// literal (SPARQL 1.2 §19.2, tests codepoint-esc-08 and -09), which is why the
+// decoding cannot be a separate pass over the whole query. The content has
+// been checked by validateStringEscapes; a malformed escape is kept as written.
 func unescapeSPARQLString(s string) string {
-	return sparqlStringUnescaper.Replace(s)
+	if strings.IndexByte(s, '\\') < 0 {
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			sb.WriteByte(s[i])
+			continue
+		}
+		switch c := s[i+1]; c {
+		case 't':
+			sb.WriteByte('\t')
+		case 'b':
+			sb.WriteByte('\b')
+		case 'n':
+			sb.WriteByte('\n')
+		case 'r':
+			sb.WriteByte('\r')
+		case 'f':
+			sb.WriteByte('\f')
+		case '"', '\'', '\\':
+			sb.WriteByte(c)
+		case 'u', 'U':
+			if r, n, ok := codepointEscape(s[i:]); ok {
+				sb.WriteRune(r)
+				i += n - 1
+				continue
+			}
+			sb.WriteByte('\\')
+			continue
+		default:
+			sb.WriteByte('\\')
+			continue
+		}
+		i++
+	}
+	return sb.String()
+}
+
+// codepointEscape decodes a \uHHHH or \UHHHHHHHH escape at the start of s. It
+// returns the rune and the escape's length in bytes. A surrogate is not a
+// character (it cannot be written in UTF-8) and is reported as not ok, as is
+// a truncated or non-hex escape or a value beyond U+10FFFF.
+func codepointEscape(s string) (rune, int, bool) {
+	if len(s) < 2 || s[0] != '\\' {
+		return 0, 0, false
+	}
+	n := 4
+	if s[1] == 'U' {
+		n = 8
+	} else if s[1] != 'u' {
+		return 0, 0, false
+	}
+	if len(s) < 2+n {
+		return 0, 0, false
+	}
+	cp, err := strconv.ParseUint(s[2:2+n], 16, 32)
+	if err != nil || cp > unicode.MaxRune || (cp >= 0xD800 && cp <= 0xDFFF) {
+		return 0, 0, false
+	}
+	return rune(cp), 2 + n, true
+}
+
+// decodeIRIRef decodes the codepoint escapes of an IRIREF's content (SPARQL
+// 1.2 §19.2: escapes are recognised inside IRIREF and string literals only).
+// A malformed escape, a surrogate, or a character IRIREF does not allow
+// (grammar [139]: controls, space, <>"{}|^` and backslash) after decoding is
+// an error.
+func decodeIRIRef(s string) (string, error) {
+	if strings.IndexByte(s, '\\') < 0 {
+		return s, nil
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			sb.WriteByte(s[i])
+			continue
+		}
+		r, n, ok := codepointEscape(s[i:])
+		if !ok {
+			return "", fmt.Errorf("invalid escape in IRI: only \\uHHHH and \\UHHHHHHHH (not a surrogate) are allowed, got %q", s[i:min(i+10, len(s))])
+		}
+		if r <= 0x20 || strings.ContainsRune("<>\"{}|^`\\", r) {
+			return "", fmt.Errorf("escape %q in IRI decodes to U+%04X, which an IRI may not contain", s[i:i+n], r)
+		}
+		sb.WriteRune(r)
+		i += n - 1
+	}
+	return sb.String(), nil
 }
 
 // validateLangDir checks that a directional language tag (lang--dir) has a valid direction.
@@ -234,9 +334,8 @@ func validateLangDir(s string) error {
 
 // validateStringEscapes checks the escape sequences of a string literal token.
 // Every escape must be an ECHAR (grammar [160]) or a complete codepoint escape
-// (\uHHHH, \UHHHHHHHH) that is not a surrogate. The parser has already
-// replaced valid codepoint escapes (preprocessCodepointEscapes, SPARQL 1.1
-// §19.2), so in a query a \u or \U that reaches here is malformed.
+// (\uHHHH, \UHHHHHHHH) that is not a surrogate. The escapes are decoded
+// afterwards, by unescapeSPARQLString.
 func validateStringEscapes(s string) error {
 	if s == "" {
 		return nil
@@ -387,54 +486,6 @@ func (p *sparqlParser) parseVersion() error {
 		p.pos++ // skip closing quote
 	}
 	return nil
-}
-
-// preprocessCodepointEscapes processes \uHHHH and \UHHHHHHHH codepoint escapes in SPARQL input.
-// Per SPARQL 1.2, codepoint escapes are processed at the character level before any other
-// tokenization, including inside string literals.
-func preprocessCodepointEscapes(input string) string {
-	if strings.IndexByte(input, '\\') < 0 {
-		return input
-	}
-
-	var sb strings.Builder
-	sb.Grow(len(input))
-
-	for i := 0; i < len(input); i++ {
-		ch := input[i]
-
-		if ch == '\\' && i+1 < len(input) {
-			if input[i+1] == 'u' && i+5 < len(input) {
-				hex := input[i+2 : i+6]
-				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
-					if cp >= 0xD800 && cp <= 0xDFFF {
-						// Preserve surrogates for later validation
-						sb.WriteString(input[i : i+6])
-						i += 5
-						continue
-					}
-					sb.WriteRune(rune(cp))
-					i += 5
-					continue
-				}
-			} else if input[i+1] == 'U' && i+9 < len(input) {
-				hex := input[i+2 : i+10]
-				if cp, err := strconv.ParseUint(hex, 16, 32); err == nil {
-					if cp >= 0xD800 && cp <= 0xDFFF {
-						sb.WriteString(input[i : i+10])
-						i += 9
-						continue
-					}
-					sb.WriteRune(rune(cp))
-					i += 9
-					continue
-				}
-			}
-		}
-
-		sb.WriteByte(ch)
-	}
-	return sb.String()
 }
 
 // datasetIRI turns the token of a FROM [NAMED] clause into the IRI to record

@@ -235,8 +235,11 @@ func fnStrLangDir(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term {
 }
 
 func fnTriple(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term {
+	// RDF 1.2 allows only an IRI or a blank node as the subject of a triple,
+	// though TripleTerm satisfies the Subject interface; the W3C test
+	// triple-on-triple-terms expects TRIPLE to be an error for it.
 	subj, ok := a[0].(rdflibgo.Subject)
-	if !ok {
+	if _, isTT := a[0].(rdflibgo.TripleTerm); !ok || isTT {
 		return nil
 	}
 	pred, ok := a[1].(rdflibgo.URIRef)

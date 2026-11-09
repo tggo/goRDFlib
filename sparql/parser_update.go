@@ -35,9 +35,6 @@ func convertInternalVarsToBnodes(triples []Triple) {
 // --- SPARQL Update parsing ---
 
 func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
-	// Preprocess codepoint escapes outside strings
-	p.input = preprocessCodepointEscapes(p.input)
-
 	u := &ParsedUpdate{
 		Prefixes: p.prefixes,
 	}
