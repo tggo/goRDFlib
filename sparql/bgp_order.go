@@ -48,7 +48,12 @@ import (
 // Below the limit its count is exact and it ranks like any exact pattern;
 // otherwise it is capped. A path with no known endpoint is never probed,
 // since counting it costs as much as evaluating it, and ranks below every
-// probed pattern, as does a capped path.
+// probed pattern, as does a capped path. Nor is any path probed once a triple
+// pattern is known to match fewer than bgpProbeStart triples: that pattern
+// already makes a cheap first step, and a path probe would cost about as much
+// as the plan it could improve. This matters when a BGP is planned once per
+// row (OPTIONAL, EXISTS, SHACL focus nodes), where the probes are paid on
+// every row.
 //
 // Variables that an earlier pattern will bind are not known values at planning
 // time; they are credited with a fixed selectivity divisor instead. Patterns
@@ -285,8 +290,9 @@ func probePatterns(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 // evaluating it, up to the smallest exact count of the patterns probed so far
 // (bgpProbeLimit when none is exact): a path that reaches that count is no
 // smaller than the pattern, and keeps the rank of an unprobed path. Each exact
-// path lowers the limit for the next. When a pattern has no match the BGP is
-// empty, and no path is evaluated.
+// path lowers the limit for the next. When a pattern matches fewer than
+// bgpProbeStart triples, none at all included, no path is evaluated (see the
+// top of the file).
 func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 	limit := bgpProbeLimit
 	for i := range cands {
@@ -294,9 +300,12 @@ func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 			limit = min(limit, c.count)
 		}
 	}
+	if limit < bgpProbeStart {
+		return
+	}
 	for i := range cands {
 		c := &cands[i]
-		if !c.pathProbe || limit == 0 {
+		if !c.pathProbe {
 			continue
 		}
 		if ec.poll() {
