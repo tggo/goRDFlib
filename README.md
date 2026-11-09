@@ -4,7 +4,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/tggo/goRDFlib.svg)](https://pkg.go.dev/github.com/tggo/goRDFlib)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tggo/goRDFlib)](https://goreportcard.com/report/github.com/tggo/goRDFlib)
 ![Coverage](https://img.shields.io/badge/Coverage-93.7%25-brightgreen)
-![W3C Tests](https://img.shields.io/badge/W3C_Tests-4083%2F4083-brightgreen)
+![W3C Tests](https://img.shields.io/badge/W3C_Tests-4093%2F4093-brightgreen)
 ![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-353%2F353-brightgreen)
 ![W3C SPARQL 1.0](https://img.shields.io/badge/W3C_SPARQL_1.0-487%2F487-brightgreen)
 ![W3C SPARQL Update](https://img.shields.io/badge/W3C_SPARQL_1.1_Update-157%2F157-brightgreen)
@@ -28,7 +28,7 @@
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
-> **Note:** This project is in active development. The core API is stabilizing but may still change. All 4083 W3C conformance tests that run pass (`make test-w3c`; suites pinned as git submodules at rdf-tests 202a74e and data-shapes 40231dfb). Skipped: 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold). Fuzz-tested for robustness.
+> **Note:** This project is in active development. The core API is stabilizing but may still change. All 4093 W3C conformance tests that run pass (`make test-w3c`; suites pinned as git submodules at rdf-tests 202a74e and data-shapes 40231dfb). Skipped: 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold). Fuzz-tested for robustness.
 
 ## About
 
@@ -1053,6 +1053,7 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | SPARQL 1.0 (DAWG syntax and evaluation) | 475 | 475 | 100% |
 | SPARQL 1.1 Update | 157 | 157 | 100% |
 | SPARQL 1.2 | 271 | 271 | 100% |
+| SPARQL 1.1 Federated (syntax-fed, service) | 10 | 10 | 100% |
 | SPARQL 1.1 Protocol | 34 | 34 | 100% |
 | SPARQL 1.1 Graph Store Protocol | 14 | 14 | 100% |
 | SPARQL 1.1 GSP (deprecated manifest) | 18 | 18 | 100% |
@@ -1077,7 +1078,7 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | SHACL 1.2 Rules (SRL) | 241 | 241 | 100% |
 | RDF 1.1 Semantics (entailment) | 48 | 48 | 100% |
 | RDF 1.2 Semantics (entailment) | 29 | 29 | 100% |
-| **Total** | **4139** | **4083** | **0 failed, 56 skipped** |
+| **Total** | **4149** | **4093** | **0 failed, 56 skipped** |
 
 Counts are leaf test cases from `go test -json`, produced by `make test-w3c`.
 
