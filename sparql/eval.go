@@ -209,7 +209,11 @@ func evalSelect(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[
 	if (q.Limit >= 0 || q.Offset > 0) &&
 		len(q.OrderBy) == 0 && !q.Distinct &&
 		len(q.GroupBy) == 0 && !hasAggregates(q) &&
-		len(q.ProjectExprs) == 0 {
+		len(q.ProjectExprs) == 0 && len(ec.pre) == 0 {
+		// Not under initial bindings: the store would be asked for the bare
+		// pattern, and the rows it returns replace the pre-bound ones, so a
+		// sub-SELECT { ?this p ?o } LIMIT 1 with ?this pre-bound answered
+		// from the first triple of p of any subject.
 		if tp := extractSimpleBGP(q.Where); tp != nil {
 			if qs, ok := g.Store().(store.QueryableStore); ok {
 				pat := buildStorePattern(tp, q.Prefixes)
