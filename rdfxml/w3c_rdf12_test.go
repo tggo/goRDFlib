@@ -59,7 +59,7 @@ func TestW3CRDFXML12(t *testing.T) {
 				}
 
 			default:
-				t.Skipf("unknown test type: %s", e.Type)
+				t.Errorf("unsupported test type %s: add a case for it; a runner must not drop a test silently", e.Type)
 			}
 		})
 	}
