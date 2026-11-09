@@ -475,3 +475,17 @@ func graphKey(ctx term.Term) string {
 ```
 
 A store that could not persist blank-node graph names before keeps its data as it was: those triples were written under the default-graph key, and they stay in the default graph.
+
+## v0.9.x → next release
+
+### SHACL rules (SPARQL-RL, `shacl/srl_*.go`)
+
+The rule language follows the current SPARQL-RL draft (data-shapes 40231dfb), which changed the grammar and tightened evaluation:
+
+- `SET ( ?v := expr )` is the assignment element. `BIND ( expr AS ?v )` is still read as the same element, so old rule files parse; new files should use `SET`.
+- New elements: `GROUP [BY ?k ...] { pattern } [ ?n := COUNT|MIN|MAX|SUM(...) ]` (`SRLBodyGroup`, `SRLBodyElement.GroupKeys/GroupBody/GroupAggs`), `NOT DATA { }` (`SRLBodyElement.NotData`), `WHERE DATA` (`SRLRule.BaseGraphOnly`), property paths in a body (`SRLTriple.Path`), an optional rule IRI (`SRLRule.ID`), `VERSION` and `IMPORTS`.
+- FILTER and SET expressions are SPARQL expressions run by the sparql engine, not string comparisons: numeric promotion, string and date functions, language matching, and "error means false" (FILTER) / "error rejects the solution" (SET). A function SPARQL-RL does not list (`BOUND`, `EXISTS`, `COALESCE`, aggregates) is a syntax error. Expressions hold the PREFIX and BASE in force where the rule was written.
+- `EvalRuleSet` checks the rule set first: `ErrSRLNotWellFormed`, `ErrSRLNotStratifiable` (a cycle through a negation, group, assignment, or a head that creates blank nodes or triple terms), `ErrSRLImports` (IMPORTS are not resolved). Syntax errors wrap `ErrSRLSyntax` and carry the offset of the token. Previously a rule set that broke these conditions was evaluated anyway.
+- Run-once rules (assignment, group, blank node or variable triple term in the head) run once per stratum, before the general rules reach their fixpoint; a blank node in a head is a fresh node per solution.
+- `<< s p o >>` no longer asserts `s p o` (RDF 1.2): it only adds `rdf:reifies`. `a` as an object, `@lang--LTR` (upper case) and a bare `[`...`]` where a blank node label is required are syntax errors.
+- Removed (unexported helpers): the string-key engine (`srlTermToKey`, `evalFilter`, ...).
