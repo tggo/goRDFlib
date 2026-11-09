@@ -19,6 +19,13 @@ import (
 // direct graph identification. They run here in manifest order against
 // GraphStoreHandler mounted at /rdf-graph-store.
 //
+// Upstream deprecated this whole manifest in favour of
+// sparql11/graph-store-protocol, which TestW3CGraphStoreProtocol runs from its
+// manifests. This transcription stays for older rdf-tests checkouts and as a
+// second check; at the newer pin its defects are all still there except the
+// removed "PUT - mismatched payload" (the entry is simply not reached), so
+// the workarounds below remain needed.
+//
 // Where the manifest cannot be taken literally, the deviation is noted at the
 // entry: "DELETE - existing graph" deletes person/2.ttl, which no earlier entry
 // creates, and "PUT - mismatched payload" sends a well-formed Turtle body with

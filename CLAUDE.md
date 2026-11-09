@@ -238,9 +238,18 @@ The `store.Store` interface (13 methods) has four implementations:
   graphs an update creates into the store, because `getOrCreateGraph` makes
   in-memory graphs). Auth, metrics, limits are options; CORS, gzip, TLS and the
   listener belong to the binary (tggo/sparql-server).
-- W3C manifests `protocol` (34/34) and `http-rdf-update` (19/19) run from the
-  manifests themselves; four GSP manifest defects are worked around and
-  commented in `w3c_gsp_test.go`.
+- Newer rdf-tests pins: `graph-store-protocol` (14/14) and `protocol` (33/34 +
+  1 exempt) are driven by the manifests' own `ht:requests`
+  (`w3c_gsp_suite_test.go`, `w3c_protocol_suite_test.go`): a property the
+  runner does not understand, an unknown status or a test missing from
+  `mf:entries` fails the run (upstream's `head_non_existing_direct` is defined
+  but never listed). The one exemption, `query_content_type_describe`
+  (DESCRIBE is not evaluated, 501), is pinned in `protocolKnown`: it must
+  still answer 501, so implementing DESCRIBE fails the run until it is removed.
+- Older pins: `protocol` (34/34) and `http-rdf-update` (19/19) run from
+  hand transcriptions (`w3c_protocol_test.go`, `w3c_gsp_test.go`; four GSP
+  manifest defects are worked around and commented). `http-rdf-update` is
+  deprecated upstream and keeps those defects at the newer pin.
 - Status decisions: 500 when the store fails (query, update, GSP; GSP GET
   serializes into a buffer first, so never a truncated 200); 400 for
   `sparql.ErrUpdateRejected`; 422 for `WithMaxResultRows` (fail, never truncate), 503
