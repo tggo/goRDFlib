@@ -303,13 +303,25 @@ func (ctx *evalContext) report(err error) {
 	}
 }
 
-// sparqlFuncs returns the SHACL functions to bind to a query run for this
-// validation, or nil when SHACL-AF is not enabled.
+// sparqlFuncs returns the functions to bind to a query run for this
+// validation: the SHACL-AF functions when SHACL-AF is enabled, and the SHACL
+// 1.2 custom functions the shapes graph declares. It is nil when there are
+// none.
 func (ctx *evalContext) sparqlFuncs() map[string]sparql.ContextFunction {
-	if ctx == nil || ctx.af == nil {
+	return ctx.sparqlFuncsAt(1)
+}
+
+// sparqlFuncsAt is sparqlFuncs for a query nested depth levels inside function
+// bodies.
+func (ctx *evalContext) sparqlFuncsAt(depth int) map[string]sparql.ContextFunction {
+	if ctx == nil {
 		return nil
 	}
-	return ctx.af.functionsAtDepth(1, ctx.guard.fail)
+	var table map[string]sparql.ContextFunction
+	if ctx.af != nil {
+		table = ctx.af.functionsAtDepth(depth, ctx.guard.fail)
+	}
+	return ctx.customSPARQLFunctions(table, depth)
 }
 
 // parseShapes extracts all NodeShapes and PropertyShapes from the shapes graph.
