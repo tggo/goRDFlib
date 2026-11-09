@@ -396,6 +396,9 @@ SPARQL 1.0 and 1.1 text the parser used to reject, found by running the DAWG SPA
 
 ### Answers that were wrong
 
+- **`=` and `<` on `xsd:date`, `xsd:time` and `xsd:dateTime` with and without a timezone.** `"2006-08-23"^^xsd:date = "2006-08-23Z"^^xsd:date` was true (the untimezoned reading was taken as UTC). The order of the two is indeterminate unless they are more than 14 hours apart (XSD 1.1 §3.3.7.2), so the comparison is now a type error, like the one `ValueEqual` already treated as unequal for `xsd:dateTime`. `"…T24:00:00"` is now the first instant of the next day instead of an unparsable value.
+- **A relative namespace in `PREFIX`** (`BASE <http://example.org/x/> PREFIX : <>`) is resolved against the BASE written before it; `:x` used to stay the relative IRI `x`.
+- **`xsd:dateTime(…)` as a cast** was an unbound error for every argument; it now accepts an `xsd:dateTime` or a string with a valid lexical form.
 - **A variable repeated in one triple pattern.** `?x ex:p ?x` matched every triple of `ex:p` and kept the subject; it now matches only triples whose subject and object are the same term. Same for `?s ?s ?o` and a path `?x ex:p+ ?x`.
 - **A zero-length path step on a term the graph does not hold.** `{ VALUES ?d { "x" } ?s ex:p* ?d }` joins the zero-length solutions of the graph's nodes with the VALUES row (§18.5); "x" is not a node, so there is no row, and it was one when `?d` came from VALUES, BIND or an earlier pattern. A term written in the pattern (`?s ex:p* "x"`) and an initial binding still match, as the W3C tests require.
 - **`(^p)+` and `^p+` walked backward through a literal.** On a store without `Reachable` (Badger, SQLite; the in-memory store uses the pushdown and was right) the walk reached unrelated nodes after meeting a literal child.

@@ -1,5 +1,7 @@
 package sparql
 
+import "github.com/tggo/goRDFlib/internal/iri"
+
 // Parse parses a SPARQL query string.
 // Ported from: rdflib.plugins.sparql.parser.parseQuery
 func Parse(input string) (*ParsedQuery, error) {
@@ -89,8 +91,7 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 			}
 			p.pos++ // skip ':'
 			p.skipWS()
-			iri := p.readIRIRef()
-			p.prefixes[prefix] = iri
+			p.prefixes[prefix] = resolveNamespace(q.BaseURI, p.readIRIRef())
 			continue
 		}
 		if p.matchKeywordCI("BASE") {
@@ -231,4 +232,15 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 	}
 
 	return q, nil
+}
+
+// resolveNamespace resolves the IRI of a PREFIX declaration against the BASE
+// declared before it (SPARQL 1.1 section 4.1.1.1: relative IRIs in a query are
+// resolved against the base IRI, which includes the IRI of a PREFIX). Without
+// a BASE the namespace stays as written, for the caller to resolve.
+func resolveNamespace(base, ns string) string {
+	if base == "" || iri.IsAbsolute(ns) {
+		return ns
+	}
+	return iri.Resolve(base, ns)
 }

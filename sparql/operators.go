@@ -249,8 +249,15 @@ func literalsEqual(a, b rdflibgo.Literal) (bool, bool) {
 	case spaceBoolean:
 		return booleanValue(a) == booleanValue(b), true
 	case spaceDateTime, spaceDate, spaceTime:
-		if ta, tb, ok := parseDatePair(a, b); ok {
-			return ta.Equal(tb), true
+		ta, okA := parseTemporal(a)
+		tb, okB := parseTemporal(b)
+		if okA && okB {
+			if c, determinate := compareTemporal(ta, tb); determinate {
+				return c == 0, true
+			}
+			// A value with a timezone and one without are not comparable
+			// unless 14 hours apart: a type error, not "different" (XSD 1.1
+			// section 3.3.7.2).
 		}
 	}
 	return false, false
@@ -363,11 +370,12 @@ func valueCompare(a, b rdflibgo.Term) (int, bool) {
 	case spaceBoolean:
 		return cmpBool(booleanValue(la), booleanValue(lb)), true
 	case spaceDateTime, spaceDate, spaceTime:
-		ta, tb, ok := parseDatePair(la, lb)
-		if !ok {
+		ta, okA := parseTemporal(la)
+		tb, okB := parseTemporal(lb)
+		if !okA || !okB {
 			return 0, false
 		}
-		return ta.Compare(tb), true
+		return compareTemporal(ta, tb)
 	}
 	return 0, false
 }

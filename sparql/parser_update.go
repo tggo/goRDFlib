@@ -66,8 +66,7 @@ func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
 				}
 				p.pos++ // skip ':'
 				p.skipWS()
-				iri := p.readIRIRef()
-				p.prefixes[prefix] = iri
+				p.prefixes[prefix] = resolveNamespace(u.BaseURI, p.readIRIRef())
 				continue
 			}
 			if p.matchKeywordCI("BASE") {

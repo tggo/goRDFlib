@@ -139,8 +139,30 @@ func parseDateTime(s string, dt rdflibgo.URIRef) (time.Time, bool) {
 	default:
 		return time.Time{}, false
 	}
+	// 24:00:00 is the end of the day: the first instant of the next one (XSD 1.1
+	// section 3.3.7.1). Go's parser stops at 23:59:59.
+	endOfDay := false
+	if dt == rdflibgo.XSDDateTime {
+		if i := strings.Index(s, "T24:00:00"); i > 0 {
+			rest := s[i+len("T24:00:00"):]
+			frac := 0
+			if strings.HasPrefix(rest, ".") {
+				frac = 1
+				for frac < len(rest) && rest[frac] >= '0' && rest[frac] <= '9' {
+					frac++
+				}
+			}
+			if strings.Trim(rest[:frac], ".0") == "" {
+				s = s[:i] + "T00:00:00" + rest
+				endOfDay = true
+			}
+		}
+	}
 	for _, f := range formats {
 		if t, err := time.Parse(f, s); err == nil {
+			if endOfDay {
+				t = t.AddDate(0, 0, 1)
+			}
 			return t, true
 		}
 	}
