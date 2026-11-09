@@ -94,37 +94,50 @@ func evalQuery(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, initBindings map[
 		if len(q.Construct) == 0 && q.Where != nil {
 			q.Construct = extractTemplateFromPattern(q.Where)
 		}
-		// Apply ORDER BY, LIMIT, OFFSET to solutions (same as SELECT)
-		if len(q.OrderBy) > 0 {
-			sortSolutions(ec, solutions, func(a, b map[string]rdflibgo.Term) int {
-				for _, ob := range q.OrderBy {
-					va := evalExprWithGraph(ec, ob.Expr, a, q.Prefixes, g, q.NamedGraphs)
-					vb := evalExprWithGraph(ec, ob.Expr, b, q.Prefixes, g, q.NamedGraphs)
-					c := compareTermValues(va, vb)
-					if ob.Desc {
-						c = -c
-					}
-					if c != 0 {
-						return c
-					}
-				}
-				return 0
-			})
-		}
-		if q.Offset > 0 {
-			if q.Offset >= len(solutions) {
-				solutions = nil
-			} else {
-				solutions = solutions[q.Offset:]
-			}
-		}
-		if q.Limit >= 0 && q.Limit < len(solutions) {
-			solutions = solutions[:q.Limit]
-		}
+		solutions = applyModifiers(ec, g, q, solutions)
 		return evalConstruct(ec, g, q, solutions)
+	case "DESCRIBE":
+		solutions = applyModifiers(ec, g, q, solutions)
+		if ec.poll() {
+			return nil, nil
+		}
+		return evalDescribe(ec, g, q, solutions)
 	default:
 		return nil, fmt.Errorf("unsupported query type: %s", q.Type)
 	}
+}
+
+// applyModifiers applies ORDER BY, OFFSET and LIMIT to the solutions of a
+// CONSTRUCT or DESCRIBE query (same as SELECT).
+func applyModifiers(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+	// Apply ORDER BY, LIMIT, OFFSET to solutions (same as SELECT)
+	if len(q.OrderBy) > 0 {
+		sortSolutions(ec, solutions, func(a, b map[string]rdflibgo.Term) int {
+			for _, ob := range q.OrderBy {
+				va := evalExprWithGraph(ec, ob.Expr, a, q.Prefixes, g, q.NamedGraphs)
+				vb := evalExprWithGraph(ec, ob.Expr, b, q.Prefixes, g, q.NamedGraphs)
+				c := compareTermValues(va, vb)
+				if ob.Desc {
+					c = -c
+				}
+				if c != 0 {
+					return c
+				}
+			}
+			return 0
+		})
+	}
+	if q.Offset > 0 {
+		if q.Offset >= len(solutions) {
+			solutions = nil
+		} else {
+			solutions = solutions[q.Offset:]
+		}
+	}
+	if q.Limit >= 0 && q.Limit < len(solutions) {
+		solutions = solutions[:q.Limit]
+	}
+	return solutions
 }
 
 func evalSelect(ec *evalCtx, g *rdflibgo.Graph, q *ParsedQuery, solutions []map[string]rdflibgo.Term) (*Result, error) {

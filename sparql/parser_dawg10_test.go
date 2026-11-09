@@ -76,10 +76,6 @@ func TestParseDescribe(t *testing.T) {
 	if q.Type != "DESCRIBE" || strings.Join(q.Describe, " ") != "<u> ?v ?w" || q.Limit != 2 || len(q.DatasetClause) != 1 {
 		t.Errorf("parsed as %+v", q)
 	}
-	// Parsing DESCRIBE is not evaluating it.
-	if _, err := Query(makeSPARQLGraph(t), `DESCRIBE <http://example.org/x>`); err == nil {
-		t.Error("DESCRIBE evaluated")
-	}
 }
 
 func TestUnaryPlus(t *testing.T) {
