@@ -158,11 +158,9 @@ INSERT DATA {
 			resultContentType(t, r, srxJSON...)
 		},
 		"query_content_type_describe": func(t *testing.T, u string) {
-			// The engine has no DESCRIBE: 501 with a message, not a 2xx.
 			r := postQuery(t, u+"/", `DESCRIBE <http://example.org/>`)
-			if r.status != http.StatusNotImplemented {
-				t.Fatalf("status = %d, want 501 (DESCRIBE unsupported)", r.status)
-			}
+			is2xxOr3xx(t, r)
+			resultContentType(t, r, "application/rdf+xml", "application/rdf+json", "text/turtle")
 		},
 		"query_content_type_construct": func(t *testing.T, u string) {
 			r := postQuery(t, u+"/", `CONSTRUCT { <s> <p> 1 } WHERE {}`)

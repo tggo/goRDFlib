@@ -42,6 +42,9 @@ func TestStoreFailureIsServerError(t *testing.T) {
 		{"CONSTRUCT", func(b string) response {
 			return get(t, b, url.Values{"query": {`CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }`}})
 		}},
+		{"DESCRIBE", func(b string) response {
+			return get(t, b, url.Values{"query": {`DESCRIBE <` + ex + `s>`}})
+		}},
 		{"SELECT in a named graph", func(b string) response {
 			return get(t, b, url.Values{"query": {`SELECT * WHERE { GRAPH <` + ex + `g1> { ?s ?p ?o } }`}})
 		}},

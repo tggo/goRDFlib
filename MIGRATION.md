@@ -400,7 +400,7 @@ SPARQL 1.0 and 1.1 text the parser used to reject, found by running the DAWG SPA
 - unary `+` (`FILTER (+?x > 1)`, `+1 + +2`)
 - non-ASCII characters in prefixes and local names (`食:ほげ`), checked against PN_CHARS_BASE / PN_CHARS
 - a prefix called `a` or beginning with `a` (`a:`, `a-b:x`); `a` alone is still `rdf:type`
-- `DESCRIBE` parses (`ParsedQuery.Describe` holds its targets) and stays unevaluated: `EvalQuery` returns an error, the endpoint answers 501 as before
+- `DESCRIBE` is evaluated. `DESCRIBE <iri> | ?var ... [WHERE {...}]` and `DESCRIBE *` return `Result{Type: "DESCRIBE", Graph: g}`: the union of the Concise Bounded Description of each resource (subject triples, followed through blank-node objects, cycle-safe, plus RDF 1.2 `rdf:reifies` reifiers of those triples). Every triple counts against `WithMaxSolutions` and the context is polled. `sparql.WithDescriber(ctx, fn)` replaces the description. The endpoint answers DESCRIBE with an RDF graph negotiated like CONSTRUCT instead of 501, and `endpoint.ErrDescribeUnsupported` is removed
 
 ### Answers that were wrong
 

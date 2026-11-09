@@ -230,6 +230,7 @@ func TestMaxResultRows(t *testing.T) {
 		t.Fatalf("OFFSET 2 of 6 rows gave %d rows", len(res.Bindings))
 	}
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {`CONSTRUCT WHERE { ?s ?p ?o }`}}), http.StatusUnprocessableEntity)
+	wantStatus(t, get(t, ts.URL, url.Values{"query": {`DESCRIBE * WHERE { ?s ?p ?o }`}}), http.StatusUnprocessableEntity)
 	wantStatus(t, do(t, newReq(t, "GET", ts.URL+"?default", "", "")), http.StatusUnprocessableEntity)
 	wantStatus(t, get(t, ts.URL, url.Values{"query": {`ASK { ?s ?p ?o }`}}), http.StatusOK)
 }

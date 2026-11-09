@@ -7,9 +7,8 @@ import (
 )
 
 // scanForm reads the query form — the first keyword after the prologue —
-// lexically, before the parser sees the text, so that a DESCRIBE query or an
-// update sent to the query endpoint is answered with its own status instead of
-// a syntax error. The returned keyword is upper-cased: SELECT, ASK, CONSTRUCT,
+// lexically, before the parser sees the text, so that an update sent to the
+// query endpoint is answered with its own status instead of a syntax error. The returned keyword is upper-cased: SELECT, ASK, CONSTRUCT,
 // DESCRIBE, or an update keyword (INSERT, DELETE, LOAD, …); it is "" when the
 // text has no keyword at all.
 //

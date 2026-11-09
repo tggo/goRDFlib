@@ -26,14 +26,6 @@ import (
 // Older rdf-tests checkouts describe these exchanges in prose only, with no
 // ht:requests; the hand transcription in TestW3CProtocol covers those, and
 // this test skips with that reason rather than reading nothing.
-// protocolKnown lists the manifest tests this implementation answers
-// differently, each with its reason. The runner then requires the 501 the
-// handler gives instead of the manifest's 2xx, so an exemption that starts
-// passing the manifest (DESCRIBE implemented) fails the run and must be
-// removed.
-var protocolKnown = map[string]string{
-	"query_content_type_describe": "DESCRIBE is parsed but deliberately not evaluated (MIGRATION.md, v0.9.x -> next release; SPARQL 1.1 section 16.4 leaves the description to the implementation): 501",
-}
 
 func TestW3CProtocolManifest(t *testing.T) {
 	manifest, err := filepath.Abs("../testdata/w3c/rdf-tests/sparql/sparql11/protocol/manifest.ttl")
@@ -59,11 +51,6 @@ func TestW3CProtocolManifest(t *testing.T) {
 		}
 		seen[name] = true
 		t.Run(name, func(t *testing.T) { runProtocolTest(t, gspNode{t, test.g, test.s}, dir) })
-	}
-	for name := range protocolKnown {
-		if !seen[name] {
-			t.Errorf("protocolKnown lists %s, which the manifest no longer has", name)
-		}
 	}
 }
 
@@ -116,14 +103,7 @@ func runProtocolTest(t *testing.T, test gspNode, dir string) {
 	t.Cleanup(srv.Close)
 
 	vars := map[string]string{}
-	name := gspTestName(test)
-	reason, exempt := protocolKnown[name]
 	for i, rq := range requests {
-		if exempt {
-			t.Logf("exempt: %s", reason)
-			runGSPRequest(t, i, rq, srv.URL, authority, vars, func(s string) string { return s }, http.StatusNotImplemented)
-			continue
-		}
 		runGSPRequest(t, i, rq, srv.URL, authority, vars, func(s string) string { return s })
 	}
 }

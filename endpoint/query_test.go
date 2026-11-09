@@ -229,6 +229,24 @@ func TestQueryConstructBodies(t *testing.T) {
 	}
 }
 
+func TestQueryDescribe(t *testing.T) {
+	ts, _ := serve(t, fixture())
+	q := url.Values{"query": {`DESCRIBE <` + ex + `s>`}}
+	r := get(t, ts.URL, q, "Accept", "text/turtle")
+	wantStatus(t, r, http.StatusOK)
+	if ct := r.header.Get("Content-Type"); !strings.HasPrefix(ct, "text/turtle") {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	g := graph.NewGraph()
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(r.body)); err != nil || mustV(g.Len(t.Context())) != 1 {
+		t.Fatalf("turtle body did not parse to one triple (err %v): %s", err, r.body)
+	}
+	// Negotiated like CONSTRUCT: nobody who accepts only results gets a graph.
+	wantStatus(t, get(t, ts.URL, q, "Accept", "text/csv"), http.StatusNotAcceptable)
+	// A resource the service does not describe is an empty graph, not an error.
+	wantStatus(t, get(t, ts.URL, url.Values{"query": {`DESCRIBE <` + ex + `none>`}}, "Accept", "text/turtle"), http.StatusOK)
+}
+
 func TestQueryCSVAndTSVBodies(t *testing.T) {
 	ts, _ := serve(t, fixture())
 	q := url.Values{"query": {`SELECT ?o WHERE { ?s ?p ?o }`}}
@@ -259,7 +277,6 @@ func TestQueryErrors(t *testing.T) {
 		body   string
 	}{
 		{"syntax error has a position", newReq(t, "GET", ts.URL+"?query="+url.QueryEscape("SELECT ?x\nWHERE { ?x ?y }"), "", ""), 400, "line 2"},
-		{"describe is not implemented", newReq(t, "GET", ts.URL+"?query="+url.QueryEscape("DESCRIBE <http://example.org/>"), "", ""), 501, "DESCRIBE"},
 		{"an update sent as a query", newReq(t, "POST", ts.URL, "application/sparql-query", "INSERT DATA { <a:b> <a:c> <a:d> }"), 400, "update="},
 		{"update via GET", newReq(t, "GET", ts.URL+"?update="+url.QueryEscape("CLEAR ALL"), "", ""), 405, "POST"},
 		{"PUT without graph", newReq(t, "PUT", ts.URL+"?query=ASK%7B%7D", "", ""), 405, "not allowed"},

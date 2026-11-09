@@ -28,8 +28,6 @@ func (x *exchange) query(req *protocolRequest) error {
 	base := h.baseIRI(x.r)
 	form := scanForm(req.text)
 	switch {
-	case form == "DESCRIBE":
-		return httpErr(http.StatusNotImplemented, ErrDescribeUnsupported)
 	case updateKeywords[form]:
 		return httpErrf(http.StatusBadRequest,
 			"%s is an update operation: send it with POST as update= or as %s", form, mtUpdate)
@@ -65,7 +63,7 @@ func (x *exchange) query(req *protocolRequest) error {
 			return notAcceptable(accept, mediaTypesOf(offers))
 		}
 		resultFormat = f
-	case "CONSTRUCT":
+	case "CONSTRUCT", "DESCRIBE":
 		if rdfFmt = negotiateRDF(accept); rdfFmt == nil {
 			return notAcceptable(accept, rdfMediaTypes())
 		}
@@ -92,7 +90,7 @@ func (x *exchange) query(req *protocolRequest) error {
 	}
 
 	switch res.Type {
-	case "CONSTRUCT":
+	case "CONSTRUCT", "DESCRIBE":
 		n := 0
 		if res.Graph != nil {
 			var err error

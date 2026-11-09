@@ -327,7 +327,7 @@ func runGSPTest(t *testing.T, test gspNode) {
 	}
 }
 
-func runGSPRequest(t *testing.T, i int, rq gspNode, base, authority string, vars map[string]string, subst func(string) string, exempt ...int) {
+func runGSPRequest(t *testing.T, i int, rq gspNode, base, authority string, vars map[string]string, subst func(string) string) {
 	t.Helper()
 	rq.onlyKnown("request", nsHT+"methodName", nsHT+"httpVersion", nsHT+"absolutePath", nsHT+"headers", nsHT+"body", nsHT+"resp")
 	method, _ := rq.str(nsHT + "methodName")
@@ -374,16 +374,6 @@ func runGSPRequest(t *testing.T, i int, rq gspNode, base, authority string, vars
 		t.Fatalf("%s: %v", label, err)
 	}
 
-	if len(exempt) > 0 {
-		// A documented exemption (see protocolKnown): the manifest's
-		// expectation is replaced by the status this implementation
-		// deliberately answers with, and nothing else is checked.
-		if resp.StatusCode != exempt[0] {
-			t.Fatalf("%s: status %d, want the exempted %d; if it now succeeds, drop the exemption\nbody: %s",
-				label, resp.StatusCode, exempt[0], data)
-		}
-		return
-	}
 	want, ok := rq.node(nsHT + "resp")
 	if !ok {
 		t.Fatalf("%s: no ht:resp", label)

@@ -33,10 +33,6 @@ var (
 	// ErrBodyTooLarge is returned when a request body exceeds
 	// WithMaxRequestBytes or WithMaxGraphBytes.
 	ErrBodyTooLarge = errors.New("endpoint: request body too large")
-
-	// ErrDescribeUnsupported is returned for DESCRIBE queries, which the
-	// query engine does not implement.
-	ErrDescribeUnsupported = errors.New("endpoint: DESCRIBE queries are not supported by this engine")
 )
 
 // HTTPError is an error with the HTTP status (and optionally headers) it is
