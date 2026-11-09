@@ -15,7 +15,7 @@ Upgrade straight to the latest version and read every section after the version 
 | v0.4.0 | from [v0.4.0 → v0.5.0](#v040--v050) |
 | v0.5.0 – v0.5.2 | [v0.5.x → v0.5.3](#v05x--v053) |
 | v0.5.3 – v0.8.x | [v0.8.x → v0.9.0](#v08x--v090) |
-| v0.9.x | [v0.9.x → next release](#v09x--next-release) |
+| v0.9.x | [v0.9.x → v0.10.0](#v09x--v0100) |
 
 If you implement `store.Store` yourself, also read [Custom store implementations](#custom-store-implementations).
 
@@ -357,9 +357,20 @@ context is refused, and that an error from the store reaches the caller of
 
 ---
 
-## v0.9.x → next release
+## v0.9.x → v0.10.0
 
-No Go API changed. Two things can change what a program sees: queries that used to parse and no longer do, and a few answers that were wrong.
+Most of this release is behaviour: queries that used to parse and no longer do (and the reverse), answers that were wrong, and SHACL 1.2 / SPARQL-RL following the current drafts. A few Go API changes, all narrow:
+
+### Go API
+
+| Change | Who is affected | Fix |
+|---|---|---|
+| `namespace.RDFS` (and the root `RDFS`) gained the field `Proposition` | only code that builds that struct with an unkeyed literal | use the package variable |
+| `endpoint.ErrDescribeUnsupported` removed | code that checks for it | DESCRIBE is evaluated now; drop the check |
+| `nq.NewWriter(w)` is `nq.NewWriter(w, opts...)` | only code that stores the function in a variable of the old type | add `...nq.Option` to that type |
+| `shacl.InstancesOfExpr.Class` is `Classes`; `LimitExpr.Limit` and `OffsetExpr.Offset` are `Term`; `SumExpr.FlatMap` removed | code that builds SHACL 1.2 node expressions by hand | follow the current draft: `shnex:instancesOf` takes a list, `shnex:limit`/`shnex:offset` may be any node expression, `shnex:sum` takes its nodes directly |
+
+New, all additive: SPARQL `DESCRIBE` (`sparql.WithDescriber`), `SERVICE` with an opt-in handler (`sparql.WithServiceHandler`, `endpoint.WithServiceHandler`; no handler means `ErrServiceUnsupported`, never a network call), `shacl.(*Graph).Overlay` and `store.NewUnion`, `reasoning.Entails` / `Satisfiable`, `nt.Writer` and `WithCanonical` (nt, nq), SHACL 1.2 custom functions callable from SPARQL.
 
 ### RDF syntax parsers and serializers
 
@@ -429,6 +440,19 @@ SPARQL 1.0 and 1.1 text the parser used to reject, found by running the DAWG SPA
   - Custom functions declared as `sh:ListParameterExpressionFunction` can be called from the SPARQL queries of the shapes graph, with or without `WithAdvancedFeatures`.
   - `sparql`: `ParsedQuery.PreBindRestrictions(vars...)` reports those restrictions; a `LIMIT` over one triple pattern no longer ignores initial bindings (`SELECT ?s ?o WHERE { ?s ex:p ?o } LIMIT 1` with `?s` pre-bound answered from the first triple of `ex:p`).
 
+### SHACL rules (SPARQL-RL, `shacl/srl_*.go`)
+
+The rule language follows the current SPARQL-RL draft (data-shapes 40231dfb), which changed the grammar and tightened evaluation:
+
+- `SET ( ?v := expr )` is the assignment element. `BIND ( expr AS ?v )` is still read as the same element, so old rule files parse; new files should use `SET`.
+- New elements: `GROUP [BY ?k ...] { pattern } [ ?n := COUNT|MIN|MAX|SUM(...) ]` (`SRLBodyGroup`, `SRLBodyElement.GroupKeys/GroupBody/GroupAggs`), `NOT DATA { }` (`SRLBodyElement.NotData`), `WHERE DATA` (`SRLRule.BaseGraphOnly`), property paths in a body (`SRLTriple.Path`), an optional rule IRI (`SRLRule.ID`), `VERSION` and `IMPORTS`.
+- FILTER and SET expressions are SPARQL expressions run by the sparql engine, not string comparisons: numeric promotion, string and date functions, language matching, and "error means false" (FILTER) / "error rejects the solution" (SET). A function SPARQL-RL does not list (`BOUND`, `EXISTS`, `COALESCE`, aggregates) is a syntax error. Expressions hold the PREFIX and BASE in force where the rule was written.
+- `EvalRuleSet` checks the rule set first: `ErrSRLNotWellFormed`, `ErrSRLNotStratifiable` (a cycle through a negation, group, assignment, or a head that creates blank nodes or triple terms), `ErrSRLImports` (IMPORTS are not resolved). Syntax errors wrap `ErrSRLSyntax` and carry the offset of the token. Previously a rule set that broke these conditions was evaluated anyway.
+- Run-once rules (assignment, group, blank node or variable triple term in the head) run once per stratum, before the general rules reach their fixpoint; a blank node in a head is a fresh node per solution.
+- `<< s p o >>` no longer asserts `s p o` (RDF 1.2): it only adds `rdf:reifies`. `a` as an object, `@lang--LTR` (upper case) and a bare `[`...`]` where a blank node label is required are syntax errors.
+- Removed (unexported helpers): the string-key engine (`srlTermToKey`, `evalFilter`, ...).
+
+
 ---
 
 ## Custom store implementations
@@ -476,17 +500,3 @@ func graphKey(ctx term.Term) string {
 ```
 
 A store that could not persist blank-node graph names before keeps its data as it was: those triples were written under the default-graph key, and they stay in the default graph.
-
-## v0.9.x → next release
-
-### SHACL rules (SPARQL-RL, `shacl/srl_*.go`)
-
-The rule language follows the current SPARQL-RL draft (data-shapes 40231dfb), which changed the grammar and tightened evaluation:
-
-- `SET ( ?v := expr )` is the assignment element. `BIND ( expr AS ?v )` is still read as the same element, so old rule files parse; new files should use `SET`.
-- New elements: `GROUP [BY ?k ...] { pattern } [ ?n := COUNT|MIN|MAX|SUM(...) ]` (`SRLBodyGroup`, `SRLBodyElement.GroupKeys/GroupBody/GroupAggs`), `NOT DATA { }` (`SRLBodyElement.NotData`), `WHERE DATA` (`SRLRule.BaseGraphOnly`), property paths in a body (`SRLTriple.Path`), an optional rule IRI (`SRLRule.ID`), `VERSION` and `IMPORTS`.
-- FILTER and SET expressions are SPARQL expressions run by the sparql engine, not string comparisons: numeric promotion, string and date functions, language matching, and "error means false" (FILTER) / "error rejects the solution" (SET). A function SPARQL-RL does not list (`BOUND`, `EXISTS`, `COALESCE`, aggregates) is a syntax error. Expressions hold the PREFIX and BASE in force where the rule was written.
-- `EvalRuleSet` checks the rule set first: `ErrSRLNotWellFormed`, `ErrSRLNotStratifiable` (a cycle through a negation, group, assignment, or a head that creates blank nodes or triple terms), `ErrSRLImports` (IMPORTS are not resolved). Syntax errors wrap `ErrSRLSyntax` and carry the offset of the token. Previously a rule set that broke these conditions was evaluated anyway.
-- Run-once rules (assignment, group, blank node or variable triple term in the head) run once per stratum, before the general rules reach their fixpoint; a blank node in a head is a fresh node per solution.
-- `<< s p o >>` no longer asserts `s p o` (RDF 1.2): it only adds `rdf:reifies`. `a` as an object, `@lang--LTR` (upper case) and a bare `[`...`]` where a blank node label is required are syntax errors.
-- Removed (unexported helpers): the string-key engine (`srlTermToKey`, `evalFilter`, ...).
