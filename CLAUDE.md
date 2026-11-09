@@ -909,7 +909,8 @@ The `store.Store` interface (13 methods) has four implementations:
   rewrites `_:b` to `?.bnode:b` (`bnode_vars.go`) in WHERE, EXISTS,
   subqueries and update WHERE, never in templates. It used to be an
   independent wildcard per occurrence. SELECT * and DISTINCT ignore internal
-  variables (`solutionKey`). The COUNT/ASK store shortcuts refuse a pattern
+  variables (`solutionKey`). A label in two BGPs is a parse error
+  (`claimBlankLabels`; a FILTER does not end a BGP, every other element does). The COUNT/ASK store shortcuts refuse a pattern
   with a repeated variable: a store pattern has only wildcards.
 - Known gaps: `BNODE("x")` is not fresh per solution; aggregates inside
   function calls stay unbound.

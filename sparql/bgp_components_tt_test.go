@@ -40,8 +40,10 @@ ex:z ex:r ex:w1 . ex:y ex:r ex:w2 . ex:s ex:r ex:w3 . ex:s2 ex:r ex:w4 .
 			`SELECT * WHERE { ?a ex:pt <<( ?x ex:q 1 )>> . ?c ex:rt <<( ?y ex:q 1 )>> }`,
 			`SELECT * WHERE { { ?a ex:pt <<( ?x ex:q 1 )>> FILTER (true) } { ?c ex:rt <<( ?y ex:q 1 )>> FILTER (true) } }`},
 		{"label shared by two triple terms",
-			`SELECT * WHERE { ?a ex:pt <<( _:b ex:q 1 )>> . ?c ex:rt <<( _:b ex:q 1 )>> }`,
-			`SELECT * WHERE { { ?a ex:pt <<( _:b ex:q 1 )>> FILTER (true) } { ?c ex:rt <<( _:b ex:q 1 )>> FILTER (true) } }`},
+			// a label cannot span two groups (§4.1.4), so the reference
+			// joins them on a variable, which is what the label is
+			`SELECT ?a ?c WHERE { ?a ex:pt <<( _:b ex:q 1 )>> . ?c ex:rt <<( _:b ex:q 1 )>> }`,
+			`SELECT ?a ?c WHERE { { ?a ex:pt <<( ?b ex:q 1 )>> FILTER (true) } { ?c ex:rt <<( ?b ex:q 1 )>> FILTER (true) } }`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			want := queryRows(t, g, c.reference, nil)

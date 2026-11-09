@@ -1,6 +1,9 @@
 package sparql
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // blankLabelVarPrefix names the variable a blank-node label in a query
 // pattern becomes. A label there is a variable that cannot be projected
@@ -101,3 +104,42 @@ func blankLabelTerm(s string) string {
 }
 
 func isVar(s string) bool { return strings.HasPrefix(s, "?") }
+
+// nextBGP starts a new basic graph pattern for claimBlankLabels.
+func (p *sparqlParser) nextBGP() int {
+	p.bgpSeq++
+	return p.bgpSeq
+}
+
+// claimBlankLabels records the blank-node labels of triples as belonging to
+// basic graph pattern bgp. "The same blank node label cannot be used in two
+// different basic graph patterns in the same query" (SPARQL 1.1 §4.1.4; W3C
+// syn-bad-34..38, syn-bad-*-breaks-BGP): a reuse is a syntax error, the first
+// one found is kept in badSyntax.
+func (p *sparqlParser) claimBlankLabels(triples []Triple, bgp int) {
+	if p.bgpLabels == nil {
+		p.bgpLabels = make(map[string]int)
+	}
+	for _, t := range triples {
+		for _, s := range [3]string{t.Subject, t.Predicate, t.Object} {
+			p.claimBlankLabel(s, bgp)
+		}
+	}
+}
+
+func (p *sparqlParser) claimBlankLabel(s string, bgp int) {
+	switch {
+	case strings.HasPrefix(s, "_:"):
+		if prev, ok := p.bgpLabels[s]; ok && prev != bgp {
+			if p.badSyntax == nil {
+				p.badSyntax = fmt.Errorf("sparql parse error near pos %d: blank node label %s is used in two basic graph patterns (SPARQL 1.1 §4.1.4)", p.pos, s)
+			}
+			return
+		}
+		p.bgpLabels[s] = bgp
+	case strings.HasPrefix(s, "<<( ") && strings.HasSuffix(s, " )>>") && strings.Contains(s, "_:"):
+		for _, part := range splitTripleTermParts(s[4 : len(s)-4]) {
+			p.claimBlankLabel(part, bgp)
+		}
+	}
+}

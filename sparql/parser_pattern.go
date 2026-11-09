@@ -17,9 +17,14 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 	var result Pattern
 	var currentTriples []Triple
 	var deferredFilters []Expr // FILTER has whole-group scope, applied at end
+	// scope identifies the basic graph pattern the next triples belong to.
+	// FILTER does not end one (it is lifted out of the group); every other
+	// non-triples element does, and so does a nested group.
+	scope := p.nextBGP()
 
 	flushTriples := func() {
 		if len(currentTriples) > 0 {
+			p.claimBlankLabels(currentTriples, scope)
 			bgp := &BGP{Triples: currentTriples}
 			currentTriples = nil
 			if result == nil {
@@ -51,6 +56,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		// Subquery: SELECT inside group graph pattern
 		if p.matchKeywordCI("SELECT") {
 			flushTriples()
+			scope = p.nextBGP()
 			// Check for invalid empty group before subquery: { {} SELECT ... }
 			if result != nil {
 				if bgp, ok := result.(*BGP); ok && len(bgp.Triples) == 0 {
@@ -74,6 +80,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		if p.matchKeywordCI("OPTIONAL") {
 			p.pos += 8
 			flushTriples()
+			scope = p.nextBGP()
 			opt, err := p.parseGroupGraphPattern()
 			if err != nil {
 				return nil, err
@@ -89,6 +96,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		if p.matchKeywordCI("MINUS") {
 			p.pos += 5
 			flushTriples()
+			scope = p.nextBGP()
 			right, err := p.parseGroupGraphPattern()
 			if err != nil {
 				return nil, err
@@ -103,6 +111,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		// UNION — look ahead after block
 		if p.input[p.pos] == '{' {
 			flushTriples()
+			scope = p.nextBGP()
 			left, err := p.parseGroupGraphPattern()
 			if err != nil {
 				return nil, err
@@ -158,6 +167,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		if p.matchKeywordCI("BIND") {
 			p.pos += 4
 			flushTriples()
+			scope = p.nextBGP()
 			p.skipWS()
 			if !p.expect('(') {
 				return nil, p.errorf("expected '(' after BIND")
@@ -187,6 +197,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		if p.matchKeywordCI("VALUES") {
 			p.pos += 6
 			flushTriples()
+			scope = p.nextBGP()
 			vp, err := p.parseValues()
 			if err != nil {
 				return nil, err
@@ -203,6 +214,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		if p.matchKeywordCI("GRAPH") {
 			p.pos += 5
 			flushTriples()
+			scope = p.nextBGP()
 			p.skipWS()
 			graphName := p.readTermOrVar()
 			p.skipWS()

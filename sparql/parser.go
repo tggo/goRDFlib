@@ -50,8 +50,10 @@ type sparqlParser struct {
 	pos             int
 	prefixes        map[string]string
 	bnodeCount      int
-	reifierTriples  []Triple // pending rdf:reifies triples from reified triple syntax
-	tripleTermError error    // deferred error from triple term validation
+	bgpSeq          int            // last basic graph pattern id (nextBGP)
+	bgpLabels       map[string]int // blank-node label -> the BGP that used it
+	reifierTriples  []Triple       // pending rdf:reifies triples from reified triple syntax
+	tripleTermError error          // deferred error from triple term validation
 	// undeclaredPrefix is the first prefixed name whose prefix the prologue
 	// did not declare (SPARQL 1.1 §4.1.1: a query error). It is deferred
 	// because the term readers return strings, not errors; Parse and

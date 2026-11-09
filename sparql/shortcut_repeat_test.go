@@ -99,3 +99,39 @@ ex:root ex:part ex:p1 . ex:x ex:part ex:p2 . ex:p1 ex:part ex:p3 .`
 		}
 	}
 }
+
+// "The same blank node label cannot be used in two different basic graph
+// patterns in the same query" (§4.1.4). A FILTER does not end a BGP; every
+// other non-triples element and a nested group does.
+func TestBlankLabelInTwoBGPsIsAnError(t *testing.T) {
+	bad := []string{
+		`SELECT * { _:a ?p ?v . { _:a ?q 1 } }`,
+		`SELECT * { { _:a ?p ?v . } _:a ?q 1 }`,
+		`SELECT * { { _:a ?p ?v . } UNION { _:a ?q 1 } }`,
+		`SELECT * { _:a ?p ?v . OPTIONAL { _:a ?q 1 } }`,
+		`SELECT * { _:a ?p ?v . GRAPH ?g { ?s ?p ?v } _:a ?q 1 }`,
+		`SELECT * { _:a ?p ?v . OPTIONAL { ?s ?p ?v } _:a ?q 1 }`,
+		`SELECT * { _:a ?p ?v . BIND (1 AS ?x) _:a ?q 1 }`,
+		`SELECT * { _:a ?p ?v . MINUS { _:a ?q 1 } }`,
+		`SELECT * { _:a ?p ?v FILTER EXISTS { _:a ?q 1 } }`,
+		`SELECT * { ?s ?p <<( _:a ?q 1 )>> . { _:a ?r 2 } }`,
+		`SELECT * { _:a ?p ?v . { SELECT * { _:a ?q 1 } } }`,
+	}
+	for _, q := range bad {
+		if _, err := Parse(q); err == nil {
+			t.Errorf("accepted: %s", q)
+		}
+	}
+	good := []string{
+		`SELECT * { _:a ?p ?v . _:a ?q 1 }`,
+		`SELECT * { _:a ?p ?v FILTER (true) _:a ?q 1 }`,
+		`SELECT * { _:a ?p ?v . ?s ?p <<( _:a ?q 1 )>> }`,
+		`SELECT * { { _:a ?p ?v } { _:b ?q 1 } }`,
+		`CONSTRUCT { _:a ?p ?v } WHERE { _:a ?p ?v }`,
+	}
+	for _, q := range good {
+		if _, err := Parse(q); err != nil {
+			t.Errorf("rejected: %s: %v", q, err)
+		}
+	}
+}

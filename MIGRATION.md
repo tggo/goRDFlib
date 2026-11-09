@@ -375,6 +375,7 @@ The parser used to accept text that is not SPARQL, and sometimes read it as some
 | `FILTER !bound(?x)`, `FILTER !isLiteral(?o)`, `FILTER !EXISTS { … }` | `!` starts a UnaryExpression, which only a bracketed expression may hold ([68]); `FILTER NOT EXISTS { … }` is fine | `FILTER (!bound(?x))`, `FILTER NOT EXISTS { … }` |
 | `HAVING COUNT(?o) > 1`, `HAVING ?s`, `HAVING !bound(?s)` | HAVING takes the same Constraint ([22]) | `HAVING (COUNT(?o) > 1)` |
 | `GROUP_CONCAT(?o; SEPARATOR=a)`, `SEPARATOR=<urn:x>` | the separator is a string literal (§18.2.4.4); this used to panic | `SEPARATOR=", "` |
+| one blank-node label in two basic graph patterns: `_:a ex:p ?v . OPTIONAL { _:a ex:q ?w }`, `{ _:a ex:p ?v } _:a ex:q ?w` | a label may not be used in two BGPs (§4.1.4); OPTIONAL, UNION, MINUS, GRAPH, BIND, VALUES, EXISTS, a subquery or a nested group starts a new one, a FILTER does not | a variable: `?a ex:p ?v . OPTIONAL { ?a ex:q ?w }` |
 
 `FILTER !bound(?x)` is the one most likely to be in existing queries. It is accepted by several engines, but it is not in the SPARQL 1.1 grammar, and goRDFlib now follows the grammar. The bracketed form means the same.
 
@@ -385,6 +386,8 @@ To find them: parse every query you store or generate with `sparql.Parse` (or `P
 - **A variable repeated in one triple pattern.** `?x ex:p ?x` matched every triple of `ex:p` and kept the subject; it now matches only triples whose subject and object are the same term. Same for `?s ?s ?o` and a path `?x ex:p+ ?x`.
 - **A zero-length path step on a term the graph does not hold.** `{ VALUES ?d { "x" } ?s ex:p* ?d }` joins the zero-length solutions of the graph's nodes with the VALUES row (§18.5); "x" is not a node, so there is no row, and it was one when `?d` came from VALUES, BIND or an earlier pattern. A term written in the pattern (`?s ex:p* "x"`) and an initial binding still match, as the W3C tests require.
 - **`(^p)+` and `^p+` walked backward through a literal.** On a store without `Reachable` (Badger, SQLite; the in-memory store uses the pushdown and was right) the walk reached unrelated nodes after meeting a literal child.
+- **A blank-node label in a query pattern.** `_:b ex:p ?o . _:b ex:q ?z` treated each `_:b` as an independent wildcard, a cross product; the label is a variable (§4.1.4) and the two patterns now join on it. `COUNT(*)` and `ASK` over one pattern with a repeated variable (`?x ex:p ?x`) counted or found every triple of `ex:p`; `SELECT DISTINCT *` kept rows that differed only in a hidden `[]` or label.
+- **Initial bindings and MINUS.** `{ MINUS { ?this ex:p ?o } }` with `?this` pre-bound removed the solution; with the value written into the query it does not, and now neither does the pre-bound form.
 - **Initial bindings and a right-hand pattern.** Queries run with initial bindings (SHACL pre-binds `$this`) now substitute the row of a join into a right-hand BGP, UNION or join of BGPs instead of evaluating it for every row. The answers are the same; the queries are much faster. Anything with an expression on the right (FILTER, BIND, OPTIONAL, subquery) still does not see the left row, as before (§18.2.1).
 
 ---
