@@ -5,6 +5,9 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	iriutil "github.com/tggo/goRDFlib/internal/iri"
+	"github.com/tggo/goRDFlib/term"
 )
 
 // srlTokenKind identifies types of SRL tokens.
@@ -19,9 +22,20 @@ const (
 	srlTokWhere
 	srlTokNot
 	srlTokFilter
-	srlTokBind
-	srlTokAs
-	srlTokA // 'a' (rdf:type shorthand)
+	srlTokSet      // SET
+	srlTokBind     // BIND (the earlier spelling of SET, accepted for old rule files)
+	srlTokGroup    // GROUP
+	srlTokBy       // BY
+	srlTokVersion  // VERSION
+	srlTokImports  // IMPORTS
+	srlTokDistinct // DISTINCT
+	srlTokAgg      // COUNT, MIN, MAX, SUM (val holds the upper-cased name)
+	srlTokStar     // *
+	srlTokSlash    // /
+	srlTokCaret    // ^ (inverse path)
+	srlTokAssign   // :=
+	srlTokLang     // @en, @en-GB, @ar--rtl (val holds the tag without @)
+	srlTokA        // 'a' (rdf:type shorthand)
 	srlTokLBrace
 	srlTokRBrace
 	srlTokLParen
@@ -32,7 +46,6 @@ const (
 	srlTokSemicolon
 	srlTokComma
 	srlTokHat     // ^^
-	srlTokAt      // @
 	srlTokTilde   // ~
 	srlTokLTriple // << or <<(
 	srlTokRTriple // >> or )>>
@@ -48,7 +61,6 @@ const (
 	srlTokDouble  // 123e10
 	srlTokTrue    // true
 	srlTokFalse   // false
-	srlTokExpr    // raw expression text (for FILTER/BIND parenthesized content)
 )
 
 type srlToken struct {
@@ -156,14 +168,28 @@ func (l *srlLexer) next() (srlToken, error) {
 		l.pos++
 		return srlToken{kind: srlTokTilde, pos: start}, nil
 	case '@':
-		l.pos++
-		return srlToken{kind: srlTokAt, pos: start}, nil
+		return l.scanLangTag()
 	case '^':
 		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '^' {
 			l.pos += 2
 			return srlToken{kind: srlTokHat, pos: start}, nil
 		}
-		return srlToken{}, fmt.Errorf("unexpected '^' at position %d", l.pos)
+		l.pos++
+		return srlToken{kind: srlTokCaret, pos: start}, nil
+	case '*':
+		l.pos++
+		return srlToken{kind: srlTokStar, pos: start}, nil
+	case '/':
+		l.pos++
+		return srlToken{kind: srlTokSlash, pos: start}, nil
+	case ':':
+		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '=' {
+			l.pos += 2
+			return srlToken{kind: srlTokAssign, val: ":=", pos: start}, nil
+		}
+		return l.scanKeywordOrPName()
+	case '$':
+		return l.scanVariable()
 	case '|':
 		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '}' {
 			l.pos += 2
@@ -223,8 +249,11 @@ func (l *srlLexer) scanAngleOrTriple() (srlToken, error) {
 		if c == '>' {
 			l.pos++
 			iri := sb.String()
-			if l.base != "" && !strings.Contains(iri, ":") {
-				iri = l.base + iri
+			if !term.ValidIRI(iri) {
+				return srlToken{}, fmt.Errorf("invalid IRI <%s> at position %d: an IRI cannot contain spaces, control characters or any of < > \" { } | \\ ^ `", iri, start)
+			}
+			if l.base != "" && !iriutil.IsAbsolute(iri) {
+				iri = iriutil.Resolve(l.base, iri)
 			}
 			return srlToken{kind: srlTokIRI, val: iri, pos: start}, nil
 		}
@@ -256,6 +285,52 @@ func (l *srlLexer) scanAngleOrTriple() (srlToken, error) {
 		l.pos++
 	}
 	return srlToken{}, fmt.Errorf("unterminated IRI at position %d", start)
+}
+
+// scanLangTag scans @lang or @lang--dir. The direction is ltr or rtl, in
+// lower case, as in RDF 1.2 (an upper-case "--LTR" is a syntax error).
+func (l *srlLexer) scanLangTag() (srlToken, error) {
+	start := l.pos
+	l.pos++ // skip @
+	tagStart := l.pos
+	isAlpha := func(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
+	for l.pos < len(l.input) && isAlpha(l.input[l.pos]) {
+		l.pos++
+	}
+	if l.pos == tagStart {
+		return srlToken{}, fmt.Errorf("empty language tag at position %d", start)
+	}
+	for l.pos+1 < len(l.input) && l.input[l.pos] == '-' && l.input[l.pos+1] != '-' {
+		l.pos++
+		subStart := l.pos
+		for l.pos < len(l.input) && (isAlpha(l.input[l.pos]) || (l.input[l.pos] >= '0' && l.input[l.pos] <= '9')) {
+			l.pos++
+		}
+		if l.pos == subStart {
+			return srlToken{}, fmt.Errorf("empty language subtag at position %d", subStart)
+		}
+	}
+	lang := l.input[tagStart:l.pos]
+	dir := ""
+	if l.pos+1 < len(l.input) && l.input[l.pos] == '-' && l.input[l.pos+1] == '-' {
+		l.pos += 2
+		dirStart := l.pos
+		for l.pos < len(l.input) && isAlpha(l.input[l.pos]) {
+			l.pos++
+		}
+		dir = l.input[dirStart:l.pos]
+		if dir != "ltr" && dir != "rtl" {
+			return srlToken{}, fmt.Errorf("invalid base direction %q at position %d: it must be ltr or rtl in lower case", dir, dirStart)
+		}
+	}
+	if !term.ValidLanguageTag(lang) {
+		return srlToken{}, fmt.Errorf("invalid language tag %q at position %d (RFC 5646)", lang, tagStart)
+	}
+	val := lang
+	if dir != "" {
+		val = lang + "--" + dir
+	}
+	return srlToken{kind: srlTokLang, val: val, pos: start}, nil
 }
 
 func (l *srlLexer) scanUnicodeEscape(digits int) (rune, int) {
@@ -485,10 +560,22 @@ func (l *srlLexer) scanKeywordOrPName() (srlToken, error) {
 		return srlToken{kind: srlTokNot, val: word, pos: start}, nil
 	case "FILTER":
 		return srlToken{kind: srlTokFilter, val: word, pos: start}, nil
+	case "SET":
+		return srlToken{kind: srlTokSet, val: word, pos: start}, nil
 	case "BIND":
 		return srlToken{kind: srlTokBind, val: word, pos: start}, nil
-	case "AS":
-		return srlToken{kind: srlTokAs, val: word, pos: start}, nil
+	case "GROUP":
+		return srlToken{kind: srlTokGroup, val: word, pos: start}, nil
+	case "BY":
+		return srlToken{kind: srlTokBy, val: word, pos: start}, nil
+	case "VERSION":
+		return srlToken{kind: srlTokVersion, val: word, pos: start}, nil
+	case "IMPORTS":
+		return srlToken{kind: srlTokImports, val: word, pos: start}, nil
+	case "DISTINCT":
+		return srlToken{kind: srlTokDistinct, val: word, pos: start}, nil
+	case "COUNT", "MIN", "MAX", "SUM":
+		return srlToken{kind: srlTokAgg, val: strings.ToUpper(word), pos: start}, nil
 	case "TRUE":
 		return srlToken{kind: srlTokTrue, val: word, pos: start}, nil
 	case "FALSE":
@@ -506,53 +593,6 @@ func (l *srlLexer) scanKeywordOrPName() (srlToken, error) {
 	}
 
 	return srlToken{}, fmt.Errorf("unexpected token %q at position %d", word, start)
-}
-
-// scanExpr scans a parenthesized expression for FILTER/BIND.
-// It reads everything between ( and ) including nested parens.
-func (l *srlLexer) scanExpr() (string, error) {
-	l.skipWS()
-	if l.pos >= len(l.input) || l.input[l.pos] != '(' {
-		return "", fmt.Errorf("expected '(' at position %d", l.pos)
-	}
-	l.pos++ // skip (
-	depth := 1
-	start := l.pos
-	for l.pos < len(l.input) && depth > 0 {
-		c := l.input[l.pos]
-		if c == '(' {
-			depth++
-		} else if c == ')' {
-			depth--
-			if depth == 0 {
-				expr := l.input[start:l.pos]
-				l.pos++ // skip )
-				return strings.TrimSpace(expr), nil
-			}
-		} else if c == '"' || c == '\'' {
-			// Skip string literal
-			l.skipStringInExpr(c)
-			continue
-		}
-		l.pos++
-	}
-	return "", fmt.Errorf("unterminated expression at position %d", start)
-}
-
-func (l *srlLexer) skipStringInExpr(delim byte) {
-	l.pos++ // skip opening quote
-	for l.pos < len(l.input) {
-		c := l.input[l.pos]
-		if c == '\\' {
-			l.pos += 2
-			continue
-		}
-		if c == delim {
-			l.pos++
-			return
-		}
-		l.pos++
-	}
 }
 
 func isVarCharRune(r rune) bool {
