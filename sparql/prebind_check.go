@@ -14,10 +14,11 @@ var ErrPreBindRestriction = errors.New("sparql: query violates the restrictions 
 // pre-bound variables, written without the marker:
 //
 //   - no MINUS clause,
+//   - no SERVICE clause,
 //   - no VALUES clause that mentions a potentially pre-bound variable,
 //   - no AS ?var, in a projection, GROUP BY or BIND, for a potentially pre-bound variable.
 //
-// SERVICE is not part of the check: the parser refuses it. It returns nil, or
+// It returns nil, or
 // an error wrapping ErrPreBindRestriction that names the construct. It does not
 // modify the query.
 func (q *ParsedQuery) PreBindRestrictions(vars ...string) error {
@@ -102,6 +103,8 @@ func (w restrictionWalker) pattern(p Pattern) error {
 		return nil
 	case *GraphPattern:
 		return w.pattern(x.Pattern)
+	case *ServicePattern:
+		return w.fail("SERVICE")
 	case *SubqueryPattern:
 		return w.query(x.Query)
 	}

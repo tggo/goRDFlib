@@ -51,8 +51,6 @@ var w3cSPARQLElsewhere = map[string]string{
 	"sparql11/http-rdf-update":      "endpoint (Graph Store HTTP, update)",
 	"sparql11/graph-store-protocol": "endpoint (Graph Store HTTP Protocol)",
 	// Features the engine does not have.
-	"sparql11/syntax-fed":          "SERVICE is not supported (parse error): federated query is not implemented",
-	"sparql11/service":             "SERVICE is not supported: federated query is not implemented",
 	"sparql11/entailment":          "SPARQL entailment regimes (RDFS, OWL, RIF) are not implemented",
 	"sparql11/service-description": "service description is a protocol concern of the binary, not the library",
 }
@@ -90,6 +88,7 @@ func TestW3CEveryManifestIsRun(t *testing.T) {
 		sparql11UpdateManifestPath,
 		sparql12ManifestPath,
 		w3cSPARQLRoot + "/sparql11/json-res/manifest.ttl", // TestW3CJSONResults
+		sparql11FedManifestPath,                           // TestW3CFederated
 	}
 	run := map[string]bool{}
 	seen := map[string]bool{}

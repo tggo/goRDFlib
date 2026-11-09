@@ -250,9 +250,37 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			continue
 		}
 
-		// SERVICE (not supported - skip)
+		// SERVICE [SILENT] VarOrIri GroupGraphPattern
 		if p.matchKeywordCI("SERVICE") {
-			return nil, p.errorf("SERVICE not supported")
+			p.pos += 7
+			flushTriples()
+			scope = p.nextBGP()
+			p.skipWS()
+			silent := false
+			if p.matchKeywordCI("SILENT") {
+				p.pos += 6
+				silent = true
+				p.skipWS()
+			}
+			endpoint, err := p.readVarOrIRI("a service endpoint after SERVICE")
+			if err != nil {
+				return nil, err
+			}
+			p.skipWS()
+			start := p.pos
+			sub, err := p.parseGroupGraphPattern()
+			if err != nil {
+				return nil, err
+			}
+			sp := &ServicePattern{Endpoint: endpoint, Silent: silent, Pattern: sub, Text: p.input[start:p.pos]}
+			if result == nil {
+				result = sp
+			} else {
+				result = &JoinPattern{Left: result, Right: sp}
+			}
+			undotted = false
+			p.skipOptionalDot()
+			continue
 		}
 
 		// Triple pattern (may include property paths in predicate)

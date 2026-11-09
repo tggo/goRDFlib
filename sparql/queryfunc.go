@@ -149,6 +149,8 @@ func (b *funcBinder) pattern(p Pattern) {
 		b.expr(x.Expr)
 	case *GraphPattern:
 		b.pattern(x.Pattern)
+	case *ServicePattern:
+		b.pattern(x.Pattern)
 	case *SubqueryPattern:
 		b.query(x.Query)
 	}

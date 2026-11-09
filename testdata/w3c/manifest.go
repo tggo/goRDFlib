@@ -34,6 +34,10 @@ type TestEntry struct {
 	Data      string   // absolute file path from qt:data (SPARQL tests)
 	GraphData []string // absolute file paths from qt:graphData (named graphs)
 
+	// ServiceData holds the qt:serviceData of a federated query test: the data
+	// each remote endpoint serves.
+	ServiceData []ServiceDataRef
+
 	// Update test fields (ut: namespace)
 	Request         string          // ut:request - update file path
 	ActionData      string          // ut:data in action (pre-data for default graph)
@@ -46,6 +50,13 @@ type TestEntry struct {
 	RecognizedDatatypes   []string // mf:recognizedDatatypes (IRI list)
 	UnrecognizedDatatypes []string // mf:unrecognizedDatatypes (IRI list)
 	ResultFalse           bool     // true when mf:result is literal `false`
+}
+
+// ServiceDataRef is a qt:serviceData node: the endpoint IRI (qt:endpoint) and
+// the absolute path of the data it serves (qt:data).
+type ServiceDataRef struct {
+	Endpoint string
+	Data     string
 }
 
 // NamedGraphRef is a named graph reference with a file path and label (graph IRI).
@@ -104,6 +115,8 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 	queryPred := term.NewURIRefUnsafe(qt + "query")
 	dataPred := term.NewURIRefUnsafe(qt + "data")
 	graphDataPred := term.NewURIRefUnsafe(qt + "graphData")
+	serviceDataPred := term.NewURIRefUnsafe(qt + "serviceData")
+	endpointPred := term.NewURIRefUnsafe(qt + "endpoint")
 
 	// Update test predicates (ut: namespace)
 	const ut = "http://www.w3.org/2009/sparql/tests/test-update#"
@@ -150,6 +163,24 @@ func ParseManifest(manifestPath string) (*Manifest, error) {
 					if u, ok := gd.Object.(term.URIRef); ok {
 						e.GraphData = append(e.GraphData, toFilePath(u.Value()))
 					}
+				}
+				for sd := range g.Triples(context.Background(), av, &serviceDataPred, nil) {
+					sdNode, ok := sd.Object.(term.Subject)
+					if !ok {
+						continue
+					}
+					var ref ServiceDataRef
+					if ev, ok, _ := g.Value(context.Background(), sdNode, &endpointPred, nil); ok {
+						if u, ok := ev.(term.URIRef); ok {
+							ref.Endpoint = u.Value()
+						}
+					}
+					if dv, ok, _ := g.Value(context.Background(), sdNode, &dataPred, nil); ok {
+						if u, ok := dv.(term.URIRef); ok {
+							ref.Data = toFilePath(u.Value())
+						}
+					}
+					e.ServiceData = append(e.ServiceData, ref)
 				}
 				// SPARQL update manifest: ut:request, ut:data, ut:graphData
 				if rv, ok, _ := g.Value(context.Background(), av, &utRequest, nil); ok {

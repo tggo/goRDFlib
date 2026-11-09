@@ -177,6 +177,8 @@ func (w volatileWalker) pattern(p Pattern) bool {
 		return w.pattern(x.Pattern) || w.expr(x.Expr)
 	case *GraphPattern:
 		return w.pattern(x.Pattern)
+	case *ServicePattern:
+		return true // a remote endpoint may answer differently each time
 	case *SubqueryPattern:
 		return w.query(x.Query)
 	}

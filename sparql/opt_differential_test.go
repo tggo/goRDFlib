@@ -121,7 +121,7 @@ func (o *optGen) group() string {
 	var sb strings.Builder
 	n := 1 + o.r.IntN(4)
 	for range n {
-		kind := o.r.IntN(14)
+		kind := o.r.IntN(15)
 		if o.depth > 3 && kind > 4 {
 			kind = 0
 		}
@@ -146,6 +146,12 @@ func (o *optGen) group() string {
 			sb.WriteString(fmt.Sprintf("{ SELECT DISTINCT %s %s WHERE { %s} } ", o.v(), o.pick("?b", "?c"), o.group()))
 		case 13:
 			sb.WriteString(fmt.Sprintf("VALUES %s { ex:p1 ex:p2 ex:Kind0 ex:nothing } ", o.v()))
+		case 14:
+			// A service sees no initial bindings (it is another endpoint),
+			// so its group must not mention ?this: the textual form would
+			// substitute inside it and the pre-bound form could not.
+			inner := strings.ReplaceAll(o.group(), "?this", "?a")
+			sb.WriteString(o.pick("SERVICE ex:svc ", "SERVICE SILENT ex:svc ") + "{ " + inner + "} ")
 		}
 	}
 	return sb.String()
@@ -162,6 +168,14 @@ func (o *optGen) query() string {
 // of intermediate solutions.
 func optRows(g *graph.Graph, pq *ParsedQuery, pre map[string]term.Term) (rows []string, skipped bool, err error) {
 	ctx := WithMaxSolutions(context.Background(), 60_000)
+	// ex:svc is a second endpoint serving the same data.
+	ctx = WithServiceHandler(ctx, func(ctx context.Context, c *ServiceCall) ([]map[string]term.Term, error) {
+		res, err := EvalQueryContext(ctx, g, c.Select(), nil)
+		if err != nil {
+			return nil, err
+		}
+		return res.Bindings, nil
+	})
 	res, err := EvalQueryContext(ctx, g, pq, pre)
 	if errors.Is(err, ErrTooManySolutions) {
 		return nil, true, nil

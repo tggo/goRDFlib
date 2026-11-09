@@ -859,6 +859,9 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 	case *GraphPattern:
 		return evalGraphPattern(ec, g, p, prefixes, namedGraphs)
 
+	case *ServicePattern:
+		return evalService(ec, p, nil, prefixes)
+
 	case *SubqueryPattern:
 		subQ := *p.Query // shallow copy; deep-copy mutable fields below
 		// Deep-copy NamedGraphs to avoid mutating the original AST
@@ -886,6 +889,24 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 	}
 
 	return []map[string]rdflibgo.Term{{}}
+}
+
+// compatibleWith keeps the rows that agree with bindings on every variable
+// both bind.
+func compatibleWith(ec *evalCtx, rows []map[string]rdflibgo.Term, bindings map[string]rdflibgo.Term) []map[string]rdflibgo.Term {
+	if len(bindings) == 0 {
+		return rows
+	}
+	kept := make([]map[string]rdflibgo.Term, 0, len(rows))
+	for _, r := range rows {
+		if ec.stop() {
+			return nil
+		}
+		if isCompatible(bindings, r) {
+			kept = append(kept, r)
+		}
+	}
+	return kept
 }
 
 func evalGraphPattern(ec *evalCtx, g *rdflibgo.Graph, gp *GraphPattern, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
@@ -995,6 +1016,9 @@ func evalPatternWithBindings(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, bi
 	switch p := pattern.(type) {
 	case *BGP:
 		return evalBGP(ec, g, p.Triples, bindings, prefixes)
+	case *ServicePattern:
+		// The row's value of a variable endpoint is what selects the service.
+		return compatibleWith(ec, evalService(ec, p, bindings, prefixes), bindings)
 	default:
 		results := evalPattern(ec, g, pattern, prefixes, namedGraphs)
 		var compatible []map[string]rdflibgo.Term
@@ -1041,9 +1065,29 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 	case *BGP:
 		return evalBGP(ec, g, p.Triples, pre, prefixes)
 
+	case *ServicePattern:
+		return compatibleWith(ec, evalService(ec, p, pre, prefixes), pre)
+
 	case *JoinPattern:
 		left := evalPatternPreBound(ec, g, p.Left, pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
+		if sp, ok := p.Right.(*ServicePattern); ok {
+			// A SERVICE clause is asked once per left row: its endpoint may be
+			// a variable the row binds, and the handler may use the row.
+			for _, lb := range left {
+				if ec.stop() {
+					return nil
+				}
+				in := mergeBindings(pre, lb)
+				for _, rb := range compatibleWith(ec, evalService(ec, sp, in, prefixes), in) {
+					result = append(result, mergeBindings(lb, rb))
+					if ec.produced(1) {
+						return nil
+					}
+				}
+			}
+			return result
+		}
 		if rs := ec.rightSideOf(p.Right); !offPreBoundJoinSubst && rs.free && rs.bindsAVariableOf(left, pre) {
 			// A basic graph pattern holds no expression, nor does a UNION or a
 			// group of them, so evaluating it with the left row's values

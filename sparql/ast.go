@@ -148,6 +148,23 @@ type GraphPattern struct {
 
 func (*GraphPattern) isPattern() {}
 
+// ServicePattern is SERVICE [SILENT] VarOrIri { pattern } (SPARQL 1.1 Federated
+// Query §2). The engine never contacts the endpoint itself: evaluation goes
+// through the ServiceHandler installed with WithServiceHandler, and fails with
+// ErrServiceUnsupported when there is none (see service.go).
+type ServicePattern struct {
+	// Endpoint is "?var" or the endpoint IRI as "<iri>" (or a prefixed name,
+	// resolved against the query's prefixes at evaluation).
+	Endpoint string
+	Silent   bool
+	Pattern  Pattern
+	// Text is the group graph pattern as written in the query, braces
+	// included: what a handler sends to a remote endpoint.
+	Text string
+}
+
+func (*ServicePattern) isPattern() {}
+
 // MinusPattern removes solutions from left that are compatible with right.
 type MinusPattern struct {
 	Left, Right Pattern

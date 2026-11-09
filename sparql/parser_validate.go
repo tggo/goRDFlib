@@ -180,6 +180,8 @@ func validateBindScope(p Pattern) error {
 			return err
 		}
 		return validateBindScope(pat.Right)
+	case *ServicePattern:
+		return validateBindScope(pat.Pattern)
 	case *SubqueryPattern:
 		return validateBindScope(pat.Query.Where)
 	}
@@ -223,6 +225,11 @@ func collectVarsInto(p Pattern, vars map[string]bool) {
 	case *BindPattern:
 		collectVarsInto(pat.Pattern, vars)
 		vars[pat.Var] = true
+	case *ServicePattern:
+		collectVarsInto(pat.Pattern, vars)
+		if strings.HasPrefix(pat.Endpoint, "?") {
+			vars[pat.Endpoint[1:]] = true
+		}
 	case *SubqueryPattern:
 		for _, v := range pat.Query.Variables {
 			vars[v] = true
@@ -341,6 +348,8 @@ func validateTripleTerms(p Pattern) error {
 		return validateTripleTerms(pat.Pattern)
 	case *ValuesPattern:
 		return nil
+	case *ServicePattern:
+		return validateTripleTerms(pat.Pattern)
 	case *SubqueryPattern:
 		return validateTripleTerms(pat.Query.Where)
 	}

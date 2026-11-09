@@ -139,7 +139,11 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	// with the files on disk. Tests in the DAWG dataset manifest declare no
 	// qt:data at all — their dataset is only what the query names.
 	loadDatasetGraphs(t, pq)
-	result, err := sparql.EvalQuery(g, pq, nil)
+	ctx := context.Background()
+	if len(entry.ServiceData) > 0 {
+		ctx = sparql.WithServiceHandler(ctx, manifestServices(t, entry))
+	}
+	result, err := sparql.EvalQueryContext(ctx, g, pq, nil)
 	if err != nil {
 		t.Fatalf("query execution failed: %v", err)
 	}

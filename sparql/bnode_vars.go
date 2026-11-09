@@ -48,6 +48,8 @@ func blankLabelsToVars(p Pattern) Pattern {
 		blankLabelsInExpr(x.Expr)
 	case *GraphPattern:
 		blankLabelsToVars(x.Pattern)
+	case *ServicePattern:
+		blankLabelsToVars(x.Pattern)
 	case *SubqueryPattern:
 		blankLabelsInQuery(x.Query)
 	}
