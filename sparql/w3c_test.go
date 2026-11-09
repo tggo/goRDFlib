@@ -303,8 +303,16 @@ func loadExpectedResult(t *testing.T, path string, g *rdflibgo.Graph) (*sparql.R
 			return parseRDFResultSet(expected), nil
 		}
 		return &sparql.Result{Type: "CONSTRUCT", Graph: expected}, nil
+	case ".nt":
+		expected := rdflibgo.NewGraph()
+		if err := nt.Parse(t.Context(), expected, f); err != nil {
+			return nil, err
+		}
+		return &sparql.Result{Type: "CONSTRUCT", Graph: expected}, nil
 	default:
-		t.Skipf("unsupported result format: %s", ext)
+		// Never a skip: an unread result format is a test that silently
+		// stops checking anything (the DAWG sort tests were, in .rdf).
+		t.Fatalf("unsupported result format: %s", ext)
 		return nil, nil
 	}
 }

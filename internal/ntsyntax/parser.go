@@ -296,6 +296,8 @@ func (p *LineParser) ReadLiteral() (rdflibgo.Literal, error) {
 				sb.WriteByte('\\')
 			case '"':
 				sb.WriteByte('"')
+			case '\'':
+				sb.WriteByte('\'') // ECHAR includes \' (N-Triples [153s])
 			case 'u':
 				if p.Pos+4 > len(p.Line) {
 					return rdflibgo.Literal{}, fmt.Errorf("line %d: truncated \\u escape", p.LineNum)
