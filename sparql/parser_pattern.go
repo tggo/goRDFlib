@@ -21,6 +21,11 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 	// FILTER does not end one (it is lifted out of the group); every other
 	// non-triples element does, and so does a nested group.
 	scope := p.nextBGP()
+	// undotted is set when a triples block ended without its '.', which a
+	// further triples block may not follow directly: TriplesBlock ::=
+	// TriplesSameSubjectPath ( '.' TriplesBlock? )? (SPARQL 1.1 grammar [55]).
+	// Any other element between them (FILTER, OPTIONAL, a group, ...) clears it.
+	undotted := false
 
 	flushTriples := func() {
 		if len(currentTriples) > 0 {
@@ -73,6 +78,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			} else {
 				result = &JoinPattern{Left: result, Right: pat}
 			}
+			undotted = false
 			continue
 		}
 
@@ -89,6 +95,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 				result = &BGP{}
 			}
 			result = &OptionalPattern{Main: result, Optional: opt}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -105,6 +113,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 				result = &BGP{}
 			}
 			result = &MinusPattern{Left: result, Right: right}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -142,6 +152,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			default:
 				result = left
 			}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -156,10 +168,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			}
 			deferredFilters = append(deferredFilters, expr)
 			// Skip optional '.' after FILTER (per SPARQL grammar: GraphPatternNotTriples '.'?)
-			p.skipWS()
-			if p.pos < len(p.input) && p.input[p.pos] == '.' {
-				p.pos++
-			}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -190,6 +200,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 				result = &BGP{}
 			}
 			result = &BindPattern{Pattern: result, Expr: expr, Var: v}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -207,6 +219,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			} else {
 				result = &JoinPattern{Left: result, Right: vp}
 			}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -216,7 +230,10 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			flushTriples()
 			scope = p.nextBGP()
 			p.skipWS()
-			graphName := p.readTermOrVar()
+			graphName, err := p.readVarOrIRI("a graph name after GRAPH")
+			if err != nil {
+				return nil, err
+			}
 			p.skipWS()
 			sub, err := p.parseGroupGraphPattern()
 			if err != nil {
@@ -228,6 +245,8 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 			} else {
 				result = &JoinPattern{Left: result, Right: gp}
 			}
+			undotted = false
+			p.skipOptionalDot()
 			continue
 		}
 
@@ -237,6 +256,9 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		}
 
 		// Triple pattern (may include property paths in predicate)
+		if undotted {
+			return nil, p.errorf("expected '.' between triples blocks")
+		}
 		triples, err := p.parseTriplePatterns()
 		if err != nil {
 			return nil, err
@@ -244,6 +266,7 @@ func (p *sparqlParser) parseGroupGraphPattern() (Pattern, error) {
 		if len(triples) == 0 {
 			return nil, p.errorf("unexpected token in group graph pattern")
 		}
+		undotted = !p.dotAfterTriples
 		currentTriples = append(currentTriples, triples...)
 	}
 }
@@ -353,9 +376,14 @@ func (p *sparqlParser) parseTriplePatterns() ([]Triple, error) {
 
 		p.skipWS()
 		if p.pos < len(p.input) && p.input[p.pos] == ';' {
-			p.pos++
-			p.skipWS()
-			if p.pos < len(p.input) && (p.input[p.pos] == '.' || p.input[p.pos] == '}') {
+			// PropertyListNotEmpty ::= Verb ObjectList ( ';' ( Verb ObjectList )? )*
+			// so ';' may repeat and may end the list, before '.', '}' or the
+			// next GraphPatternNotTriples.
+			for p.pos < len(p.input) && p.input[p.pos] == ';' {
+				p.pos++
+				p.skipWS()
+			}
+			if p.pos < len(p.input) && (p.input[p.pos] == '.' || p.input[p.pos] == '}' || p.input[p.pos] == '{' || p.atGroupKeyword()) {
 				break
 			}
 			continue
@@ -364,10 +392,32 @@ func (p *sparqlParser) parseTriplePatterns() ([]Triple, error) {
 	}
 
 	p.skipWS()
+	p.dotAfterTriples = false
+	if p.pos < len(p.input) && p.input[p.pos] == '.' {
+		p.pos++
+		p.dotAfterTriples = true
+	}
+	return triples, nil
+}
+
+// skipOptionalDot consumes the '.'? that may follow a GraphPatternNotTriples
+// (SPARQL 1.1 grammar [54]: GraphPatternNotTriples '.'? TriplesBlock?).
+func (p *sparqlParser) skipOptionalDot() {
+	p.skipWS()
 	if p.pos < len(p.input) && p.input[p.pos] == '.' {
 		p.pos++
 	}
-	return triples, nil
+}
+
+// atGroupKeyword reports whether the parser sits at a keyword that starts a
+// GraphPatternNotTriples or a subquery, as opposed to a verb.
+func (p *sparqlParser) atGroupKeyword() bool {
+	for _, kw := range []string{"OPTIONAL", "MINUS", "FILTER", "BIND", "VALUES", "GRAPH", "SERVICE", "SELECT"} {
+		if p.matchKeywordCI(kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseAnnotationsAndReifiers parses ~ reifier and {| annotation |} syntax after an object.

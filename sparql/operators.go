@@ -94,6 +94,14 @@ func evalUnaryOp(op string, arg rdflibgo.Term) rdflibgo.Term {
 			return nil
 		}
 		return rdflibgo.NewLiteral(!v)
+	case "+":
+		// op:numeric-unary-plus (XPath F&O §6.2.6): the operand's value,
+		// in the base type it derives from.
+		n, ok := numericOf(arg)
+		if !ok {
+			return nil
+		}
+		return numericLiteral(n)
 	case "-":
 		n, ok := numericOf(arg)
 		if !ok {

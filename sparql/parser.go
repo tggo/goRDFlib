@@ -50,6 +50,7 @@ type sparqlParser struct {
 	pos             int
 	prefixes        map[string]string
 	bnodeCount      int
+	dotAfterTriples bool           // the last triples block ended with '.'
 	bgpSeq          int            // last basic graph pattern id (nextBGP)
 	bgpLabels       map[string]int // blank-node label -> the BGP that used it
 	reifierTriples  []Triple       // pending rdf:reifies triples from reified triple syntax
@@ -83,7 +84,7 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 			p.skipWS()
 			prefix := p.readUntil(':')
 			// Validate prefix: must start with letter or be empty
-			if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z')) {
+			if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z') || (prefix[0] >= 0x80 && validPNRunes(prefix))) {
 				return nil, p.errorf("invalid prefix name: %q", prefix)
 			}
 			p.pos++ // skip ':'
@@ -129,8 +130,14 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 				return nil, err
 			}
 		}
+	} else if p.matchKeywordCI("DESCRIBE") {
+		p.pos += 8
+		q.Type = "DESCRIBE"
+		if err := p.parseDescribeTargets(q); err != nil {
+			return nil, err
+		}
 	} else {
-		return nil, p.errorf("expected SELECT, ASK, or CONSTRUCT")
+		return nil, p.errorf("expected SELECT, ASK, CONSTRUCT, or DESCRIBE")
 	}
 
 	// FROM / FROM NAMED dataset clauses
@@ -154,8 +161,15 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 		})
 	}
 
-	// WHERE clause
+	// WHERE clause (optional for DESCRIBE: DescribeQuery ::= ... WhereClause?)
 	p.skipWS()
+	if q.Type == "DESCRIBE" && !p.matchKeywordCI("WHERE") && (p.pos >= len(p.input) || p.input[p.pos] != '{') {
+		q.Where = &BGP{}
+		if err := p.parseSolutionModifiers(q); err != nil {
+			return nil, err
+		}
+		return q, nil
+	}
 	if p.matchKeywordCI("WHERE") {
 		p.pos += 5
 	}

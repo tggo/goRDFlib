@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
 
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/internal/iri"
@@ -318,7 +317,7 @@ func (p *sparqlParser) matchKeywordCI(kw string) bool {
 		return false
 	}
 	after := p.pos + len(kw)
-	if after < len(p.input) && isNameChar(rune(p.input[after])) {
+	if after < len(p.input) && isNameByte(p.input[after]) {
 		return false
 	}
 	return true
@@ -337,8 +336,31 @@ func (p *sparqlParser) errorf(format string, args ...any) error {
 	return fmt.Errorf("sparql parse error at pos %d: %s", p.pos, fmt.Sprintf(format, args...))
 }
 
-func isNameChar(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+// isNameByte reports whether c can be part of a name. A byte of a multi-byte
+// UTF-8 sequence counts: the parser reads names byte by byte, and the runes
+// they form are checked against PN_CHARS_BASE/PN_CHARS by validPNRunes.
+func isNameByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c >= 0x80
+}
+
+// validPNRunes reports whether every non-ASCII rune of a name is allowed by
+// PN_CHARS_BASE or PN_CHARS (SPARQL 1.1 grammar [164]-[167]).
+func validPNRunes(s string) bool {
+	for _, r := range s {
+		if r < 0x80 {
+			continue
+		}
+		switch {
+		case r >= 0xC0 && r <= 0xD6, r >= 0xD8 && r <= 0xF6, r >= 0xF8 && r <= 0x2FF,
+			r >= 0x370 && r <= 0x37D, r >= 0x37F && r <= 0x1FFF, r >= 0x200C && r <= 0x200D,
+			r >= 0x2070 && r <= 0x218F, r >= 0x2C00 && r <= 0x2FEF, r >= 0x3001 && r <= 0xD7FF,
+			r >= 0xF900 && r <= 0xFDCF, r >= 0xFDF0 && r <= 0xFFFD, r >= 0x10000 && r <= 0xEFFFF,
+			r == 0xB7, r >= 0x300 && r <= 0x36F, r >= 0x203F && r <= 0x2040:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // parseVersion parses a VERSION directive. Accepts single-quoted or double-quoted strings.

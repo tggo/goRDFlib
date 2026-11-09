@@ -476,3 +476,41 @@ func (p *sparqlParser) parseSubQuery() (*ParsedQuery, error) {
 	}
 	return q, nil
 }
+
+// parseDescribeTargets reads ( VarOrIri+ | '*' ) after DESCRIBE.
+func (p *sparqlParser) parseDescribeTargets(q *ParsedQuery) error {
+	p.skipWS()
+	if p.pos < len(p.input) && p.input[p.pos] == '*' {
+		p.pos++
+		return nil
+	}
+	for {
+		p.skipWS()
+		if p.pos >= len(p.input) || !(p.input[p.pos] == '?' || p.input[p.pos] == '$' || p.input[p.pos] == '<' || isNameByte(p.input[p.pos]) || p.input[p.pos] == ':') {
+			break
+		}
+		if p.atDescribeEnd() {
+			break
+		}
+		t, err := p.readVarOrIRI("a variable or IRI to DESCRIBE")
+		if err != nil {
+			return err
+		}
+		q.Describe = append(q.Describe, t)
+	}
+	if len(q.Describe) == 0 {
+		return p.errorf("DESCRIBE needs * or at least one variable or IRI")
+	}
+	return nil
+}
+
+// atDescribeEnd reports whether a clause keyword that ends a target list
+// (FROM, WHERE, ORDER, ...) is next.
+func (p *sparqlParser) atDescribeEnd() bool {
+	for _, kw := range []string{"FROM", "WHERE", "ORDER", "LIMIT", "OFFSET", "GROUP", "HAVING"} {
+		if p.matchKeywordCI(kw) {
+			return true
+		}
+	}
+	return false
+}

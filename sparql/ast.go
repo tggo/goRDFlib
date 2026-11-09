@@ -8,16 +8,22 @@ import (
 // ParsedQuery is the parsed representation of a SPARQL query.
 // Ported from: rdflib.plugins.sparql.parserutils.CompValue
 type ParsedQuery struct {
-	Type           string // "SELECT", "ASK", "CONSTRUCT"
-	Distinct       bool
-	Variables      []string // projection vars (nil = *)
-	ProjectExprs   []ProjectExpr
-	Where          Pattern
-	OrderBy        []OrderExpr
-	Limit          int // -1 = no limit
-	Offset         int
-	Prefixes       map[string]string // prefix → namespace
-	Construct      []TripleTemplate  // CONSTRUCT template
+	Type         string // "SELECT", "ASK", "CONSTRUCT", "DESCRIBE" (parsed, not evaluated)
+	Distinct     bool
+	Variables    []string // projection vars (nil = *)
+	ProjectExprs []ProjectExpr
+	Where        Pattern
+	OrderBy      []OrderExpr
+	Limit        int // -1 = no limit
+	Offset       int
+	Prefixes     map[string]string // prefix → namespace
+	Construct    []TripleTemplate  // CONSTRUCT template
+	// Describe lists the DESCRIBE targets: a variable as "?name", an IRI as
+	// "<iri>". Empty for DESCRIBE *. The engine parses DESCRIBE (the syntax is
+	// part of SPARQL 1.0) but does not evaluate it: EvalQuery returns an error,
+	// because which triples describe a resource is left to the implementation
+	// (SPARQL 1.1 section 16.4).
+	Describe       []string
 	GroupBy        []Expr
 	GroupByAliases []string // parallel to GroupBy: variable name if (expr AS ?var), else ""
 	Having         Expr

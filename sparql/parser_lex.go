@@ -19,7 +19,7 @@ func (p *sparqlParser) readVar() string {
 	}
 	p.pos++ // skip ? or $
 	start := p.pos
-	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
+	for p.pos < len(p.input) && isNameByte(p.input[p.pos]) {
 		p.pos++
 	}
 	if p.pos == start && p.badSyntax == nil {
@@ -79,7 +79,7 @@ func (p *sparqlParser) readTermOrVar() string {
 	if ch == '_' && p.pos+1 < len(p.input) && p.input[p.pos+1] == ':' {
 		start := p.pos
 		p.pos += 2 // skip "_:"
-		for p.pos < len(p.input) && (isNameChar(rune(p.input[p.pos])) || p.input[p.pos] == '.' || p.input[p.pos] == '-') {
+		for p.pos < len(p.input) && (isNameByte(p.input[p.pos]) || p.input[p.pos] == '.' || p.input[p.pos] == '-') {
 			p.pos++
 		}
 		// Trim trailing dots
@@ -90,17 +90,17 @@ func (p *sparqlParser) readTermOrVar() string {
 	}
 
 	// 'a' as rdf:type shorthand
-	if ch == 'a' && (p.pos+1 >= len(p.input) || !isNameChar(rune(p.input[p.pos+1]))) {
+	if ch == 'a' && p.atTypeShorthand() {
 		p.pos++
 		return "<" + rdflibgo.RDF.Type.Value() + ">"
 	}
 
 	// true/false
-	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameChar(rune(p.input[p.pos+4]))) {
+	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameByte(p.input[p.pos+4])) {
 		p.pos += 4
 		return "true"
 	}
-	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameChar(rune(p.input[p.pos+5]))) {
+	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameByte(p.input[p.pos+5])) {
 		p.pos += 5
 		return "false"
 	}
@@ -311,17 +311,20 @@ func (p *sparqlParser) parseBnodePropertyListTriples() (string, []Triple, error)
 // callers that read a keyword or function name expect.
 func (p *sparqlParser) readPNameNS() (string, bool) {
 	start := p.pos
-	for p.pos < len(p.input) && isNameChar(rune(p.input[p.pos])) {
+	for p.pos < len(p.input) && isNameByte(p.input[p.pos]) {
 		p.pos++
 	}
 	nameEnd := p.pos
 	if p.pos > start {
-		for p.pos < len(p.input) && (isNameChar(rune(p.input[p.pos])) || p.input[p.pos] == '-' || p.input[p.pos] == '.') {
+		for p.pos < len(p.input) && (isNameByte(p.input[p.pos]) || p.input[p.pos] == '-' || p.input[p.pos] == '.') {
 			p.pos++
 		}
 	}
 	if p.pos < len(p.input) && p.input[p.pos] == ':' && p.input[p.pos-1] != '.' {
 		prefix := p.input[start:p.pos]
+		if !validPNRunes(prefix) && p.badSyntax == nil {
+			p.badSyntax = fmt.Errorf("sparql parse error at pos %d: %q is not a valid prefix (PN_PREFIX, SPARQL 1.1 grammar [167])", start, prefix)
+		}
 		if _, ok := p.prefixes[prefix]; !ok && p.undeclaredPrefix == nil {
 			p.undeclaredPrefix = fmt.Errorf("sparql parse error at pos %d: %w %q", start, ErrUndeclaredPrefix, prefix)
 		}
@@ -341,7 +344,7 @@ func (p *sparqlParser) readPNLocal() string {
 	start := p.pos
 	for p.pos < len(p.input) {
 		ch := p.input[p.pos]
-		if isNameChar(rune(ch)) || ch == ':' || ((ch == '.' || ch == '-') && p.pos > start) {
+		if isNameByte(ch) || ch == ':' || ((ch == '.' || ch == '-') && p.pos > start) {
 			p.pos++
 		} else if ch == '%' && p.pos+2 < len(p.input) && isHexDigit(p.input[p.pos+1]) && isHexDigit(p.input[p.pos+2]) {
 			// Percent-encoded char: %HH
@@ -359,6 +362,9 @@ func (p *sparqlParser) readPNLocal() string {
 			break // escaped dot, keep it
 		}
 		p.pos--
+	}
+	if !validPNRunes(p.input[start:p.pos]) && p.badSyntax == nil {
+		p.badSyntax = fmt.Errorf("sparql parse error at pos %d: %q is not a valid local name (PN_LOCAL, SPARQL 1.1 grammar [169])", start, p.input[start:p.pos])
 	}
 	return p.input[start:p.pos]
 }
@@ -588,4 +594,74 @@ func (p *sparqlParser) readInt() (int, error) {
 func (p *sparqlParser) readTermValue() rdflibgo.Term {
 	tv := p.readTermOrVar()
 	return p.resolveTermValue(tv)
+}
+
+// atTypeShorthand reports whether the 'a' at p.pos is the keyword for rdf:type
+// (Verb ::= VarOrIri | 'a') and not the start of a name. A prefix may be
+// called "a" (`a:`, `a:b`) or begin with it (`ab:c`, `a-b:c`); it is a prefixed
+// name when the name characters run into a ':' (SPARQL 1.1 grammar [140]).
+func (p *sparqlParser) atTypeShorthand() bool {
+	i := p.pos + 1
+	if i >= len(p.input) || !(isNameByte(p.input[i]) || p.input[i] == ':' || p.input[i] == '-' || p.input[i] == '.') {
+		return true
+	}
+	for i < len(p.input) && (isNameByte(p.input[i]) || p.input[i] == '-' || p.input[i] == '.') {
+		i++
+	}
+	if i < len(p.input) && p.input[i] == ':' && p.input[i-1] != '.' {
+		return false
+	}
+	// No colon: the name characters are not a prefix. An 'a' directly before
+	// a name character is a bare word, which is no verb either; only a lone
+	// 'a' is the shorthand.
+	return !isNameByte(p.input[p.pos+1])
+}
+
+// readVarOrIRI reads a VarOrIri (SPARQL 1.1 grammar [106]): a variable, an
+// <iri> or a prefixed name. what names the position for the error. Anything
+// else -- a blank node, [], a collection, a literal, a bare word -- is a
+// syntax error there, though readTermOrVar reads it happily as a term.
+func (p *sparqlParser) readVarOrIRI(what string) (string, error) {
+	p.skipWS()
+	if p.pos >= len(p.input) {
+		return "", p.errorf("expected %s", what)
+	}
+	start := p.pos
+	ch := p.input[start]
+	t := p.readTermOrVar()
+	ok := false
+	switch {
+	case t == "", ch == '[', ch == '(', ch == '"', ch == '\'', ch == '_':
+	case ch == '?' || ch == '$':
+		ok = true
+	case ch == '<':
+		ok = !strings.HasPrefix(t, "<<")
+	default:
+		// A prefixed name always has its colon; true, false, numbers and bare
+		// words do not.
+		ok = strings.Contains(t, ":") && ch != '+' && ch != '-' && ch != '.'
+	}
+	if !ok {
+		return "", fmt.Errorf("sparql parse error at pos %d: expected %s (a variable, <iri> or prefixed name): %q is not a term there", start, what, p.input[start:p.pos])
+	}
+	return t, nil
+}
+
+// atIRIRef reports whether the '<' at p.pos opens an IRIREF token: it runs to
+// a '>' without a character IRIREF excludes (SPARQL 1.1 grammar [139]:
+// no <>"{}|^` or backslash, nothing up to U+0020). Tokens are matched
+// greedily, so such text is an IRI even where a comparison was meant.
+func (p *sparqlParser) atIRIRef() bool {
+	if p.pos >= len(p.input) || p.input[p.pos] != '<' {
+		return false
+	}
+	for i := p.pos + 1; i < len(p.input); i++ {
+		switch c := p.input[i]; {
+		case c == '>':
+			return true
+		case c <= ' ' || c == '<' || c == '"' || c == '{' || c == '}' || c == '|' || c == '^' || c == '`' || c == '\\':
+			return false
+		}
+	}
+	return false
 }

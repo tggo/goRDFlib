@@ -101,6 +101,11 @@ func (p *sparqlParser) parseCompareExpr() (Expr, error) {
 	p.skipWS()
 	for _, op := range []string{"!=", "<=", ">=", "=", "<", ">"} {
 		if p.startsWith(op) {
+			if op[0] == '<' && p.atIRIRef() {
+				// The lexer is greedy: "<?a&&?b>" is one IRIREF token, not a
+				// less-than sign followed by an expression (DAWG syn-bad-26).
+				break
+			}
 			p.pos += len(op)
 			right, err := p.parseAddExpr()
 			if err != nil {
@@ -248,13 +253,16 @@ func (p *sparqlParser) parseUnaryExpr() (Expr, error) {
 		}
 		return &UnaryExpr{Op: "!", Arg: arg}, nil
 	}
-	if p.pos < len(p.input) && p.input[p.pos] == '-' {
+	// UnaryExpression ::= '!' PrimaryExpression | '+' PrimaryExpression |
+	// '-' PrimaryExpression (SPARQL 1.1 grammar [118]).
+	if p.pos < len(p.input) && (p.input[p.pos] == '-' || p.input[p.pos] == '+') {
+		op := string(p.input[p.pos])
 		p.pos++
 		arg, err := p.parseUnaryExpr()
 		if err != nil {
 			return nil, err
 		}
-		return &UnaryExpr{Op: "-", Arg: arg}, nil
+		return &UnaryExpr{Op: op, Arg: arg}, nil
 	}
 	return p.parsePrimaryExpr()
 }
@@ -376,11 +384,11 @@ func (p *sparqlParser) parsePrimaryExpr() (Expr, error) {
 	}
 
 	// Boolean or function call
-	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameChar(rune(p.input[p.pos+4]))) {
+	if p.matchKeywordCI("true") && (p.pos+4 >= len(p.input) || !isNameByte(p.input[p.pos+4])) {
 		p.pos += 4
 		return &LiteralExpr{Value: rdflibgo.NewLiteral(true)}, nil
 	}
-	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameChar(rune(p.input[p.pos+5]))) {
+	if p.matchKeywordCI("false") && (p.pos+5 >= len(p.input) || !isNameByte(p.input[p.pos+5])) {
 		p.pos += 5
 		return &LiteralExpr{Value: rdflibgo.NewLiteral(false)}, nil
 	}

@@ -376,10 +376,23 @@ The parser used to accept text that is not SPARQL, and sometimes read it as some
 | `HAVING COUNT(?o) > 1`, `HAVING ?s`, `HAVING !bound(?s)` | HAVING takes the same Constraint ([22]) | `HAVING (COUNT(?o) > 1)` |
 | `GROUP_CONCAT(?o; SEPARATOR=a)`, `SEPARATOR=<urn:x>` | the separator is a string literal (§18.2.4.4); this used to panic | `SEPARATOR=", "` |
 | one blank-node label in two basic graph patterns: `_:a ex:p ?v . OPTIONAL { _:a ex:q ?w }`, `{ _:a ex:p ?v } _:a ex:q ?w` | a label may not be used in two BGPs (§4.1.4); OPTIONAL, UNION, MINUS, GRAPH, BIND, VALUES, EXISTS, a subquery or a nested group starts a new one, a FILTER does not | a variable: `?a ex:p ?v . OPTIONAL { ?a ex:q ?w }` |
+| two triples blocks with no `.` between them: `?x ex:q ?x ?z ex:p ?x`, `:s1 :p1 :o1 :s2 :p2 :o2` | the second subject read as another object; TriplesBlock needs the dot (grammar [55]); both Oxigraph and rdflib reject it | `?x ex:q ?x . ?z ex:p ?x` |
+| a blank node, `[]`, a literal or a number as a predicate (`:x [] :q`, `:x _:a :q`) or as a graph name (`GRAPH [] { }`, `GRAPH _:g { }`) | a predicate and a graph name are a variable, an IRI or a prefixed name (VarOrIri, [106]) | a variable: `:x ?p :q`, `GRAPH ?g { }` |
+| `FILTER (?x<?a&&?b>?y)` | `<?a&&?b>` is one IRIREF token, tokens are matched greedily | spaces around the operator: `?x < ?a && ?b > ?y` |
 
 `FILTER !bound(?x)` is the one most likely to be in existing queries. It is accepted by several engines, but it is not in the SPARQL 1.1 grammar, and goRDFlib now follows the grammar. The bracketed form means the same.
 
 To find them: parse every query you store or generate with `sparql.Parse` (or `ParseUpdate`) in a test and look at the errors. In a SHACL shapes graph, `shacl.WithErrorHandler` reports a `sh:select` that does not parse as `ErrMalformedConstraint`, and the constraint yields a violation per focus node, so a shape that suddenly reports violations everywhere has one of these in its query. A search for `FILTER\s+[^(\s]` over your query text finds the unbracketed constraints.
+
+### SPARQL text that now parses
+
+SPARQL 1.0 and 1.1 text the parser used to reject, found by running the DAWG SPARQL 1.0 suites (`TestW3CSPARQL10`):
+
+- a `.` after OPTIONAL, MINUS, a group, BIND, VALUES or GRAPH (`OPTIONAL { … } .`), and a trailing `;` in a property list (`:s :p :o ; FILTER (…)`, `:s :p :o ; OPTIONAL { … }`)
+- unary `+` (`FILTER (+?x > 1)`, `+1 + +2`)
+- non-ASCII characters in prefixes and local names (`食:ほげ`), checked against PN_CHARS_BASE / PN_CHARS
+- a prefix called `a` or beginning with `a` (`a:`, `a-b:x`); `a` alone is still `rdf:type`
+- `DESCRIBE` parses (`ParsedQuery.Describe` holds its targets) and stays unevaluated: `EvalQuery` returns an error, the endpoint answers 501 as before
 
 ### Answers that were wrong
 

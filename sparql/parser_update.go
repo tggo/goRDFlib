@@ -61,7 +61,7 @@ func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
 				p.pos += 6
 				p.skipWS()
 				prefix := p.readUntil(':')
-				if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z')) {
+				if prefix != "" && !((prefix[0] >= 'a' && prefix[0] <= 'z') || (prefix[0] >= 'A' && prefix[0] <= 'Z') || (prefix[0] >= 0x80 && validPNRunes(prefix))) {
 					return nil, p.errorf("invalid prefix name: %q", prefix)
 				}
 				p.pos++ // skip ':'
