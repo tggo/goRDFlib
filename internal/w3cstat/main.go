@@ -28,6 +28,7 @@ var suites = []struct {
 }{
 	{"SPARQL 1.1 Query", []string{"sparql.TestW3C"}},
 	{"SPARQL 1.0 Dataset (FROM / FROM NAMED)", []string{"sparql.TestW3CDataset"}},
+	{"SPARQL 1.0 (DAWG syntax and evaluation)", []string{"sparql.TestW3CSPARQL10"}},
 	{"SPARQL 1.1 Update", []string{"sparql.TestW3CUpdate"}},
 	{"SPARQL 1.2", []string{"sparql.TestW3CSPARQL12"}},
 	{"SPARQL 1.1 Protocol", []string{"endpoint.TestW3CProtocol"}},

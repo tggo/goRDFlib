@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -151,6 +153,9 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	}
 
 	// Compare
+	if orderedExpected[expected] && sparql.ResultsEqual(result, expected) && !sameOrder(result, expected) {
+		t.Errorf("rows are right but in the wrong order (rs:index)\nGot:      %v\nExpected: %v", formatBindings(result.Bindings), formatBindings(expected.Bindings))
+	}
 	if !sparql.ResultsEqual(result, expected) {
 		t.Errorf("result mismatch\nGot %d bindings, expected %d bindings", len(result.Bindings), len(expected.Bindings))
 		if len(result.Bindings) <= 10 {
@@ -271,11 +276,17 @@ func loadExpectedResult(t *testing.T, path string, g *rdflibgo.Graph) (*sparql.R
 		return sparql.ParseSRX(f)
 	case ".srj":
 		return sparql.ParseSRJ(f)
-	case ".ttl":
+	case ".ttl", ".rdf":
 		// Could be CONSTRUCT result or RDF Result Set
 		expected := rdflibgo.NewGraph()
 		base := "file://" + path
-		if err := turtle.Parse(t.Context(), expected, f, turtle.WithBase(base)); err != nil {
+		var err error
+		if ext == ".ttl" {
+			err = turtle.Parse(t.Context(), expected, f, turtle.WithBase(base))
+		} else {
+			err = rdfxml.Parse(t.Context(), expected, f, rdfxml.WithBase(base))
+		}
+		if err != nil {
 			return nil, err
 		}
 		// Check if it's an RDF Result Set (contains rs:ResultSet)
@@ -334,7 +345,10 @@ func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
 	}
 
 	// Get solutions
+	rsIndex := rdflibgo.NewURIRefUnsafe(rs + "index")
 	var bindings []map[string]rdflibgo.Term
+	var indexes []int
+	allIndexed := true
 	for sol := range g.Triples(context.Background(), rsNode, &rsSolution, nil) {
 		solNode, ok := sol.Object.(rdflibgo.Subject)
 		if !ok {
@@ -359,9 +373,70 @@ func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
 			}
 		}
 		bindings = append(bindings, row)
+		idx, hasIdx := -1, false
+		if v, ok, _ := g.Value(context.Background(), solNode, &rsIndex, nil); ok {
+			if l, isLit := v.(rdflibgo.Literal); isLit {
+				if n, err := strconv.Atoi(l.Lexical()); err == nil {
+					idx, hasIdx = n, true
+				}
+			}
+		}
+		if !hasIdx {
+			allIndexed = false
+		}
+		indexes = append(indexes, idx)
 	}
 
-	return &sparql.Result{Type: "SELECT", Vars: vars, Bindings: bindings}
+	res := &sparql.Result{Type: "SELECT", Vars: vars, Bindings: bindings}
+	if allIndexed && len(bindings) > 1 {
+		// rs:index gives the order an ORDER BY query must produce.
+		order := make([]int, len(bindings))
+		for i := range order {
+			order[i] = i
+		}
+		sort.SliceStable(order, func(a, b int) bool { return indexes[order[a]] < indexes[order[b]] })
+		sorted := make([]map[string]rdflibgo.Term, len(bindings))
+		for i, j := range order {
+			sorted[i] = bindings[j]
+		}
+		res.Bindings = sorted
+		orderedExpected[res] = true
+	}
+	return res
+}
+
+// orderedExpected marks expected results whose row order is part of the
+// answer (an RDF result set with rs:index). ResultsEqual compares multisets,
+// so without this no W3C test checked ORDER BY at all.
+var orderedExpected = map[*sparql.Result]bool{}
+
+// sameOrder reports whether got lists its rows in the order of want. Blank
+// nodes compare as "some blank node", as in ResultsEqual.
+func sameOrder(got, want *sparql.Result) bool {
+	if len(got.Bindings) != len(want.Bindings) {
+		return false
+	}
+	key := func(row map[string]rdflibgo.Term) string {
+		var parts []string
+		for k, v := range row {
+			if v == nil {
+				continue
+			}
+			s := v.N3()
+			if _, isB := v.(rdflibgo.BNode); isB {
+				s = "_:"
+			}
+			parts = append(parts, k+"="+s)
+		}
+		sort.Strings(parts)
+		return strings.Join(parts, " ")
+	}
+	for i := range got.Bindings {
+		if key(got.Bindings[i]) != key(want.Bindings[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func formatBindings(bindings []map[string]rdflibgo.Term) string {
