@@ -107,13 +107,6 @@ func runQueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 			graphName := "file://" + gd
 			namedGraphs[graphName] = ng
 		}
-		// If no explicit default graph data, add named graph data to default
-		// (only for queries that don't use GRAPH patterns)
-		if entry.Data == "" {
-			for _, gd := range entry.GraphData {
-				loadDataFile(t, g, gd)
-			}
-		}
 	}
 
 	// Read query
@@ -322,6 +315,14 @@ func parseRDFResultSet(g *rdflibgo.Graph) *sparql.Result {
 	}
 	if rsNode == nil {
 		return &sparql.Result{Type: "SELECT"}
+	}
+
+	// An ASK answer is rs:boolean on the result set (DAWG true.ttl/false.ttl).
+	rsBoolean := rdflibgo.NewURIRefUnsafe(rs + "boolean")
+	if v, ok, _ := g.Value(context.Background(), rsNode, &rsBoolean, nil); ok {
+		if l, isLit := v.(rdflibgo.Literal); isLit {
+			return &sparql.Result{Type: "ASK", AskResult: l.Lexical() == "true" || l.Lexical() == "1"}
+		}
 	}
 
 	// Get variable names
