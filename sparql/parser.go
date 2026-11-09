@@ -15,6 +15,9 @@ func Parse(input string) (*ParsedQuery, error) {
 	if err == nil && p.badSyntax != nil {
 		return nil, p.badSyntax
 	}
+	if err == nil {
+		blankLabelsInQuery(q)
+	}
 	return q, err
 }
 
@@ -31,6 +34,13 @@ func ParseUpdate(input string) (*ParsedUpdate, error) {
 	}
 	if err == nil && p.badSyntax != nil {
 		return nil, p.badSyntax
+	}
+	if err == nil {
+		for _, op := range u.Operations {
+			if m, ok := op.(*ModifyOp); ok {
+				blankLabelsToVars(m.Where)
+			}
+		}
 	}
 	return u, err
 }

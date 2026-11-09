@@ -259,8 +259,8 @@ func TestDisjointBGPGroupsInQueries(t *testing.T) {
 		{"distinct", `SELECT DISTINCT ?b ?o WHERE { ` + gb + ` . ` + gc + ` }`, `SELECT DISTINCT ?b ?o WHERE { ` + sep(gb, gc) + ` }`, nil},
 		{"blank nodes in the data", `SELECT * WHERE { ?a ex:note ?n . ?n ex:text ?s . ` + gb + ` }`,
 			`SELECT * WHERE { ` + sep(`?a ex:note ?n . ?n ex:text ?s`, gb) + ` }`, nil},
-		{"blank node label shared by two groups", `SELECT * WHERE { _:n ex:text ?s . ` + gb + ` . _:n ex:note ?q }`,
-			`SELECT * WHERE { ` + sep(`_:n ex:text ?s . _:n ex:note ?q`, gb) + ` }`, nil},
+		{"blank node label shared by two groups", `SELECT * WHERE { _:n ex:note ?q . ` + gb + ` . _:n ex:note ?r }`,
+			`SELECT * WHERE { ` + sep(`_:n ex:note ?q . _:n ex:note ?r`, gb) + ` }`, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			want := queryRows(t, g, c.reference, c.pre)

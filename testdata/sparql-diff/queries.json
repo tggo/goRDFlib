@@ -29507,6 +29507,23 @@
   }
  },
  {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?x ex:p ?x }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
   "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nASK { ?x ex:p ?x }",
   "expected": {
    "ask": true
@@ -29551,6 +29568,23 @@
      "x": {
       "type": "uri",
       "value": "http://example.org/a2"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?x ex:q ?x }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
      }
     }
    ]
@@ -29619,6 +29653,23 @@
      "s": {
       "type": "uri",
       "value": "http://example.org/p"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?s ?s ?o }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
      }
     }
    ]
@@ -29813,6 +29864,23 @@
   }
  },
  {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?s }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "8",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
   "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nASK { ?s ?p ?s }",
   "expected": {
    "ask": true
@@ -29845,6 +29913,23 @@
      "o": {
       "type": "uri",
       "value": "http://example.org/p"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?o ?o ?o }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
      }
     }
    ]
@@ -30342,6 +30427,23 @@
   }
  },
  {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?x ex:knows ?x }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "1",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
   "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nASK { ?x ex:knows ?x }",
   "expected": {
    "ask": true
@@ -30459,6 +30561,29 @@
     "x"
    ],
    "rows": []
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?x ex:v ?x }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "0",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nASK { ?x ex:v ?x }",
+  "expected": {
+   "ask": false
   }
  },
  {
@@ -31663,9 +31788,317 @@
   }
  },
  {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT * WHERE { _:b ex:p ?x . _:b ex:q ?y }",
+  "expected": {
+   "vars": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT DISTINCT * WHERE { _:b ex:p ?x . _:b ex:q ?y }",
+  "expected": {
+   "vars": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { _:b ex:p ?x . _:b ex:q ?y }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
   "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nASK { _:b ex:p ?x . _:b ex:q ?y }",
   "expected": {
    "ask": true
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT * WHERE { ?x ex:p _:b . _:b ex:p ?y }",
+  "expected": {
+   "vars": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/p"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/p"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT DISTINCT * WHERE { ?x ex:p _:b . _:b ex:p ?y }",
+  "expected": {
+   "vars": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/p"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/p"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?x ex:p _:b . _:b ex:p ?y }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "7",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
   }
  },
  {
@@ -31675,9 +32108,155 @@
   }
  },
  {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { _:b ex:p _:b }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "2",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
+  }
+ },
+ {
   "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nASK { _:b ex:p _:b }",
   "expected": {
    "ask": true
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT * WHERE { ?x ex:p _:b . ?y ex:q _:b }",
+  "expected": {
+   "vars": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT DISTINCT * WHERE { ?x ex:p _:b . ?y ex:q _:b }",
+  "expected": {
+   "vars": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a3"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     }
+    },
+    {
+     "x": {
+      "type": "uri",
+      "value": "http://example.org/a1"
+     },
+     "y": {
+      "type": "uri",
+      "value": "http://example.org/a2"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "query": "PREFIX ex: <http://example.org/>\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\nSELECT (COUNT(*) AS ?c) WHERE { ?x ex:p _:b . ?y ex:q _:b }",
+  "expected": {
+   "vars": [
+    "c"
+   ],
+   "rows": [
+    {
+     "c": {
+      "type": "literal",
+      "value": "5",
+      "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+     }
+    }
+   ]
   }
  },
  {

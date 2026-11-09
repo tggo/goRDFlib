@@ -905,8 +905,14 @@ The `store.Store` interface (13 methods) has four implementations:
   variables by a `_` prefix again.
 - Template blank nodes need one `bnodes.New(false)` per instantiation; don't
   write generated nodes into solution maps, rows can share them.
-- Known gaps: `BNODE("x")` is not fresh per solution; `_:b` in a WHERE pattern
-  acts as an unnamed wildcard; aggregates inside function calls stay unbound.
+- A blank-node label in a query pattern is a variable (§4.1.4): the parser
+  rewrites `_:b` to `?.bnode:b` (`bnode_vars.go`) in WHERE, EXISTS,
+  subqueries and update WHERE, never in templates. It used to be an
+  independent wildcard per occurrence. SELECT * and DISTINCT ignore internal
+  variables (`solutionKey`). The COUNT/ASK store shortcuts refuse a pattern
+  with a repeated variable: a store pattern has only wildcards.
+- Known gaps: `BNODE("x")` is not fresh per solution; aggregates inside
+  function calls stay unbound.
 
 ### shacl/ recursion, datatypes, order
 - Any new place that creates an `evalContext` or `nodeExprContext` must pass on

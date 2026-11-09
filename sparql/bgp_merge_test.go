@@ -132,7 +132,7 @@ func TestJoinedBGPsMatchUnmergedJoin(t *testing.T) {
 		{"split group in an EXISTS body", `SELECT ?p WHERE { ?this ex:part ?p FILTER EXISTS { ?p ex:size ?s FILTER (?s != ex:s3) ?p ex:type ?k } }`,
 			`SELECT ?p WHERE { ?this ex:part ?p FILTER EXISTS { ?p ex:size ?s FILTER (?s != ex:s3) ` + unmerged(`?p ex:type ?k`) + ` } }`, 3},
 		{"blank node label in two leaves (not merged)", `SELECT ?p ?v ?w WHERE { ?this ex:part ?p . _:n ex:b ?v FILTER (?p = ex:t) _:n ex:b ?w }`,
-			`SELECT ?p ?v ?w WHERE { ?this ex:part ?p . _:n ex:b ?v FILTER (?p = ex:t) ` + unmerged(`_:n ex:b ?w`) + ` }`, 4},
+			`SELECT ?p ?v ?w WHERE { ?this ex:part ?p . _:n ex:b ?v FILTER (?p = ex:t) ` + unmerged(`_:n ex:b ?w`) + ` }`, 2}, // one label, one node: ?v = ?w
 		{"count", `SELECT (COUNT(*) AS ?n) WHERE { ` + a + f + b + ` }`,
 			`SELECT (COUNT(*) AS ?n) WHERE { ` + a + f + unmerged(b) + ` }`, 1},
 		{"distinct", `SELECT DISTINCT ?p WHERE { ?this ex:part ?p . FILTER (?p != ex:p0) { ?p ex:a/ex:b ?x } }`,

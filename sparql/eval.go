@@ -1725,7 +1725,12 @@ func isCompatible(a, b map[string]rdflibgo.Term) bool {
 func solutionKey(s map[string]rdflibgo.Term, vars []string) string {
 	var parts []string
 	if vars == nil {
+		// SELECT * projects in-scope variables only: a blank-node label or
+		// [] is a variable of the pattern, never of the solution (§18.2.1).
 		for k, v := range s {
+			if isInternalVar(k) {
+				continue
+			}
 			parts = append(parts, k+"="+v.N3())
 		}
 		slices.Sort(parts)
@@ -1801,6 +1806,13 @@ func extractSimpleBGP(p Pattern) *Triple {
 		return nil
 	}
 	if strings.HasPrefix(tp.Object, "<<( ") && tripleTermHasVariables(tp.Object) {
+		return nil
+	}
+	// A variable repeated within the pattern (?x ex:p ?x) constrains the
+	// match, and a store pattern has only wildcards: it would count or find
+	// every triple of ex:p.
+	if isVar(tp.Subject) && (tp.Subject == tp.Predicate || tp.Subject == tp.Object) ||
+		isVar(tp.Predicate) && tp.Predicate == tp.Object {
 		return nil
 	}
 	return tp

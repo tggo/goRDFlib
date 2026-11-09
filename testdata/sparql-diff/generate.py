@@ -307,15 +307,9 @@ def _q(form, body):
 
 # Queries the references agree on and the engine still gets wrong. They are
 # kept out of queries.json so the test stays green, and written to
-# pending.json; move them back with the fix.
+# pending.json; move them back with the fix. Empty: the COUNT/ASK shortcuts
+# and blank-node labels as variables were fixed together.
 PENDING = {}
-for _body in ["?x ex:p ?x", "?x ex:q ?x", "?s ?s ?o", "?s ?p ?s", "?o ?o ?o", "?x ex:knows ?x", "?x ex:v ?x"]:
-    PENDING[_q(2, _body)] = "COUNT(*) store pushdown ignores a variable repeated within one pattern"
-PENDING[_q(3, "?x ex:v ?x")] = "ASK existence shortcut ignores a variable repeated within one pattern"
-for _body in ["_:b ex:p ?x . _:b ex:q ?y", "?x ex:p _:b . _:b ex:p ?y", "?x ex:p _:b . ?y ex:q _:b"]:
-    for _form in (0, 1, 2):
-        PENDING[_q(_form, _body)] = "a blank-node label shared by two patterns acts as two wildcards"
-PENDING[_q(2, "_:b ex:p _:b")] = "a blank-node label repeated within one pattern acts as a wildcard"
 
 
 def shape_candidates(rng):
