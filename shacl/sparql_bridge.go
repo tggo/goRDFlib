@@ -241,8 +241,11 @@ func executeSPARQLConstruct(ctx context.Context, g *Graph, query string, initBin
 func resolvePrefixes(g *Graph, prefixesNode Term) string {
 	var sb strings.Builder
 	writeGraphPrefixes(g, &sb)
+	seen := make(map[string]bool)
 	if !prefixesNode.IsNone() {
-		collectPrefixes(g, prefixesNode, &sb, make(map[string]bool), make(map[string]bool))
+		collectPrefixes(g, prefixesNode, &sb, seen, make(map[string]bool))
+	} else {
+		collectDefaultPrefixes(g, &sb, seen)
 	}
 	return sb.String()
 }
@@ -291,6 +294,50 @@ func collectPrefixes(g *Graph, node Term, sb *strings.Builder, seen, visited map
 	}
 	visited[key] = true
 
+	// sh:prefixes/(^owl:versionIRI)?/(owl:imports/(^owl:versionIRI)?)*/sh:declare
+	// (SHACL-SPARQL 1.2, prefix declarations): a graph may be named by its
+	// owl:versionIRI, both directly and as an import. The version IRI is
+	// followed back to the graph IRI before declarations are read.
+	for _, ontology := range g.Subjects(IRI("http://www.w3.org/2002/07/owl#versionIRI"), node) {
+		collectPrefixes(g, ontology, sb, seen, visited)
+	}
+	writeDeclared(g, node, sb, seen)
+
+	// Follow owl:imports
+	owlImports := IRI("http://www.w3.org/2002/07/owl#imports")
+	for _, imp := range g.Objects(node, owlImports) {
+		collectPrefixes(g, imp, sb, seen, visited)
+	}
+}
+
+// collectDefaultPrefixes emits the declarations of a query that has no
+// sh:prefixes: the sh:declare values of the SHACL instances of owl:Ontology,
+// sh:DataGraph, sh:ShapesGraph and sh:RulesGraph in the shapes graph.
+// A declaration hanging off any other node is not used.
+func collectDefaultPrefixes(g *Graph, sb *strings.Builder, seen map[string]bool) {
+	typePred := IRI(RDFType)
+	var holders []Term
+	have := make(map[string]bool)
+	for _, class := range []string{
+		"http://www.w3.org/2002/07/owl#Ontology",
+		SH + "DataGraph", SH + "ShapesGraph", SH + "RulesGraph",
+	} {
+		for _, n := range g.Subjects(typePred, IRI(class)) {
+			if k := n.TermKey(); !have[k] {
+				have[k] = true
+				holders = append(holders, n)
+			}
+		}
+	}
+	sort.Slice(holders, func(i, j int) bool { return holders[i].TermKey() < holders[j].TermKey() })
+	for _, h := range holders {
+		writeDeclared(g, h, sb, seen)
+	}
+}
+
+// writeDeclared writes a PREFIX line for each sh:declare of node whose prefix
+// is not written yet.
+func writeDeclared(g *Graph, node Term, sb *strings.Builder, seen map[string]bool) {
 	declarePred := IRI(SH + "declare")
 	prefixPred := IRI(SH + "prefix")
 	namespacePred := IRI(SH + "namespace")
@@ -310,12 +357,6 @@ func collectPrefixes(g *Graph, node Term, sb *strings.Builder, seen, visited map
 				sb.WriteString(">\n")
 			}
 		}
-	}
-
-	// Follow owl:imports
-	owlImports := IRI("http://www.w3.org/2002/07/owl#imports")
-	for _, imp := range g.Objects(node, owlImports) {
-		collectPrefixes(g, imp, sb, seen, visited)
 	}
 }
 

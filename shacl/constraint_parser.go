@@ -37,6 +37,23 @@ func parseConstraints(g *Graph, s *Shape, shapes map[string]*Shape) []Constraint
 		}
 	}
 
+	// sh:rootClass, sh:uniqueValuesFor — SHACL 1.2 Core; an IRI or a SHACL list
+	listHead := IRI(RDFFirst)
+	for _, v := range g.Objects(id, IRI(SH+"rootClass")) {
+		if g.Has(&v, &listHead, nil) {
+			result = append(result, &RootClassConstraint{Classes: g.RDFList(v)})
+		} else {
+			result = append(result, &RootClassConstraint{Classes: []Term{v}})
+		}
+	}
+	for _, v := range g.Objects(id, IRI(SH+"uniqueValuesFor")) {
+		if g.Has(&v, &listHead, nil) {
+			result = append(result, &UniqueValuesForConstraint{Properties: g.RDFList(v)})
+		} else {
+			result = append(result, &UniqueValuesForConstraint{Properties: []Term{v}})
+		}
+	}
+
 	for _, v := range g.Objects(id, IRI(SH+"minCount")) {
 		result = append(result, &MinCountConstraint{MinCount: parseInt(v)})
 	}
@@ -230,6 +247,9 @@ func parseConstraints(g *Graph, s *Shape, shapes map[string]*Shape) []Constraint
 		}
 		sc.Prefixes = resolvePrefixes(g, firstOrNone(g.Objects(v, IRI(SH+"prefixes"))))
 		sc.Messages = g.Objects(v, IRI(SH+"message"))
+		if sev := g.Objects(v, IRI(SH+"severity")); len(sev) > 0 {
+			sc.Severity = sev[0]
+		}
 		if deact := g.Objects(v, IRI(SH+"deactivated")); len(deact) > 0 {
 			sc.Deactivated = deact[0].Value() == "true"
 		}

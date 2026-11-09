@@ -43,7 +43,7 @@ const (
 	RDFSSubClassOf = RDFS + "subClassOf"
 )
 
-// TermKind distinguishes the three kinds of RDF terms.
+// TermKind distinguishes the kinds of RDF terms.
 type TermKind int
 
 const (
@@ -234,6 +234,12 @@ func toSubject(t Term) term.Subject {
 		return term.NewURIRefUnsafe(t.value)
 	case TermBlankNode:
 		return term.NewBNode(t.value)
+	case TermTriple:
+		if tt, err := term.TermFromKey(t.value); err == nil {
+			if sub, ok := tt.(term.Subject); ok {
+				return sub
+			}
+		}
 	}
 	return nil
 }

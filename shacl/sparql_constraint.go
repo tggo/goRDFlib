@@ -15,6 +15,7 @@ type SPARQLConstraint struct {
 	Prefixes    string // resolved PREFIX preamble
 	Messages    []Term // sh:message on the constraint
 	Deactivated bool   // sh:deactivated
+	Severity    Term   // sh:severity of the constraint; overrides the shape's (SHACL-SPARQL 1.2)
 
 	// prepared holds the query text Evaluate runs, keyed by the textual
 	// $PATH binding ("" for a shape without a predicate path): the text
@@ -65,11 +66,12 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 	if ctx.shapesGraph != nil && ctx.shapesGraph.baseURI != "" {
 		initBindings["shapesGraph"] = term.NewURIRefUnsafe(ctx.shapesGraph.baseURI)
 	}
-	path := ""
-	if shape.Path != nil && shape.Path.Kind == PathPredicate {
-		path = termToSPARQL(shape.Path.Pred)
-	}
+	path := shape.Path.sparqlSyntax()
 	query := c.preparedQuery(path)
+	if err := checkPreBound(query, nil, initBindings); err != nil {
+		ctx.guard.fail(err)
+		return nil
+	}
 
 	// Provide shapes graph as a named graph for GRAPH ?shapesGraph { ... }
 	var namedGraphs map[string]*graph.Graph
@@ -98,6 +100,13 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 
 	var results []ValidationResult
 	for _, row := range rows {
+		// A solution with ?failure true makes the run fail rather than
+		// yield a result (SHACL-SPARQL, "Validation with SPARQL-based
+		// Constraints").
+		if isFailureTrue(row) {
+			ctx.guard.fail(failureError(c.Node))
+			return nil
+		}
 		value := focusNode
 		if v, ok := row["value"]; ok && !v.IsNone() {
 			value = v
@@ -105,6 +114,9 @@ func (c *SPARQLConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode Te
 
 		r := makeResult(shape, focusNode, value, c.ComponentIRI())
 		r.SourceConstraint = c.Node
+		if !c.Severity.IsNone() {
+			r.ResultSeverity = c.Severity
+		}
 
 		if p, ok := row["path"]; ok && !p.IsNone() {
 			r.ResultPath = p

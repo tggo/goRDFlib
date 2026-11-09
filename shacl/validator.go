@@ -164,7 +164,7 @@ func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []Validatio
 	// SHACL §2.1.5: every node conforms to a deactivated shape. Top-level
 	// validation skips them before getting here; sh:node, sh:and and the
 	// other shape-valued constraints did not.
-	if s.Deactivated {
+	if ctx.isDeactivated(s, focusNode) {
 		return nil
 	}
 	var results []ValidationResult
@@ -186,7 +186,7 @@ func validateShapeOnNode(ctx *evalContext, s *Shape, focusNode Term) []Validatio
 			}
 		}
 		for _, ps := range s.Properties {
-			if ps.Deactivated {
+			if ctx.isDeactivated(ps, focusNode) {
 				continue
 			}
 			results = append(results, validatePropertyShape(ctx, ps, focusNode)...)
@@ -217,10 +217,10 @@ func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []Validat
 	}
 
 	for _, ps := range s.Properties {
-		if ps.Deactivated {
-			continue
-		}
 		for _, vn := range valueNodes {
+			if ctx.isDeactivated(ps, vn) {
+				continue
+			}
 			results = append(results, validatePropertyShape(ctx, ps, vn)...)
 			if quick && len(results) > 0 {
 				return results
@@ -231,12 +231,61 @@ func validatePropertyShape(ctx *evalContext, s *Shape, focusNode Term) []Validat
 	return results
 }
 
+// propertyValueNodes computes the value nodes of a property shape (SHACL 1.2
+// Core, "Value Nodes of Property Shapes"): the nodes the path reaches, plus the
+// output of sh:values, and when that set is still empty the output of
+// sh:defaultValue. Without sh:values and sh:defaultValue this is the path alone.
 func propertyValueNodes(ctx *evalContext, s *Shape, focusNode Term) []Term {
-	if s.Values != nil {
-		// SHACL 1.2: sh:values — compute value nodes via SPARQL
-		return evalSPARQLValues(ctx, s.Values, focusNode)
+	values := evalPath(ctx.dataGraph, s.Path, focusNode)
+	if !s.valuesNode.IsNone() {
+		values = addDistinct(values, evalValueExpr(ctx, s.Values, s.valuesNode, focusNode))
 	}
-	return evalPath(ctx.dataGraph, s.Path, focusNode)
+	if len(values) == 0 && !s.defaultNode.IsNone() {
+		values = addDistinct(values, evalValueExpr(ctx, s.DefaultValue, s.defaultNode, focusNode))
+	}
+	return values
+}
+
+// evalValueExpr evaluates the node expression of sh:values or sh:defaultValue
+// for focusNode: SPARQL when it is a sh:select / sh:sparqlExpr, otherwise the
+// SHACL 1.2 node expression that node describes (a constant, a list, shnex:).
+func evalValueExpr(ctx *evalContext, sp *SPARQLValues, node, focusNode Term) []Term {
+	if sp != nil {
+		return evalSPARQLValues(ctx, sp, focusNode)
+	}
+	nCtx := &nodeExprContext{
+		dataGraph:   ctx.dataGraph,
+		shapesGraph: ctx.shapesGraph,
+		shapesMap:   ctx.shapesMap,
+		focusNode:   focusNode,
+		af:          ctx.af,
+		guard:       ctx.sharedGuard(),
+	}
+	return parseExpressionFor(ctx, node).Eval(nCtx)
+}
+
+// addDistinct appends the terms of add that dst does not hold yet. The value
+// nodes of a property shape are a set. dst is never modified in place: it may
+// be a slice the path evaluation shares.
+func addDistinct(dst, add []Term) []Term {
+	if len(add) == 0 {
+		return dst
+	}
+	seen := make(map[ikey]struct{}, len(dst)+len(add))
+	out := make([]Term, 0, len(dst)+len(add))
+	for _, t := range dst {
+		if _, dup := seen[indexKey(t)]; !dup {
+			seen[indexKey(t)] = struct{}{}
+			out = append(out, t)
+		}
+	}
+	for _, t := range add {
+		if _, dup := seen[indexKey(t)]; !dup {
+			seen[indexKey(t)] = struct{}{}
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // evalSPARQLValues computes value nodes using a SPARQL query or expression.
@@ -253,6 +302,11 @@ func evalSPARQLValues(ctx *evalContext, v *SPARQLValues, focusNode Term) []Term 
 	// preBindTerm), never spliced into the text.
 	query = replaceVar(query, "$this", "?this")
 	initBindings := map[string]term.Term{"this": toTerm(focusNode)}
+	if err := checkPreBound(query, nil, initBindings); err != nil {
+		ctx.guard.fail(err)
+		ctx.reportMalformed(v, IRI(SH+"values"), err)
+		return nil
+	}
 	rows, err := executeSPARQL(ctx.goContext(), ctx.dataGraph, query, initBindings, nil, ctx.sparqlFuncs())
 	if err != nil {
 		ctx.guard.fail(err)
@@ -430,4 +484,20 @@ func resolveTargets(ctx *evalContext, s *Shape) []Term {
 	}
 
 	return targets
+}
+
+// isDeactivated reports whether s is deactivated for focusNode. A constant
+// sh:deactivated true deactivates the shape for every node; since SHACL 1.2 the
+// value may be a node expression, evaluated with the focus node, and the shape
+// is deactivated when its only output node is true.
+func (ctx *evalContext) isDeactivated(s *Shape, focusNode Term) bool {
+	if s.Deactivated {
+		return true
+	}
+	if s.deactivatedNode.IsNone() {
+		return false
+	}
+	out := evalValueExpr(ctx, s.deactivatedSPARQL, s.deactivatedNode, focusNode)
+	return len(out) == 1 && out[0].IsLiteral() &&
+		out[0].Datatype() == XSD+"boolean" && out[0].Value() == "true"
 }
