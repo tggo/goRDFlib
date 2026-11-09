@@ -66,7 +66,7 @@ func (c *NodeKindConstraint) Evaluate(ctx *evalContext, shape *Shape, focusNode 
 
 func matchesNodeKind(t Term, nk string) bool {
 	// SHACL 1.2 Core, sh:nodeKind: a triple term matches only sh:TripleTerm.
-	if t.IsTripleTerm() {
+	if t.IsTriple() {
 		return nk == SH+"TripleTerm"
 	}
 	switch nk {

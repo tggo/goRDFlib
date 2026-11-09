@@ -9,14 +9,14 @@ import (
 
 // A triple term must survive fromRDFLib -> toTerm with the same TermKey, or
 // anything keyed by it (provenance, initial bindings) misses.
-func TestTripleTermRoundTrip(t *testing.T) {
+func TestShaclTripleTermConversionRoundTrip(t *testing.T) {
 	ex := func(s string) term.URIRef { return term.NewURIRefUnsafe("http://example.org/" + s) }
 	inner := term.NewTripleTerm(ex("s"), ex("p"), term.NewLiteral("o", term.WithLang("en")))
 	outer := term.NewTripleTerm(term.NewBNode("b"), ex("q"), inner)
 
 	for _, in := range []term.Term{inner, outer} {
 		got := fromRDFLib(in)
-		if !got.IsTripleTerm() || got.IsNone() {
+		if !got.IsTriple() || got.IsNone() {
 			t.Fatalf("fromRDFLib(%v) = %v, want a triple term", in, got)
 		}
 		back := toTerm(got)
