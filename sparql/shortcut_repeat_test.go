@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/tggo/goRDFlib/graph"
+	"github.com/tggo/goRDFlib/term"
 	"github.com/tggo/goRDFlib/turtle"
 )
 
@@ -62,6 +63,39 @@ ex:c ex:q ex:a . ex:b ex:q ex:z .`
 		}
 		if res.AskResult != c.want {
 			t.Errorf("%s = %v, want %v", c.q, res.AskResult, c.want)
+		}
+	}
+}
+
+// A pre-bound value is a constant, so MINUS evaluates its right side with it
+// and does not count it as a variable the sides share: the result must be
+// what the same query with the value written into the text gives.
+func TestPreBoundMinusIsSubstitution(t *testing.T) {
+	g := graph.NewGraph()
+	data := `@prefix ex: <http://example.org/> .
+ex:root ex:part ex:p1 . ex:x ex:part ex:p2 . ex:p1 ex:part ex:p3 .`
+	if err := turtle.Parse(t.Context(), g, strings.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
+	for _, q := range []string{
+		`SELECT * WHERE { MINUS { ?this ex:part ?o } }`,
+		`SELECT ?c WHERE { ?s ex:part ?c . { MINUS { ?this ex:part+ ?c } } }`,
+		`SELECT ?c WHERE { ?s ex:part ?c MINUS { ?this ex:part ?c } }`,
+		`SELECT ?c WHERE { ?s ex:part ?c MINUS { ?this ex:part+ ?c } }`,
+	} {
+		pq, err := Parse("PREFIX ex: <http://example.org/>\n" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := EvalQuery(g, pq, root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := renderRows(res.Bindings)
+		want := repeatedVarRows(t, g, strings.ReplaceAll(q, "?this", "ex:root"))
+		if len(got) != len(want) {
+			t.Errorf("%s\npre-bound %d rows %v, textual %d rows %v", q, len(got), got, len(want), want)
 		}
 	}
 }

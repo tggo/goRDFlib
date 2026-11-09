@@ -798,7 +798,11 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 		if ec.poll() {
 			return nil
 		}
-		right := evalPattern(ec, g, p.Right, prefixes, namedGraphs)
+		// A pre-bound value is a constant substituted into the whole query,
+		// the right side included, and a constant is not a variable the two
+		// sides can share: { MINUS { ?this ex:p ?o } } removes nothing from
+		// the empty solution, exactly as { MINUS { ex:root ex:p ?o } } does.
+		right := minusRight(ec, g, p.Right, ec.pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, lb := range left {
 			excluded := false
@@ -806,7 +810,7 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 				if ec.stop() {
 					return nil
 				}
-				if minusCompatible(lb, rb) {
+				if minusCompatibleExcept(lb, rb, ec.pre) {
 					excluded = true
 					break
 				}
@@ -898,6 +902,35 @@ func evalGraphPattern(ec *evalCtx, g *rdflibgo.Graph, gp *GraphPattern, prefixes
 		return evalPattern(ec, namedG, gp.Pattern, prefixes, namedGraphs)
 	}
 	return nil
+}
+
+// minusRight evaluates the right side of a MINUS with the initial bindings as
+// constants, as it would be with the values written into the query.
+func minusRight(ec *evalCtx, g *rdflibgo.Graph, p Pattern, pre map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+	if len(pre) == 0 {
+		return evalPattern(ec, g, p, prefixes, namedGraphs)
+	}
+	return evalPatternPreBound(ec, g, p, pre, prefixes, namedGraphs)
+}
+
+// minusCompatibleExcept is minusCompatible with the variables of pre left
+// out of the shared domain: they are constants, and both sides agree on them
+// by construction.
+func minusCompatibleExcept(a, b, pre map[string]rdflibgo.Term) bool {
+	shared := false
+	for k, va := range a {
+		vb, ok := b[k]
+		if !ok {
+			continue
+		}
+		if va.N3() != vb.N3() {
+			return false
+		}
+		if _, constant := pre[k]; !constant {
+			shared = true
+		}
+	}
+	return shared
 }
 
 func minusCompatible(a, b map[string]rdflibgo.Term) bool {
@@ -1095,7 +1128,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		if ec.poll() {
 			return nil
 		}
-		right := evalPattern(ec, g, p.Right, prefixes, namedGraphs)
+		right := minusRight(ec, g, p.Right, pre, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, lb := range left {
 			excluded := false
@@ -1103,7 +1136,7 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 				if ec.stop() {
 					return nil
 				}
-				if minusCompatible(lb, rb) {
+				if minusCompatibleExcept(lb, rb, pre) {
 					excluded = true
 					break
 				}

@@ -182,9 +182,9 @@ func optRows(g *graph.Graph, pq *ParsedQuery, pre map[string]term.Term) (rows []
 //	A  ?this pre-bound, optimisations on     B  ?this pre-bound, off
 //	C  ?this written into the text, on       D  written into the text, off
 //
-// A must equal B and C must equal D. A must equal C too unless the plain
-// engine's own two paths already disagree (B != D), which is not something an
-// optimisation did.
+// All four must be equal: A = B and C = D (the optimisations change nothing)
+// and B = D (pre-binding is substitution, §5.3.1 of SHACL, with
+// PreBindSubqueries).
 func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	g := optGraph(t)
 	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
@@ -193,7 +193,7 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	if testing.Short() {
 		n = 150
 	}
-	var compared, nonEmpty, pathDiffer int
+	var compared, nonEmpty int
 	for i := range n {
 		gen := &optGen{r: rand.New(rand.NewPCG(20260101, uint64(i)))}
 		q := gen.query()
@@ -201,6 +201,10 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 		if err != nil {
 			continue
 		}
+		// The textual form substitutes ?this everywhere, subqueries that do
+		// not project it included; that is PreBindSubqueries. Without it a
+		// subquery's ?this is another variable (§18.2.1), and differs.
+		pq.PreBindSubqueries = true
 		textual := strings.ReplaceAll(q, "?this", "ex:root")
 		pqT, err := Parse(textual)
 		if err != nil {
@@ -233,15 +237,14 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 		if !slices.Equal(c, d) {
 			t.Errorf("query %d: textual rows differ with the optimisations off\n%s\non  (%d): %v\noff (%d): %v", i, textual, len(c), head(c), len(d), head(d))
 		}
-		if slices.Equal(b, d) && !slices.Equal(a, c) {
+		if !slices.Equal(a, c) {
 			t.Errorf("query %d: the optimisations make the pre-bound and textual forms disagree\n%s\npre-bound (%d): %v\ntextual   (%d): %v", i, q, len(a), head(a), len(c), head(c))
 		}
 		if !slices.Equal(b, d) {
-			t.Logf("plain engine, query %d: pre-bound (%d rows) vs textual (%d rows)\n%s", i, len(b), len(d), q)
-			pathDiffer++
+			t.Errorf("plain engine, query %d: pre-bound (%d rows) vs textual (%d rows)\n%s", i, len(b), len(d), q)
 		}
 	}
-	t.Logf("compared %d random queries (%d with rows); the plain engine's pre-bound and textual forms differ on %d", compared, nonEmpty, pathDiffer)
+	t.Logf("compared %d random queries (%d with rows)", compared, nonEmpty)
 	if compared < n/3 || nonEmpty < compared/5 {
 		t.Errorf("only %d of %d queries compared, %d with rows: the generator is too weak", compared, n, nonEmpty)
 	}
