@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
-	"github.com/tggo/goRDFlib/internal/ntsyntax"
 	"github.com/tggo/goRDFlib/nq"
 )
 
@@ -24,7 +23,7 @@ func TestParseStreamVersionAnnouncement(t *testing.T) {
 
 func TestParseStreamVersionAnnouncementMalformed(t *testing.T) {
 	err := nq.ParseStream(strings.NewReader("VERSION 1.2\n"), func(rdflibgo.Subject, rdflibgo.URIRef, rdflibgo.Term, rdflibgo.Term) error { return nil })
-	if !errors.Is(err, ntsyntax.ErrBadVersion) {
+	if !errors.Is(err, nq.ErrBadVersion) {
 		t.Fatalf("want ErrBadVersion, got %v", err)
 	}
 }

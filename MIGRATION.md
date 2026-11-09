@@ -361,6 +361,14 @@ context is refused, and that an error from the store reaches the caller of
 
 No Go API changed. Two things can change what a program sees: queries that used to parse and no longer do, and a few answers that were wrong.
 
+### RDF syntax parsers and serializers
+
+- **`rdf:XMLLiteral` lexical forms from RDF/XML are now Exclusive XML Canonicalization** (RDF 1.1 Concepts §3.3) of the `rdf:parseType="Literal"` content, without comments. The parser used to declare every namespace in scope on every element and drop element prefixes. Now only visibly used namespaces are declared, once, on the outermost element that needs them; attributes are sorted; empty elements are written `<br></br>`. A literal parsed before and compared by lexical form with one parsed now differs; the new form is what the W3C `xml-canon` tests expect. A namespace bound to several prefixes at once may come back under a different prefix.
+- **N-Triples and N-Quads accept a `VERSION "1.2"` line** (RDF 1.2). A malformed one (`VERSION 1.2`, `VERSION "1.2" .`) is `nt.ErrBadVersion` / `nq.ErrBadVersion` with the line number; `version "1.2"` in lower case is still a syntax error.
+- **N-Triples and N-Quads accept white space between a literal and its `@lang` or `^^`, and between `^^` and the datatype IRI** (`"Alice" @en`).
+- **New:** `nt.WithCanonical()` / `nq.WithCanonical()` for `Serialize` and `NewWriter`, and `nt.Writer` (the N-Triples twin of `nq.Writer`). Canonical output writes `\b`, `\f`, `\uXXXX` for the other controls, U+007F, U+FFFE, U+FFFF, and every other character raw. Without the option the output is unchanged.
+- **RDFS closure (`reasoning`) types triple terms and the objects of `rdf:reifies` as `rdfs:Proposition`** (RDF 1.2 Semantics). A graph with triple terms gains `rdf:type rdfs:Proposition` triples after `Expand(g, RDFS)`. `namespace.RDFS.Proposition` is new.
+
 ### SPARQL text that no longer parses
 
 The parser used to accept text that is not SPARQL, and sometimes read it as something else. Each of these is now a parse error with the position, and each has a one-line fix. They do not occur in valid queries; they show up in hand-written or generated query text, and in SHACL `sh:select` text.

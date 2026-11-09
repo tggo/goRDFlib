@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	rdflibgo "github.com/tggo/goRDFlib"
-	"github.com/tggo/goRDFlib/internal/ntsyntax"
 	"github.com/tggo/goRDFlib/nt"
 )
 
@@ -33,7 +32,7 @@ func TestParseVersionAnnouncement(t *testing.T) {
 func TestParseVersionAnnouncementMalformed(t *testing.T) {
 	for _, doc := range []string{"VERSION 1.2\n", "VERSION \"1.2\" .\n", "VERSION <http://x/>\n"} {
 		err := nt.Parse(t.Context(), rdflibgo.NewGraph(), strings.NewReader(doc))
-		if !errors.Is(err, ntsyntax.ErrBadVersion) {
+		if !errors.Is(err, nt.ErrBadVersion) {
 			t.Errorf("%q: want ErrBadVersion, got %v", doc, err)
 		}
 		if err != nil && !strings.Contains(err.Error(), "line 1") {
