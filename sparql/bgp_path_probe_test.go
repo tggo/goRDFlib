@@ -119,3 +119,23 @@ func TestOrderBGP_PathProbeStopsAtSmallestCount(t *testing.T) {
 		t.Errorf("planning pulled %d triples, want at most 100", ps.pulled)
 	}
 }
+
+// No path is probed once a triple pattern is known to match fewer than
+// bgpProbeStart triples: planning `<small> part ?x . ?x type/sub* Class1`
+// pulls the 3 triples of the small pattern and nothing of the path.
+func TestOrderBGP_NoPathProbeBelowProbeStart(t *testing.T) {
+	ps := &probingStore{Store: store.NewMemoryStore()}
+	g := pathProbeGraph(t, graph.WithStore(ps))
+	pq, err := Parse(`SELECT ?x WHERE { ?x <urn:type>/<urn:sub>* <urn:Class1> . <urn:small> <urn:part> ?x }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps.pulled = 0
+	ordered := orderBGP(nil, g, pq.Where.(*BGP).Triples, nil, pq.Prefixes)
+	if ordered[0].Subject != "<urn:small>" {
+		t.Errorf("first pattern %s %s, want the urn:small pattern", ordered[0].Subject, ordered[0].Object)
+	}
+	if ps.pulled != 3 {
+		t.Errorf("planning pulled %d triples, want the 3 of the urn:small pattern", ps.pulled)
+	}
+}
