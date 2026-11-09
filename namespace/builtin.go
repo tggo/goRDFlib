@@ -66,7 +66,7 @@ var RDFS = struct {
 	Comment, Domain, IsDefinedBy, Label, Member, Range, SeeAlso, SubClassOf, SubPropertyOf term.URIRef
 
 	// Classes
-	Class, Container, ContainerMembershipProperty, Datatype, Literal, Resource term.URIRef
+	Class, Container, ContainerMembershipProperty, Datatype, Literal, Proposition, Resource term.URIRef
 }{
 	NS: NewNamespace(RDFSNamespace),
 
@@ -85,6 +85,7 @@ var RDFS = struct {
 	ContainerMembershipProperty: term.NewURIRefUnsafe(RDFSNamespace + "ContainerMembershipProperty"),
 	Datatype:                    term.NewURIRefUnsafe(RDFSNamespace + "Datatype"),
 	Literal:                     term.NewURIRefUnsafe(RDFSNamespace + "Literal"),
+	Proposition:                 term.NewURIRefUnsafe(RDFSNamespace + "Proposition"),
 	Resource:                    term.NewURIRefUnsafe(RDFSNamespace + "Resource"),
 }
 

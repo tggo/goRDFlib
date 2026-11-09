@@ -218,6 +218,21 @@ func (e *rdfsEngine) applyRules() []term.Triple {
 			}
 		}
 
+		// RDF 1.2 Semantics §RDFS: a triple term denotes an instance of
+		// rdfs:Proposition, and rdf:reifies has rdfs:Proposition as its range
+		// (the object need not be a triple term).
+		if tt, ok := t.Subject.(term.TripleTerm); ok {
+			emit(tt, rdfType, namespace.RDFS.Proposition)
+		}
+		if tt, ok := t.Object.(term.TripleTerm); ok {
+			emit(tt, rdfType, namespace.RDFS.Proposition)
+		}
+		if t.Predicate == namespace.RDF.Reifies {
+			if oSubj, ok := t.Object.(term.Subject); ok {
+				emit(oSubj, rdfType, namespace.RDFS.Proposition)
+			}
+		}
+
 		// rdfs7: ?p rdfs:subPropertyOf ?q, ?s ?p ?o → ?s ?q ?o
 		for _, q := range e.subPropOf[pk] {
 			emit(t.Subject, q, t.Object)
