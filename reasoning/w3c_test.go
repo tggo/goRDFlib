@@ -1,7 +1,6 @@
 package reasoning
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,119 +8,128 @@ import (
 
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/nt"
-	"github.com/tggo/goRDFlib/term"
 	w3c "github.com/tggo/goRDFlib/testdata/w3c"
 	"github.com/tggo/goRDFlib/turtle"
 )
 
-const manifestPath = "../testdata/w3c/rdf-tests/rdf/rdf11/rdf-mt/manifest.ttl"
+const (
+	manifestPath   = "../testdata/w3c/rdf-tests/rdf/rdf11/rdf-mt/manifest.ttl"
+	manifestPath12 = "../testdata/w3c/rdf-tests/rdf/rdf12/rdf-semantics/manifest.ttl"
+	mfPositive     = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveEntailmentTest"
+	mfNegative     = "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#NegativeEntailmentTest"
+	minRDFMT       = 39 // rdf11/rdf-mt entries at the oldest supported pin (48 at rdf-tests 202a74e)
+	minRDF12Sem    = 29 // rdf12/rdf-semantics entries (its manifest before 202a74e is not valid Turtle)
+)
 
-// Tests that require datatype semantics, axiomatic triples, or non-RDFS regimes.
-var skipTests = map[string]string{
-	// Datatype semantics
-	"datatypes-intensional-xsd-integer-decimal-compatible": "requires recognized datatypes",
-	"datatypes-non-well-formed-literal-1":                  "requires datatype inconsistency detection",
-	"datatypes-non-well-formed-literal-2":                  "requires datatype inconsistency detection",
-	"datatypes-semantic-equivalence-within-type-1":         "requires datatype value equivalence",
-	"datatypes-semantic-equivalence-within-type-2":         "requires datatype value equivalence",
-	"datatypes-semantic-equivalence-between-datatypes":     "requires datatype value equivalence",
-	"datatypes-range-clash":                                "requires datatype inconsistency detection",
-	"datatypes-test008":                                    "simple entailment",
-	"datatypes-test009":                                    "simple entailment",
-	"datatypes-test010":                                    "requires datatype inconsistency detection",
-	"datatypes-plain-literal-and-xsd-string":               "requires recognized datatypes",
-	// XMLLiteral / datatype inconsistency
-	"rdfs-entailment-test001": "requires XMLLiteral recognition",
-	"rdfs-entailment-test002": "requires datatype inconsistency detection",
-	// Axiomatic triples (rdf:_n membership properties)
-	"rdfms-seq-representation-test002": "requires axiomatic triples",
-	"rdfms-seq-representation-test003": "requires axiomatic triples",
-	"rdfms-seq-representation-test004": "requires axiomatic triples",
-	// Simple/RDF entailment (not RDFS)
-	"rdfms-xmllang-test007a":     "simple entailment",
-	"rdfms-xmllang-test007b":     "simple entailment",
-	"rdfms-xmllang-test007c":     "simple entailment",
-	"rdf-charmod-uris-test003":   "RDF entailment",
-	"rdf-charmod-uris-test004":   "RDF entailment",
-	"tex-01-language-tag-case-1": "RDF entailment (language tag case)",
-	"tex-01-language-tag-case-2": "RDF entailment (language tag case)",
-	// Statement entailment (reification semantics, not RDFS closure)
-	"statement-entailment-test001": "RDF entailment (reification)",
-	"statement-entailment-test002": "RDF entailment (reification)",
-	"statement-entailment-test004": "RDF entailment (reification)",
-	// xmlsch-02 whitespace facet tests (require recognized datatypes)
-	"xmlsch-02-whitespace-facet-1": "requires recognized datatypes",
-	"xmlsch-02-whitespace-facet-2": "requires recognized datatypes",
-	"xmlsch-02-whitespace-facet-4": "requires recognized datatypes",
+// w3cKnown lists entailment tests the checker does not pass, each with the
+// reason. A listed test that starts passing fails the run, so the list can
+// only shrink. It is empty: every test of both suites runs under the regime
+// and datatype set its manifest declares.
+var w3cKnown = map[string]string{}
+
+func TestW3C_Entailment_RDF11(t *testing.T) {
+	runEntailmentManifest(t, manifestPath, minRDFMT)
 }
 
-func TestW3C_RDFS_Entailment(t *testing.T) {
-	m, err := w3c.ParseManifest(manifestPath)
+func TestW3C_Entailment_RDF12(t *testing.T) {
+	runEntailmentManifest(t, manifestPath12, minRDF12Sem)
+}
+
+// runEntailmentManifest runs every test of a manifest under the entailment
+// regime and the recognized datatypes the test declares (README of
+// rdf-tests/rdf/rdf11/rdf-mt: a positive test passes if the premise entails
+// the conclusion, or is inconsistent when the conclusion is false; a negative
+// test is the reverse). Nothing is skipped: an unknown test type or regime
+// fails the test.
+func runEntailmentManifest(t *testing.T, path string, atLeast int) {
+	t.Helper()
+	m, err := w3c.ParseManifest(path)
 	if err != nil {
 		t.Fatalf("failed to parse manifest: %v", err)
 	}
-
-	ran := 0
+	// A manifest that shrinks means tests were lost, whether by an upstream
+	// change or by the parser dropping entries: either way the run must not
+	// pass quietly.
+	if len(m.Entries) < atLeast {
+		t.Fatalf("manifest %s has %d entries, fewer than the %d the runner has seen", path, len(m.Entries), atLeast)
+	}
 	for _, e := range m.Entries {
-		e := e
 		t.Run(e.Name, func(t *testing.T) {
-			if reason, ok := skipTests[e.Name]; ok {
-				t.Skipf("skipped: %s", reason)
+			got := runEntailmentTest(t, e)
+			if reason, known := w3cKnown[e.Name]; known {
+				if got {
+					t.Fatalf("listed as failing (%s) but passes: remove it from w3cKnown", reason)
+				}
+				t.Logf("known failure: %s", reason)
+				return
 			}
-
-			// Load action graph
-			actionGraph := loadGraph(t, e.Action)
-			if actionGraph == nil {
-				t.Fatalf("could not load action graph: %s", e.Action)
-			}
-
-			// Apply RDFS closure
-			RDFSClosure(t.Context(), actionGraph)
-
-			isPositive := strings.Contains(e.Type, "PositiveEntailmentTest")
-			isNegative := strings.Contains(e.Type, "NegativeEntailmentTest")
-
-			switch {
-			case isPositive && e.ResultFalse:
-				// Positive entailment with result false = inconsistency test.
-				// RDFS closure doesn't detect inconsistency, so skip.
-				t.Skip("inconsistency detection not implemented")
-
-			case isPositive && e.Result != "":
-				// Result graph must be a subgraph of expanded action graph.
-				resultGraph := loadGraph(t, e.Result)
-				if resultGraph == nil {
-					t.Fatalf("could not load result graph: %s", e.Result)
-				}
-				if !isSubgraph(resultGraph, actionGraph) {
-					t.Error("positive entailment failed: result is not a subgraph of expanded action")
-					reportMissing(t, resultGraph, actionGraph)
-				}
-				ran++
-
-			case isNegative && e.ResultFalse:
-				// Negative entailment with result false = graph is not inconsistent.
-				// RDFS closure never produces inconsistency, so this always passes.
-				ran++
-
-			case isNegative && e.Result != "":
-				// Result graph must NOT be a subgraph of expanded action graph.
-				resultGraph := loadGraph(t, e.Result)
-				if resultGraph == nil {
-					t.Fatalf("could not load result graph: %s", e.Result)
-				}
-				if isSubgraph(resultGraph, actionGraph) {
-					t.Error("negative entailment failed: result IS a subgraph of expanded action (should not be)")
-				}
-				ran++
-
-			default:
-				t.Skipf("unhandled test type: %s", e.Type)
+			if !got {
+				t.Fail()
 			}
 		})
 	}
+}
 
-	t.Logf("ran %d W3C RDFS entailment tests", ran)
+func runEntailmentTest(t *testing.T, e w3c.TestEntry) bool {
+	t.Helper()
+	var sem Semantics
+	switch e.EntailmentRegime {
+	case "simple":
+		sem = SimpleEntailment
+	case "RDF":
+		sem = RDFEntailment
+	case "RDFS":
+		sem = RDFSEntailment
+	default:
+		t.Fatalf("unknown entailment regime %q", e.EntailmentRegime)
+	}
+	for _, d := range e.UnrecognizedDatatypes {
+		for _, r := range e.RecognizedDatatypes {
+			if d == r {
+				t.Fatalf("datatype %s is both recognized and unrecognized", d)
+			}
+		}
+	}
+	opts := []EntailOption{WithSemantics(sem), WithRecognizedDatatypes(e.RecognizedDatatypes...)}
+
+	var positive bool
+	switch e.Type {
+	case mfPositive:
+		positive = true
+	case mfNegative:
+	default:
+		t.Fatalf("unknown test type %s", e.Type)
+	}
+	premise := loadGraph(t, e.Action)
+
+	if e.ResultFalse {
+		ok, err := Satisfiable(t.Context(), premise, opts...)
+		if err != nil {
+			t.Fatalf("Satisfiable: %v", err)
+		}
+		if positive && ok {
+			t.Error("premise is satisfiable, but the test expects it to be inconsistent")
+		}
+		if !positive && !ok {
+			t.Error("premise is inconsistent, but the test expects it to be consistent")
+		}
+		return ok != positive
+	}
+	if e.Result == "" {
+		t.Fatalf("test has neither a result graph nor mf:result false")
+	}
+	conclusion := loadGraph(t, e.Result)
+	ok, err := Entails(t.Context(), premise, conclusion, opts...)
+	if err != nil {
+		t.Fatalf("Entails: %v", err)
+	}
+	if positive && !ok {
+		t.Error("premise does not entail the conclusion")
+	}
+	if !positive && ok {
+		t.Error("premise entails the conclusion, but it must not")
+	}
+	return ok == positive
 }
 
 // loadGraph parses a .nt or .ttl file into a graph.
@@ -130,160 +138,21 @@ func loadGraph(t *testing.T, path string) *graph.Graph {
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("cannot open %s: %v", path, err)
-		return nil
 	}
 	defer f.Close()
 
 	g := graph.NewGraph()
-	ext := strings.ToLower(filepath.Ext(path))
-	base := "file://" + path
-
-	switch ext {
+	switch ext := strings.ToLower(filepath.Ext(path)); ext {
 	case ".nt":
 		if err := nt.Parse(t.Context(), g, f); err != nil {
 			t.Fatalf("parse error %s: %v", path, err)
 		}
 	case ".ttl":
-		if err := turtle.Parse(t.Context(), g, f, turtle.WithBase(base)); err != nil {
+		if err := turtle.Parse(t.Context(), g, f, turtle.WithBase("file://"+path)); err != nil {
 			t.Fatalf("parse error %s: %v", path, err)
 		}
 	default:
 		t.Fatalf("unsupported format: %s", ext)
 	}
-
 	return g
-}
-
-// isSubgraph checks if every triple in sub exists in super (up to bnode relabelling).
-func isSubgraph(sub, super *graph.Graph) bool {
-	// For ground triples (no bnodes), direct containment check suffices.
-	// For triples with bnodes, we need a more sophisticated check.
-	type tripleT = struct {
-		s, p, o term.Term
-	}
-	var subTriples []tripleT
-	hasBNodes := false
-
-	sub.Triples(context.Background(), nil, nil, nil)(func(t term.Triple, _ error) bool {
-		subTriples = append(subTriples, tripleT{t.Subject, t.Predicate, t.Object})
-		if _, ok := t.Subject.(term.BNode); ok {
-			hasBNodes = true
-		}
-		if _, ok := t.Object.(term.BNode); ok {
-			hasBNodes = true
-		}
-		return true
-	})
-
-	if !hasBNodes {
-		// Fast path: exact match
-		for _, st := range subTriples {
-			if !mustV(super.Contains(context.Background(), st.s.(term.Subject), st.p.(term.URIRef), st.o)) {
-				return false
-			}
-		}
-		return true
-	}
-
-	// Bnode subgraph matching with backtracking
-	bnodes := collectBNodes(subTriples)
-	if len(bnodes) == 0 {
-		// No bnodes after all
-		for _, st := range subTriples {
-			if !mustV(super.Contains(context.Background(), st.s.(term.Subject), st.p.(term.URIRef), st.o)) {
-				return false
-			}
-		}
-		return true
-	}
-
-	// Collect candidate mappings: for each bnode in sub, find possible nodes in super
-	superNodes := collectSuperNodes(super)
-	mapping := make(map[string]term.Term, len(bnodes))
-
-	var search func(idx int) bool
-	search = func(idx int) bool {
-		if idx == len(bnodes) {
-			return verifySubgraph(subTriples, super, mapping)
-		}
-		bn := bnodes[idx]
-		for _, candidate := range superNodes {
-			mapping[bn] = candidate
-			if search(idx + 1) {
-				return true
-			}
-		}
-		delete(mapping, bn)
-		return false
-	}
-
-	return search(0)
-}
-
-func collectBNodes(triples []struct{ s, p, o term.Term }) []string {
-	seen := make(map[string]struct{})
-	var result []string
-	for _, t := range triples {
-		if bn, ok := t.s.(term.BNode); ok {
-			if _, dup := seen[bn.Value()]; !dup {
-				seen[bn.Value()] = struct{}{}
-				result = append(result, bn.Value())
-			}
-		}
-		if bn, ok := t.o.(term.BNode); ok {
-			if _, dup := seen[bn.Value()]; !dup {
-				seen[bn.Value()] = struct{}{}
-				result = append(result, bn.Value())
-			}
-		}
-	}
-	return result
-}
-
-func collectSuperNodes(g *graph.Graph) []term.Term {
-	seen := make(map[string]term.Term)
-	g.Triples(context.Background(), nil, nil, nil)(func(t term.Triple, _ error) bool {
-		seen[term.TermKey(t.Subject)] = t.Subject
-		seen[term.TermKey(t.Object)] = t.Object
-		return true
-	})
-	nodes := make([]term.Term, 0, len(seen))
-	for _, v := range seen {
-		nodes = append(nodes, v)
-	}
-	return nodes
-}
-
-func verifySubgraph(triples []struct{ s, p, o term.Term }, super *graph.Graph, mapping map[string]term.Term) bool {
-	for _, t := range triples {
-		s := mapNode(t.s, mapping)
-		o := mapNode(t.o, mapping)
-		subj, ok := s.(term.Subject)
-		if !ok {
-			return false
-		}
-		if !mustV(super.Contains(context.Background(), subj, t.p.(term.URIRef), o)) {
-			return false
-		}
-	}
-	return true
-}
-
-func mapNode(t term.Term, mapping map[string]term.Term) term.Term {
-	if bn, ok := t.(term.BNode); ok {
-		if mapped, exists := mapping[bn.Value()]; exists {
-			return mapped
-		}
-	}
-	return t
-}
-
-func reportMissing(t *testing.T, sub, super *graph.Graph) {
-	t.Helper()
-	sub.Triples(t.Context(), nil, nil, nil)(func(tr term.Triple, _ error) bool {
-		if !mustV(super.Contains(t.Context(), tr.Subject, tr.Predicate, tr.Object)) {
-			t.Logf("  missing: %s %s %s", tr.Subject.N3(), tr.Predicate.N3(), tr.Object.N3())
-		}
-		return true
-	})
 }
