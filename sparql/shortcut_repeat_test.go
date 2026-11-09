@@ -135,3 +135,29 @@ func TestBlankLabelInTwoBGPsIsAnError(t *testing.T) {
 		}
 	}
 }
+
+// A DELETE template and DELETE WHERE hold no blank node, whatever syntax
+// produced it (SPARQL 1.1 Update §3.1.3).
+func TestDeleteTemplateRejectsEveryBlankNode(t *testing.T) {
+	for _, u := range []string{
+		`DELETE { ?s ex:r ?o {| ex:a 1 |} } WHERE { ?s ex:p ?o }`,
+		`DELETE { ?s ex:r [] } WHERE { ?s ex:p ?o }`,
+		`DELETE { ?s ex:r ( 1 2 ) } WHERE { ?s ex:p ?o }`,
+		`DELETE { << ?s ex:r ?o >> ex:a 1 } WHERE { ?s ex:p ?o }`,
+		`DELETE { ?s ex:r <<( _:b ex:q 1 )>> } WHERE { ?s ex:p ?o }`,
+		`DELETE WHERE { ?s ex:r [] }`,
+	} {
+		if _, err := ParseUpdate("PREFIX ex: <http://example.org/>\n" + u); err == nil {
+			t.Errorf("accepted: %s", u)
+		}
+	}
+	for _, u := range []string{
+		`DELETE { << ?s ex:r ?o ~ ex:id >> ex:a 1 } WHERE { ?s ex:p ?o }`,
+		`INSERT { ?s ex:r ?o {| ex:a 1 |} } WHERE { ?s ex:p ?o }`,
+		`DELETE { ?s ex:r ?o } WHERE { ?s ex:p ?o {| ex:q ?v |} }`,
+	} {
+		if _, err := ParseUpdate("PREFIX ex: <http://example.org/>\n" + u); err != nil {
+			t.Errorf("rejected: %s: %v", u, err)
+		}
+	}
+}

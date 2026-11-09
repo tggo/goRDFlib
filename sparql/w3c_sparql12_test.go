@@ -87,9 +87,7 @@ func TestW3CSPARQL12(t *testing.T) {
 // sparql12UpdateSyntaxKnown lists negative update syntax tests the parser
 // still accepts. They were dropped silently by the dispatch until the
 // un-suffixed update syntax test types were added to it.
-var sparql12UpdateSyntaxKnown = map[string]string{
-	"syntax-update-anonreifier-01.ru": "an annotation {| ... |} (an anonymous reifier, i.e. a blank node) in a DELETE template is accepted; blank nodes are not allowed in DELETE templates",
-}
+var sparql12UpdateSyntaxKnown = map[string]string{}
 
 func runSPARQL12QueryEvalTest(t *testing.T, entry w3c.TestEntry) {
 	g := rdflibgo.NewGraph()

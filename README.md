@@ -4,11 +4,11 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/tggo/goRDFlib.svg)](https://pkg.go.dev/github.com/tggo/goRDFlib)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tggo/goRDFlib)](https://goreportcard.com/report/github.com/tggo/goRDFlib)
 ![Coverage](https://img.shields.io/badge/Coverage-93.7%25-brightgreen)
-![W3C Tests](https://img.shields.io/badge/W3C_Tests-3361%2F3361-brightgreen)
+![W3C Tests](https://img.shields.io/badge/W3C_Tests-3362%2F3362-brightgreen)
 ![W3C SPARQL Query](https://img.shields.io/badge/W3C_SPARQL_1.1_Query-328%2F328-brightgreen)
 ![W3C SPARQL 1.0](https://img.shields.io/badge/W3C_SPARQL_1.0-481%2F481-brightgreen)
 ![W3C SPARQL Update](https://img.shields.io/badge/W3C_SPARQL_1.1_Update-157%2F157-brightgreen)
-![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-253%2F254-brightgreen)
+![W3C SPARQL 1.2](https://img.shields.io/badge/W3C_SPARQL_1.2-254%2F254-brightgreen)
 ![W3C Turtle](https://img.shields.io/badge/W3C_Turtle-313%2F313-brightgreen)
 ![W3C Turtle 1.2](https://img.shields.io/badge/W3C_Turtle_1.2-96%2F96-brightgreen)
 ![W3C N-Triples](https://img.shields.io/badge/W3C_N--Triples-70%2F70-brightgreen)
@@ -28,7 +28,7 @@
 
 A Go port of the Python [RDFLib](https://github.com/RDFLib/rdflib) library for working with RDF (Resource Description Framework) data.
 
-> **Note:** This project is in active development. The core API is stabilizing but may still change. All 3361 W3C conformance tests that run pass (`make test-w3c`, suites pinned as git submodules; moving them to current upstream is issue #71). Skipped: 29 RDFS entailment tests that need datatype semantics, 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold), one SPARQL 1.2 update syntax test (an annotation in a DELETE template is accepted), and one CSV test whose file the pinned checkout does not have. Fuzz-tested for robustness.
+> **Note:** This project is in active development. The core API is stabilizing but may still change. All 3362 W3C conformance tests that run pass (`make test-w3c`, suites pinned as git submodules; moving them to current upstream is issue #71). Skipped: 29 RDFS entailment tests that need datatype semantics, 56 JSON-LD toRdf tests (JSON-LD 1.0 only, or limitations of json-gold), and one CSV test whose file the pinned checkout does not have. Fuzz-tested for robustness.
 
 ## About
 
@@ -586,7 +586,7 @@ yet; its SPARQL query and update handlers do.
 
 ### SPARQL 1.2 Extensions
 
-Full SPARQL 1.2 support -- **253/254 W3C tests pass** (one known gap, see the table below):
+Full SPARQL 1.2 support -- **254/254 W3C tests pass (100%)**:
 
 - **Triple term patterns** -- `<<( ?s ?p ?o )>>` in graph patterns
 - **Reified triples** -- `<< ?s ?p ?o >>` with `rdf:reifies` desugaring
@@ -1052,7 +1052,7 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | SPARQL 1.0 Dataset (FROM / FROM NAMED) | 12 | 12 | 100% |
 | SPARQL 1.0 (DAWG syntax and evaluation) | 469 | 469 | 100% |
 | SPARQL 1.1 Update | 157 | 157 | 100% |
-| SPARQL 1.2 | 254 | 253 | 1 skipped: an annotation in a DELETE template is accepted |
+| SPARQL 1.2 | 254 | 254 | 100% |
 | SPARQL 1.1 Protocol | 34 | 34 | 100% |
 | SPARQL 1.1 Graph Store Protocol | 19 | 19 | 100% |
 | SPARQL 1.1 Results CSV/TSV | 8 | 7 | 1 skipped: csv04 is not in the pinned checkout |
@@ -1074,7 +1074,7 @@ All parsers, SPARQL engine, and SHACL validator are validated against official W
 | SHACL 1.2 Node Expressions | 65 | 65 | 100% |
 | SHACL 1.2 Rules (SRL) | 86 | 86 | 100% |
 | RDF 1.1 Semantics (RDFS entailment) | 39 | 10 | 29 skipped: need datatype semantics |
-| **Total** | **3448** | **3361** | **0 failed, 87 skipped** |
+| **Total** | **3448** | **3362** | **0 failed, 86 skipped** |
 
 Counts are leaf test cases from `go test -json`, produced by `make test-w3c`.
 
