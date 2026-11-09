@@ -29,6 +29,25 @@ import (
 // (<<( ?b ex:p ex:o )>>) counts too: substituting the row into it makes a term
 // the graph need not hold, exactly as for a bare variable.
 func rowBound(ec *evalCtx, pat string, bindings map[string]rdflibgo.Term) bool {
+	// Most endpoints are constants or unbound variables: answer those without
+	// a closure, since this runs for every path pattern evaluated.
+	switch {
+	case len(pat) == 0:
+		return false
+	case pat[0] == '?':
+		val, ok := bindings[pat[1:]]
+		if !ok {
+			return false
+		}
+		if ec != nil {
+			if pv, isPre := ec.pre[pat[1:]]; isPre && term.TermKey(pv) == term.TermKey(val) {
+				return false
+			}
+		}
+		return true
+	case pat[0] != '<' || len(pat) < 3 || pat[1] != '<':
+		return false
+	}
 	found := false
 	collectTermVars(pat, func(v string) {
 		val, ok := bindings[v]
@@ -82,4 +101,39 @@ func isGraphNode(ec *evalCtx, g *rdflibgo.Graph, t term.Term) bool {
 		return err == nil
 	}
 	return false
+}
+
+// pathEndChecks is what eachPathSolution needs to know about the endpoints of a
+// path pattern beyond the path's own pairs.
+type pathEndChecks struct {
+	// subjTT and objTT: the endpoint is a triple term with variables that no
+	// earlier pattern bound. The path runs open at that end and the pair's end
+	// is matched against the pattern, binding its variables.
+	subjTT, objTT bool
+	// checkZero: an endpoint was bound from the row, so a zero-length pair
+	// needs zeroLengthMatches. constKeys are the keys of the endpoints that
+	// are constants (empty for a variable).
+	checkZero bool
+	constKeys [2]string
+}
+
+// newPathEndChecks returns nil when neither check can apply, which is almost
+// always: no triple term endpoint and no endpoint bound from the row.
+func newPathEndChecks(ec *evalCtx, tp Triple, bindings map[string]rdflibgo.Term, sVal, oVal term.Term, subjOpen, objOpen bool) *pathEndChecks {
+	subjTT := subjOpen && len(tp.Subject) > 3 && tp.Subject[0] == '<' && tp.Subject[1] == '<'
+	objTT := objOpen && len(tp.Object) > 3 && tp.Object[0] == '<' && tp.Object[1] == '<'
+	rowS, rowO := rowBound(ec, tp.Subject, bindings), rowBound(ec, tp.Object, bindings)
+	if !subjTT && !objTT && !rowS && !rowO {
+		return nil
+	}
+	c := &pathEndChecks{subjTT: subjTT, objTT: objTT, checkZero: rowS || rowO}
+	if c.checkZero {
+		if sVal != nil && !rowS {
+			c.constKeys[0] = term.TermKey(sVal)
+		}
+		if oVal != nil && !rowO {
+			c.constKeys[1] = term.TermKey(oVal)
+		}
+	}
+	return c
 }
