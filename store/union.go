@@ -31,9 +31,15 @@ var ErrReadOnly = errors.New("store: read-only")
 // layer while the union is read, nor mutate the base while views are in use:
 // the union has no snapshot of its own.
 //
-// The union implements none of the optional interfaces (QueryableStore,
-// CardinalityStore, ...): their promises do not survive dedup between layers.
-// The planner and the engines fall back to Triples.
+// The union implements QueryableStore and ReachabilityStore, whose answers it
+// can give exactly, dedup included: Count and Exists from the layers' own,
+// plus a bound lookup per over triple matched; a transitive traversal by the
+// base when the over store holds no edge it could take (otherwise it declines,
+// and the caller walks the union). It does not implement CardinalityStore: an
+// exact count costs a lookup per over triple matched, on every call, and the
+// SPARQL planner makes one per pattern of every BGP it plans. A caller that
+// knows the layers share no triple can sum their counts instead (shacl's
+// overlay does).
 //
 // UnionStore is safe for concurrent use if both layers are. Dedup costs one
 // bound lookup in the base per triple of the over store that a read visits, so

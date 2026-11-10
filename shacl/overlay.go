@@ -40,11 +40,14 @@ type overlay struct {
 // of the reifier lookups (SHACL 1.2) and reads g's namespace bindings.
 //
 // Nothing is written to g or to its store. SPARQL-based constraints and
-// SHACL-AF see g plus added through a read-only store.UnionStore over g's
-// store and a small in-memory one holding added, built on the first such
-// query. So overlays over one base validate concurrently, SPARQL shapes
-// included, without any store the caller has to keep in step. Added triples
-// belong to the graph g wraps (the default graph of a plain graph).
+// SHACL-AF see g plus added through a read-only union of g's store and a small
+// in-memory one holding the added triples g's store does not hold, built on
+// the first such query. The two share no triple, so the union skips the dedup
+// of store.UnionStore and gives the SPARQL planner the cardinalities, counts
+// and reachability of g's store, when it has them. So overlays over one base
+// validate concurrently, SPARQL shapes included, without any store the caller
+// has to keep in step. Added triples belong to the graph g wraps (the default
+// graph of a plain graph).
 //
 // The overlay is read-only: Add and Merge return ErrReadOnly, and
 // InvalidateIndexes does nothing (it has no error to return, and re-indexing
@@ -88,21 +91,41 @@ func (g *Graph) Overlay(ctx context.Context, added []term.Triple) (*Graph, error
 }
 
 // rdfOverlay builds the rdflib graph of an overlay: a read-only union of the
-// base's graph and a memory store holding the added triples.
+// base's graph and a memory store holding the added triples the base does not
+// hold (newOverlayStore).
 func (g *Graph) rdfOverlay(ctx context.Context) (*graph.Graph, error) {
 	brg, err := g.over.base.rdf(ctx)
 	if err != nil {
 		return nil, err
 	}
 	id := brg.Identifier()
+	base := brg.Store()
 	extra := store.NewMemoryStore()
+	empty := true
 	for _, t := range g.over.added {
+		held, err := holds(ctx, base, t, id)
+		if err != nil {
+			return nil, fmt.Errorf("shacl: building the store of an overlay graph: %w", err)
+		}
+		if held {
+			continue
+		}
 		if err := extra.Add(ctx, t, id); err != nil {
 			return nil, fmt.Errorf("shacl: building the store of an overlay graph: %w", err)
 		}
+		empty = false
 	}
-	return graph.NewGraph(graph.WithStore(store.NewUnion(brg.Store(), extra)),
+	return graph.NewGraph(graph.WithStore(newOverlayStore(base, extra, empty)),
 		graph.WithIdentifier(id), graph.WithBase(g.baseURI)), nil
+}
+
+// holds reports whether s holds t in graph.
+func holds(ctx context.Context, s store.Store, t term.Triple, graph term.Term) (bool, error) {
+	p := t.Predicate
+	for _, err := range s.Triples(ctx, term.TriplePattern{Subject: t.Subject, Predicate: &p, Object: t.Object}, graph) {
+		return err == nil, err
+	}
+	return false, nil
 }
 
 // addOver indexes one added triple of an overlay, unless the overlay (its base

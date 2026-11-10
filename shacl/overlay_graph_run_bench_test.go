@@ -14,7 +14,7 @@ import (
 // documents on all cores over the one base, which the rewrap path cannot do
 // (it writes the one shared store).
 func BenchmarkOverlayGraph(b *testing.B) {
-	for _, shapes := range []struct{ name, ttl string }{{"core", benchOverlayShapes}, {"sparql", benchOverlaySPARQLShapes}} {
+	for _, shapes := range []struct{ name, ttl string }{{"core", benchOverlayShapes}, {"sparql", benchOverlaySPARQLShapes}, {"sparql-shared", benchOverlaySharedShapes}} {
 		sg, err := LoadTurtleString(shapes.ttl, "")
 		if err != nil {
 			b.Fatal(err)
@@ -65,6 +65,30 @@ func BenchmarkOverlayGraph(b *testing.B) {
 						b.Fatal(err)
 					}
 					check(b, g)
+				}
+			})
+			// "overlay-held": as in rewrap, the caller's store already holds the
+			// document (another of its steps reads or writes it there), and the
+			// caller still takes an overlay over the base indexes, built once.
+			// Every added triple is then one the base's store holds.
+			b.Run(name+"/overlay-held", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					for _, t := range doc {
+						if err := shared.Add(b.Context(), t.Subject, t.Predicate, t.Object); err != nil {
+							b.Fatal(err)
+						}
+					}
+					g, err := base.Overlay(b.Context(), doc)
+					if err != nil {
+						b.Fatal(err)
+					}
+					check(b, g)
+					for _, t := range doc {
+						if err := shared.Remove(b.Context(), t.Subject, &t.Predicate, t.Object); err != nil {
+							b.Fatal(err)
+						}
+					}
 				}
 			})
 			b.Run(name+"/overlay-parallel", func(b *testing.B) {
