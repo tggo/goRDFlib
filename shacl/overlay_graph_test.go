@@ -43,6 +43,7 @@ var overlayVariants = []string{
 	`ex:x rdf:reifies <<( ex:a ex:size 3 )>> . ex:y rdf:reifies <<( ex:b ex:size 4 )>> .`, // a new reifier, and one base holds
 	`ex:group ex:part ex:f . ex:f a ex:Gadget ; ex:size 7 .`,                              // a class found through the base's subclass chain
 	`ex:Gadget rdfs:subClassOf ex:Part . ex:root ex:maxSize 6 .`,
+	`ex:a ex:size 3 . ex:group ex:part ex:b .`, // only triples base already holds: SPARQL reads the base's store alone
 }
 
 func overlayCompile(t testing.TB) *CompiledShapes {

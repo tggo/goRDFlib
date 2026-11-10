@@ -65,3 +65,16 @@ const benchOverlaySPARQLShapes = benchOverlayShapes + `
 ex:NoSharedName a sh:NodeShape ; sh:targetClass ex:Item ;
   sh:sparql [ sh:select """PREFIX ex: <http://example.org/>
     SELECT $this WHERE { $this ex:name ?n . ?o ex:name ?n FILTER (?o != $this) }""" ] .`
+
+// benchOverlaySharedShapes adds SPARQL constraints that join each item with
+// the shared graph, where the patterns match many triples: the planner orders
+// them once per focus node, from the store's counts when it has them,
+// otherwise by probing each pattern.
+const benchOverlaySharedShapes = benchOverlayShapes + `
+ex:UniqueKindLabel a sh:NodeShape ; sh:targetClass ex:Item ;
+  sh:sparql [ sh:select """PREFIX ex: <http://example.org/>
+    SELECT $this WHERE { ?other ex:label ?l . ?k ex:label ?l . $this ex:kind ?k FILTER (?other != ?k) }""" ] .
+ex:KindUnderKind a sh:NodeShape ; sh:targetClass ex:Item ;
+  sh:sparql [ sh:select """PREFIX ex: <http://example.org/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    SELECT $this WHERE { $this ex:kind ?k FILTER NOT EXISTS { ?k a/rdfs:subClassOf* ex:Kind } }""" ] .`
