@@ -1,6 +1,7 @@
 package sparql
 
 import (
+	"errors"
 	"slices"
 	"strings"
 
@@ -53,7 +54,13 @@ import (
 // already makes a cheap first step, and a path probe would cost about as much
 // as the plan it could improve. This matters when a BGP is planned once per
 // row (OPTIONAL, EXISTS, SHACL focus nodes), where the probes are paid on
-// every row.
+// every row. For the same reason one evaluation runs at most
+// bgpMaxPathProbes path probes, and each is bounded in work, not only in
+// pairs, by bgpPathProbeSteps traversal steps (paths.WithStepLimit): a walk
+// that finds few of the pairs it looks for would otherwise run to the end of
+// what it can reach. A probe that runs out of steps ranks as capped. A
+// closure pushed down to a ReachabilityStore is one step; its answer is
+// cached for the query (paths.WithReachabilityCache), so evaluation reuses it.
 //
 // Variables that an earlier pattern will bind are not known values at planning
 // time; they are credited with a fixed selectivity divisor instead. Patterns
@@ -71,6 +78,17 @@ const (
 	// bgpProbeLimit is the second-round probe limit, used only when every
 	// first-round probe was capped.
 	bgpProbeLimit = 1000
+	// bgpPathProbeSteps bounds the work of one path probe in traversal
+	// steps (paths.WithStepLimit). The pair limit alone does not: a walk
+	// that reaches few of the pairs it is asked for, or none, runs to the
+	// end of what it can reach. A probe that runs out ranks as capped.
+	bgpPathProbeSteps = 8 * bgpProbeLimit
+	// bgpMaxPathProbes is how many path probes one evaluation may run. A
+	// BGP is planned again for every row of an enclosing OPTIONAL or
+	// EXISTS and every SHACL focus node, so without it the probes would be
+	// paid per row; past it, paths rank unprobed, as they did before
+	// probing existed.
+	bgpMaxPathProbes = 64
 )
 
 // Selectivity credited to a position whose variable is bound by a pattern
@@ -294,6 +312,9 @@ func probePatterns(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 // bgpProbeStart triples, none at all included, no path is evaluated (see the
 // top of the file).
 func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
+	if offPathProbes {
+		return
+	}
 	limit := bgpProbeLimit
 	for i := range cands {
 		if c := &cands[i]; !c.path && !c.capped {
@@ -310,6 +331,15 @@ func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 		}
 		if ec.poll() {
 			return // a store error or a done context: the plan no longer matters
+		}
+		if ec != nil {
+			if ec.pathProbes >= bgpMaxPathProbes {
+				return
+			}
+			ec.pathProbes++
+		}
+		if pathProbeHook != nil {
+			pathProbeHook()
 		}
 		n := probePath(ec, g, c.tp.PredicatePath, c.s, c.o, limit)
 		if n < limit {
@@ -398,10 +428,15 @@ func probeCount(ec *evalCtx, g *rdflibgo.Graph, s rdflibgo.Subject, p *rdflibgo.
 }
 
 // probePath counts the pairs of a property path, with at least one endpoint
-// known, up to limit, by evaluating it and stopping there.
+// known, up to limit, by evaluating it and stopping there. A probe that runs
+// out of steps (bgpPathProbeSteps) returns limit: its count is unknown, and
+// the path keeps the rank of an unprobed one.
 func probePath(ec *evalCtx, g *rdflibgo.Graph, p paths.Path, s rdflibgo.Subject, o rdflibgo.Term, limit int) int {
 	n := 0
-	for _, err := range p.Eval(ec.context(), g, s, o) {
+	for _, err := range p.Eval(paths.WithStepLimit(ec.context(), bgpPathProbeSteps), g, s, o) {
+		if errors.Is(err, paths.ErrStepLimit) {
+			return limit
+		}
 		if err != nil {
 			ec.fail(err)
 			return n
