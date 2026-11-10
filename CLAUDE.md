@@ -757,6 +757,15 @@ The `store.Store` interface (13 methods) has four implementations:
 - Every rule has a test that fails when the rule is removed (checked by
   mutation). `TestOrderBGP_SameSolutionsForEveryPermutation` is the
   correctness guard.
+- Paths with a known endpoint are probed (PR #62), after the triple patterns,
+  up to the smallest exact count, and not at all once a triple pattern is
+  below `bgpProbeStart`. Each probe is bounded in **work** by
+  `paths.WithStepLimit` (`bgpPathProbeSteps`; out of steps = capped, never
+  an error) and one evaluation runs at most `bgpMaxPathProbes`, because a BGP
+  is re-planned per OPTIONAL/EXISTS row and SHACL focus node. A literal
+  subject is never probed. `offPathProbes` is the differential-test switch;
+  `pathProbeHook` lets that test prove probes ran. A pushed-down `Reachable`
+  is one step: its cost is the store's (bounded per query by the cap).
 - `benchmarks/bench_bgp_order_test.go` has written-well vs badly-written
   queries. A 4-pattern chain from a constant costs ~1µs more for planning; the
   badly-written queries went from seconds to µs.

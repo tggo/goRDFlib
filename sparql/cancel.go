@@ -68,6 +68,9 @@ type evalCtx struct {
 	// rights remembers what a pre-bound join knows about its right side
 	// (rightSideOf), by the query's own pattern.
 	rights map[Pattern]*rightSide
+	// pathProbes counts the property-path probes the BGP planner has run in
+	// this evaluation (bgpMaxPathProbes).
+	pathProbes int
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {

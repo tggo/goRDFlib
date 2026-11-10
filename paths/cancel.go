@@ -32,16 +32,51 @@ type stopper struct {
 	// reach caches Reachable answers for this traversal, or for the
 	// evaluation the context belongs to (WithReachabilityCache).
 	reach *reachCache
+	// steps counts traversal steps against maxSteps (WithStepLimit; 0: no
+	// limit).
+	steps, maxSteps int
 }
 
 func newStopper(ctx context.Context) *stopper {
-	return &stopper{ctx: ctx, done: ctx.Done(), reach: reachCacheIn(ctx)}
+	return &stopper{ctx: ctx, done: ctx.Done(), reach: reachCacheIn(ctx), maxSteps: stepLimitIn(ctx)}
+}
+
+// ErrStepLimit is the failure of a traversal that took more steps than
+// WithStepLimit allows.
+var ErrStepLimit = errors.New("paths: traversal step limit reached")
+
+type stepLimitKey struct{}
+
+// WithStepLimit returns a context under which a path evaluation stops with
+// ErrStepLimit after n traversal steps (n <= 0: no limit). A step is one
+// triple read or one node visited, so the limit bounds the work of an
+// evaluation, not the pairs it yields: a walk that reaches nothing it is asked
+// for still ends. It is meant for estimates, such as the SPARQL planner
+// probing a path, that must cost a bounded amount whatever the data.
+//
+// A Reachable call pushed down to the store is one step: its cost is the
+// store's, and its answer is cached for the rest of the evaluation when
+// WithReachabilityCache is in force.
+func WithStepLimit(ctx context.Context, n int) context.Context {
+	return context.WithValue(ctx, stepLimitKey{}, max(n, 0))
+}
+
+func stepLimitIn(ctx context.Context) int {
+	n, _ := ctx.Value(stepLimitKey{}).(int)
+	return n
 }
 
 // stop counts one traversal step and reports whether the traversal must end.
 func (s *stopper) stop() bool {
 	if s.err != nil {
 		return true
+	}
+	if s.maxSteps > 0 {
+		s.steps++
+		if s.steps > s.maxSteps {
+			s.err = ErrStepLimit
+			return true
+		}
 	}
 	if s.done == nil {
 		return false

@@ -72,7 +72,7 @@ func (o *optGen) node() string {
 }
 
 func (o *optGen) triple() string {
-	switch o.r.IntN(12) {
+	switch o.r.IntN(17) {
 	case 0:
 		return fmt.Sprintf("%s ex:part+ %s .", o.pick("?this", o.v()), o.node())
 	case 1:
@@ -91,6 +91,19 @@ func (o *optGen) triple() string {
 		return fmt.Sprintf("_:n%d ex:text %s .", o.r.IntN(2), o.v())
 	case 8:
 		return fmt.Sprintf("%s ex:note _:n%d .", o.v(), o.r.IntN(2))
+	// Paths the planner probes: a constant or pre-bound subject, a bound
+	// object only, a literal subject (never probed), a repeated variable.
+	case 9:
+		return fmt.Sprintf("%s ex:part+ %s .", o.pick("ex:root", "?this", "ex:p1"), o.v())
+	case 10:
+		return fmt.Sprintf("%s ex:part/ex:type %s .", o.v(), o.pick("ex:Kind0", "ex:Kind2", "?this"))
+	case 11:
+		return fmt.Sprintf("%s ^ex:part* %s .", o.pick("ex:q1_0", "?this", "ex:p4"), o.v())
+	case 12:
+		return fmt.Sprintf("%s ^ex:label/ex:sub? %s .", o.pick(`"zero"`, `"two"`, "1"), o.v())
+	case 13:
+		x := o.v()
+		return fmt.Sprintf("%s ex:part* %s .", x, x)
 	}
 	pred := o.pick("ex:part", "ex:type", "ex:opt", "ex:sub", "ex:label", "ex:part", "ex:type")
 	return fmt.Sprintf("%s %s %s .", o.pick("?this", o.v(), o.v()), pred, o.node())
@@ -203,6 +216,9 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	g := optGraph(t)
 	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
 	defer setOpts(false)
+	probes := 0
+	pathProbeHook = func() { probes++ }
+	defer func() { pathProbeHook = nil }()
 	n := 600
 	if testing.Short() {
 		n = 150
@@ -258,7 +274,10 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 			t.Errorf("plain engine, query %d: pre-bound (%d rows) vs textual (%d rows)\n%s", i, len(b), len(d), q)
 		}
 	}
-	t.Logf("compared %d random queries (%d with rows)", compared, nonEmpty)
+	t.Logf("compared %d random queries (%d with rows), %d path probes", compared, nonEmpty, probes)
+	if probes < n/10 {
+		t.Errorf("only %d path probes ran: the generator no longer exercises them", probes)
+	}
 	if compared < n/3 || nonEmpty < compared/5 {
 		t.Errorf("only %d of %d queries compared, %d with rows: the generator is too weak", compared, n, nonEmpty)
 	}
