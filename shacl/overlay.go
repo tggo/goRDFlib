@@ -53,8 +53,11 @@ type overlay struct {
 // InvalidateIndexes does nothing (it has no error to return, and re-indexing
 // would defeat the point). g must not be changed — Add, Merge, or writes to its
 // store followed by InvalidateIndexes — while any overlay over it is in use:
-// the overlays read g's indexes and its store as they are. Overlays are safe
-// for concurrent reads, and an overlay may itself be the base of another.
+// the overlays read g's indexes and its store as they are. Breaking this is not
+// detected: a triple that reaches g's store after an overlay first answered a
+// SPARQL query is then in both of its layers, and that overlay counts and
+// yields it twice. Overlays are safe for concurrent reads, and an overlay may
+// itself be the base of another.
 func (g *Graph) Overlay(ctx context.Context, added []term.Triple) (*Graph, error) {
 	if g == nil {
 		return nil, fmt.Errorf("%w: Overlay needs a base graph", ErrNilGraph)

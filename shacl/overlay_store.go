@@ -7,6 +7,11 @@ import (
 	"github.com/tggo/goRDFlib/term"
 )
 
+// offDisjointUnion makes newOverlayStore return the plain store.UnionStore.
+// It is the off switch of the differential test (overlay_diff_test.go) and is
+// never set outside tests.
+var offDisjointUnion bool
+
 // disjointUnion is the SPARQL store of an overlay whose base store reports
 // cardinalities. rdfOverlay fills its over store with only the added triples
 // the base does not hold, and neither layer changes while the overlay is in use
@@ -29,6 +34,9 @@ type disjointUnion struct {
 // over holds nothing at all.
 func newOverlayStore(base, over store.Store, empty bool) store.Store {
 	u := store.NewUnion(base, over)
+	if offDisjointUnion {
+		return u
+	}
 	bc, ok := base.(store.CardinalityStore)
 	if !ok {
 		return u
