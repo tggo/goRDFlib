@@ -2,7 +2,7 @@ package namespace
 
 import "github.com/tggo/goRDFlib/term"
 
-// Built-in RDF namespace constants.
+// Built-in RDF namespace constants (test PR for the PR tests check; do not merge).
 // Ported from: rdflib.namespace._RDF, _RDFS, _OWL, _XSD
 
 // --- RDF Namespace ---
