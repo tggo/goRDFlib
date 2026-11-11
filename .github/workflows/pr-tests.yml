@@ -1,0 +1,39 @@
+name: PR tests
+
+# Does the PR carry the tests the project requires? The rules are in
+# scripts/check-pr-tests.sh (and CLAUDE.md "Testing"): a test in every package
+# whose code changed, a seeded differential test for every evaluation
+# shortcut, no test removed, no new skip or conformance exemption.
+#
+# A maintainer waives it for one PR with the label "tests-not-needed";
+# labelling re-runs the check. pull_request (not pull_request_target): the
+# job runs with a read-only token and no secrets, so a fork's code can do no
+# harm here.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  required-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the merge base with main is needed to diff the PR
+          fetch-depth: 0
+
+      - name: Waived by a maintainer
+        if: contains(github.event.pull_request.labels.*.name, 'tests-not-needed')
+        run: echo "::notice::the tests-not-needed label waives this check"
+
+      - name: Check the PR's tests
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'tests-not-needed') }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/check-pr-tests.sh "$BASE" "$HEAD"

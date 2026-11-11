@@ -30,14 +30,18 @@ jobs:
       - name: Run tests with race detector
         run: go test -race ./... -short -count=1 -timeout 300s
 
+      # pipefail: without it `| tail -1` hides go test's exit status, and a
+      # failing suite printed FAIL and the step passed.
       - name: Run W3C conformance tests
+        shell: bash
         run: |
+          set -eo pipefail
           echo "=== Turtle ===" && go test ./turtle/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== N-Triples ===" && go test ./nt/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== N-Quads ===" && go test ./nq/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== RDF/XML ===" && go test ./rdfxml/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== TriG ===" && go test ./trig/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1
-          echo "=== SPARQL 1.1 ===" && go test ./sparql/ -run 'TestW3C$$' -v -count=1 -timeout 120s 2>&1 | tail -1
+          echo "=== SPARQL 1.1 ===" && go test ./sparql/ -run 'TestW3C$' -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== SPARQL 1.2 ===" && go test ./sparql/ -run TestW3CSPARQL12 -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== SPARQL Update ===" && go test ./sparql/ -run TestW3CUpdate -v -count=1 -timeout 120s 2>&1 | tail -1
           echo "=== SHACL ===" && go test ./shacl/ -run TestW3C -v -count=1 -timeout 120s 2>&1 | tail -1

@@ -48,6 +48,17 @@
 - All W3C test suites must stay at 100% pass rate
 - Add benchmarks (`_bench_test.go`) for performance-critical packages
 - Isomorphism checks: avoid O(n²) algorithms — use reverse indexes for signature matching
+- Every PR runs `scripts/check-pr-tests.sh` (workflow `pr-tests.yml`): a test
+  in each package whose code changed, a seeded random differential test
+  (`math/rand/v2` + `rand.NewPCG`) for every evaluation shortcut (BGP
+  planning, pushdown, caches, snapshots, path probes, reachability, a store's
+  optional interfaces), no test function removed, no new skip or `*Known`
+  entry. Run it before opening a PR: `scripts/check-pr-tests.sh origin/main HEAD`.
+  The label `tests-not-needed` waives it; only a maintainer can set labels.
+  It is a check, not a gate: `main` is unprotected, so a red check does not
+  block a merge.
+- The W3C step in `ci.yml` runs with `pipefail`: the `| tail -1` used to hide
+  go test's exit status, so a failing suite passed CI.
 
 ## Key Packages
 
