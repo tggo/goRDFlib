@@ -201,7 +201,8 @@ func optRows(g *graph.Graph, pq *ParsedQuery, pre map[string]term.Term) (rows []
 
 // The optimisations (merging a join of BGPs, splitting a BGP into groups,
 // substituting the left row into a pre-bound join, probing paths when
-// planning) are shortcuts: with them off the answers must be the same
+// planning, evaluating a join's right side once or with the left row
+// substituted) are shortcuts: with them off the answers must be the same
 // multisets. Random queries with joins, OPTIONAL, MINUS, UNION, EXISTS,
 // subqueries, BIND, VALUES, paths, triple terms and blank node labels are
 // evaluated four ways, from a fixed seed:
@@ -216,9 +217,10 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	g := optGraph(t)
 	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
 	defer setOpts(false)
-	probes := 0
+	probes, joins := 0, 0
 	pathProbeHook = func() { probes++ }
-	defer func() { pathProbeHook = nil }()
+	joinRightSideHook = func() { joins++ }
+	defer func() { pathProbeHook, joinRightSideHook = nil, nil }()
 	n := 600
 	if testing.Short() {
 		n = 150
@@ -274,9 +276,12 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 			t.Errorf("plain engine, query %d: pre-bound (%d rows) vs textual (%d rows)\n%s", i, len(b), len(d), q)
 		}
 	}
-	t.Logf("compared %d random queries (%d with rows), %d path probes", compared, nonEmpty, probes)
+	t.Logf("compared %d random queries (%d with rows), %d path probes, %d joins with their right side evaluated once or substituted", compared, nonEmpty, probes, joins)
 	if probes < n/10 {
 		t.Errorf("only %d path probes ran: the generator no longer exercises them", probes)
+	}
+	if joins < n/10 {
+		t.Errorf("only %d joins had their right side evaluated once or substituted: the generator no longer exercises them", joins)
 	}
 	if compared < n/3 || nonEmpty < compared/5 {
 		t.Errorf("only %d of %d queries compared, %d with rows: the generator is too weak", compared, n, nonEmpty)

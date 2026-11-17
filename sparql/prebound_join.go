@@ -115,22 +115,32 @@ func collectTermVars(s string, add func(string)) {
 // expression-free pattern described by rs mentions and pre does not already
 // bind.
 func (rs *rightSide) bindsAVariableOf(left []map[string]rdflibgo.Term, pre map[string]rdflibgo.Term) bool {
+	for _, lb := range left {
+		if rs.bindsAVariableIn(lb, pre) {
+			return true
+		}
+	}
+	return false
+}
+
+// bindsAVariableIn reports whether the row lb binds a variable that the
+// expression-free pattern described by rs mentions and pre does not already
+// bind.
+func (rs *rightSide) bindsAVariableIn(lb map[string]rdflibgo.Term, pre map[string]rdflibgo.Term) bool {
 	if len(rs.vars) == 0 {
 		return false
 	}
-	for _, lb := range left {
-		if rs.set != nil {
-			for k := range lb {
-				if _, ok := rs.set[k]; ok && !preBinds(pre, k) {
-					return true
-				}
-			}
-			continue
-		}
-		for _, v := range rs.vars {
-			if _, ok := lb[v]; ok && !preBinds(pre, v) {
+	if rs.set != nil {
+		for k := range lb {
+			if _, ok := rs.set[k]; ok && !preBinds(pre, k) {
 				return true
 			}
+		}
+		return false
+	}
+	for _, v := range rs.vars {
+		if _, ok := lb[v]; ok && !preBinds(pre, v) {
+			return true
 		}
 	}
 	return false

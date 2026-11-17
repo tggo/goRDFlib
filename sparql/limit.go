@@ -104,6 +104,7 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 		return eachBGPSolution(ec, g, orderBGP(ec, g, p.Triples, empty, prefixes), empty, prefixes, yield)
 
 	case *JoinPattern:
+		right := newJoinSide(ec, g, p.Right, prefixes, namedGraphs)
 		return eachSolution(ec, g, p.Left, prefixes, namedGraphs, func(lb map[string]rdflibgo.Term) bool {
 			if ec.stop() {
 				return false
@@ -113,7 +114,11 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 				// solutions already contain lb.
 				return eachBGPSolution(ec, g, orderBGP(ec, g, r.Triples, lb, prefixes), lb, prefixes, yield)
 			}
-			for _, rb := range evalPatternWithBindings(ec, g, p.Right, lb, prefixes, namedGraphs) {
+			rows, filter := right.rows(lb)
+			for _, rb := range rows {
+				if filter && !isCompatible(lb, rb) {
+					continue
+				}
 				if ec.produced(1) || !yield(mergeBindings(lb, rb)) {
 					return false
 				}
