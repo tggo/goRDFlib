@@ -70,6 +70,7 @@ func (p *sparqlParser) parseUpdate() (*ParsedUpdate, error) {
 				p.pos += 4
 				p.skipWS()
 				u.BaseURI = p.readIRIRef()
+				p.base = u.BaseURI
 				continue
 			}
 			break

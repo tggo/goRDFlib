@@ -455,6 +455,9 @@ func (p *sparqlParser) parseSubQuery() (*ParsedQuery, error) {
 	q := &ParsedQuery{
 		Limit:    -1,
 		Prefixes: p.prefixes,
+		// SPARQL 1.1 §4.1.1.1: BASE applies to every relative IRI in the
+		// query; a sub-SELECT has no prologue of its own.
+		BaseURI: p.base,
 	}
 	p.pos += 6 // skip "SELECT"
 	q.Type = "SELECT"

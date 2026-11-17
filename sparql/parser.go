@@ -48,9 +48,11 @@ func ParseUpdate(input string) (*ParsedUpdate, error) {
 }
 
 type sparqlParser struct {
-	input           string
-	pos             int
-	prefixes        map[string]string
+	input    string
+	pos      int
+	prefixes map[string]string
+	// base is the prologue's BASE, inherited by every sub-SELECT (issue #74).
+	base            string
 	bnodeCount      int
 	dotAfterTriples bool           // the last triples block ended with '.'
 	bgpSeq          int            // last basic graph pattern id (nextBGP)
@@ -95,6 +97,7 @@ func (p *sparqlParser) parse() (*ParsedQuery, error) {
 			p.pos += 4
 			p.skipWS()
 			q.BaseURI = p.readIRIRef()
+			p.base = q.BaseURI
 			continue
 		}
 		if p.matchKeywordCI("VERSION") {
