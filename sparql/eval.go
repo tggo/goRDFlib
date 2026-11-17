@@ -729,13 +729,20 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 
 	case *JoinPattern:
 		left := evalPattern(ec, g, p.Left, prefixes, namedGraphs)
+		if len(left) == 0 {
+			return nil
+		}
+		right := newJoinSide(ec, g, p.Right, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, lb := range left {
 			if ec.stop() {
 				return nil
 			}
-			right := evalPatternWithBindings(ec, g, p.Right, lb, prefixes, namedGraphs)
-			for _, rb := range right {
+			rows, filter := right.rows(lb)
+			for _, rb := range rows {
+				if filter && !isCompatible(lb, rb) {
+					continue
+				}
 				result = append(result, mergeBindings(lb, rb))
 				if ec.produced(1) {
 					return nil
