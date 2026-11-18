@@ -13,10 +13,12 @@ import (
 // right side without expressions can take the left row as constants instead,
 // and one that does not depend on the row need not be evaluated once per row.
 
-// expressionFree reports whether p is a BGP, or a UNION or join of such
-// patterns: a pattern no FILTER, BIND, OPTIONAL condition or subquery can
-// observe a variable of, so that substituting values into it only restricts
-// its solutions.
+// expressionFree reports whether p is a BGP, or a UNION, join or GRAPH of
+// such patterns: a pattern no FILTER, BIND, OPTIONAL condition or subquery
+// can observe a variable of, so that substituting values into it only
+// restricts its solutions. A GRAPH pattern counts only while its pre-bound
+// evaluation (evalGraphPatternPreBound) is on, since substituting a value for
+// its graph name is what makes it worth it.
 func expressionFree(p Pattern) bool {
 	switch p := p.(type) {
 	case *BGP:
@@ -25,6 +27,8 @@ func expressionFree(p Pattern) bool {
 		return expressionFree(p.Left) && expressionFree(p.Right)
 	case *JoinPattern:
 		return expressionFree(p.Left) && expressionFree(p.Right)
+	case *GraphPattern:
+		return !offGraphPreBound && expressionFree(p.Pattern)
 	}
 	return false
 }
@@ -95,6 +99,9 @@ func collectRightVars(p Pattern, add func(string)) {
 	case *JoinPattern:
 		collectRightVars(p.Left, add)
 		collectRightVars(p.Right, add)
+	case *GraphPattern:
+		collectTermVars(p.Name, add)
+		collectRightVars(p.Pattern, add)
 	}
 }
 
