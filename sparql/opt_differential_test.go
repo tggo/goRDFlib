@@ -15,8 +15,9 @@ import (
 )
 
 // optGraph is the data of the differential tests: a small tree under
-// ex:root with a cycle, a class hierarchy, optional values, triple terms and
-// a blank node.
+// ex:root with a cycle, a class hierarchy, optional values, triple terms, a
+// blank node, and ex:in links from nodes to graph names, all but one of them
+// in optNamedGraphs.
 func optGraph(t testing.TB) *graph.Graph {
 	var sb strings.Builder
 	sb.WriteString(`@prefix ex: <http://example.org/> .
@@ -25,6 +26,7 @@ ex:Kind0 ex:label "zero" . ex:Kind1 ex:label "one" . ex:Kind2 ex:label "two" .
 ex:q9_0 ex:part ex:p9 .
 ex:p2 ex:note [ ex:text "a note" ] .
 ex:p1 ex:a ex:m1 , ex:m2 . ex:m1 ex:b ex:v . ex:m2 ex:b ex:v .
+ex:p1 ex:in ex:g1 . ex:q1_0 ex:in ex:g1 . ex:p2 ex:in ex:g2 . ex:p4 ex:in ex:g9 .
 `)
 	for i := range 10 {
 		fmt.Fprintf(&sb, "ex:root ex:part ex:p%d . ex:p%d ex:type ex:Kind%d .\n", i, i, i%3)
@@ -50,6 +52,25 @@ ex:p1 ex:a ex:m1 , ex:m2 . ex:m1 ex:b ex:v . ex:m2 ex:b ex:v .
 	}
 	return g
 }
+
+// optNamedGraphs are the named graphs of the differential tests: two that
+// restate and extend parts of optGraph, and an empty one.
+var optNamedGraphs = func() map[string]*graph.Graph {
+	named := map[string]string{
+		"http://example.org/g1": `ex:p1 ex:part ex:q1_0 . ex:q1_0 ex:type ex:Kind1 . ex:p4 ex:opt 4 . ex:p1 ex:in ex:g2 .`,
+		"http://example.org/g2": `ex:p1 ex:type ex:Kind0 . ex:q1_0 ex:part ex:p1 . ex:p2 ex:label "two" . ex:Kind0 ex:sub ex:Top .`,
+		"http://example.org/g3": ``,
+	}
+	graphs := make(map[string]*graph.Graph, len(named))
+	for name, data := range named {
+		g := graph.NewGraph()
+		if err := turtle.Parse(context.Background(), g, strings.NewReader("@prefix ex: <http://example.org/> .\n"+data)); err != nil {
+			panic(err)
+		}
+		graphs[name] = g
+	}
+	return graphs
+}()
 
 // optGen builds random group patterns from a fixed vocabulary. Every query it
 // writes is deterministic (no LIMIT without ORDER BY, no RAND), so two
@@ -105,7 +126,7 @@ func (o *optGen) triple() string {
 		x := o.v()
 		return fmt.Sprintf("%s ex:part* %s .", x, x)
 	}
-	pred := o.pick("ex:part", "ex:type", "ex:opt", "ex:sub", "ex:label", "ex:part", "ex:type")
+	pred := o.pick("ex:part", "ex:type", "ex:opt", "ex:sub", "ex:label", "ex:part", "ex:type", "ex:in")
 	return fmt.Sprintf("%s %s %s .", o.pick("?this", o.v(), o.v()), pred, o.node())
 }
 
@@ -134,7 +155,7 @@ func (o *optGen) group() string {
 	var sb strings.Builder
 	n := 1 + o.r.IntN(4)
 	for range n {
-		kind := o.r.IntN(15)
+		kind := o.r.IntN(16)
 		if o.depth > 3 && kind > 4 {
 			kind = 0
 		}
@@ -165,6 +186,10 @@ func (o *optGen) group() string {
 			// substitute inside it and the pre-bound form could not.
 			inner := strings.ReplaceAll(o.group(), "?this", "?a")
 			sb.WriteString(o.pick("SERVICE ex:svc ", "SERVICE SILENT ex:svc ") + "{ " + inner + "} ")
+		case 15:
+			// A variable graph name is often bound by an outer ex:in, and
+			// ?this is never a graph.
+			sb.WriteString("GRAPH " + o.pick("?a", "?b", "?g", "?this", "ex:g1", "ex:g2", "ex:nothing") + " { " + o.group() + "} ")
 		}
 	}
 	return sb.String()
@@ -189,6 +214,7 @@ func optRows(g *graph.Graph, pq *ParsedQuery, pre map[string]term.Term) (rows []
 		}
 		return res.Bindings, nil
 	})
+	pq.NamedGraphs = optNamedGraphs
 	res, err := EvalQueryContext(ctx, g, pq, pre)
 	if errors.Is(err, ErrTooManySolutions) {
 		return nil, true, nil
@@ -217,11 +243,14 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	g := optGraph(t)
 	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
 	defer setOpts(false)
-	probes, joins, optionals := 0, 0, 0
+	probes, joins, optionals, graphs := 0, 0, 0, 0
 	pathProbeHook = func() { probes++ }
 	joinRightSideHook = func() { joins++ }
 	optionalRightSideHook = func() { optionals++ }
-	defer func() { pathProbeHook, joinRightSideHook, optionalRightSideHook = nil, nil, nil }()
+	graphPreBoundHook = func() { graphs++ }
+	defer func() {
+		pathProbeHook, joinRightSideHook, optionalRightSideHook, graphPreBoundHook = nil, nil, nil, nil
+	}()
 	n := 600
 	if testing.Short() {
 		n = 150
@@ -277,7 +306,7 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 			t.Errorf("plain engine, query %d: pre-bound (%d rows) vs textual (%d rows)\n%s", i, len(b), len(d), q)
 		}
 	}
-	t.Logf("compared %d random queries (%d with rows), %d path probes, %d joins with their right side evaluated once or substituted (%d of them OPTIONALs)", compared, nonEmpty, probes, joins, optionals)
+	t.Logf("compared %d random queries (%d with rows), %d path probes, %d joins with their right side evaluated once or substituted (%d of them OPTIONALs), %d pre-bound GRAPH patterns", compared, nonEmpty, probes, joins, optionals, graphs)
 	if probes < n/10 {
 		t.Errorf("only %d path probes ran: the generator no longer exercises them", probes)
 	}
@@ -286,6 +315,9 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	}
 	if optionals < n/20 {
 		t.Errorf("only %d OPTIONALs had their right side evaluated once or substituted: the generator no longer exercises them", optionals)
+	}
+	if graphs < n/20 {
+		t.Errorf("only %d GRAPH patterns were evaluated on the pre-bound path: the generator no longer exercises it", graphs)
 	}
 	if compared < n/3 || nonEmpty < compared/5 {
 		t.Errorf("only %d of %d queries compared, %d with rows: the generator is too weak", compared, n, nonEmpty)
