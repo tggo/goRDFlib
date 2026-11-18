@@ -1343,7 +1343,11 @@ func newOptionalSide(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, perRow bool, p
 	if perRow {
 		return &optionalSide{conds: conds, side: &joinSide{ec: ec, g: g, pattern: opt, prefixes: prefixes, namedGraphs: namedGraphs, perRow: true}}
 	}
-	return &optionalSide{conds: conds, side: newJoinSide(ec, g, opt, prefixes, namedGraphs)}
+	side := newJoinSide(ec, g, opt, prefixes, namedGraphs)
+	if !side.perRow && optionalRightSideHook != nil {
+		optionalRightSideHook()
+	}
+	return &optionalSide{conds: conds, side: side}
 }
 
 // optionalMatches returns the right-side rows of the OPTIONAL os that join

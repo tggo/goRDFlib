@@ -28,3 +28,7 @@ var pathProbeHook func()
 // (joinSide). Like pathProbeHook, it is nil otherwise, and only a test that
 // runs none in parallel may set it.
 var joinRightSideHook func()
+
+// optionalRightSideHook is joinRightSideHook for the right side of an
+// OPTIONAL (optionalSide), so a test can prove OPTIONALs take that path too.
+var optionalRightSideHook func()
