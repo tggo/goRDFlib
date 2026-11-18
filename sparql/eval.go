@@ -1155,6 +1155,9 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 
 	case *OptionalPattern:
 		main := evalPatternPreBound(ec, g, p.Main, pre, prefixes, namedGraphs)
+		if len(main) == 0 {
+			return nil
+		}
 		side := newOptionalSide(ec, g, p.Optional, true, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, mb := range main {
@@ -1320,9 +1323,10 @@ func projectedBindings(q *ParsedQuery, pre map[string]rdflibgo.Term) map[string]
 // is not matched in full once per left row, exactly as for a join's right
 // side. Without initial bindings, the right side's solutions do not depend
 // on the left row (SPARQL 1.1 §18.2.1); only the LeftJoin condition does,
-// and conds is evaluated per row. On the pre-bound path the right side is
-// evaluated with the initial bindings too, so it stays per row there
-// (perRow), as before.
+// and conds is evaluated per row. On the pre-bound path that holds too: the
+// initial bindings reach the right side's expressions through ec.pre, the
+// same for every left row, never through the row (preBound only tells the
+// test hook which path this is).
 //
 // An optionalSide is not safe for concurrent use.
 type optionalSide struct {
@@ -1330,7 +1334,7 @@ type optionalSide struct {
 	side  *joinSide
 }
 
-func newOptionalSide(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, perRow bool, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) *optionalSide {
+func newOptionalSide(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, preBound bool, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) *optionalSide {
 	var conds []Expr
 	for {
 		f, ok := opt.(*FilterPattern)
@@ -1340,12 +1344,9 @@ func newOptionalSide(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, perRow bool, p
 		conds = append(conds, f.Expr)
 		opt = f.Pattern
 	}
-	if perRow {
-		return &optionalSide{conds: conds, side: &joinSide{ec: ec, g: g, pattern: opt, prefixes: prefixes, namedGraphs: namedGraphs, perRow: true}}
-	}
 	side := newJoinSide(ec, g, opt, prefixes, namedGraphs)
 	if !side.perRow && optionalRightSideHook != nil {
-		optionalRightSideHook()
+		optionalRightSideHook(preBound)
 	}
 	return &optionalSide{conds: conds, side: side}
 }

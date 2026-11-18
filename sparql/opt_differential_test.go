@@ -217,10 +217,15 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	g := optGraph(t)
 	root := map[string]term.Term{"this": term.NewURIRefUnsafe("http://example.org/root")}
 	defer setOpts(false)
-	probes, joins, optionals := 0, 0, 0
+	probes, joins, optionals, preBoundOptionals := 0, 0, 0, 0
 	pathProbeHook = func() { probes++ }
 	joinRightSideHook = func() { joins++ }
-	optionalRightSideHook = func() { optionals++ }
+	optionalRightSideHook = func(preBound bool) {
+		optionals++
+		if preBound {
+			preBoundOptionals++
+		}
+	}
 	defer func() { pathProbeHook, joinRightSideHook, optionalRightSideHook = nil, nil, nil }()
 	n := 600
 	if testing.Short() {
@@ -277,7 +282,7 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 			t.Errorf("plain engine, query %d: pre-bound (%d rows) vs textual (%d rows)\n%s", i, len(b), len(d), q)
 		}
 	}
-	t.Logf("compared %d random queries (%d with rows), %d path probes, %d joins with their right side evaluated once or substituted (%d of them OPTIONALs)", compared, nonEmpty, probes, joins, optionals)
+	t.Logf("compared %d random queries (%d with rows), %d path probes, %d joins with their right side evaluated once or substituted (%d of them OPTIONALs, %d pre-bound)", compared, nonEmpty, probes, joins, optionals, preBoundOptionals)
 	if probes < n/10 {
 		t.Errorf("only %d path probes ran: the generator no longer exercises them", probes)
 	}
@@ -286,6 +291,9 @@ func TestOptimisationsDoNotChangeAnswers(t *testing.T) {
 	}
 	if optionals < n/20 {
 		t.Errorf("only %d OPTIONALs had their right side evaluated once or substituted: the generator no longer exercises them", optionals)
+	}
+	if preBoundOptionals < n/40 {
+		t.Errorf("only %d pre-bound OPTIONALs had their right side evaluated once or substituted: the generator no longer exercises them", preBoundOptionals)
 	}
 	if compared < n/3 || nonEmpty < compared/5 {
 		t.Errorf("only %d of %d queries compared, %d with rows: the generator is too weak", compared, n, nonEmpty)

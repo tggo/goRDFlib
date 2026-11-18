@@ -30,5 +30,6 @@ var pathProbeHook func()
 var joinRightSideHook func()
 
 // optionalRightSideHook is joinRightSideHook for the right side of an
-// OPTIONAL (optionalSide), so a test can prove OPTIONALs take that path too.
-var optionalRightSideHook func()
+// OPTIONAL (optionalSide), so a test can prove OPTIONALs take that path too,
+// with and without initial bindings.
+var optionalRightSideHook func(preBound bool)

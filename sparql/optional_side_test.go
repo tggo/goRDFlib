@@ -34,22 +34,29 @@ func TestOptionalWork(t *testing.T) {
 	}
 	g.Add(ctx, ex("schema"), ex("partOf"), ex("gateway"))
 
+	root := map[string]term.Term{"r": ex("root")}
 	for _, c := range []struct {
 		name, query string
+		pre         map[string]term.Term
 		rows        int
 	}{
 		{"union", `SELECT ?f ?server WHERE {
 			ex:root ex:part ?f .
 			OPTIONAL { { ?f ex:fromSubgraph ?s . ?s ex:partOf ?server } UNION { ?f ex:inSchema ?s . ?s ex:partOf ?server } }
-		}`, 30},
+		}`, nil, 30},
+		// the same over initial bindings (SHACL, the protocol's initBindings)
+		{"union, pre-bound", `SELECT ?f ?server WHERE {
+			?r ex:part ?f .
+			OPTIONAL { { ?f ex:fromSubgraph ?s . ?s ex:partOf ?server } UNION { ?f ex:inSchema ?s . ?s ex:partOf ?server } }
+		}`, root, 30},
 		{"group with a filter", `SELECT ?f ?server WHERE {
 			ex:root ex:part ?f .
 			OPTIONAL { { ?f ex:inSchema ?s . ?s ex:partOf ?server FILTER NOT EXISTS { ?f ex:fromSubgraph ?any } } }
-		}`, 20},
+		}`, nil, 20},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			st.pulled = 0
-			if rows := preboundRows(t, g, c.query, nil); len(rows) != c.rows {
+			if rows := preboundRows(t, g, c.query, c.pre); len(rows) != c.rows {
 				t.Fatalf("%d rows, want %d", len(rows), c.rows)
 			}
 			if st.pulled > 12_000 {
