@@ -189,7 +189,15 @@ func (o *optGen) group() string {
 		case 15:
 			// A variable graph name is often bound by an outer ex:in, and
 			// ?this is never a graph.
-			sb.WriteString("GRAPH " + o.pick("?a", "?b", "?g", "?this", "ex:g1", "ex:g2", "ex:nothing") + " { " + o.group() + "} ")
+			name := o.pick("?a", "?b", "?g", "?this", "ex:g1", "ex:g2", "ex:nothing")
+			body := o.group()
+			if strings.HasPrefix(name, "?") && o.r.IntN(2) == 0 {
+				// An expression inside GRAPH ?g must not see ?g unless the
+				// row bound it outside (SPARQL 1.1 §18.6: P is evaluated
+				// before ?g is joined in).
+				body += o.pick("FILTER (BOUND("+name+")) ", "FILTER (!BOUND("+name+")) ", "BIND ("+name+" AS ?e) ")
+			}
+			sb.WriteString("GRAPH " + name + " { " + body + "} ")
 		}
 	}
 	return sb.String()

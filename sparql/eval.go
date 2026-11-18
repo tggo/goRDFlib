@@ -1269,9 +1269,6 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 		return compatible
 
 	case *GraphPattern:
-		if offGraphPreBound {
-			return evalPatternWithBindings(ec, g, pattern, pre, prefixes, namedGraphs)
-		}
 		return evalGraphPatternPreBound(ec, p, pre, prefixes, namedGraphs)
 
 	default:
