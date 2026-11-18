@@ -753,12 +753,16 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 
 	case *OptionalPattern:
 		main := evalPattern(ec, g, p.Main, prefixes, namedGraphs)
+		if len(main) == 0 {
+			return nil
+		}
+		side := newOptionalSide(ec, g, p.Optional, false, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, mb := range main {
 			if ec.stop() {
 				return nil
 			}
-			opt := optionalMatches(ec, g, p.Optional, mb, mb, prefixes, namedGraphs)
+			opt := optionalMatches(ec, g, side, mb, mb, prefixes, namedGraphs)
 			if len(opt) > 0 {
 				for _, ob := range opt {
 					result = append(result, mergeBindings(mb, ob))
@@ -1151,12 +1155,13 @@ func evalPatternPreBound(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, pre ma
 
 	case *OptionalPattern:
 		main := evalPatternPreBound(ec, g, p.Main, pre, prefixes, namedGraphs)
+		side := newOptionalSide(ec, g, p.Optional, true, prefixes, namedGraphs)
 		var result []map[string]rdflibgo.Term
 		for _, mb := range main {
 			if ec.stop() {
 				return nil
 			}
-			opt := optionalMatches(ec, g, p.Optional, mb, mergeBindings(pre, mb), prefixes, namedGraphs)
+			opt := optionalMatches(ec, g, side, mb, mergeBindings(pre, mb), prefixes, namedGraphs)
 			if len(opt) > 0 {
 				for _, ob := range opt {
 					result = append(result, mergeBindings(mb, ob))
@@ -1309,17 +1314,23 @@ func projectedBindings(q *ParsedQuery, pre map[string]rdflibgo.Term) map[string]
 	return inner
 }
 
-// optionalMatches returns the right-side rows of OPTIONAL { opt } that join
-// with the left row mb. inner is what the right side is evaluated with (mb,
-// plus the initial bindings on the pre-bound path).
+// optionalSide is the right side of an OPTIONAL, prepared once per
+// evaluation of the OptionalPattern: the top-level FILTERs of its group
+// (conds) and the rest of it as a joinSide, so that a group that is not a BGP
+// is not matched in full once per left row, exactly as for a join's right
+// side. Without initial bindings, the right side's solutions do not depend
+// on the left row (SPARQL 1.1 §18.2.1); only the LeftJoin condition does,
+// and conds is evaluated per row. On the pre-bound path the right side is
+// evaluated with the initial bindings too, so it stays per row there
+// (perRow), as before.
 //
-// A FILTER at the top level of the OPTIONAL's group is the condition of the
-// LeftJoin (SPARQL 1.1 §18.2.2), evaluated over the merged solution, so it
-// sees the left side's variables: OPTIONAL { ?z ex:p ?y FILTER (?y = ?o) }
-// with ?o bound on the left (#58). Evaluating it inside the right side, as
-// any other group, hides the left row from it — the rule for a join's right
-// side (§18.2.1, W3C bind10), not for this.
-func optionalMatches(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, mb, inner map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+// An optionalSide is not safe for concurrent use.
+type optionalSide struct {
+	conds []Expr
+	side  *joinSide
+}
+
+func newOptionalSide(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, perRow bool, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) *optionalSide {
 	var conds []Expr
 	for {
 		f, ok := opt.(*FilterPattern)
@@ -1329,18 +1340,44 @@ func optionalMatches(ec *evalCtx, g *rdflibgo.Graph, opt Pattern, mb, inner map[
 		conds = append(conds, f.Expr)
 		opt = f.Pattern
 	}
-	rows := evalPatternWithBindings(ec, g, opt, inner, prefixes, namedGraphs)
-	if len(conds) == 0 {
+	if perRow {
+		return &optionalSide{conds: conds, side: &joinSide{ec: ec, g: g, pattern: opt, prefixes: prefixes, namedGraphs: namedGraphs, perRow: true}}
+	}
+	return &optionalSide{conds: conds, side: newJoinSide(ec, g, opt, prefixes, namedGraphs)}
+}
+
+// optionalMatches returns the right-side rows of the OPTIONAL os that join
+// with the left row mb. inner is what the right side is evaluated with (mb,
+// plus the initial bindings on the pre-bound path).
+//
+// A FILTER at the top level of the OPTIONAL's group is the condition of the
+// LeftJoin (SPARQL 1.1 §18.2.2), evaluated over the merged solution, so it
+// sees the left side's variables: OPTIONAL { ?z ex:p ?y FILTER (?y = ?o) }
+// with ?o bound on the left (#58). Evaluating it inside the right side, as
+// any other group, hides the left row from it — the rule for a join's right
+// side (§18.2.1, W3C bind10), not for this.
+func optionalMatches(ec *evalCtx, g *rdflibgo.Graph, os *optionalSide, mb, inner map[string]rdflibgo.Term, prefixes map[string]string, namedGraphs map[string]*rdflibgo.Graph) []map[string]rdflibgo.Term {
+	rows, filter := os.side.rows(inner)
+	if !filter && len(os.conds) == 0 {
 		return rows
 	}
-	kept := rows[:0]
+	// A new slice, never rows[:0]: a right side evaluated once hands every
+	// left row the same rows, and filtering them in place would corrupt them.
+	var kept []map[string]rdflibgo.Term
 	for _, r := range rows {
 		if ec.stop() {
 			return nil
 		}
+		if filter && !isCompatible(inner, r) {
+			continue
+		}
+		if len(os.conds) == 0 {
+			kept = append(kept, r)
+			continue
+		}
 		merged := mergeBindings(mb, r)
 		ok := true
-		for _, c := range conds {
+		for _, c := range os.conds {
 			if !effectiveBooleanValue(evalExprWithGraph(ec, c, merged, prefixes, g, namedGraphs)) {
 				ok = false
 				break

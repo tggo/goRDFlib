@@ -127,6 +127,7 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 		})
 
 	case *OptionalPattern:
+		var side *optionalSide // prepared when the first left row needs it
 		return eachSolution(ec, g, p.Main, prefixes, namedGraphs, func(mb map[string]rdflibgo.Term) bool {
 			if ec.stop() {
 				return false
@@ -141,7 +142,10 @@ func eachSolution(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[
 				}
 				return matched || (!ec.produced(1) && yield(mb))
 			}
-			opt := optionalMatches(ec, g, p.Optional, mb, mb, prefixes, namedGraphs)
+			if side == nil {
+				side = newOptionalSide(ec, g, p.Optional, false, prefixes, namedGraphs)
+			}
+			opt := optionalMatches(ec, g, side, mb, mb, prefixes, namedGraphs)
 			if len(opt) == 0 {
 				return !ec.produced(1) && yield(mb)
 			}
