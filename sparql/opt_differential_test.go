@@ -213,7 +213,12 @@ func (o *optGen) query() string {
 // skipped, since the optimised and plain evaluations build different numbers
 // of intermediate solutions.
 func optRows(g *graph.Graph, pq *ParsedQuery, pre map[string]term.Term) (rows []string, skipped bool, err error) {
-	ctx := WithMaxSolutions(context.Background(), 60_000)
+	return optRowsContext(context.Background(), g, pq, pre)
+}
+
+// optRowsContext is optRows with the evaluation's options taken from ctx.
+func optRowsContext(ctx context.Context, g *graph.Graph, pq *ParsedQuery, pre map[string]term.Term) (rows []string, skipped bool, err error) {
+	ctx = WithMaxSolutions(ctx, 60_000)
 	// ex:svc is a second endpoint serving the same data.
 	ctx = WithServiceHandler(ctx, func(ctx context.Context, c *ServiceCall) ([]map[string]term.Term, error) {
 		res, err := EvalQueryContext(ctx, g, c.Select(), nil)

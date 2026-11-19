@@ -1,7 +1,9 @@
 package sparql
 
 import (
+	"context"
 	"errors"
+	"math"
 	"slices"
 	"strings"
 
@@ -83,13 +85,64 @@ const (
 	// that reaches few of the pairs it is asked for, or none, runs to the
 	// end of what it can reach. A probe that runs out ranks as capped.
 	bgpPathProbeSteps = 8 * bgpProbeLimit
-	// bgpMaxPathProbes is how many path probes one evaluation may run. A
-	// BGP is planned again for every row of an enclosing OPTIONAL or
-	// EXISTS and every SHACL focus node, so without it the probes would be
-	// paid per row; past it, paths rank unprobed, as they did before
-	// probing existed.
+	// bgpMaxPathProbes is how many path probes one evaluation may run,
+	// unless its context sets another bound (WithMaxPathProbes). A BGP is
+	// planned again for every row of an enclosing OPTIONAL or EXISTS and
+	// every SHACL focus node, so without it the probes would be paid per
+	// row; past it, paths rank unprobed, as they did before probing existed.
 	bgpMaxPathProbes = 64
 )
+
+type maxPathProbesKey struct{}
+
+// WithMaxPathProbes returns a context that lets every query and update run
+// with it make up to n property-path probes while ordering its basic graph
+// patterns, instead of 64. The bound is per evaluation, not per BGP. n <= 0
+// removes the bound.
+//
+// A BGP is planned again for every row of an enclosing OPTIONAL, EXISTS or
+// join, so its probes are paid on every row; the bound caps that cost. Once
+// it is spent, the paths of every later row rank unprobed, and a plan that
+// would have started from a path with few pairs may start from a large
+// triple pattern instead. A query whose per-row plans need their probes can
+// raise the bound. The answer never changes, only the evaluation order and so
+// its cost. shacl.ValidateContext passes its context to every SHACL-SPARQL
+// query, so the option applies there too.
+func WithMaxPathProbes(ctx context.Context, n int) context.Context {
+	return context.WithValue(ctx, maxPathProbesKey{}, n)
+}
+
+// maxPathProbesFrom is the path-probe bound of an evaluation run with ctx:
+// bgpMaxPathProbes without the option, math.MaxInt for n <= 0.
+func maxPathProbesFrom(ctx context.Context) int {
+	n, ok := ctx.Value(maxPathProbesKey{}).(int)
+	switch {
+	case !ok:
+		return bgpMaxPathProbes
+	case n <= 0:
+		return math.MaxInt
+	}
+	return n
+}
+
+// takePathProbe reports whether the evaluation may run one more path probe,
+// and counts it. A maxPathProbes of 0 means bgpMaxPathProbes, so an evalCtx
+// not built by newEvalCtx keeps the default bound instead of switching
+// probing off. A nil evalCtx has no bound.
+func (e *evalCtx) takePathProbe() bool {
+	if e == nil {
+		return true
+	}
+	bound := e.maxPathProbes
+	if bound == 0 {
+		bound = bgpMaxPathProbes
+	}
+	if e.pathProbes >= bound {
+		return false
+	}
+	e.pathProbes++
+	return true
+}
 
 // Selectivity credited to a position whose variable is bound by a pattern
 // chosen earlier. A bound subject narrows a pattern the most (a subject has
@@ -332,11 +385,8 @@ func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 		if ec.poll() {
 			return // a store error or a done context: the plan no longer matters
 		}
-		if ec != nil {
-			if ec.pathProbes >= bgpMaxPathProbes {
-				return
-			}
-			ec.pathProbes++
+		if !ec.takePathProbe() {
+			return
 		}
 		if pathProbeHook != nil {
 			pathProbeHook()

@@ -69,15 +69,16 @@ type evalCtx struct {
 	// (rightSideOf), by the query's own pattern.
 	rights map[Pattern]*rightSide
 	// pathProbes counts the property-path probes the BGP planner has run in
-	// this evaluation (bgpMaxPathProbes).
-	pathProbes int
+	// this evaluation, and maxPathProbes is how many it may run
+	// (WithMaxPathProbes; 0 means bgpMaxPathProbes, see takePathProbe).
+	pathProbes, maxPathProbes int
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return &evalCtx{ctx: ctx, done: ctx.Done(), budget: maxSolutionsFrom(ctx)}
+	return &evalCtx{ctx: ctx, done: ctx.Done(), budget: maxSolutionsFrom(ctx), maxPathProbes: maxPathProbesFrom(ctx)}
 }
 
 // stop counts one unit of work and reports whether evaluation must end.
