@@ -42,3 +42,8 @@ var joinRightSideHook func()
 // OPTIONAL (optionalSide), so a test can prove OPTIONALs take that path too,
 // with and without initial bindings.
 var optionalRightSideHook func(preBound bool)
+
+// probeFloor is bgpProbeFloor, a variable so a test can run the same queries
+// with no probing allowance (0), the default, and an unlimited one: the budget
+// only decides which plan runs, never the answer (probeAllowance).
+var probeFloor = bgpProbeFloor

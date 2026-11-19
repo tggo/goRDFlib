@@ -56,3 +56,37 @@ func TestStepLimit(t *testing.T) {
 		t.Errorf("pushed down, limit 100: %d pairs, err %v; want a complete empty walk", n, err)
 	}
 }
+
+// WithStepsUsed charges every step of a traversal to the caller's counter,
+// including the steps of a walk that yields no pair, and cumulatively across
+// evaluations that share it.
+func TestStepsUsed(t *testing.T) {
+	ctx := t.Context()
+	g := graph.NewGraph(graph.WithStore(struct{ store.Store }{store.NewMemoryStore()}))
+	u := func(s string) term.URIRef { return term.NewURIRefUnsafe("urn:" + s) }
+	for i := range 50 {
+		g.Add(ctx, u(fmt.Sprintf("n%d", i)), u("next"), u(fmt.Sprintf("n%d", i+1)))
+	}
+	p := ZeroOrMore(URIRefPath{URI: u("next")})
+	used := 0
+	walk := func() {
+		for range p.Eval(WithStepsUsed(ctx, &used), g, u("n0"), u("missing")) {
+		}
+	}
+	walk()
+	first := used
+	if first < 50 {
+		t.Fatalf("a walk over 50 triples was charged %d steps", first)
+	}
+	walk()
+	if used != 2*first {
+		t.Errorf("second walk brought the counter to %d, want %d", used, 2*first)
+	}
+	// Without the counter nothing is written, and the walk is unlimited.
+	n := used
+	for range p.Eval(ctx, g, u("n0"), u("missing")) {
+	}
+	if used != n {
+		t.Errorf("counter moved to %d without WithStepsUsed", used)
+	}
+}

@@ -54,11 +54,20 @@ import (
 // already makes a cheap first step, and a path probe would cost about as much
 // as the plan it could improve. This matters when a BGP is planned once per
 // row (OPTIONAL, EXISTS, SHACL focus nodes), where the probes are paid on
-// every row. For the same reason one evaluation runs at most
-// bgpMaxPathProbes path probes, and each is bounded in work, not only in
+// every row. For the same reason each probe is bounded in work, not only in
 // pairs, by bgpPathProbeSteps traversal steps (paths.WithStepLimit): a walk
 // that finds few of the pairs it looks for would otherwise run to the end of
-// what it can reach. A probe that runs out of steps ranks as capped. A
+// what it can reach. A probe that runs out of steps ranks as capped.
+//
+// The probes of one evaluation are bounded in total work too (probeAllowance):
+// bgpProbeFloor steps, plus half the work the evaluation has done.
+// A count of probes would not do: a probe that reaches three nodes costs
+// nothing, and once a count ran out every later row planned without it and
+// started from the large pattern, so a per-row EXISTS over n rows went from
+// linear to quadratic. Work funds the probes instead: a plan that is
+// wrong makes the evaluation do work, which pays for the probe that
+// fixes the next plan, and a plan that is right does little work and so
+// spends little on probes. A
 // closure pushed down to a ReachabilityStore is one step; its answer is
 // cached for the query (paths.WithReachabilityCache), so evaluation reuses it.
 //
@@ -83,12 +92,15 @@ const (
 	// that reaches few of the pairs it is asked for, or none, runs to the
 	// end of what it can reach. A probe that runs out ranks as capped.
 	bgpPathProbeSteps = 8 * bgpProbeLimit
-	// bgpMaxPathProbes is how many path probes one evaluation may run. A
-	// BGP is planned again for every row of an enclosing OPTIONAL or
-	// EXISTS and every SHACL focus node, so without it the probes would be
-	// paid per row; past it, paths rank unprobed, as they did before
-	// probing existed.
-	bgpMaxPathProbes = 64
+	// bgpProbeFloor is the traversal steps of path probes one evaluation may
+	// spend before it has done any work of its own: 64 probes of
+	// bgpProbeLimit steps. A BGP is planned again for every row of an
+	// enclosing OPTIONAL or EXISTS and every SHACL focus node, so the probes
+	// are paid per row; probeAllowance bounds what they may cost.
+	bgpProbeFloor = 64 * bgpProbeLimit
+	// bgpProbeShare is the share of the evaluation's own work (calls to
+	// evalCtx.stop) that probes may add to the floor: one step in two.
+	bgpProbeShare = 2
 )
 
 // Selectivity credited to a position whose variable is bound by a pattern
@@ -332,11 +344,8 @@ func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 		if ec.poll() {
 			return // a store error or a done context: the plan no longer matters
 		}
-		if ec != nil {
-			if ec.pathProbes >= bgpMaxPathProbes {
-				return
-			}
-			ec.pathProbes++
+		if ec != nil && ec.probeSteps > probeAllowance(ec) {
+			return
 		}
 		if pathProbeHook != nil {
 			pathProbeHook()
@@ -347,6 +356,13 @@ func probePaths(ec *evalCtx, g *rdflibgo.Graph, cands []bgpCandidate) {
 			limit = n
 		}
 	}
+}
+
+// probeAllowance is how many traversal steps the path probes of this
+// evaluation may have taken before the planner stops probing: the floor plus
+// a share of the evaluation's work so far. Past it paths rank unprobed.
+func probeAllowance(ec *evalCtx) int {
+	return probeFloor + ec.n/bgpProbeShare
 }
 
 // bgpCostKey orders candidates: connected before disconnected, exact before
@@ -433,7 +449,11 @@ func probeCount(ec *evalCtx, g *rdflibgo.Graph, s rdflibgo.Subject, p *rdflibgo.
 // the path keeps the rank of an unprobed one.
 func probePath(ec *evalCtx, g *rdflibgo.Graph, p paths.Path, s rdflibgo.Subject, o rdflibgo.Term, limit int) int {
 	n := 0
-	for _, err := range p.Eval(paths.WithStepLimit(ec.context(), bgpPathProbeSteps), g, s, o) {
+	ctx := paths.WithStepLimit(ec.context(), bgpPathProbeSteps)
+	if ec != nil {
+		ctx = paths.WithStepsUsed(ctx, &ec.probeSteps)
+	}
+	for _, err := range p.Eval(ctx, g, s, o) {
 		if errors.Is(err, paths.ErrStepLimit) {
 			return limit
 		}

@@ -46,7 +46,9 @@ type evalCtx struct {
 	ctx context.Context
 	// done is ctx.Done(), nil when ctx can never be done.
 	done <-chan struct{}
-	n    uint32
+	// n counts calls to stop. It is the evaluation's work so far, for
+	// probeAllowance, so it counts whether or not the context can end.
+	n int
 	// err is the context's error once stop has reported true. It is sticky.
 	err error
 	// budget is the WithMaxSolutions bound (0: none) and built the solutions
@@ -68,9 +70,9 @@ type evalCtx struct {
 	// rights remembers what a pre-bound join knows about its right side
 	// (rightSideOf), by the query's own pattern.
 	rights map[Pattern]*rightSide
-	// pathProbes counts the property-path probes the BGP planner has run in
-	// this evaluation (bgpMaxPathProbes).
-	pathProbes int
+	// probeSteps counts the traversal steps the BGP planner's property-path
+	// probes have taken in this evaluation (probeAllowance).
+	probeSteps int
 }
 
 func newEvalCtx(ctx context.Context) *evalCtx {
@@ -88,10 +90,10 @@ func (e *evalCtx) stop() bool {
 	if e.err != nil {
 		return true
 	}
+	e.n++
 	if e.done == nil {
 		return false
 	}
-	e.n++
 	if e.n%cancelCheckInterval != 0 {
 		return false
 	}

@@ -772,11 +772,18 @@ The `store.Store` interface (13 methods) has four implementations:
   up to the smallest exact count, and not at all once a triple pattern is
   below `bgpProbeStart`. Each probe is bounded in **work** by
   `paths.WithStepLimit` (`bgpPathProbeSteps`; out of steps = capped, never
-  an error) and one evaluation runs at most `bgpMaxPathProbes`, because a BGP
-  is re-planned per OPTIONAL/EXISTS row and SHACL focus node. A literal
-  subject is never probed. `offPathProbes` is the differential-test switch;
-  `pathProbeHook` lets that test prove probes ran. A pushed-down `Reachable`
-  is one step: its cost is the store's (bounded per query by the cap).
+  an error). A BGP is re-planned per OPTIONAL/EXISTS row and SHACL focus
+  node, so the probes of one evaluation are bounded in total **steps**
+  (`probeAllowance`: `bgpProbeFloor` plus half of `evalCtx.n`, the
+  evaluation's own work), never in number. A count of 64 made every row past
+  the 64th plan blind and turned a per-row EXISTS quadratic (40x at 2,000
+  rows, `BenchmarkPathProbeCliff`); work funds the probe that fixes the next
+  plan. `evalCtx.n` therefore counts on every `stop()`, cancellable or not.
+  A literal subject is never probed. `offPathProbes` and `probeFloor` are
+  the differential-test switches (`TestProbeBudgetDoesNotChangeAnswers`);
+  `pathProbeHook` lets tests prove probes ran. A pushed-down `Reachable`
+  is one step: its cost is the store's, and its answers are cached per
+  query, so it is asked at most once per start node.
 - `benchmarks/bench_bgp_order_test.go` has written-well vs badly-written
   queries. A 4-pattern chain from a constant costs ~1µs more for planning; the
   badly-written queries went from seconds to µs.

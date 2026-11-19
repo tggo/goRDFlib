@@ -47,31 +47,48 @@ func TestOrderBGP_PathProbeStepLimit(t *testing.T) {
 	}
 }
 
-// One evaluation runs at most bgpMaxPathProbes path probes, however often
-// its BGPs are planned; after that, paths rank unprobed.
+// The probes of one evaluation are bounded in work, not in number: once their
+// steps pass probeAllowance, paths rank unprobed, and work the evaluation does
+// itself raises the allowance again.
 func TestOrderBGP_PathProbesCappedPerEvaluation(t *testing.T) {
 	g := pathProbeGraph(t)
 	c, _ := pathCandidate(t, `SELECT * WHERE { ?x <urn:type>/<urn:sub>* <urn:Class1> }`, nil)
-	ec := newEvalCtx(t.Context())
-	exact := 0
-	for range 3 * bgpMaxPathProbes {
+	probe := func(ec *evalCtx) bool {
 		cands := []bgpCandidate{c}
 		probeCandidates(ec, g, cands)
-		if cands[0].pathExact {
-			exact++
-			if cands[0].count != 20 {
-				t.Fatalf("probe counted %d pairs, want 20", cands[0].count)
-			}
+		return cands[0].pathExact
+	}
+
+	ec := newEvalCtx(t.Context())
+	if !probe(ec) {
+		t.Fatal("a fresh evaluation must probe")
+	}
+	if ec.probeSteps == 0 {
+		t.Fatal("a probe was not charged for its steps")
+	}
+	// Repeating the probe spends the floor, then stops: the total stays
+	// within the floor plus one probe, which is bounded by bgpPathProbeSteps.
+	for range 10 * bgpProbeFloor {
+		if !probe(ec) {
+			break
 		}
 	}
-	if exact != bgpMaxPathProbes {
-		t.Errorf("%d probes ran, want %d", exact, bgpMaxPathProbes)
+	if probe(ec) {
+		t.Fatal("probing never stopped")
+	}
+	if ec.probeSteps > bgpProbeFloor+bgpPathProbeSteps {
+		t.Errorf("probes took %d steps, floor %d", ec.probeSteps, bgpProbeFloor)
+	}
+	// Work done by the evaluation itself pays for more probes.
+	ec.n += 2 * bgpProbeShare * ec.probeSteps
+	if !probe(ec) {
+		t.Error("probing did not resume after the evaluation did work")
 	}
 }
 
-// The cap holds through a real query: an OPTIONAL planned once per row of
-// 1,500 rows still probes at most bgpMaxPathProbes times, and the answer
-// does not change.
+// Probes are not counted: an OPTIONAL planned once per row of 1,500 rows
+// probes for (nearly) every row, because each probe is cheap, and the answer
+// does not change. A count of 64 used to end probing at the 65th row.
 func TestOrderBGP_PathProbesPerRowAreBounded(t *testing.T) {
 	g := pathProbeGraph(t)
 	q := `SELECT ?y ?c WHERE { <urn:root> <urn:part> ?y OPTIONAL { ?y <urn:type>/<urn:sub>* ?c . ?c <urn:sub>* <urn:Class1> } }`
@@ -88,8 +105,8 @@ func TestOrderBGP_PathProbesPerRowAreBounded(t *testing.T) {
 		}
 		counts[i] = len(res.Bindings)
 		if i == 0 {
-			if probes == 0 || probes > bgpMaxPathProbes {
-				t.Errorf("%d path probes, want 1..%d", probes, bgpMaxPathProbes)
+			if probes <= 64 {
+				t.Errorf("%d path probes over 1500 rows, want more than 64", probes)
 			}
 			probes = 0
 		} else if probes != 0 {

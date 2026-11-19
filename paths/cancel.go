@@ -35,10 +35,13 @@ type stopper struct {
 	// steps counts traversal steps against maxSteps (WithStepLimit; 0: no
 	// limit).
 	steps, maxSteps int
+	// used, when set, is where the steps are also added as they are taken
+	// (WithStepsUsed).
+	used *int
 }
 
 func newStopper(ctx context.Context) *stopper {
-	return &stopper{ctx: ctx, done: ctx.Done(), reach: reachCacheIn(ctx), maxSteps: stepLimitIn(ctx)}
+	return &stopper{ctx: ctx, done: ctx.Done(), reach: reachCacheIn(ctx), maxSteps: stepLimitIn(ctx), used: stepsUsedIn(ctx)}
 }
 
 // ErrStepLimit is the failure of a traversal that took more steps than
@@ -66,10 +69,29 @@ func stepLimitIn(ctx context.Context) int {
 	return n
 }
 
+type stepsUsedKey struct{}
+
+// WithStepsUsed returns a context under which every traversal step of a path
+// evaluation is also added to *used, so a caller that runs bounded estimates
+// can charge what each one cost, including a walk that yielded no pair. The
+// counter is written by the evaluating goroutine only: it is not safe for
+// concurrent use.
+func WithStepsUsed(ctx context.Context, used *int) context.Context {
+	return context.WithValue(ctx, stepsUsedKey{}, used)
+}
+
+func stepsUsedIn(ctx context.Context) *int {
+	used, _ := ctx.Value(stepsUsedKey{}).(*int)
+	return used
+}
+
 // stop counts one traversal step and reports whether the traversal must end.
 func (s *stopper) stop() bool {
 	if s.err != nil {
 		return true
+	}
+	if s.used != nil {
+		*s.used++
 	}
 	if s.maxSteps > 0 {
 		s.steps++
