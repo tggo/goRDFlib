@@ -114,7 +114,7 @@ func (p *sparqlParser) readTermOrVar() string {
 		for p.pos < len(p.input) && (p.input[p.pos] >= '0' && p.input[p.pos] <= '9') {
 			p.pos++
 		}
-		if p.pos < len(p.input) && p.input[p.pos] == '.' {
+		if p.pos < len(p.input) && p.input[p.pos] == '.' && numericDotContinues(p.input, p.pos) {
 			p.pos++
 			for p.pos < len(p.input) && (p.input[p.pos] >= '0' && p.input[p.pos] <= '9') {
 				p.pos++
@@ -673,4 +673,23 @@ func (p *sparqlParser) atIRIRef() bool {
 		}
 	}
 	return false
+}
+
+// A decimal dot needs a following digit; a double may instead have an exponent.
+func numericDotContinues(input string, dot int) bool {
+	i := dot + 1
+	if i >= len(input) {
+		return false
+	}
+	if input[i] >= '0' && input[i] <= '9' {
+		return true
+	}
+	if input[i] != 'e' && input[i] != 'E' {
+		return false
+	}
+	i++
+	if i < len(input) && (input[i] == '+' || input[i] == '-') {
+		i++
+	}
+	return i < len(input) && input[i] >= '0' && input[i] <= '9'
 }

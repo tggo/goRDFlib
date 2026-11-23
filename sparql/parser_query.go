@@ -361,7 +361,7 @@ func (p *sparqlParser) parseSolutionModifiers(q *ParsedQuery) error {
 			var havingExprs []Expr
 			for {
 				p.skipWS()
-				if p.pos >= len(p.input) || p.isKeyword() {
+				if p.pos >= len(p.input) || p.input[p.pos] == '}' || p.isKeyword() {
 					break
 				}
 				before := p.pos
