@@ -122,3 +122,23 @@ ex:S a sh:NodeShape ;
 		t.Errorf("the error should name the missing property, got %q", err)
 	}
 }
+
+func TestAF_Target_DeclaredPrefixes(t *testing.T) {
+	data := afGraph(t, `ex:alice a ex:Thing . ex:bob a ex:Other .`)
+	const declaration = `ex:ontology sh:declare [ sh:prefix "custom" ; sh:namespace "http://example.org/"^^xsd:anyURI ] .`
+	for name, target := range map[string]string{
+		"SPARQLTarget":     `ex:S sh:target [ a sh:SPARQLTarget ; sh:prefixes ex:ontology ; sh:select "SELECT ?this WHERE { ?this a custom:Thing }" ] .`,
+		"SPARQLTargetType": `ex:T a sh:SPARQLTargetType ; sh:prefixes ex:ontology ; sh:select "SELECT ?this WHERE { ?this a custom:Thing }" . ex:S sh:target [ a ex:T ] .`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			shapes := afGraph(t, declaration+`ex:S a sh:NodeShape ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .`+target)
+			report, err := ValidateContext(t.Context(), data, shapes, WithAdvancedFeatures(), WithStrictShapes())
+			if err != nil {
+				t.Fatalf("ValidateContext: %v", err)
+			}
+			if len(report.Results) != 1 || !report.Results[0].FocusNode.Equal(exIRI("alice")) {
+				t.Fatalf("got results %v, want one result for ex:alice", report.Results)
+			}
+		})
+	}
+}

@@ -61,7 +61,7 @@ func (ctx *afContext) resolveTarget(node Term) (string, map[string]term.Term, er
 		if len(sel) == 0 {
 			return "", nil, fmt.Errorf("%w: the sh:SPARQLTarget %s has no sh:select", ErrAdvancedFeatures, node)
 		}
-		return resolvePrefixes(g, node) + normalizeDollarVars(sel[0].Value()), nil, nil
+		return resolvePrefixes(g, firstOrNone(g.Objects(node, IRI(SH+"prefixes")))) + normalizeDollarVars(sel[0].Value()), nil, nil
 	}
 
 	// Otherwise the node instantiates a target type: its rdf:type names a
@@ -75,7 +75,7 @@ func (ctx *afContext) resolveTarget(node Term) (string, map[string]term.Term, er
 		if len(sel) == 0 {
 			return "", nil, fmt.Errorf("%w: the sh:SPARQLTargetType %s has no sh:select", ErrAdvancedFeatures, typ)
 		}
-		query := resolvePrefixes(g, typ) + normalizeDollarVars(sel[0].Value())
+		query := resolvePrefixes(g, firstOrNone(g.Objects(typ, IRI(SH+"prefixes")))) + normalizeDollarVars(sel[0].Value())
 		return ctx.bindTargetParameters(g, typ, node, query)
 	}
 
