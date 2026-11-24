@@ -188,10 +188,7 @@ func fnIRI(a []rdflibgo.Term, prefixes map[string]string) rdflibgo.Term {
 	} else {
 		return nil // §17.4.2.8: a simple literal, xsd:string or IRI
 	}
-	if base, ok := prefixes[baseURIKey]; ok && !strings.Contains(s, ":") {
-		s = base + s
-	}
-	return rdflibgo.NewURIRefUnsafe(s)
+	return rdflibgo.NewURIRefUnsafe(resolveIRI(s, prefixes))
 }
 
 func fnStrDT(a []rdflibgo.Term, _ map[string]string) rdflibgo.Term {

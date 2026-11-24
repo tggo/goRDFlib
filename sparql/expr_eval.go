@@ -1,10 +1,6 @@
 package sparql
 
-import (
-	"strings"
-
-	rdflibgo "github.com/tggo/goRDFlib"
-)
+import rdflibgo "github.com/tggo/goRDFlib"
 
 // evalExpr evaluates an expression without a graph: EXISTS evaluates to an
 // error. Use evalExprWithGraph wherever the active graph is known.
@@ -31,13 +27,7 @@ func evalExprWithGraph(ec *evalCtx, expr Expr, bindings map[string]rdflibgo.Term
 	case *LiteralExpr:
 		return e.Value
 	case *IRIExpr:
-		iri := e.Value
-		if !strings.Contains(iri, ":") {
-			if base, ok := prefixes[baseURIKey]; ok {
-				iri = resolveRelativeIRI(base, iri)
-			}
-		}
-		return rdflibgo.NewURIRefUnsafe(iri)
+		return rdflibgo.NewURIRefUnsafe(resolveIRI(e.Value, prefixes))
 	case *BinaryExpr:
 		left := evalExprWithGraph(ec, e.Left, bindings, prefixes, g, namedGraphs)
 		right := evalExprWithGraph(ec, e.Right, bindings, prefixes, g, namedGraphs)
