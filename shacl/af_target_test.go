@@ -142,3 +142,30 @@ func TestAF_Target_DeclaredPrefixes(t *testing.T) {
 		})
 	}
 }
+
+// A prefix the target's sh:prefixes does not declare is still an error, never
+// a prefix that matches anything: the target is reported and selects nothing.
+func TestAF_Target_UndeclaredPrefixIsReported(t *testing.T) {
+	data := afGraph(t, `ex:alice a ex:Thing . ex:bob a ex:Other .`)
+	const declaration = `ex:ontology sh:declare [ sh:prefix "other" ; sh:namespace "http://example.org/"^^xsd:anyURI ] .`
+	for name, target := range map[string]string{
+		"SPARQLTarget":     `ex:S sh:target [ a sh:SPARQLTarget ; sh:prefixes ex:ontology ; sh:select "SELECT ?this WHERE { ?this a custom:Thing }" ] .`,
+		"SPARQLTargetType": `ex:T a sh:SPARQLTargetType ; sh:prefixes ex:ontology ; sh:select "SELECT ?this WHERE { ?this a custom:Thing }" . ex:S sh:target [ a ex:T ] .`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			shapes := afGraph(t, declaration+`ex:S a sh:NodeShape ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .`+target)
+			var reported []error
+			report, err := ValidateContext(t.Context(), data, shapes, WithAdvancedFeatures(),
+				WithErrorHandler(func(e error) { reported = append(reported, e) }))
+			if err != nil {
+				t.Fatalf("ValidateContext: %v", err)
+			}
+			if len(report.Results) != 0 {
+				t.Errorf("got results %v, want none: an undeclared prefix must not select nodes", report.Results)
+			}
+			if len(reported) == 0 || !errors.Is(reported[0], ErrMalformedTarget) {
+				t.Errorf("reported %v, want ErrMalformedTarget", reported)
+			}
+		})
+	}
+}
