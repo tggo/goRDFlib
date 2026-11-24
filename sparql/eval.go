@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	rdflibgo "github.com/tggo/goRDFlib"
 	"github.com/tggo/goRDFlib/graph"
 	"github.com/tggo/goRDFlib/internal/bnodes"
+	"github.com/tggo/goRDFlib/internal/iri"
 	"github.com/tggo/goRDFlib/store"
 	"github.com/tggo/goRDFlib/term"
 )
@@ -678,12 +678,7 @@ func resolveTermRef(s string, prefixes map[string]string) rdflibgo.Term {
 		return resolveTripleTermPattern(s, nil, prefixes)
 	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
-		iri := s[1 : len(s)-1]
-		// Resolve relative IRI against base
-		if base, ok := prefixes[baseURIKey]; ok && iri != "" && !strings.Contains(iri, "://") {
-			iri = resolveRelativeIRI(base, iri)
-		}
-		return rdflibgo.NewURIRefUnsafe(iri)
+		return rdflibgo.NewURIRefUnsafe(resolveIRI(s[1:len(s)-1], prefixes))
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
 		return parseLiteralWithPrefixes(s, prefixes)
@@ -819,7 +814,6 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 
 	case *ValuesPattern:
 		var result []map[string]rdflibgo.Term
-		base, _ := prefixes[baseURIKey]
 		for _, row := range p.Values {
 			if ec.stop() {
 				return nil
@@ -828,9 +822,8 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 			for i, v := range p.Vars {
 				if i < len(row) && row[i] != nil {
 					val := row[i]
-					// Resolve relative IRIs in VALUES against base
-					if u, ok := val.(rdflibgo.URIRef); ok && base != "" && !strings.Contains(u.Value(), ":") {
-						val = rdflibgo.NewURIRefUnsafe(resolveRelativeIRI(base, u.Value()))
+					if u, ok := val.(rdflibgo.URIRef); ok {
+						val = rdflibgo.NewURIRefUnsafe(resolveIRI(u.Value(), prefixes))
 					}
 					b[v] = val
 				}
@@ -1660,14 +1653,7 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 		return resolveTripleTermPattern(s, bindings, prefixes)
 	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
-		iri := s[1 : len(s)-1]
-		// Resolve relative IRI against base
-		if !strings.Contains(iri, ":") {
-			if base, ok := prefixes[baseURIKey]; ok {
-				iri = resolveRelativeIRI(base, iri)
-			}
-		}
-		return rdflibgo.NewURIRefUnsafe(iri)
+		return rdflibgo.NewURIRefUnsafe(resolveIRI(s[1:len(s)-1], prefixes))
 	}
 	if s == "true" {
 		return rdflibgo.NewLiteral(true)
@@ -1699,22 +1685,15 @@ func resolvePatternTerm(s string, bindings map[string]rdflibgo.Term, prefixes ma
 	return nil
 }
 
-// resolveRelativeIRI resolves a relative IRI reference against a base URI
-// per RFC 3986 §5.
-func resolveRelativeIRI(base, ref string) string {
-	if ref == "" {
-		return base
+// resolveIRI resolves ref against the query's BASE by RFC 3986 §5.2 when the
+// query declares one and ref is relative. An absolute IRI is returned as
+// written: resolving it would remove its dot segments, which changes the IRI.
+func resolveIRI(ref string, prefixes map[string]string) string {
+	base, ok := prefixes[baseURIKey]
+	if !ok || iri.IsAbsolute(ref) {
+		return ref
 	}
-	baseURL, err := url.Parse(base)
-	if err != nil {
-		return base + ref
-	}
-	refURL, err := url.Parse(ref)
-	if err != nil {
-		return base + ref
-	}
-	resolved := baseURL.ResolveReference(refURL)
-	return resolved.String()
+	return iri.Resolve(base, ref)
 }
 
 // resolveTripleTermPattern resolves a triple term pattern string to a TripleTerm.

@@ -1,5 +1,5 @@
 // Package iri resolves relative IRI references against a base IRI, for the
-// Turtle, TriG and RDF/XML parsers.
+// Turtle, TriG and RDF/XML parsers and for SPARQL queries and updates.
 //
 // It implements RFC 3986 §5.2 (strict mode) directly on strings, as RFC 3987
 // §6.5 requires for IRIs: no percent-decoding, no percent-encoding, and no

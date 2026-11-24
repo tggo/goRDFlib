@@ -269,17 +269,17 @@ func TestResolveTermRefUnknownPrefix(t *testing.T) {
 	}
 }
 
-// --- resolveRelativeIRI ---
+// --- resolveIRI ---
 
 func TestResolveRelativeIRIEmpty(t *testing.T) {
-	result := resolveRelativeIRI("http://example.org/base", "")
+	result := resolveIRI("", map[string]string{baseURIKey: "http://example.org/base"})
 	if result != "http://example.org/base" {
 		t.Errorf("expected base URI, got %s", result)
 	}
 }
 
 func TestResolveRelativeIRIRelative(t *testing.T) {
-	result := resolveRelativeIRI("http://example.org/base/", "foo")
+	result := resolveIRI("foo", map[string]string{baseURIKey: "http://example.org/base/"})
 	if result != "http://example.org/base/foo" {
 		t.Errorf("expected resolved URI, got %s", result)
 	}
@@ -2135,13 +2135,13 @@ func TestBuildNegatedPathOnlyInv(t *testing.T) {
 	}
 }
 
-// --- resolveRelativeIRI edge cases ---
+// --- resolveIRI edge cases ---
 
 func TestResolveRelativeIRIBadBase(t *testing.T) {
-	// Invalid base URL
-	result := resolveRelativeIRI("://bad", "relative")
-	if result != "://badrelative" {
-		t.Errorf("expected fallback concatenation, got %s", result)
+	// A base without a scheme leaves nothing to resolve against (RFC 3986 §5.1).
+	result := resolveIRI("relative", map[string]string{baseURIKey: "://bad"})
+	if result != "relative" {
+		t.Errorf("expected the reference unchanged, got %s", result)
 	}
 }
 
@@ -4801,14 +4801,14 @@ func TestNotExistsBang(t *testing.T) {
 }
 
 func TestResolveRelativeIRIPathMerge(t *testing.T) {
-	got := resolveRelativeIRI("http://example.org/base/", "other")
+	got := resolveIRI("other", map[string]string{baseURIKey: "http://example.org/base/"})
 	if got != "http://example.org/base/other" {
 		t.Errorf("got %s", got)
 	}
 }
 
 func TestResolveRelativeIRIAbsPath(t *testing.T) {
-	got := resolveRelativeIRI("http://example.org/base/", "/abs")
+	got := resolveIRI("/abs", map[string]string{baseURIKey: "http://example.org/base/"})
 	if got != "http://example.org/abs" {
 		t.Errorf("got %s", got)
 	}
