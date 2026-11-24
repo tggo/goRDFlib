@@ -47,14 +47,20 @@ func (p *sparqlParser) resolveTermValue(s string) rdflibgo.Term {
 		return nil
 	}
 	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
-		return rdflibgo.NewURIRefUnsafe(s[1 : len(s)-1])
+		return rdflibgo.NewURIRefUnsafe(p.resolveRef(s[1 : len(s)-1]))
 	}
 	if strings.HasPrefix(s, "_:") {
 		label := s[2:]
 		return rdflibgo.NewBNode(label)
 	}
 	if strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") {
-		return parseLiteralWithPrefixes(s, p.prefixes)
+		lit := parseLiteralWithPrefixes(s, p.prefixes)
+		if dt := lit.Datatype().Value(); lit.Language() == "" {
+			if r := p.resolveRef(dt); r != dt {
+				return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(r)))
+			}
+		}
+		return lit
 	}
 	if s == "true" {
 		return rdflibgo.NewLiteral(true)
@@ -107,7 +113,15 @@ func parseLiteralWithPrefixes(s string, prefixes map[string]string) rdflibgo.Lit
 			}
 		}
 	}
-	return parseLiteralString(s)
+	lit := parseLiteralString(s)
+	// A relative datatype IRI is resolved against the query's BASE, which
+	// reaches evaluation through prefixes (resolveIRI).
+	if dt := lit.Datatype().Value(); lit.Language() == "" {
+		if r := resolveIRI(dt, prefixes); r != dt {
+			return rdflibgo.NewLiteral(lit.Lexical(), rdflibgo.WithDatatype(rdflibgo.NewURIRefUnsafe(r)))
+		}
+	}
+	return lit
 }
 
 func parseLiteralString(s string) rdflibgo.Literal {
@@ -493,6 +507,16 @@ func (p *sparqlParser) parseVersion() error {
 // IRI is resolved against the query's own BASE when it declares one. A token
 // that is neither (an undeclared prefix, a variable) is kept as written (only a variable now: an undeclared prefix is a parse error), so
 // that a caller sees what the query said instead of nothing.
+// resolveRef resolves an IRI reference written in the query against its BASE
+// by RFC 3986 §5.2 (internal/iri), as resolveIRI does at evaluation. An
+// absolute reference, or any reference without a BASE, is returned as written.
+func (p *sparqlParser) resolveRef(ref string) string {
+	if p.base == "" || iri.IsAbsolute(ref) {
+		return ref
+	}
+	return iri.Resolve(p.base, ref)
+}
+
 func (p *sparqlParser) datasetIRI(tok, base string) string {
 	s := tok
 	if t := p.resolveTermValue(tok); t != nil {

@@ -314,7 +314,7 @@ func (p *sparqlParser) resolvePathURI() string {
 		return rdflibgo.RDF.Type.Value()
 	}
 	if p.input[p.pos] == '<' {
-		return p.readIRIRef()
+		return p.resolveRef(p.readIRIRef())
 	}
 	// Prefixed name
 	start := p.pos

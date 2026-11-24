@@ -476,7 +476,7 @@ func evalAggExprWithGraph(ec *evalCtx, expr Expr, group []map[string]rdflibgo.Te
 	case *LiteralExpr:
 		return e.Value
 	case *IRIExpr:
-		return rdflibgo.NewURIRefUnsafe(e.Value)
+		return rdflibgo.NewURIRefUnsafe(resolveIRI(e.Value, prefixes))
 	}
 	return nil
 }
@@ -823,7 +823,9 @@ func evalPattern(ec *evalCtx, g *rdflibgo.Graph, pattern Pattern, prefixes map[s
 				if i < len(row) && row[i] != nil {
 					val := row[i]
 					if u, ok := val.(rdflibgo.URIRef); ok {
-						val = rdflibgo.NewURIRefUnsafe(resolveIRI(u.Value(), prefixes))
+						if r := resolveIRI(u.Value(), prefixes); r != u.Value() {
+							val = rdflibgo.NewURIRefUnsafe(r)
+						}
 					}
 					b[v] = val
 				}
